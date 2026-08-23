@@ -1,5 +1,6 @@
-requests
+requests>=2.31.0
 numpy==1.26.4
-ecmwf-api-client
-eccodes
+python-dateutil>=2.8.2
+ecmwf-api-client>=1.6.5
+eccodes>=2.43.0
 SHARPpy @ git+https://github.com/sharppy/SHARPpy.git@main
