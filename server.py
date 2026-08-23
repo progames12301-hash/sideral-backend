@@ -765,19 +765,19 @@ def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, gri
 
 
 def _ecmwf_runtime_modules() -> dict[str, Any]:
-    """Importa apenas o cliente Open Data, ecCodes, NumPy e o núcleo do SHARPpy."""
+    """Importa as dependências do ECMWF/SHARPpy somente quando /api/sounding é usado."""
     try:
         import numpy as np
-        from ecmwf.opendata import Client as ECMWFOpenDataClient
+        from ecmwfapi import ECMWFService
         from eccodes import codes_get, codes_grib_find_nearest, codes_grib_new_from_file, codes_release
         from sharppy.sharptab import profile as shp_profile
     except ImportError as exc:
         raise RuntimeError(
-            "Dependências do Skew-T ausentes. Instale ecmwf-opendata, eccodes, numpy e SHARPpy."
+            "Dependências do Skew-T ausentes. Instale ecmwf-api-client, eccodes, numpy e SHARPpy."
         ) from exc
     return {
         "np": np,
-        "ECMWFOpenDataClient": ECMWFOpenDataClient,
+        "ECMWFService": ECMWFService,
         "codes_get": codes_get,
         "codes_grib_find_nearest": codes_grib_find_nearest,
         "codes_grib_new_from_file": codes_grib_new_from_file,
@@ -787,15 +787,18 @@ def _ecmwf_runtime_modules() -> dict[str, Any]:
 
 
 def _ecmwf_api_client(modules: dict[str, Any]) -> Any:
-    # A API oficial ECMWF Open Data é pública e não usa ECMWF_API_KEY/EMAIL.
-    source = os.environ.get("ECMWF_SOURCE", "ecmwf").strip().lower()
-    if source not in {"ecmwf", "aws", "azure", "google"}:
-        source = "ecmwf"
-    return modules["ECMWFOpenDataClient"](
-        source=source,
-        model="ifs",
-        resol="0p25",
-        infer_stream_keyword=False,
+    api_url = os.environ.get("ECMWF_API_URL", "https://api.ecmwf.int/v1").strip()
+    api_key = os.environ.get("ECMWF_API_KEY", "").strip()
+    api_email = os.environ.get("ECMWF_API_EMAIL", "").strip()
+    if not api_key or not api_email:
+        raise RuntimeError(
+            "ECMWF_API_KEY e ECMWF_API_EMAIL não estão configurados no Render."
+        )
+    return modules["ECMWFService"](
+        "mars",
+        url=api_url,
+        key=api_key,
+        email=api_email,
     )
 
 
@@ -826,7 +829,7 @@ def _ecmwf_cleanup_cache() -> None:
         cutoff = time.time() - 6 * 60 * 60
         files = sorted(ECMWF_SOUNDING_CACHE_DIR.glob("*.grib"), key=lambda p: p.stat().st_mtime, reverse=True)
         for index, path in enumerate(files):
-            if path.stat().st_mtime < cutoff or index >= 12:
+            if path.stat().st_mtime < cutoff or index >= 24:
                 try:
                     path.unlink()
                 except OSError:
@@ -835,39 +838,20 @@ def _ecmwf_cleanup_cache() -> None:
         pass
 
 
-def _ecmwf_run_candidates(run_requested: str, client: Any | None = None, fh: int = 0) -> list[dt.datetime]:
+def _ecmwf_run_candidates(run_requested: str) -> list[dt.datetime]:
     now = dt.datetime.now(dt.timezone.utc)
-
-    if run_requested == "latest" and client is not None:
-        try:
-            latest = client.latest(
-                type="fc",
-                stream="oper",
-                step=fh,
-                param="2t",
-            )
-            if isinstance(latest, dt.datetime):
-                if latest.tzinfo is None:
-                    latest = latest.replace(tzinfo=dt.timezone.utc)
-                else:
-                    latest = latest.astimezone(dt.timezone.utc)
-                return [latest]
-        except Exception as exc:
-            print(f"[ECMWF] não foi possível resolver a rodada mais recente pela API: {exc}")
-
     if run_requested != "latest":
         hour = int(run_requested)
         candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
         if candidate > now:
             candidate -= dt.timedelta(days=1)
-        # A rodada pode ainda estar em disseminação. Tenta também o ciclo anterior do mesmo horário.
-        return [candidate, candidate - dt.timedelta(days=1)]
+        return [candidate]
 
-    # Fallback se Client.latest() não responder.
-    reference = now - dt.timedelta(hours=8)
+    # Para "latest", evita a rodada que ainda pode estar em disseminação e mantém fallbacks.
+    reference = now - dt.timedelta(hours=7)
     base_hour = (reference.hour // 6) * 6
     first = reference.replace(hour=base_hour, minute=0, second=0, microsecond=0)
-    return [first - dt.timedelta(hours=6 * index) for index in range(6)]
+    return [first - dt.timedelta(hours=6 * index) for index in range(4)]
 
 
 def _ecmwf_cached_grib(path: Path) -> bool:
@@ -882,18 +866,20 @@ def _ecmwf_point_tag(lat: float, lon: float) -> str:
 
 
 def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, lon: float) -> tuple[Path, Path, Path]:
-    """Baixa somente os campos/níveis necessários da API oficial ECMWF Open Data.
-
-    Os arquivos baixados continuam globais porque o Open Data não oferece recorte espacial
-    no cliente. Por isso o cache é compartilhado entre todas as lat/lon da mesma rodada/FH.
-    """
     ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = run_dt.strftime("%Y%m%d_%H")
-    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_pl.grib"
-    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_sfc.grib"
-    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_z_sfc.grib"
+    point_tag = _ecmwf_point_tag(lat, lon)
+    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
+    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
+    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_{point_tag}_oro.grib"
 
-    def retrieve_atomic(target: Path, **request: Any) -> None:
+    north = min(90.0, lat + 0.30)
+    south = max(-90.0, lat - 0.30)
+    west = max(-180.0, lon - 0.30)
+    east = min(180.0, lon + 0.30)
+    area = f"{north:.2f}/{west:.2f}/{south:.2f}/{east:.2f}"
+
+    def execute_atomic(target: Path, request: dict[str, Any]) -> None:
         if _ecmwf_cached_grib(target):
             return
         tmp = target.with_suffix(target.suffix + ".tmp")
@@ -902,52 +888,57 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
                 tmp.unlink()
         except OSError:
             pass
-        try:
-            result = client.retrieve(target=str(tmp), **request)
-            if result is not None and getattr(result, "datetime", None):
-                print(f"[ECMWF] rodada obtida: {result.datetime}")
-        except Exception as exc:
-            try:
-                if tmp.exists():
-                    tmp.unlink()
-            except OSError:
-                pass
-            detail = str(exc).strip() or type(exc).__name__
-            raise RuntimeError("Falha na ECMWF Open Data API: " + detail) from exc
+        client.execute(request, str(tmp))
         if not tmp.exists() or tmp.stat().st_size < 512:
-            raise RuntimeError(f"ECMWF Open Data retornou arquivo vazio para {target.name}.")
+            raise RuntimeError(f"ECMWF retornou arquivo vazio para {target.name}.")
         tmp.replace(target)
 
-    common = {
+    common_fc = {
+        "class": "od",
         "date": run_dt.strftime("%Y%m%d"),
-        "time": run_dt.hour,
+        "expver": "1",
         "stream": "oper",
+        "time": f"{run_dt.hour:02d}",
         "type": "fc",
+        "step": str(fh),
+        "grid": "0.1/0.1",
+        "area": area,
     }
 
     with ecmwf_download_lock:
-        retrieve_atomic(
+        execute_atomic(
             pressure_path,
-            **common,
-            step=fh,
-            levtype="pl",
-            levelist=ECMWF_PRESSURE_LEVELS,
-            param=["t", "r", "u", "v", "gh"],
+            {
+                **common_fc,
+                "levtype": "pl",
+                "levelist": "/".join(str(level) for level in ECMWF_PRESSURE_LEVELS),
+                # T / U / V / RH / geopotential height / vertical velocity (omega, Pa/s).
+                "param": "130.128/131.128/132.128/157.128/156.128/135.128",
+            },
         )
-        retrieve_atomic(
+        execute_atomic(
             surface_path,
-            **common,
-            step=fh,
-            levtype="sfc",
-            param=["sp", "2t", "2d", "10u", "10v"],
+            {
+                **common_fc,
+                "levtype": "sfc",
+                # SP / 10U / 10V / 2T / 2D.
+                "param": "134.128/165.128/166.128/167.128/168.128",
+            },
         )
-        # O geopotencial de superfície (z) do IFS Open Data é publicado em step 0.
-        retrieve_atomic(
+        execute_atomic(
             orography_path,
-            **common,
-            step=0,
-            levtype="sfc",
-            param="z",
+            {
+                "class": "od",
+                "date": run_dt.strftime("%Y%m%d"),
+                "expver": "1",
+                "stream": "oper",
+                "time": f"{run_dt.hour:02d}",
+                "type": "an",
+                "levtype": "sfc",
+                "param": "129.128",
+                "grid": "0.1/0.1",
+                "area": area,
+            },
         )
         _ecmwf_cleanup_cache()
     return pressure_path, surface_path, orography_path
@@ -1035,10 +1026,29 @@ def _parcel_json(parcel: Any, np: Any) -> dict[str, Any]:
     return {
         "cape": n("bplus"),
         "cin": n("bminus"),
+        "cape_3km": n("b3km"),
+        "cape_6km": n("b6km"),
+        "cape_to_freezing": n("bfzl"),
         "lcl": n("lclhght"),
         "lfc": n("lfchght"),
         "el": n("elhght"),
+        "lcl_pressure": n("lclpres"),
+        "lfc_pressure": n("lfcpres"),
+        "el_pressure": n("elpres"),
+        "freezing_height": n("hght0c"),
+        "minus10_height": n("hghtm10c"),
+        "minus20_height": n("hghtm20c"),
+        "minus30_height": n("hghtm30c"),
         "li5": n("li5"),
+        "li3": n("li3"),
+        "brn": n("brn"),
+        "brn_shear": n("brnshear"),
+        "brn_u": n("brnu"),
+        "brn_v": n("brnv"),
+        "cap_strength": n("cap"),
+        "source_pressure": n("pres"),
+        "source_temperature": n("tmpc"),
+        "source_dewpoint": n("dwpc"),
         "trace": {"pressure": pressure, "temperature": temperature},
     }
 
@@ -1092,6 +1102,7 @@ def _ecmwf_build_sounding_payload(
         "dewpoint": surface_dewpoint,
         "u": surface_u,
         "v": surface_v,
+        "omega": math.nan,
     }]
 
     for level in ECMWF_PRESSURE_LEVELS:
@@ -1103,6 +1114,7 @@ def _ecmwf_build_sounding_payload(
         u_ms = values.get("u")
         v_ms = values.get("v")
         gh = values.get("gh")
+        omega_pa_s = values.get("w")
         if None in (t_k, rh, u_ms, v_ms, gh):
             continue
         temp_c = float(t_k) - 273.15
@@ -1116,6 +1128,7 @@ def _ecmwf_build_sounding_payload(
             "dewpoint": dewpoint_c,
             "u": float(u_ms) * 1.9438444924406,
             "v": float(v_ms) * 1.9438444924406,
+            "omega": float(omega_pa_s) if omega_pa_s is not None else math.nan,
         })
 
     points.sort(key=lambda item: item["pressure"], reverse=True)
@@ -1141,25 +1154,33 @@ def _ecmwf_build_sounding_payload(
     dwpc = np.array([p["dewpoint"] for p in points], dtype=float)
     u = np.array([p["u"] for p in points], dtype=float)
     v = np.array([p["v"] for p in points], dtype=float)
+    omega = np.array([p.get("omega", math.nan) for p in points], dtype=float)
 
     # Apenas o núcleo de cálculo do SHARPpy é usado; nenhuma GUI/Qt é iniciada.
-    prof = shp_profile.create_profile(
-        profile="convective",
-        pres=pres,
-        hght=hght,
-        tmpc=tmpc,
-        dwpc=dwpc,
-        u=u,
-        v=v,
-        latitude=float(lat),
-        date=run_dt + dt.timedelta(hours=fh),
-        location="ECMWF",
-        strictQC=False,
-    )
+    profile_kwargs = {
+        "profile": "convective",
+        "pres": pres,
+        "hght": hght,
+        "tmpc": tmpc,
+        "dwpc": dwpc,
+        "u": u,
+        "v": v,
+        "latitude": float(lat),
+        "date": run_dt + dt.timedelta(hours=fh),
+        "location": "ECMWF",
+        "strictQC": False,
+    }
+    # O omega oficial do ECMWF permite OPRH/DGZ e diagnósticos de inverno reais.
+    omega_masked = np.ma.masked_invalid(omega)
+    if int(np.ma.count(omega_masked)) >= 2:
+        profile_kwargs["omeg"] = omega_masked
+    prof = shp_profile.create_profile(**profile_kwargs)
 
     sb = _parcel_json(prof.sfcpcl, np)
     ml = _parcel_json(prof.mlpcl, np)
+    fcst = _parcel_json(prof.fcstpcl, np)
     mu = _parcel_json(prof.mupcl, np)
+    eff = _parcel_json(getattr(prof, "effpcl", prof.sfcpcl), np)
     shear01 = _sharppy_vector_magnitude(getattr(prof, "sfc_1km_shear", None), np)
     shear03 = _sharppy_vector_magnitude(getattr(prof, "sfc_3km_shear", None), np)
     shear06 = _sharppy_vector_magnitude(getattr(prof, "sfc_6km_shear", None), np)
@@ -1182,14 +1203,196 @@ def _ecmwf_build_sounding_payload(
 
     pwat_in = _sharppy_number(getattr(prof, "pwat", None), np)
     stp = _sharppy_number(getattr(prof, "stp_cin", None), np)
+    stp_fixed = _sharppy_number(getattr(prof, "stp_fixed", None), np)
     scp = _sharppy_number(getattr(prof, "scp", None), np)
+    ship = _sharppy_number(getattr(prof, "ship", None), np)
+    sherb = _sharppy_number(getattr(prof, "sherbe", None), np)
+    ehi01 = None
     ehi03 = None
-    if mu.get("cape") is not None and srh03 is not None:
-        ehi03 = (float(mu["cape"]) * float(srh03)) / 160000.0
+    if mu.get("cape") is not None:
+        if srh01 is not None:
+            ehi01 = (float(mu["cape"]) * float(srh01)) / 160000.0
+        if srh03 is not None:
+            ehi03 = (float(mu["cape"]) * float(srh03)) / 160000.0
+
+    def seq_number(value: Any, index: int) -> float | None:
+        try:
+            return _sharppy_number(value[index], np)
+        except Exception:
+            return None
+
+    def dir_speed_from_uv(u_value: Any, v_value: Any) -> dict[str, float | None]:
+        u_num = _sharppy_number(u_value, np)
+        v_num = _sharppy_number(v_value, np)
+        if u_num is None or v_num is None:
+            return {"u": None, "v": None, "direction": None, "speed": None}
+        return {
+            "u": u_num,
+            "v": v_num,
+            "direction": wind_direction_deg(u_num, v_num),
+            "speed": math.hypot(u_num, v_num),
+        }
+
+    def dir_speed_pair(value: Any) -> dict[str, float | None]:
+        direction = seq_number(value, 0)
+        speed = seq_number(value, 1)
+        if direction is None or speed is None:
+            return {"direction": None, "speed": None, "u": None, "v": None}
+        rad = math.radians(direction)
+        return {
+            "direction": direction,
+            "speed": speed,
+            "u": -speed * math.sin(rad),
+            "v": -speed * math.cos(rad),
+        }
+
+    bunkers = getattr(prof, "bunkers", [None, None, None, None])
+    bunkers_rm = dir_speed_from_uv(seq_number(bunkers, 0), seq_number(bunkers, 1))
+    bunkers_lm = dir_speed_from_uv(seq_number(bunkers, 2), seq_number(bunkers, 3))
+
+    corfidi = getattr(prof, "upshear_downshear", [None, None, None, None])
+    corfidi_up = dir_speed_from_uv(seq_number(corfidi, 0), seq_number(corfidi, 1))
+    corfidi_down = dir_speed_from_uv(seq_number(corfidi, 2), seq_number(corfidi, 3))
+
+    mean01 = dir_speed_pair(getattr(prof, "mean_1km", [None, None]))
+    mean03 = dir_speed_pair(getattr(prof, "mean_3km", [None, None]))
+    mean06 = dir_speed_pair(getattr(prof, "mean_6km", [None, None]))
+    mean08 = dir_speed_pair(getattr(prof, "mean_8km", [None, None]))
+    mean_lcl_el = dir_speed_pair(getattr(prof, "mean_lcl_el", [None, None]))
+    mean_eff_raw = getattr(prof, "mean_eff", [None, None])
+    mean_ebw_raw = getattr(prof, "mean_ebw", [None, None])
+    mean_eff = dir_speed_from_uv(seq_number(mean_eff_raw, 0), seq_number(mean_eff_raw, 1))
+    mean_ebw = dir_speed_from_uv(seq_number(mean_ebw_raw, 0), seq_number(mean_ebw_raw, 1))
+
+    if lat < 0:
+        effective_srh_raw = seq_number(getattr(prof, "left_esrh", [None]), 0)
+        effective_srh = -effective_srh_raw if effective_srh_raw is not None else None
+        critical_angle = _sharppy_number(getattr(prof, "left_critical_angle", None), np)
+        srw01 = dir_speed_pair(getattr(prof, "left_srw_1km", [None, None]))
+        srw03 = dir_speed_pair(getattr(prof, "left_srw_3km", [None, None]))
+        srw06 = dir_speed_pair(getattr(prof, "left_srw_6km", [None, None]))
+        srw08 = dir_speed_pair(getattr(prof, "left_srw_8km", [None, None]))
+        srw45 = dir_speed_pair(getattr(prof, "left_srw_4_5km", [None, None]))
+        srw_lcl_el = dir_speed_pair(getattr(prof, "left_srw_lcl_el", [None, None]))
+        srw_eff_raw = getattr(prof, "left_srw_eff", [None, None])
+        srw_ebw_raw = getattr(prof, "left_srw_ebw", [None, None])
+        selected_motion_name = "Bunkers LM (ciclônico SH)"
+    else:
+        effective_srh = seq_number(getattr(prof, "right_esrh", [None]), 0)
+        critical_angle = _sharppy_number(getattr(prof, "right_critical_angle", None), np)
+        srw01 = dir_speed_pair(getattr(prof, "right_srw_1km", [None, None]))
+        srw03 = dir_speed_pair(getattr(prof, "right_srw_3km", [None, None]))
+        srw06 = dir_speed_pair(getattr(prof, "right_srw_6km", [None, None]))
+        srw08 = dir_speed_pair(getattr(prof, "right_srw_8km", [None, None]))
+        srw45 = dir_speed_pair(getattr(prof, "right_srw_4_5km", [None, None]))
+        srw_lcl_el = dir_speed_pair(getattr(prof, "right_srw_lcl_el", [None, None]))
+        srw_eff_raw = getattr(prof, "right_srw_eff", [None, None])
+        srw_ebw_raw = getattr(prof, "right_srw_ebw", [None, None])
+        selected_motion_name = "Bunkers RM (ciclônico NH)"
+
+    srw_eff = dir_speed_from_uv(seq_number(srw_eff_raw, 0), seq_number(srw_eff_raw, 1))
+    srw_ebw = dir_speed_from_uv(seq_number(srw_ebw_raw, 0), seq_number(srw_ebw_raw, 1))
+    ebwspd = _sharppy_number(getattr(prof, "ebwspd", None), np)
+    effective_bottom = _sharppy_number(getattr(prof, "ebotm", None), np)
+    effective_top = _sharppy_number(getattr(prof, "etopm", None), np)
+    shear08 = _sharppy_vector_magnitude(getattr(prof, "sfc_8km_shear", None), np)
+    shear09 = _sharppy_vector_magnitude(getattr(prof, "sfc_9km_shear", None), np)
+    lcl_el_shear = _sharppy_vector_magnitude(getattr(prof, "lcl_el_shear", None), np)
+    eff_shear = _sharppy_vector_magnitude(getattr(prof, "eff_shear", None), np)
+    ebwd = _sharppy_vector_magnitude(getattr(prof, "ebwd", None), np)
+    wind1km = dir_speed_pair(getattr(prof, "wind1km", [None, None]))
+    wind6km = dir_speed_pair(getattr(prof, "wind6km", [None, None]))
+
+    k_index = _sharppy_number(getattr(prof, "k_idx", None), np)
+    totals_totals = _sharppy_number(getattr(prof, "totals_totals", None), np)
+    lapse_03 = _sharppy_number(getattr(prof, "lapserate_3km", None), np)
+    lapse_36 = _sharppy_number(getattr(prof, "lapserate_3_6km", None), np)
+    lapse_850_500 = _sharppy_number(getattr(prof, "lapserate_850_500", None), np)
+    lapse_700_500 = _sharppy_number(getattr(prof, "lapserate_700_500", None), np)
+    max_lapse_26 = _sharppy_number(getattr(prof, "max_lapse_rate_2_6", None), np)
+    conv_temp_f = _sharppy_number(getattr(prof, "convT", None), np)
+    max_temp_f = _sharppy_number(getattr(prof, "maxT", None), np)
+    mean_mixr = _sharppy_number(getattr(prof, "mean_mixr", None), np)
+    low_rh = _sharppy_number(getattr(prof, "low_rh", None), np)
+    mid_rh = _sharppy_number(getattr(prof, "mid_rh", None), np)
+    dcape = _sharppy_number(getattr(prof, "dcape", None), np)
+    drush_f = _sharppy_number(getattr(prof, "drush", None), np)
+    tei = _sharppy_number(getattr(prof, "tei", None), np)
+    esp = _sharppy_number(getattr(prof, "esp", None), np)
+    mmp = _sharppy_number(getattr(prof, "mmp", None), np)
+    wndg = _sharppy_number(getattr(prof, "wndg", None), np)
+    sig_severe = _sharppy_number(getattr(prof, "sig_severe", None), np)
+    mburst = _sharppy_number(getattr(prof, "mburst", None), np)
+
+    dgz_pbot = _sharppy_number(getattr(prof, "dgz_pbot", None), np)
+    dgz_ptop = _sharppy_number(getattr(prof, "dgz_ptop", None), np)
+    dgz_meanrh = _sharppy_number(getattr(prof, "dgz_meanrh", None), np)
+    dgz_pw_in = _sharppy_number(getattr(prof, "dgz_pw", None), np)
+    dgz_meanq = _sharppy_number(getattr(prof, "dgz_meanq", None), np)
+    dgz_meanomega = _sharppy_number(getattr(prof, "dgz_meanomeg", None), np)
+    oprh = _sharppy_number(getattr(prof, "oprh", None), np)
+    initial_phase_pressure = _sharppy_number(getattr(prof, "plevel", None), np)
+    initial_phase_temp = _sharppy_number(getattr(prof, "tmp", None), np)
+    initial_phase_raw = getattr(prof, "phase", None)
+    initial_phase = None if initial_phase_raw is None or np.ma.is_masked(initial_phase_raw) else str(initial_phase_raw)
+    initial_state_raw = getattr(prof, "st", None)
+    initial_state = None if initial_state_raw is None or np.ma.is_masked(initial_state_raw) else str(initial_state_raw)
+    tpos = _sharppy_number(getattr(prof, "tpos", None), np)
+    tneg = _sharppy_number(getattr(prof, "tneg", None), np)
+    ttop = _sharppy_number(getattr(prof, "ttop", None), np)
+    tbot = _sharppy_number(getattr(prof, "tbot", None), np)
+    wpos = _sharppy_number(getattr(prof, "wpos", None), np)
+    wneg = _sharppy_number(getattr(prof, "wneg", None), np)
+    wtop = _sharppy_number(getattr(prof, "wtop", None), np)
+    wbot = _sharppy_number(getattr(prof, "wbot", None), np)
+    precip_type_raw = getattr(prof, "precip_type", None)
+    precip_type = None if precip_type_raw is None or np.ma.is_masked(precip_type_raw) else str(precip_type_raw)
+
+    watch_type_raw = getattr(prof, "watch_type", None)
+    watch_type_name = None if watch_type_raw is None or np.ma.is_masked(watch_type_raw) else str(watch_type_raw)
+
+    def sars_payload(matches: Any, kind: str) -> dict[str, Any]:
+        try:
+            quality_ids = []
+            for item in list(matches[0])[:10]:
+                if isinstance(item, bytes):
+                    quality_ids.append(item.decode("utf-8", errors="replace"))
+                else:
+                    quality_ids.append(str(item))
+            quality_values = []
+            for value in list(matches[1])[:10]:
+                if isinstance(value, bytes):
+                    quality_values.append(value.decode("utf-8", errors="replace"))
+                else:
+                    num = _safe_float(value)
+                    quality_values.append(round(num, 2) if num is not None else str(value))
+            loose = int(float(matches[2])) if len(matches) > 2 else 0
+            severe_count = int(float(matches[3])) if len(matches) > 3 else 0
+            probability = _safe_float(matches[4]) if len(matches) > 4 else None
+            return {
+                "kind": kind,
+                "quality_ids": quality_ids,
+                "quality_values": quality_values,
+                "quality_count": len(quality_ids),
+                "loose_count": loose,
+                "severe_count": severe_count,
+                "probability": probability,
+            }
+        except Exception:
+            return {"kind": kind, "quality_ids": [], "quality_values": [], "quality_count": 0, "loose_count": 0, "severe_count": 0, "probability": None}
+
+    hail_sars = sars_payload(getattr(prof, "matches", ([], [], 0, 0, 0)), "hail")
+    supercell_sars = sars_payload(getattr(prof, "supercell_matches", ([], [], 0, 0, 0)), "supercell")
+
+    def f_to_c(value: float | None) -> float | None:
+        return (value - 32.0) * (5.0 / 9.0) if value is not None else None
 
     def r(value: Any, digits: int = 1) -> float | None:
         number = _safe_float(value)
         return round(number, digits) if number is not None else None
+
+    def round_vector(vector: dict[str, float | None]) -> dict[str, float | None]:
+        return {key: r(value, 0 if key == "direction" else 1) for key, value in vector.items()}
 
     profile_json = {
         "pressure": [r(p["pressure"], 1) for p in points],
@@ -1201,17 +1404,19 @@ def _ecmwf_build_sounding_payload(
         "v": [r(p["v"], 1) for p in points],
         "wind_speed": [r(math.hypot(p["u"], p["v"]), 1) for p in points],
         "wind_direction": [r(wind_direction_deg(p["u"], p["v"]), 0) for p in points],
+        "omega": [r(p.get("omega"), 3) for p in points],
     }
 
     # Arredonda os índices depois do cálculo, preservando null quando mascarados.
-    for parcel in (sb, ml, mu):
-        for key in ("cape", "cin", "lcl", "lfc", "el", "li5"):
-            parcel[key] = r(parcel.get(key), 1 if key == "li5" else 0)
+    for parcel in (sb, ml, fcst, mu, eff):
+        for key in ("cape", "cin", "cape_3km", "cape_6km", "cape_to_freezing", "lcl", "lfc", "el", "lcl_pressure", "lfc_pressure", "el_pressure", "freezing_height", "minus10_height", "minus20_height", "minus30_height", "li5", "li3", "brn", "brn_shear", "brn_u", "brn_v", "cap_strength", "source_pressure", "source_temperature", "source_dewpoint"):
+            parcel[key] = r(parcel.get(key), 1 if key in {"li5", "li3"} else 0)
+
 
     valid_dt = run_dt + dt.timedelta(hours=fh)
     return {
-        "model": "ECMWF IFS 0.25°",
-        "model_id": "ecmwf_ifs_open_data",
+        "model": "ECMWF IFS 0.1°",
+        "model_id": "ecmwf_ifs_api",
         "latitude": lat,
         "longitude": lon,
         "grid_latitude": r(grid_lat, 3),
@@ -1223,26 +1428,76 @@ def _ecmwf_build_sounding_payload(
         "surface_elevation_m": r(surface_height, 0),
         "surface_pressure_hpa": r(surface_pressure, 1),
         "profile": profile_json,
-        "parcels": {"sb": sb, "ml": ml, "mu": mu},
+        "parcels": {"sb": sb, "ml": ml, "fcst": fcst, "mu": mu, "eff": eff},
         "thermodynamics": {
             "sbcape": sb["cape"], "sbcin": sb["cin"],
             "mlcape": ml["cape"], "mlcin": ml["cin"],
+            "fcstcape": fcst["cape"], "fcstcin": fcst["cin"],
             "mucape": mu["cape"], "mucin": mu["cin"],
+            "sb_cape_3km": sb["cape_3km"], "ml_cape_3km": ml["cape_3km"], "mu_cape_3km": mu["cape_3km"],
+            "sb_cape_6km": sb["cape_6km"], "ml_cape_6km": ml["cape_6km"], "mu_cape_6km": mu["cape_6km"],
+            "mu_cape_to_freezing": mu["cape_to_freezing"],
             "lcl": ml["lcl"], "lfc": ml["lfc"], "el": ml["el"],
-            "lifted_index": sb["li5"],
+            "lifted_index": sb["li5"], "lifted_index_300": sb["li3"],
             "pwat": r(pwat_in * 25.4 if pwat_in is not None else None, 1),
+            "pwat_in": r(pwat_in, 2),
+            "k_index": r(k_index, 1), "totals_totals": r(totals_totals, 1),
+            "lapse_0_3km": r(lapse_03, 1), "lapse_3_6km": r(lapse_36, 1),
+            "lapse_850_500": r(lapse_850_500, 1), "lapse_700_500": r(lapse_700_500, 1),
+            "max_lapse_2_6km": r(max_lapse_26, 1),
+            "convective_temperature_c": r(f_to_c(conv_temp_f), 1), "convective_temperature_f": r(conv_temp_f, 0),
+            "max_temperature_c": r(f_to_c(max_temp_f), 1), "max_temperature_f": r(max_temp_f, 0),
+            "mean_mixratio": r(mean_mixr, 1), "low_level_rh": r(low_rh, 0), "mid_level_rh": r(mid_rh, 0),
+            "dcape": r(dcape, 0), "downrush_temperature_c": r(f_to_c(drush_f), 1), "downrush_temperature_f": r(drush_f, 0),
+            "brn": r(mu.get("brn"), 1), "brn_shear": r(mu.get("brn_shear"), 0),
         },
         "kinematics": {
             "shear_01km": r(shear01, 1), "shear_03km": r(shear03, 1), "shear_06km": r(shear06, 1),
-            "srh_01km": r(srh01, 0), "srh_03km": r(srh03, 0),
+            "shear_08km": r(shear08, 1), "shear_09km": r(shear09, 1),
+            "lcl_el_shear": r(lcl_el_shear, 1), "effective_layer_shear": r(eff_shear, 1), "effective_bulk_wind": r(ebwd if ebwd is not None else ebwspd, 1),
+            "srh_01km": r(srh01, 0), "srh_03km": r(srh03, 0), "effective_srh": r(effective_srh, 0),
+            "effective_inflow_bottom_m": r(effective_bottom, 0), "effective_inflow_top_m": r(effective_top, 0),
+            "critical_angle": r(critical_angle, 0),
+            "mean_wind_01km": round_vector(mean01), "mean_wind_03km": round_vector(mean03), "mean_wind_06km": round_vector(mean06), "mean_wind_08km": round_vector(mean08),
+            "mean_wind_lcl_el": round_vector(mean_lcl_el), "mean_wind_effective": round_vector(mean_eff), "mean_wind_ebw": round_vector(mean_ebw),
+            "srw_01km_vector": round_vector(srw01), "srw_03km_vector": round_vector(srw03), "srw_06km_vector": round_vector(srw06), "srw_08km_vector": round_vector(srw08),
+            "srw_4_5km_vector": round_vector(srw45), "srw_lcl_el_vector": round_vector(srw_lcl_el), "srw_effective": round_vector(srw_eff), "srw_ebw": round_vector(srw_ebw),
+            "srw_01km": r(srw01.get("speed"), 1), "srw_03km": r(srw03.get("speed"), 1), "srw_06km": r(srw06.get("speed"), 1), "srw_08km": r(srw08.get("speed"), 1),
+            "srw_4_5km": r(srw45.get("speed"), 1), "srw_lcl_el": r(srw_lcl_el.get("speed"), 1),
+            "wind_1km": round_vector(wind1km), "wind_6km": round_vector(wind6km),
+            "mean_wind_06km_direction": r(mean06.get("direction"), 0), "mean_wind_06km_speed": r(mean06.get("speed"), 1),
             "storm_motion_u": r(storm_u, 1), "storm_motion_v": r(storm_v, 1),
             "storm_motion_speed": r(storm_speed, 1), "storm_motion_direction": r(storm_dir, 0),
+            "storm_motion_name": selected_motion_name,
+            "bunkers_rm": round_vector(bunkers_rm), "bunkers_lm": round_vector(bunkers_lm),
+            "corfidi_up": round_vector(corfidi_up), "corfidi_down": round_vector(corfidi_down),
         },
-        "severe": {"stp": r(stp, 2), "scp": r(scp, 2), "ehi_03km": r(ehi03, 2)},
-        "source": "ECMWF Open Data API + SHARPpy",
+        "severe": {
+            "stp": r(stp, 2), "stp_fixed": r(stp_fixed, 2), "scp": r(scp, 2),
+            "ehi_01km": r(ehi01, 2), "ehi_03km": r(ehi03, 2),
+            "ship": r(ship, 2), "sherb": r(sherb, 2), "tei": r(tei, 2), "esp": r(esp, 2),
+            "mmp": r(mmp, 2), "wndg": r(wndg, 2), "sig_severe": r(sig_severe, 0),
+            "microburst": r(mburst, 2), "watch_type": watch_type_name,
+        },
+        "winter": {
+            "dgz_bottom_hpa": r(dgz_pbot, 1), "dgz_top_hpa": r(dgz_ptop, 1),
+            "dgz_mean_rh": r(dgz_meanrh, 0), "dgz_pw_in": r(dgz_pw_in, 2), "dgz_pw_mm": r(dgz_pw_in * 25.4 if dgz_pw_in is not None else None, 1),
+            "dgz_mean_mixratio": r(dgz_meanq, 2), "dgz_mean_omega": r(dgz_meanomega, 2), "oprh": r(oprh, 3),
+            "initial_phase_pressure_hpa": r(initial_phase_pressure, 1), "initial_phase": initial_phase, "initial_phase_temp_c": r(initial_phase_temp, 1), "initial_phase_state": initial_state,
+            "temperature_positive_energy": r(tpos, 1), "temperature_negative_energy": r(tneg, 1), "temperature_layer_top_hpa": r(ttop, 1), "temperature_layer_bottom_hpa": r(tbot, 1),
+            "wetbulb_positive_energy": r(wpos, 1), "wetbulb_negative_energy": r(wneg, 1), "wetbulb_layer_top_hpa": r(wtop, 1), "wetbulb_layer_bottom_hpa": r(wbot, 1),
+            "precip_type": precip_type,
+        },
+        "analogs": {
+            "hail": hail_sars, "supercell": supercell_sars,
+            "sars_hail_count": hail_sars["quality_count"], "sars_supercell_count": supercell_sars["quality_count"],
+            "database_scope": "SARS/SHARPpy (base calibrada com casos dos EUA; usar apenas como analogia fora do CONUS)",
+        },
+        "source": "ECMWF Web API + SHARPpy",
         "attribution": "ECMWF",
         "cache": False,
     }
+
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -1308,7 +1563,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def handle_sounding(self, query: dict[str, list[str]]) -> None:
-        """Sondagem IFS obtida pela ECMWF Open Data API e processada pelo núcleo do SHARPpy."""
+        """Sondagem IFS obtida pela ECMWF Web API e processada pelo núcleo do SHARPpy."""
         try:
             lat = float(query.get("lat", ["-25.43"])[0])
             lon = float(query.get("lon", ["-49.27"])[0])
@@ -1322,7 +1577,7 @@ class Handler(SimpleHTTPRequestHandler):
             if fh < 0 or fh > 144 or fh % 3 != 0:
                 self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas."}); return
 
-            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-open-data-sharppy-v3")
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v5-g010")
             cached = sounding_cache.get(cache_key)
             if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
                 payload = dict(cached["data"])
@@ -1333,7 +1588,7 @@ class Handler(SimpleHTTPRequestHandler):
             client = _ecmwf_api_client(modules)
             last_error: Exception | None = None
             payload = None
-            for run_dt in _ecmwf_run_candidates(run_requested, client, fh):
+            for run_dt in _ecmwf_run_candidates(run_requested):
                 try:
                     pressure_path, surface_path, orography_path = _ecmwf_retrieve_grib(
                         client, run_dt, fh, lat, lon
@@ -1348,14 +1603,14 @@ class Handler(SimpleHTTPRequestHandler):
                         raise
             if payload is None:
                 raise RuntimeError(
-                    f"Nenhuma rodada ECMWF Open Data disponível para esta solicitação: {last_error}"
+                    f"Nenhuma rodada ECMWF disponível pela API para esta solicitação: {last_error}"
                 )
             sounding_cache[cache_key] = {"saved_at": time.monotonic(), "data": payload}
             self.send_json(200, payload)
         except RuntimeError as exc:
             self.send_json(502, {"error": str(exc)})
         except Exception as exc:
-            self.send_json(500, {"error": f"Erro interno no ECMWF Open Data/SHARPpy: {type(exc).__name__}: {exc}"})
+            self.send_json(500, {"error": f"Erro interno no ECMWF/SHARPpy: {type(exc).__name__}: {exc}"})
 
     def handle_ipmet_meta(self) -> None:
         try:
