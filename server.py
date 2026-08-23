@@ -765,19 +765,19 @@ def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, gri
 
 
 def _ecmwf_runtime_modules() -> dict[str, Any]:
-    """Importa as dependências do ECMWF/SHARPpy somente quando /api/sounding é usado."""
+    """Importa apenas o cliente Open Data, ecCodes, NumPy e o núcleo do SHARPpy."""
     try:
         import numpy as np
-        from ecmwfapi import ECMWFService
+        from ecmwf.opendata import Client as ECMWFOpenDataClient
         from eccodes import codes_get, codes_grib_find_nearest, codes_grib_new_from_file, codes_release
         from sharppy.sharptab import profile as shp_profile
     except ImportError as exc:
         raise RuntimeError(
-            "Dependências do Skew-T ausentes. Instale ecmwf-api-client, eccodes, numpy e SHARPpy."
+            "Dependências do Skew-T ausentes. Instale ecmwf-opendata, eccodes, numpy e SHARPpy."
         ) from exc
     return {
         "np": np,
-        "ECMWFService": ECMWFService,
+        "ECMWFOpenDataClient": ECMWFOpenDataClient,
         "codes_get": codes_get,
         "codes_grib_find_nearest": codes_grib_find_nearest,
         "codes_grib_new_from_file": codes_grib_new_from_file,
@@ -787,18 +787,15 @@ def _ecmwf_runtime_modules() -> dict[str, Any]:
 
 
 def _ecmwf_api_client(modules: dict[str, Any]) -> Any:
-    api_url = os.environ.get("ECMWF_API_URL", "https://api.ecmwf.int/v1").strip()
-    api_key = os.environ.get("ECMWF_API_KEY", "").strip()
-    api_email = os.environ.get("ECMWF_API_EMAIL", "").strip()
-    if not api_key or not api_email:
-        raise RuntimeError(
-            "ECMWF_API_KEY e ECMWF_API_EMAIL não estão configurados no Render."
-        )
-    return modules["ECMWFService"](
-        "mars",
-        url=api_url,
-        key=api_key,
-        email=api_email,
+    # A API oficial ECMWF Open Data é pública e não usa ECMWF_API_KEY/EMAIL.
+    source = os.environ.get("ECMWF_SOURCE", "ecmwf").strip().lower()
+    if source not in {"ecmwf", "aws", "azure", "google"}:
+        source = "ecmwf"
+    return modules["ECMWFOpenDataClient"](
+        source=source,
+        model="ifs",
+        resol="0p25",
+        infer_stream_keyword=False,
     )
 
 
@@ -829,7 +826,7 @@ def _ecmwf_cleanup_cache() -> None:
         cutoff = time.time() - 6 * 60 * 60
         files = sorted(ECMWF_SOUNDING_CACHE_DIR.glob("*.grib"), key=lambda p: p.stat().st_mtime, reverse=True)
         for index, path in enumerate(files):
-            if path.stat().st_mtime < cutoff or index >= 24:
+            if path.stat().st_mtime < cutoff or index >= 12:
                 try:
                     path.unlink()
                 except OSError:
@@ -838,20 +835,39 @@ def _ecmwf_cleanup_cache() -> None:
         pass
 
 
-def _ecmwf_run_candidates(run_requested: str) -> list[dt.datetime]:
+def _ecmwf_run_candidates(run_requested: str, client: Any | None = None, fh: int = 0) -> list[dt.datetime]:
     now = dt.datetime.now(dt.timezone.utc)
+
+    if run_requested == "latest" and client is not None:
+        try:
+            latest = client.latest(
+                type="fc",
+                stream="oper",
+                step=fh,
+                param="2t",
+            )
+            if isinstance(latest, dt.datetime):
+                if latest.tzinfo is None:
+                    latest = latest.replace(tzinfo=dt.timezone.utc)
+                else:
+                    latest = latest.astimezone(dt.timezone.utc)
+                return [latest]
+        except Exception as exc:
+            print(f"[ECMWF] não foi possível resolver a rodada mais recente pela API: {exc}")
+
     if run_requested != "latest":
         hour = int(run_requested)
         candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
         if candidate > now:
             candidate -= dt.timedelta(days=1)
-        return [candidate]
+        # A rodada pode ainda estar em disseminação. Tenta também o ciclo anterior do mesmo horário.
+        return [candidate, candidate - dt.timedelta(days=1)]
 
-    # Para "latest", evita a rodada que ainda pode estar em disseminação e mantém fallbacks.
-    reference = now - dt.timedelta(hours=7)
+    # Fallback se Client.latest() não responder.
+    reference = now - dt.timedelta(hours=8)
     base_hour = (reference.hour // 6) * 6
     first = reference.replace(hour=base_hour, minute=0, second=0, microsecond=0)
-    return [first - dt.timedelta(hours=6 * index) for index in range(4)]
+    return [first - dt.timedelta(hours=6 * index) for index in range(6)]
 
 
 def _ecmwf_cached_grib(path: Path) -> bool:
@@ -866,20 +882,18 @@ def _ecmwf_point_tag(lat: float, lon: float) -> str:
 
 
 def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, lon: float) -> tuple[Path, Path, Path]:
+    """Baixa somente os campos/níveis necessários da API oficial ECMWF Open Data.
+
+    Os arquivos baixados continuam globais porque o Open Data não oferece recorte espacial
+    no cliente. Por isso o cache é compartilhado entre todas as lat/lon da mesma rodada/FH.
+    """
     ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = run_dt.strftime("%Y%m%d_%H")
-    point_tag = _ecmwf_point_tag(lat, lon)
-    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
-    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
-    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_{point_tag}_oro.grib"
+    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_pl.grib"
+    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_sfc.grib"
+    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_z_sfc.grib"
 
-    north = min(90.0, lat + 0.30)
-    south = max(-90.0, lat - 0.30)
-    west = max(-180.0, lon - 0.30)
-    east = min(180.0, lon + 0.30)
-    area = f"{north:.2f}/{west:.2f}/{south:.2f}/{east:.2f}"
-
-    def execute_atomic(target: Path, request: dict[str, Any]) -> None:
+    def retrieve_atomic(target: Path, **request: Any) -> None:
         if _ecmwf_cached_grib(target):
             return
         tmp = target.with_suffix(target.suffix + ".tmp")
@@ -888,57 +902,52 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
                 tmp.unlink()
         except OSError:
             pass
-        client.execute(request, str(tmp))
+        try:
+            result = client.retrieve(target=str(tmp), **request)
+            if result is not None and getattr(result, "datetime", None):
+                print(f"[ECMWF] rodada obtida: {result.datetime}")
+        except Exception as exc:
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
+            detail = str(exc).strip() or type(exc).__name__
+            raise RuntimeError("Falha na ECMWF Open Data API: " + detail) from exc
         if not tmp.exists() or tmp.stat().st_size < 512:
-            raise RuntimeError(f"ECMWF retornou arquivo vazio para {target.name}.")
+            raise RuntimeError(f"ECMWF Open Data retornou arquivo vazio para {target.name}.")
         tmp.replace(target)
 
-    common_fc = {
-        "class": "od",
+    common = {
         "date": run_dt.strftime("%Y%m%d"),
-        "expver": "1",
+        "time": run_dt.hour,
         "stream": "oper",
-        "time": f"{run_dt.hour:02d}",
         "type": "fc",
-        "step": str(fh),
-        "grid": "0.25/0.25",
-        "area": area,
     }
 
     with ecmwf_download_lock:
-        execute_atomic(
+        retrieve_atomic(
             pressure_path,
-            {
-                **common_fc,
-                "levtype": "pl",
-                "levelist": "/".join(str(level) for level in ECMWF_PRESSURE_LEVELS),
-                # T / U / V / RH / geopotential height.
-                "param": "130.128/131.128/132.128/157.128/156.128",
-            },
+            **common,
+            step=fh,
+            levtype="pl",
+            levelist=ECMWF_PRESSURE_LEVELS,
+            param=["t", "r", "u", "v", "gh"],
         )
-        execute_atomic(
+        retrieve_atomic(
             surface_path,
-            {
-                **common_fc,
-                "levtype": "sfc",
-                # SP / 10U / 10V / 2T / 2D.
-                "param": "134.128/165.128/166.128/167.128/168.128",
-            },
+            **common,
+            step=fh,
+            levtype="sfc",
+            param=["sp", "2t", "2d", "10u", "10v"],
         )
-        execute_atomic(
+        # O geopotencial de superfície (z) do IFS Open Data é publicado em step 0.
+        retrieve_atomic(
             orography_path,
-            {
-                "class": "od",
-                "date": run_dt.strftime("%Y%m%d"),
-                "expver": "1",
-                "stream": "oper",
-                "time": f"{run_dt.hour:02d}",
-                "type": "an",
-                "levtype": "sfc",
-                "param": "129.128",
-                "grid": "0.25/0.25",
-                "area": area,
-            },
+            **common,
+            step=0,
+            levtype="sfc",
+            param="z",
         )
         _ecmwf_cleanup_cache()
     return pressure_path, surface_path, orography_path
@@ -1202,7 +1211,7 @@ def _ecmwf_build_sounding_payload(
     valid_dt = run_dt + dt.timedelta(hours=fh)
     return {
         "model": "ECMWF IFS 0.25°",
-        "model_id": "ecmwf_ifs_api",
+        "model_id": "ecmwf_ifs_open_data",
         "latitude": lat,
         "longitude": lon,
         "grid_latitude": r(grid_lat, 3),
@@ -1230,7 +1239,7 @@ def _ecmwf_build_sounding_payload(
             "storm_motion_speed": r(storm_speed, 1), "storm_motion_direction": r(storm_dir, 0),
         },
         "severe": {"stp": r(stp, 2), "scp": r(scp, 2), "ehi_03km": r(ehi03, 2)},
-        "source": "ECMWF Web API + SHARPpy",
+        "source": "ECMWF Open Data API + SHARPpy",
         "attribution": "ECMWF",
         "cache": False,
     }
@@ -1299,7 +1308,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def handle_sounding(self, query: dict[str, list[str]]) -> None:
-        """Sondagem IFS obtida pela ECMWF Web API e processada pelo núcleo do SHARPpy."""
+        """Sondagem IFS obtida pela ECMWF Open Data API e processada pelo núcleo do SHARPpy."""
         try:
             lat = float(query.get("lat", ["-25.43"])[0])
             lon = float(query.get("lon", ["-49.27"])[0])
@@ -1313,7 +1322,7 @@ class Handler(SimpleHTTPRequestHandler):
             if fh < 0 or fh > 144 or fh % 3 != 0:
                 self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas."}); return
 
-            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v2")
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-open-data-sharppy-v3")
             cached = sounding_cache.get(cache_key)
             if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
                 payload = dict(cached["data"])
@@ -1324,7 +1333,7 @@ class Handler(SimpleHTTPRequestHandler):
             client = _ecmwf_api_client(modules)
             last_error: Exception | None = None
             payload = None
-            for run_dt in _ecmwf_run_candidates(run_requested):
+            for run_dt in _ecmwf_run_candidates(run_requested, client, fh):
                 try:
                     pressure_path, surface_path, orography_path = _ecmwf_retrieve_grib(
                         client, run_dt, fh, lat, lon
@@ -1339,14 +1348,14 @@ class Handler(SimpleHTTPRequestHandler):
                         raise
             if payload is None:
                 raise RuntimeError(
-                    f"Nenhuma rodada ECMWF disponível pela API para esta solicitação: {last_error}"
+                    f"Nenhuma rodada ECMWF Open Data disponível para esta solicitação: {last_error}"
                 )
             sounding_cache[cache_key] = {"saved_at": time.monotonic(), "data": payload}
             self.send_json(200, payload)
         except RuntimeError as exc:
             self.send_json(502, {"error": str(exc)})
         except Exception as exc:
-            self.send_json(500, {"error": f"Erro interno no ECMWF/SHARPpy: {type(exc).__name__}: {exc}"})
+            self.send_json(500, {"error": f"Erro interno no ECMWF Open Data/SHARPpy: {type(exc).__name__}: {exc}"})
 
     def handle_ipmet_meta(self) -> None:
         try:
