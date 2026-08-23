@@ -872,11 +872,12 @@ def _ecmwf_run_candidates(run_requested: str) -> list[dt.datetime]:
             candidate -= dt.timedelta(days=1)
         return [candidate]
 
-    # Para "latest", evita a rodada que ainda pode estar em disseminação e mantém fallbacks.
+    # Para "latest", usa uma rodada já disseminada e apenas um fallback.
+    # Isso evita que uma chamada web fique presa tentando 4 downloads MARS consecutivos.
     reference = now - dt.timedelta(hours=7)
     base_hour = (reference.hour // 6) * 6
     first = reference.replace(hour=base_hour, minute=0, second=0, microsecond=0)
-    return [first - dt.timedelta(hours=6 * index) for index in range(4)]
+    return [first, first - dt.timedelta(hours=6)]
 
 
 def _ecmwf_cached_grib(path: Path) -> bool:
@@ -894,14 +895,14 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
     ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = run_dt.strftime("%Y%m%d_%H")
     point_tag = _ecmwf_point_tag(lat, lon)
-    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
-    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
-    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_{point_tag}_oro.grib"
+    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_o1280_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
+    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_o1280_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
+    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_o1280_{stamp}_{point_tag}_oro.grib"
 
-    north = min(90.0, lat + 0.30)
-    south = max(-90.0, lat - 0.30)
-    west = max(-180.0, lon - 0.30)
-    east = min(180.0, lon + 0.30)
+    north = min(90.0, lat + 0.15)
+    south = max(-90.0, lat - 0.15)
+    west = max(-180.0, lon - 0.15)
+    east = min(180.0, lon + 0.15)
     area = f"{north:.2f}/{west:.2f}/{south:.2f}/{east:.2f}"
 
     def execute_atomic(target: Path, request: dict[str, Any]) -> None:
@@ -926,7 +927,7 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
         "time": f"{run_dt.hour:02d}",
         "type": "fc",
         "step": str(fh),
-        "grid": "0.1/0.1",
+        "grid": "O1280",
         "area": area,
     }
 
@@ -961,7 +962,7 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
                 "type": "an",
                 "levtype": "sfc",
                 "param": "129.128",
-                "grid": "0.1/0.1",
+                "grid": "O1280",
                 "area": area,
             },
         )
@@ -1440,7 +1441,7 @@ def _ecmwf_build_sounding_payload(
 
     valid_dt = run_dt + dt.timedelta(hours=fh)
     return {
-        "model": "ECMWF IFS 0.1°",
+        "model": "ECMWF IFS O1280 (~9 km)",
         "model_id": "ecmwf_ifs_api",
         "latitude": lat,
         "longitude": lon,
@@ -1602,7 +1603,7 @@ class Handler(SimpleHTTPRequestHandler):
             if fh < 0 or fh > 144 or fh % 3 != 0:
                 self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas.", "code": "BAD_FORECAST_HOUR"}); return
 
-            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v6-g010-private")
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v7-o1280-private")
             cached = sounding_cache.get(cache_key)
             if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
                 payload = dict(cached["data"])
