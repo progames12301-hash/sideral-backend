@@ -1,6 +1,6 @@
-requests
-numpy
-xarray
-netCDF4
-cfgrib
-eccodes
+requests>=2.31.0
+numpy==1.26.4
+python-dateutil>=2.8.2
+ecmwf-api-client
+eccodes>=2.43.0
+SHARPpy @ git+https://github.com/sharppy/SHARPpy.git@master
