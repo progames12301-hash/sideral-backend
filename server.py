@@ -28,21 +28,17 @@ def render_keep_alive() -> None:
     if not render_url:
         print("[KEEP-ALIVE] RENDER_EXTERNAL_URL não definido; keep-alive desativado.")
         return
-
     while True:
-        time.sleep(600)  # Aguarda 10 minutos (600 segundos) antes de cada ping
-        
+        time.sleep(600)
         try:
-            response = requests.get(
-                f"{render_url.rstrip('/')}/api/health",
-                timeout=10
-            )
-            print(f"[KEEP-ALIVE] ping enviado - status {response.status_code}")
+            resp = requests.get(f'{render_url.rstrip("/")}/api/health', timeout=10)
+            print(f"[KEEP-ALIVE] ping enviado — status HTTP {resp.status_code}")
         except Exception as exc:
             print(f"[KEEP-ALIVE] falhou: {exc}")
+
 # ==============================================================================
-
-
+# CONFIGURAÇÕES E CAMINHOS
+# ==============================================================================
 BASE_DIR = Path(__file__).resolve().parent
 WRF_OUTPUT_DIR = Path(os.environ.get("WRF_OUTPUT_DIR", str(BASE_DIR / "wrf_system" / "output")))
 WRF_MODEL_OUTPUTS = {
@@ -102,9 +98,21 @@ inea_radar_image_cache: dict[str, bytes] = {}
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
 
+# Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
+SOUNDING_CACHE_SECONDS = 15 * 60
+sounding_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+ECMWF_PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100]
+ECMWF_GRIB_CACHE_SECONDS = 3 * 60 * 60
+ECMWF_SOUNDING_CACHE_DIR = Path(
+    os.environ.get(
+        "ECMWF_CACHE_DIR",
+        "/tmp/sideral_ecmwf" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "ecmwf_sounding_cache"),
+    )
+)
+ecmwf_download_lock = threading.Lock()
+
 
 def png_black_to_transparent(body: bytes, threshold: int = 12) -> bytes:
-    """Remove the opaque black background used by INEA's RGBA radar exports."""
     if not body.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("Arquivo não é PNG")
     position, ihdr, idat = 8, None, []
@@ -113,12 +121,9 @@ def png_black_to_transparent(body: bytes, threshold: int = 12) -> bytes:
         kind = body[position + 4:position + 8]
         data = body[position + 8:position + 8 + length]
         position += 12 + length
-        if kind == b"IHDR":
-            ihdr = data
-        elif kind == b"IDAT":
-            idat.append(data)
-        elif kind == b"IEND":
-            break
+        if kind == b"IHDR": ihdr = data
+        elif kind == b"IDAT": idat.append(data)
+        elif kind == b"IEND": break
     if not ihdr or len(ihdr) != 13:
         raise ValueError("PNG sem IHDR")
     width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", ihdr)
@@ -130,35 +135,27 @@ def png_black_to_transparent(body: bytes, threshold: int = 12) -> bytes:
         raise ValueError("Tamanho PNG inesperado")
     rows, offset, previous = [], 0, bytearray(stride)
     for _ in range(height):
-        filter_type = packed[offset]
-        offset += 1
-        source = packed[offset:offset + stride]
-        offset += stride
+        filter_type = packed[offset]; offset += 1
+        source = packed[offset:offset + stride]; offset += stride
         row = bytearray(stride)
         for index, value in enumerate(source):
             left = row[index - bpp] if index >= bpp else 0
             up = previous[index]
             upper_left = previous[index - bpp] if index >= bpp else 0
-            if filter_type == 0:
-                predictor = 0
-            elif filter_type == 1:
-                predictor = left
-            elif filter_type == 2:
-                predictor = up
-            elif filter_type == 3:
-                predictor = (left + up) // 2
+            if filter_type == 0: predictor = 0
+            elif filter_type == 1: predictor = left
+            elif filter_type == 2: predictor = up
+            elif filter_type == 3: predictor = (left + up) // 2
             elif filter_type == 4:
                 estimate = left + up - upper_left
                 distances = (abs(estimate - left), abs(estimate - up), abs(estimate - upper_left))
                 predictor = left if distances[0] <= distances[1] and distances[0] <= distances[2] else up if distances[1] <= distances[2] else upper_left
-            else:
-                raise ValueError("Filtro PNG inválido")
+            else: raise ValueError("Filtro PNG inválido")
             row[index] = (value + predictor) & 255
         for index in range(0, stride, 4):
             if row[index] <= threshold and row[index + 1] <= threshold and row[index + 2] <= threshold:
                 row[index + 3] = 0
-        rows.append(b"\x00" + bytes(row))
-        previous = row
+        rows.append(b"\x00" + bytes(row)); previous = row
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xffffffff)
@@ -166,36 +163,23 @@ def png_black_to_transparent(body: bytes, threshold: int = 12) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(b"".join(rows), 6)) + chunk(b"IEND", b"")
 
 
-class ExternalAPIError(RuntimeError):
-    pass
-
-
-class WRFDomainError(RuntimeError):
-    pass
-
+class ExternalAPIError(RuntimeError): pass
+class WRFDomainError(RuntimeError): pass
 
 def inmet_safe_float(value: Any) -> float | None:
-    if value is None:
-        return None
+    if value is None: return None
     text = str(value).strip().replace(",", ".")
-    if text.lower() in {"", "null", "none", "nan", "-9999", "-9999.0", "9999", "9999.0"}:
-        return None
-    try:
-        number = float(text)
-    except (TypeError, ValueError):
-        return None
-    if abs(number) >= 9990:
-        return None
+    if text.lower() in {"", "null", "none", "nan", "-9999", "-9999.0", "9999", "9999.0"}: return None
+    try: number = float(text)
+    except (TypeError, ValueError): return None
+    if abs(number) >= 9990: return None
     return number
-
 
 def request_headers_with_optional_inmet_token() -> dict[str, str]:
     headers = dict(INMET_HEADERS)
     token = os.environ.get("INMET_TOKEN") or os.environ.get("AGROBR_INMET_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    if token: headers["Authorization"] = f"Bearer {token}"
     return headers
-
 
 def get_inmet_station_catalog() -> list[dict[str, Any]]:
     now_monotonic = time.monotonic()
@@ -203,12 +187,10 @@ def get_inmet_station_catalog() -> list[dict[str, Any]]:
     if cached_data is not None and now_monotonic - float(inmet_station_catalog_cache.get("saved_at", 0.0)) < 3600:
         return cached_data
     data = fetch_inmet_json(INMET_STATIONS_URL, timeout=25)
-    if not isinstance(data, list):
-        raise RuntimeError("Catálogo INMET em formato inesperado.")
+    if not isinstance(data, list): raise RuntimeError("Catálogo INMET em formato inesperado.")
     inmet_station_catalog_cache["saved_at"] = now_monotonic
     inmet_station_catalog_cache["data"] = data
     return data
-
 
 def find_inmet_station(station_code: str) -> dict[str, Any] | None:
     for station in get_inmet_station_catalog():
@@ -216,29 +198,19 @@ def find_inmet_station(station_code: str) -> dict[str, Any] | None:
             return station
     return None
 
-
 def inmet_normalize_hour(value: Any) -> str:
     digits = "".join(ch for ch in str(value or "") if ch.isdigit())
     return (digits or "0000").zfill(4)[-4:]
 
-
 def inmet_record_datetime_utc(record: dict[str, Any]) -> dt.datetime | None:
     date_text = str(record.get("DT_MEDICAO") or "").strip()
-    if not date_text:
-        return None
+    if not date_text: return None
     hour_text = inmet_normalize_hour(record.get("HR_MEDICAO"))
-    try:
-        return dt.datetime.strptime(f"{date_text} {hour_text}", "%Y-%m-%d %H%M").replace(tzinfo=dt.timezone.utc)
-    except ValueError:
-        return None
-
+    try: return dt.datetime.strptime(f"{date_text} {hour_text}", "%Y-%m-%d %H%M").replace(tzinfo=dt.timezone.utc)
+    except ValueError: return None
 
 def inmet_has_weather_value(record: dict[str, Any]) -> bool:
-    return any(
-        inmet_safe_float(record.get(key)) is not None
-        for key in ("TEM_INS", "TEM_SEN", "UMD_INS", "CHUVA", "VEN_VEL", "VEN_RAJ", "PRE_INS", "PTO_INS", "VEN_DIR", "RAD_GLO")
-    )
-
+    return any(inmet_safe_float(record.get(key)) is not None for key in ("TEM_INS", "TEM_SEN", "UMD_INS", "CHUVA", "VEN_VEL", "VEN_RAJ", "PRE_INS", "PTO_INS", "VEN_DIR", "RAD_GLO"))
 
 def inmet_normalize_observation(record: dict[str, Any]) -> dict[str, Any]:
     measured_utc = inmet_record_datetime_utc(record)
@@ -260,31 +232,25 @@ def inmet_normalize_observation(record: dict[str, Any]) -> dict[str, Any]:
         "radiacao_kjm2": inmet_safe_float(record.get("RAD_GLO")),
     }
 
-
 def fetch_inmet_json(url: str, timeout: int = 35) -> Any:
     response = requests.get(url, headers=request_headers_with_optional_inmet_token(), timeout=timeout)
-    if response.status_code == 204 or not response.content:
-        return []
+    if response.status_code == 204 or not response.content: return []
     response.raise_for_status()
     return response.json()
-
 
 def inmet_historical_zip_path(year: int) -> Path:
     INMET_CACHE_DIR.mkdir(exist_ok=True)
     path = INMET_CACHE_DIR / f"{year}.zip"
-    if path.exists() and path.stat().st_size > 0:
-        return path
+    if path.exists() and path.stat().st_size > 0: return path
     url = INMET_HISTORICAL_ZIP_URL.format(year=year)
     with requests.get(url, headers=INMET_HEADERS, timeout=180, stream=True) as response:
         response.raise_for_status()
         temp_path = path.with_suffix(".zip.tmp")
         with temp_path.open("wb") as file:
             for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    file.write(chunk)
+                if chunk: file.write(chunk)
         temp_path.replace(path)
     return path
-
 
 def inmet_parse_historical_datetime(date_text: str, hour_text: str) -> dt.datetime | None:
     hour_digits = inmet_normalize_hour(hour_text)
@@ -292,15 +258,9 @@ def inmet_parse_historical_datetime(date_text: str, hour_text: str) -> dt.dateti
     for fmt in ("%Y/%m/%d", "%d/%m/%Y"):
         try:
             date_value = dt.datetime.strptime(clean_date, fmt)
-            return date_value.replace(
-                hour=int(hour_digits[:2]),
-                minute=int(hour_digits[2:4]),
-                tzinfo=dt.timezone.utc,
-            )
-        except ValueError:
-            continue
+            return date_value.replace(hour=int(hour_digits[:2]), minute=int(hour_digits[2:4]), tzinfo=dt.timezone.utc)
+        except ValueError: continue
     return None
-
 
 def normalize_historical_observation(row: dict[str, str], station_code: str) -> dict[str, Any]:
     measured_utc = inmet_parse_historical_datetime(row.get("Data", ""), row.get("Hora UTC", ""))
@@ -322,140 +282,44 @@ def normalize_historical_observation(row: dict[str, str], station_code: str) -> 
         "radiacao_kjm2": inmet_safe_float(row.get("RADIACAO GLOBAL (Kj/m²)")),
     }
 
-
 def historical_row_has_weather_value(row: dict[str, str]) -> bool:
-    keys = (
-        "TEMPERATURA DO AR - BULBO SECO, HORARIA (°C)",
-        "UMIDADE RELATIVA DO AR, HORARIA (%)",
-        "PRECIPITAÇÃO TOTAL, HORÁRIO (mm)",
-        "VENTO, VELOCIDADE HORARIA (m/s)",
-        "VENTO, RAJADA MAXIMA (m/s)",
-        "PRESSAO ATMOSFERICA AO NIVEL DA ESTACAO, HORARIA (mB)",
-        "TEMPERATURA DO PONTO DE ORVALHO (°C)",
-        "VENTO, DIREÇÃO HORARIA (gr) (° (gr))",
-        "RADIACAO GLOBAL (Kj/m²)",
-    )
+    keys = ("TEMPERATURA DO AR - BULBO SECO, HORARIA (°C)", "UMIDADE RELATIVA DO AR, HORARIA (%)", "PRECIPITAÇÃO TOTAL, HORÁRIO (mm)", "VENTO, VELOCIDADE HORARIA (m/s)", "VENTO, RAJADA MAXIMA (m/s)", "PRESSAO ATMOSFERICA AO NIVEL DA ESTACAO, HORARIA (mB)", "TEMPERATURA DO PONTO DE ORVALHO (°C)", "VENTO, DIREÇÃO HORARIA (gr) (° (gr))", "RADIACAO GLOBAL (Kj/m²)")
     return any(inmet_safe_float(row.get(key)) is not None for key in keys)
-
 
 def get_latest_inmet_historical_observation(station_code: str, year: int) -> dict[str, Any]:
     zip_path = inmet_historical_zip_path(year)
     with zipfile.ZipFile(zip_path) as archive:
-        station_files = [
-            name
-            for name in archive.namelist()
-            if station_code in name.upper() and name.upper().endswith(".CSV")
-        ]
+        station_files = [name for name in archive.namelist() if f" {station_code} " in name.upper() and name.upper().endswith(".CSV")]
         if not station_files:
-            return {
-                "estacao": station_code,
-                "observacao": None,
-                "registros_recebidos": 0,
-                "fonte": f"INMET dados históricos {year}",
-            }
+            return {"estacao": station_code, "observacao": None, "registros_recebidos": 0, "fonte": f"INMET dados históricos {year}"}
         with archive.open(station_files[0]) as raw_file:
             text = raw_file.read().decode("latin1")
         lines = text.splitlines()
         header_index = next((index for index, line in enumerate(lines) if line.startswith("Data;Hora UTC;")), None)
-        if header_index is None:
-            raise RuntimeError("CSV histórico do INMET sem cabeçalho esperado.")
+        if header_index is None: raise RuntimeError("CSV histórico do INMET sem cabeçalho esperado.")
         csv_text = "\n".join(lines[header_index:])
         rows = list(csv.DictReader(io.StringIO(csv_text), delimiter=";"))
         for row in reversed(rows):
             measured_utc = inmet_parse_historical_datetime(row.get("Data", ""), row.get("Hora UTC", ""))
             if measured_utc and historical_row_has_weather_value(row):
-                return {
-                    "estacao": station_code,
-                    "observacao": normalize_historical_observation(row, station_code),
-                    "registros_recebidos": len(rows),
-                    "fonte": f"INMET dados históricos {year}",
-                    "idade_segundos": max(0, int((dt.datetime.now(dt.timezone.utc) - measured_utc).total_seconds())),
-                    "arquivo_consultado": station_files[0],
-                }
-        return {
-            "estacao": station_code,
-            "observacao": None,
-            "registros_recebidos": len(rows),
-            "fonte": f"INMET dados históricos {year}",
-            "arquivo_consultado": station_files[0],
-        }
-
+                return {"estacao": station_code, "observacao": normalize_historical_observation(row, station_code), "registros_recebidos": len(rows), "fonte": f"INMET dados históricos {year}", "idade_segundos": max(0, int((dt.datetime.now(dt.timezone.utc) - measured_utc).total_seconds())), "arquivo_consultado": station_files[0]}
+        return {"estacao": station_code, "observacao": None, "registros_recebidos": len(rows), "fonte": f"INMET dados históricos {year}", "arquivo_consultado": station_files[0]}
 
 def get_open_meteo_observation(station_code: str) -> dict[str, Any]:
     station = find_inmet_station(station_code)
-    if not station:
-        return {
-            "estacao": station_code,
-            "observacao": None,
-            "fonte": "Open-Meteo: estação INMET não encontrada",
-        }
+    if not station: return {"estacao": station_code, "observacao": None, "fonte": "Open-Meteo: estação INMET não encontrada"}
     latitude = inmet_safe_float(station.get("VL_LATITUDE"))
     longitude = inmet_safe_float(station.get("VL_LONGITUDE"))
-    if latitude is None or longitude is None:
-        return {
-            "estacao": station_code,
-            "observacao": None,
-            "fonte": "Open-Meteo: coordenadas da estação indisponíveis",
-        }
-    response = requests.get(
-        OPEN_METEO_URL,
-        params={
-            "latitude": latitude,
-            "longitude": longitude,
-            "current": ",".join(
-                [
-                    "temperature_2m",
-                    "relative_humidity_2m",
-                    "apparent_temperature",
-                    "precipitation",
-                    "surface_pressure",
-                    "wind_speed_10m",
-                    "wind_direction_10m",
-                    "wind_gusts_10m",
-                    "shortwave_radiation",
-                ]
-            ),
-            "wind_speed_unit": "ms",
-            "timezone": "UTC",
-        },
-        timeout=20,
-    )
+    if latitude is None or longitude is None: return {"estacao": station_code, "observacao": None, "fonte": "Open-Meteo: coordenadas da estação indisponíveis"}
+    response = requests.get(OPEN_METEO_URL, params={"latitude": latitude, "longitude": longitude, "current": ",".join(["temperature_2m", "relative_humidity_2m", "apparent_temperature", "precipitation", "surface_pressure", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "shortwave_radiation"]), "wind_speed_unit": "ms", "timezone": "UTC"}, timeout=20)
     response.raise_for_status()
     data = response.json()
     current = data.get("current") if isinstance(data, dict) else None
-    if not isinstance(current, dict):
-        raise RuntimeError("Open-Meteo retornou formato inesperado.")
+    if not isinstance(current, dict): raise RuntimeError("Open-Meteo retornou formato inesperado.")
     measured_text = current.get("time")
-    measured_utc = None
-    if measured_text:
-        measured_utc = dt.datetime.fromisoformat(str(measured_text)).replace(tzinfo=dt.timezone.utc)
+    measured_utc = dt.datetime.fromisoformat(str(measured_text)).replace(tzinfo=dt.timezone.utc) if measured_text else None
     measured_local = measured_utc.astimezone(dt.timezone(dt.timedelta(hours=-3))) if measured_utc else None
-    return {
-        "estacao": station_code,
-        "observacao": {
-            "codigo": station_code,
-            "observado_em_utc": measured_utc.isoformat() if measured_utc else None,
-            "data_hora_utc": measured_utc.strftime("%d/%m/%Y %H:%M UTC") if measured_utc else None,
-            "data_hora_brasilia": measured_local.strftime("%d/%m/%Y %H:%M") if measured_local else None,
-            "temperatura_c": inmet_safe_float(current.get("temperature_2m")),
-            "sensacao_c": inmet_safe_float(current.get("apparent_temperature")),
-            "umidade_pct": inmet_safe_float(current.get("relative_humidity_2m")),
-            "chuva_mm": inmet_safe_float(current.get("precipitation")),
-            "vento_ms": inmet_safe_float(current.get("wind_speed_10m")),
-            "rajada_ms": inmet_safe_float(current.get("wind_gusts_10m")),
-            "direcao_vento_graus": inmet_safe_float(current.get("wind_direction_10m")),
-            "pressao_hpa": inmet_safe_float(current.get("surface_pressure")),
-            "orvalho_c": None,
-            "radiacao_kjm2": None,
-        },
-        "fonte": "Open-Meteo quase em tempo real no ponto da estação INMET",
-        "idade_segundos": max(
-            0,
-            int((dt.datetime.now(dt.timezone.utc) - measured_utc).total_seconds()),
-        ) if measured_utc else None,
-        "coordenadas_consultadas": {"latitude": latitude, "longitude": longitude},
-    }
-
+    return {"estacao": station_code, "observacao": {"codigo": station_code, "observado_em_utc": measured_utc.isoformat() if measured_utc else None, "data_hora_utc": measured_utc.strftime("%d/%m/%Y %H:%M UTC") if measured_utc else None, "data_hora_brasilia": measured_local.strftime("%d/%m/%Y %H:%M") if measured_local else None, "temperatura_c": inmet_safe_float(current.get("temperature_2m")), "sensacao_c": inmet_safe_float(current.get("apparent_temperature")), "umidade_pct": inmet_safe_float(current.get("relative_humidity_2m")), "chuva_mm": inmet_safe_float(current.get("precipitation")), "vento_ms": inmet_safe_float(current.get("wind_speed_10m")), "rajada_ms": inmet_safe_float(current.get("wind_gusts_10m")), "direcao_vento_graus": inmet_safe_float(current.get("wind_direction_10m")), "pressao_hpa": inmet_safe_float(current.get("surface_pressure")), "orvalho_c": None, "radiacao_kjm2": None}, "fonte": "Open-Meteo quase em tempo real no ponto da estação INMET", "idade_segundos": max(0, int((dt.datetime.now(dt.timezone.utc) - measured_utc).total_seconds())) if measured_utc else None, "coordenadas_consultadas": {"latitude": latitude, "longitude": longitude}}
 
 def fetch_open_meteo_synoptic_points() -> tuple[list[dict[str, Any]], str | None]:
     lats = [lat for lat in range(-55, 16, 5)]
@@ -465,47 +329,23 @@ def fetch_open_meteo_synoptic_points() -> tuple[list[dict[str, Any]], str | None
     valid_time = None
     for start in range(0, len(pairs), 80):
         chunk = pairs[start:start + 80]
-        response = requests.get(
-            OPEN_METEO_URL,
-            params={
-                "latitude": ",".join(str(lat) for lat, _ in chunk),
-                "longitude": ",".join(str(lon) for _, lon in chunk),
-                "current": "pressure_msl,wind_speed_10m,wind_direction_10m,precipitation",
-                "wind_speed_unit": "ms",
-                "timezone": "UTC",
-            },
-            timeout=35,
-        )
+        response = requests.get(OPEN_METEO_URL, params={"latitude": ",".join(str(lat) for lat, _ in chunk), "longitude": ",".join(str(lon) for _, lon in chunk), "current": "pressure_msl,wind_speed_10m,wind_direction_10m,precipitation", "wind_speed_unit": "ms", "timezone": "UTC"}, timeout=35)
         response.raise_for_status()
         payload = response.json()
-        if isinstance(payload, dict):
-            payload = [payload]
-        if not isinstance(payload, list):
-            raise RuntimeError("Open-Meteo retornou formato inesperado para a carta sinótica.")
+        if isinstance(payload, dict): payload = [payload]
+        if not isinstance(payload, list): raise RuntimeError("Open-Meteo retornou formato inesperado para a carta sinótica.")
         for item in payload:
-            if not isinstance(item, dict):
-                continue
+            if not isinstance(item, dict): continue
             current = item.get("current")
-            if not isinstance(current, dict):
-                continue
-            if valid_time is None:
-                valid_time = current.get("time")
+            if not isinstance(current, dict): continue
+            if valid_time is None: valid_time = current.get("time")
             pressure = inmet_safe_float(current.get("pressure_msl"))
             wind_speed = inmet_safe_float(current.get("wind_speed_10m"))
             wind_dir = inmet_safe_float(current.get("wind_direction_10m"))
             precipitation = inmet_safe_float(current.get("precipitation"))
-            if pressure is None:
-                continue
-            points.append({
-                "lat": float(item.get("latitude")),
-                "lon": float(item.get("longitude")),
-                "pressure": pressure,
-                "wind_speed": wind_speed or 0.0,
-                "wind_dir": wind_dir or 0.0,
-                "precipitation": precipitation or 0.0,
-            })
+            if pressure is None: continue
+            points.append({"lat": float(item.get("latitude")), "lon": float(item.get("longitude")), "pressure": pressure, "wind_speed": wind_speed or 0.0, "wind_dir": wind_dir or 0.0, "precipitation": precipitation or 0.0})
     return points, valid_time
-
 
 def project_synoptic(lon: float, lat: float, width: int = 1200, height: int = 860) -> tuple[float, float]:
     west, east = -85.0, -30.0
@@ -516,67 +356,25 @@ def project_synoptic(lon: float, lat: float, width: int = 1200, height: int = 86
     y = top + (north - lat) / (north - south) * plot_height
     return x, y
 
-
 def precipitation_color(value: float) -> str:
-    if value >= 10:
-        return "#7c2d12"
-    if value >= 5:
-        return "#dc2626"
-    if value >= 2:
-        return "#f97316"
-    if value >= 1:
-        return "#facc15"
-    if value >= 0.2:
-        return "#22c55e"
-    if value > 0:
-        return "#93c5fd"
+    if value >= 10: return "#7c2d12"
+    if value >= 5: return "#dc2626"
+    if value >= 2: return "#f97316"
+    if value >= 1: return "#facc15"
+    if value >= 0.2: return "#22c55e"
+    if value > 0: return "#93c5fd"
     return "#ffffff"
-
-
-def pressure_segments(grid: dict[tuple[float, float], float], lats: list[float], lons: list[float], level: float) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    segments = []
-    edges = ((0, 1), (1, 2), (2, 3), (3, 0))
-    for lat_index in range(len(lats) - 1):
-        for lon_index in range(len(lons) - 1):
-            corners = [
-                (lons[lon_index], lats[lat_index], grid.get((lats[lat_index], lons[lon_index]))),
-                (lons[lon_index + 1], lats[lat_index], grid.get((lats[lat_index], lons[lon_index + 1]))),
-                (lons[lon_index + 1], lats[lat_index + 1], grid.get((lats[lat_index + 1], lons[lon_index + 1]))),
-                (lons[lon_index], lats[lat_index + 1], grid.get((lats[lat_index + 1], lons[lon_index]))),
-            ]
-            if any(value is None for _, _, value in corners):
-                continue
-            intersections = []
-            for a_index, b_index in edges:
-                lon_a, lat_a, value_a = corners[a_index]
-                lon_b, lat_b, value_b = corners[b_index]
-                if value_a == value_b:
-                    continue
-                if (value_a <= level <= value_b) or (value_b <= level <= value_a):
-                    ratio = (level - value_a) / (value_b - value_a)
-                    intersections.append((lon_a + (lon_b - lon_a) * ratio, lat_a + (lat_b - lat_a) * ratio))
-            if len(intersections) == 2:
-                segments.append((intersections[0], intersections[1]))
-            elif len(intersections) == 4:
-                segments.append((intersections[0], intersections[1]))
-                segments.append((intersections[2], intersections[3]))
-    return segments
-
 
 def geojson_paths_svg() -> str:
     geojson_path = BASE_DIR / "brazil-states.geojson"
-    if not geojson_path.exists():
-        return ""
-    try:
-        data = json.loads(geojson_path.read_text(encoding="utf-8"))
-    except Exception:
-        return ""
+    if not geojson_path.exists(): return ""
+    try: data = json.loads(geojson_path.read_text(encoding="utf-8"))
+    except Exception: return ""
     paths = []
     def ring_path(ring: list[list[float]]) -> str:
         parts = []
         for index, coord in enumerate(ring):
-            if len(coord) < 2:
-                continue
+            if len(coord) < 2: continue
             x, y = project_synoptic(float(coord[0]), float(coord[1]))
             parts.append(("M" if index == 0 else "L") + f"{x:.1f},{y:.1f}")
         return " ".join(parts)
@@ -586,30 +384,18 @@ def geojson_paths_svg() -> str:
         geometry_type = geometry.get("type")
         polygons = coordinates if geometry_type == "MultiPolygon" else [coordinates]
         for polygon in polygons:
-            if not polygon:
-                continue
+            if not polygon: continue
             path_data = ring_path(polygon[0])
-            if path_data:
-                paths.append(f'<path d="{path_data} Z" fill="rgba(255,255,255,.18)" stroke="#334155" stroke-width="0.9"/>')
+            if path_data: paths.append(f'<path d="{path_data} Z" fill="rgba(255,255,255,.18)" stroke="#334155" stroke-width="0.9"/>')
     return "\n".join(paths)
-
 
 def build_synoptic_svg(points: list[dict[str, Any]], valid_time: str | None) -> str:
     width, height = 1200, 860
     by_key = {(round(point["lat"] / 5) * 5, round(point["lon"] / 5) * 5): point for point in points}
     lats = sorted({key[0] for key in by_key})
     lons = sorted({key[1] for key in by_key})
-    pressure_grid = {key: value["pressure"] for key, value in by_key.items()}
-    pressures = [point["pressure"] for point in points]
-    min_level = int(math.floor(min(pressures) / 4) * 4)
-    max_level = int(math.ceil(max(pressures) / 4) * 4)
-    levels = list(range(min_level, max_level + 1, 4))
     valid_label = valid_time or "horário indisponível"
-    svg_parts = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
-        '<rect width="1200" height="860" fill="#dbeafe"/>',
-        '<rect x="70" y="86" width="1060" height="700" rx="10" fill="#eff6ff" stroke="#93c5fd"/>',
-    ]
+    svg_parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">', '<rect width="1200" height="860" fill="#dbeafe"/>', '<rect x="70" y="86" width="1060" height="700" rx="10" fill="#eff6ff" stroke="#93c5fd"/>']
     for lon in range(-85, -29, 10):
         x1, y1 = project_synoptic(lon, -55)
         x2, y2 = project_synoptic(lon, 15)
@@ -624,13 +410,9 @@ def build_synoptic_svg(points: list[dict[str, Any]], valid_time: str | None) -> 
     cell_w = 1060 / max(1, len(lons) - 1)
     cell_h = 700 / max(1, len(lats) - 1)
     for point in points:
-        if point["precipitation"] <= 0:
-            continue
+        if point["precipitation"] <= 0: continue
         x, y = project_synoptic(point["lon"], point["lat"])
-        svg_parts.append(
-            f'<rect x="{x - cell_w / 2:.1f}" y="{y - cell_h / 2:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" '
-            f'fill="{precipitation_color(point["precipitation"])}" opacity="0.45"/>'
-        )
+        svg_parts.append(f'<rect x="{x - cell_w / 2:.1f}" y="{y - cell_h / 2:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="{precipitation_color(point["precipitation"])}" opacity="0.45"/>')
     svg_parts.append(geojson_paths_svg())
     for point in points[::3]:
         x, y = project_synoptic(point["lon"], point["lat"])
@@ -650,31 +432,15 @@ def build_synoptic_svg(points: list[dict[str, Any]], valid_time: str | None) -> 
         svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="18" fill="#ffffff" stroke="{color}" stroke-width="3"/>')
         svg_parts.append(f'<text x="{x:.1f}" y="{y + 7:.1f}" text-anchor="middle" fill="{color}" font-size="22" font-weight="900">{label}</text>')
         svg_parts.append(f'<text x="{x:.1f}" y="{y + 36:.1f}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="800">{point["pressure"]:.0f} hPa</text>')
-    svg_parts.extend([
-        '<rect x="0" y="0" width="1200" height="66" fill="#0f172a"/>',
-        '<text x="42" y="42" fill="#ffffff" font-size="28" font-weight="900">Carta Sinótica Sideral</text>',
-        f'<text x="1160" y="38" fill="#cbd5e1" font-size="16" text-anchor="end">Válida: {html.escape(valid_label)} UTC</text>',
-        '<rect x="76" y="710" width="310" height="64" rx="8" fill="rgba(255,255,255,.86)" stroke="#cbd5e1"/>',
-        '<text x="94" y="735" fill="#0f172a" font-size="14" font-weight="900">Camadas</text>',
-        '<text x="94" y="758" fill="#334155" font-size="13">Isóbaras: pressão ao nível do mar • Setas: vento 10 m</text>',
-        '<text x="76" y="836" fill="#475569" font-size="13">Carta sinótica Sideral Meteorologia</text>',
-        '</svg>',
-    ])
+    svg_parts.extend(['<rect x="0" y="0" width="1200" height="66" fill="#0f172a"/>', '<text x="42" y="42" fill="#ffffff" font-size="28" font-weight="900">Carta Sinótica Sideral</text>', f'<text x="1160" y="38" fill="#cbd5e1" font-size="16" text-anchor="end">Válida: {html.escape(valid_label)} UTC</text>', '<rect x="76" y="710" width="310" height="64" rx="8" fill="rgba(255,255,255,.86)" stroke="#cbd5e1"/>', '<text x="94" y="735" fill="#0f172a" font-size="14" font-weight="900">Camadas</text>', '<text x="94" y="758" fill="#334155" font-size="13">Isóbaras: pressão ao nível do mar • Setas: vento 10 m</text>', '<text x="76" y="836" fill="#475569" font-size="13">Carta sinótica Sideral Meteorologia</text>', '</svg>'])
     return "\n".join(svg_parts)
-
 
 def ensure_synoptic_chart(force: bool = False) -> dict[str, Any]:
     SYNOPTIC_CACHE_DIR.mkdir(exist_ok=True)
     with synoptic_cache_lock:
         now = time.time()
-        if (
-            not force
-            and SYNOPTIC_PNG_PATH.exists()
-            and SYNOPTIC_META_PATH.exists()
-            and now - SYNOPTIC_PNG_PATH.stat().st_mtime < SYNOPTIC_CACHE_SECONDS
-        ):
+        if not force and SYNOPTIC_PNG_PATH.exists() and SYNOPTIC_META_PATH.exists() and now - SYNOPTIC_PNG_PATH.stat().st_mtime < SYNOPTIC_CACHE_SECONDS:
             return json.loads(SYNOPTIC_META_PATH.read_text(encoding="utf-8"))
-        
         last_error: Exception | None = None
         current_year = dt.datetime.now(dt.timezone.utc).year
         for year in (current_year, current_year - 1):
@@ -683,22 +449,10 @@ def ensure_synoptic_chart(force: bool = False) -> dict[str, Any]:
                 SYNOPTIC_PNG_PATH.write_bytes(image)
                 valid_datetime = dt.datetime.fromisoformat(valid_time)
                 delayed = dt.datetime.now(dt.timezone.utc) - valid_datetime > dt.timedelta(hours=36)
-                metadata = {
-                    "image": "/api/sinotica/chart.png",
-                    "valid_time_utc": valid_time,
-                    "updated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-                    "source": "Instituto Nacional de Meteorologia (INMET)",
-                    "official_page": INMET_SYNOPTIC_PAGE,
-                    "archive": archive_url,
-                    "filename": filename,
-                    "cache_seconds": SYNOPTIC_CACHE_SECONDS,
-                    "stale": False,
-                    "delayed": delayed,
-                }
+                metadata = {"image": "/api/sinotica/chart.png", "valid_time_utc": valid_time, "updated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "source": "Instituto Nacional de Meteorologia (INMET)", "official_page": INMET_SYNOPTIC_PAGE, "archive": archive_url, "filename": filename, "cache_seconds": SYNOPTIC_CACHE_SECONDS, "stale": False, "delayed": delayed}
                 SYNOPTIC_META_PATH.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
                 return metadata
-            except Exception as exc:
-                last_error = exc
+            except Exception as exc: last_error = exc
         if SYNOPTIC_PNG_PATH.exists() and SYNOPTIC_META_PATH.exists():
             metadata = json.loads(SYNOPTIC_META_PATH.read_text(encoding="utf-8"))
             metadata["stale"] = True
@@ -706,40 +460,26 @@ def ensure_synoptic_chart(force: bool = False) -> dict[str, Any]:
             return metadata
         raise RuntimeError(f"Não foi possível obter a carta oficial do INMET: {last_error}")
 
-
 def remote_zip_range(url: str, start: int, end: int, total_size: int) -> bytes:
-    """Read one byte range without downloading the complete annual INMET archive."""
-    response = requests.get(
-        url,
-        headers={**INMET_HEADERS, "Range": f"bytes={start}-{end}"},
-        timeout=35,
-    )
+    response = requests.get(url, headers={**INMET_HEADERS, "Range": f"bytes={start}-{end}"}, timeout=35)
     response.raise_for_status()
     body = response.content
     expected = end - start + 1
-    if response.status_code == 206 and len(body) == expected:
-        return body
-    if response.status_code == 200 and len(body) == total_size:
-        return body[start:end + 1]
+    if response.status_code == 206 and len(body) == expected: return body
+    if response.status_code == 200 and len(body) == total_size: return body[start:end + 1]
     raise RuntimeError("O servidor do INMET não respeitou a leitura parcial do arquivo.")
 
-
 def fetch_latest_inmet_synoptic(year: int) -> tuple[bytes, str, str, str]:
-    """Extract the newest analysis PNG using the ZIP central directory and HTTP ranges."""
     archive_url = INMET_SYNOPTIC_ARCHIVE_URL.format(year=year)
     head = requests.head(archive_url, headers=INMET_HEADERS, timeout=25, allow_redirects=True)
     head.raise_for_status()
     total_size = int(head.headers.get("Content-Length", "0"))
-    if total_size < 100:
-        raise RuntimeError("Arquivo anual de cartas sinóticas vazio.")
+    if total_size < 100: raise RuntimeError("Arquivo anual de cartas sinóticas vazio.")
     tail_start = max(0, total_size - 131072)
     tail = remote_zip_range(archive_url, tail_start, total_size - 1, total_size)
     eocd_position = tail.rfind(b"PK\x05\x06")
-    if eocd_position < 0 or eocd_position + 22 > len(tail):
-        raise RuntimeError("Diretório do arquivo de cartas sinóticas não encontrado.")
-    _, _, _, _, _, directory_size, directory_offset, _ = struct.unpack(
-        "<4s4H2LH", tail[eocd_position:eocd_position + 22]
-    )
+    if eocd_position < 0 or eocd_position + 22 > len(tail): raise RuntimeError("Diretório do arquivo de cartas sinóticas não encontrado.")
+    _, _, _, _, _, directory_size, directory_offset, _ = struct.unpack("<4s4H2LH", tail[eocd_position:eocd_position + 22])
     directory_end = directory_offset + directory_size - 1
     if directory_offset >= tail_start and directory_end < total_size:
         relative = directory_offset - tail_start
@@ -757,63 +497,40 @@ def fetch_latest_inmet_synoptic(year: int) -> tuple[bytes, str, str, str]:
         name_bytes = directory[position + 46:position + 46 + filename_size]
         filename = name_bytes.decode("utf-8" if flags & 0x800 else "cp437", errors="replace")
         match = re.fullmatch(r"web_AS_analise_(\d{12})_\+0\.png", filename)
-        if match:
-            candidates.append((match.group(1), filename, local_offset, compressed_size, uncompressed_size, compression, crc32_value))
+        if match: candidates.append((match.group(1), filename, local_offset, compressed_size, uncompressed_size, compression, crc32_value))
         position += 46 + filename_size + extra_size + comment_size
-    if not candidates:
-        raise RuntimeError(f"Nenhuma carta sinótica encontrada no arquivo de {year}.")
+    if not candidates: raise RuntimeError(f"Nenhuma carta sinótica encontrada no arquivo de {year}.")
     stamp, filename, local_offset, compressed_size, uncompressed_size, compression, expected_crc = max(candidates)
     local_header = remote_zip_range(archive_url, local_offset, local_offset + 29, total_size)
     local_fields = struct.unpack("<4s5H3L2H", local_header)
-    if local_fields[0] != b"PK\x03\x04":
-        raise RuntimeError("Cabeçalho da imagem sinótica inválido.")
+    if local_fields[0] != b"PK\x03\x04": raise RuntimeError("Cabeçalho da imagem sinótica inválido.")
     data_start = local_offset + 30 + local_fields[9] + local_fields[10]
     compressed = remote_zip_range(archive_url, data_start, data_start + compressed_size - 1, total_size)
-    if compression == 8:
-        image = zlib.decompress(compressed, -zlib.MAX_WBITS)
-    elif compression == 0:
-        image = compressed
-    else:
-        raise RuntimeError(f"Compressão ZIP não suportada: {compression}.")
-    if len(image) != uncompressed_size or not image.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise RuntimeError("A imagem extraída do INMET está incompleta.")
-    if (binascii.crc32(image) & 0xffffffff) != expected_crc:
-        raise RuntimeError("A verificação da imagem sinótica falhou.")
+    if compression == 8: image = zlib.decompress(compressed, -zlib.MAX_WBITS)
+    elif compression == 0: image = compressed
+    else: raise RuntimeError(f"Compressão ZIP não suportada: {compression}.")
+    if len(image) != uncompressed_size or not image.startswith(b"\x89PNG\r\n\x1a\n"): raise RuntimeError("A imagem extraída do INMET está incompleta.")
+    if (binascii.crc32(image) & 0xffffffff) != expected_crc: raise RuntimeError("A verificação da imagem sinótica falhou.")
     valid_time = dt.datetime.strptime(stamp, "%Y%m%d%H%M").replace(tzinfo=dt.timezone.utc).isoformat()
     return image, valid_time, filename, archive_url
-
 
 def get_latest_inmet_observation(station_code: str) -> dict[str, Any]:
     now = dt.datetime.now(dt.timezone.utc)
     end_date = now.date()
     start_date = end_date - dt.timedelta(days=2)
-    url = INMET_OBSERVATION_URL.format(
-        start=start_date.isoformat(),
-        end=end_date.isoformat(),
-        station=station_code,
-    )
+    url = INMET_OBSERVATION_URL.format(start=start_date.isoformat(), end=end_date.isoformat(), station=station_code)
     data = fetch_inmet_json(url)
-    if not isinstance(data, list):
-        raise RuntimeError("O INMET retornou formato inesperado para a estação.")
+    if not isinstance(data, list): raise RuntimeError("O INMET retornou formato inesperado para a estação.")
     candidates: list[tuple[dt.datetime, dict[str, Any]]] = []
     for record in data:
-        if not isinstance(record, dict):
-            continue
+        if not isinstance(record, dict): continue
         measured_utc = inmet_record_datetime_utc(record)
-        if measured_utc and inmet_has_weather_value(record):
-            candidates.append((measured_utc, record))
+        if measured_utc and inmet_has_weather_value(record): candidates.append((measured_utc, record))
     historical = get_latest_inmet_historical_observation(station_code, now.year)
     live_error = None
     if candidates:
         latest_utc, latest_record = max(candidates, key=lambda item: item[0])
-        live = {
-            "estacao": station_code,
-            "observacao": inmet_normalize_observation(latest_record),
-            "registros_recebidos": len(data),
-            "fonte": "INMET tempo real",
-            "idade_segundos": max(0, int((now - latest_utc).total_seconds())),
-            "url_consultada": url,
-        }
+        live = {"estacao": station_code, "observacao": inmet_normalize_observation(latest_record), "registros_recebidos": len(data), "fonte": "INMET tempo real", "idade_segundos": max(0, int((now - latest_utc).total_seconds())), "url_consultada": url}
     else:
         try:
             live = get_open_meteo_observation(station_code)
@@ -821,52 +538,24 @@ def get_latest_inmet_observation(station_code: str) -> dict[str, Any]:
             live["api_registros_recebidos"] = len(data)
         except Exception as exc:
             live_error = f"{type(exc).__name__}: {exc}"
-            live = {
-                "estacao": station_code,
-                "observacao": None,
-                "fonte": "Ao vivo indisponível",
-                "url_consultada": url,
-                "api_registros_recebidos": len(data),
-            }
-    return {
-        "estacao": station_code,
-        "observacao": live.get("observacao"),
-        "fonte": live.get("fonte"),
-        "idade_segundos": live.get("idade_segundos"),
-        "url_consultada": url,
-        "api_registros_recebidos": len(data),
-        "ao_vivo": live,
-        "historico_inmet": historical,
-        "erro_ao_vivo": live_error,
-    }
-
+            live = {"estacao": station_code, "observacao": None, "fonte": "Ao vivo indisponível", "url_consultada": url, "api_registros_recebidos": len(data)}
+    return {"estacao": station_code, "observacao": live.get("observacao"), "fonte": live.get("fonte"), "idade_segundos": live.get("idade_segundos"), "url_consultada": url, "api_registros_recebidos": len(data), "ao_vivo": live, "historico_inmet": historical, "erro_ao_vivo": live_error}
 
 def precipitation_to_dbz(precipitation_mm_per_hour: float) -> float:
-    """Converte chuva em mm/h para uma refletividade aproximada em dBZ."""
-    if precipitation_mm_per_hour <= 0:
-        return 0.0
+    if precipitation_mm_per_hour <= 0: return 0.0
     return max(0.0, min(75.0, 25.0 + 10.0 * math.log10(precipitation_mm_per_hour)))
 
-
 def wind_direction_deg(u10: float, v10: float) -> float:
-    if u10 == 0 and v10 == 0:
-        return 0.0
+    if u10 == 0 and v10 == 0: return 0.0
     return (270.0 - math.degrees(math.atan2(v10, u10))) % 360.0
-
 
 def hydrometeor_reflectivity_dbz(dataset: Any, t2m: Any) -> Any:
     import numpy as np
     shape = np.asarray(t2m).shape
     z_linear = np.zeros(shape, dtype=float)
-    species = {
-        "QRAIN": 4.0e11,
-        "QSNOW": 1.2e11,
-        "QGRAUP": 9.0e11,
-        "QHAIL": 1.4e12,
-    }
+    species = {"QRAIN": 4.0e11, "QSNOW": 1.2e11, "QGRAUP": 9.0e11, "QHAIL": 1.4e12}
     for name, scale in species.items():
-        if name not in dataset:
-            continue
+        if name not in dataset: continue
         mixing_ratio = np.maximum(dataset[name].isel(Time=0).to_numpy(), 0.0)
         column_max = np.nanmax(mixing_ratio, axis=0)
         z_linear += scale * np.power(column_max, 1.25)
@@ -877,7 +566,6 @@ def hydrometeor_reflectivity_dbz(dataset: Any, t2m: Any) -> Any:
     positive_mask = z_linear > 0
     log_z_linear[positive_mask] = np.log10(z_linear[positive_mask])
     return np.where(z_linear > 1.0, np.clip(10.0 * log_z_linear, 0.0, 75.0), 0.0)
-
 
 def approximate_reflectivity_dbz(dataset: Any, t2m: Any, precip_rate: Any) -> Any:
     import numpy as np
@@ -890,132 +578,76 @@ def approximate_reflectivity_dbz(dataset: Any, t2m: Any, precip_rate: Any) -> An
             mask |= column_max > 4.0e-6
     return np.where(mask, np.maximum(hydrometeor_refl, precip_refl), 0.0)
 
-
 def find_wrf_files(model_key: str = "icon") -> list[Path]:
     model_key = (model_key or "icon").lower()
     output_dir = WRF_MODEL_OUTPUTS.get(model_key, WRF_MODEL_OUTPUTS["icon"])
     candidates = sorted(path for path in output_dir.glob("wrfout_d01_*") if path.is_file())
-    if not candidates:
-        raise FileNotFoundError(
-            f"Nenhum arquivo wrfout encontrado em {output_dir}. "
-            f"Execute a simulacao {model_key.upper()} + WRF Sul 4 km primeiro."
-        )
+    if not candidates: raise FileNotFoundError(f"Nenhum arquivo wrfout encontrado em {output_dir}. Execute a simulacao {model_key.upper()} + WRF Sul 4 km primeiro.")
     runs: dict[str, list[Path]] = {}
     for path in candidates:
         match = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
-        if not match:
-            continue
+        if not match: continue
         runs.setdefault(match.group(1), []).append(path)
-    if not runs:
-        print(f"Arquivos WRF encontrados sem data parseavel: {[c.name for c in candidates]}")
-        return candidates
+    if not runs: return candidates
     latest_run = max(runs)
     def forecast_time(path: Path) -> tuple[int, int, int]:
         match = re.search(r"wrfout_d01_\d{4}-\d{2}-\d{2}_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
-        if not match:
-            return (0, 0, 0)
+        if not match: return (0, 0, 0)
         return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
     files = sorted(runs[latest_run], key=forecast_time)
-    print(f"Rodada WRF {model_key.upper()} usada: {latest_run} -> {[c.name for c in files]}")
     return files
-
 
 def gfs_run_key(data_dir: Path) -> tuple[str, str]:
     run_info = data_dir / "run_info.env"
-    run_date = ""
-    run_cycle = ""
+    run_date, run_cycle = "", ""
     if run_info.exists():
         for line in run_info.read_text(encoding="utf-8", errors="ignore").splitlines():
-            if line.startswith("RUN_DATE="):
-                run_date = line.split("=", 1)[1].strip()
-            elif line.startswith("RUN_CYCLE="):
-                run_cycle = line.split("=", 1)[1].strip()
+            if line.startswith("RUN_DATE="): run_date = line.split("=", 1)[1].strip()
+            elif line.startswith("RUN_CYCLE="): run_cycle = line.split("=", 1)[1].strip()
     return (run_date, run_cycle)
 
-
 def find_gfs_file(hours: int) -> Path:
-    def valid_gfs_file(path: Path) -> bool:
-        return (
-            path.is_file()
-            and path.stat().st_size > 0
-            and re.search(r"gfs.t\d{2}z.pgrb2.0p25.f\d{3}$", path.name) is not None
-        )
+    def valid_gfs_file(path: Path) -> bool: return path.is_file() and path.stat().st_size > 0 and re.search(r"gfs.t\d{2}z.pgrb2.0p25.f\d{3}$", path.name) is not None
     available_dirs = [data_dir for data_dir in GFS_DATA_DIRS if data_dir.exists()]
     search_dirs = sorted(available_dirs, key=gfs_run_key, reverse=True)
     files = [path for data_dir in search_dirs for path in data_dir.glob("gfs.t*z.pgrb2.0p25.f*") if valid_gfs_file(path)]
-    if not files:
-        raise FileNotFoundError(
-            f"Nenhum arquivo GFS encontrado em {', '.join(str(path) for path in GFS_DATA_DIRS)}. "
-            "Execute o download do GFS primeiro."
-        )
+    if not files: raise FileNotFoundError(f"Nenhum arquivo GFS encontrado em {', '.join(str(path) for path in GFS_DATA_DIRS)}. Execute o download do GFS primeiro.")
     def forecast_hour(path: Path) -> int:
         suffix = path.name.rsplit(".f", 1)[-1]
-        try:
-            return int(suffix)
-        except ValueError:
-            return 0
+        try: return int(suffix)
+        except ValueError: return 0
     return min(files, key=lambda path: abs(forecast_hour(path) - hours))
-
 
 def get_wrf_variable(ncfile_list: list[Any], var_name: str, timeidx: int) -> Any:
     from wrf import getvar
-    try:
-        return getvar(ncfile_list, var_name, timeidx=timeidx)
+    try: return getvar(ncfile_list, var_name, timeidx=timeidx)
     except Exception as exc:
         print(f"AVISO: falha ao extrair variavel '{var_name}' do WRF: {exc}")
         return None
 
-
 def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int, model_key: str = "icon") -> list[dict[str, float]]:
-    try:
-        import numpy as np
-        import xarray as xr
-    except ImportError as exc:
-        raise RuntimeError(
-            "Dependencias WRF ausentes. Instale netCDF4, xarray e numpy."
-        ) from exc
+    try: import numpy as np; import xarray as xr
+    except ImportError as exc: raise RuntimeError("Dependencias WRF ausentes. Instale netCDF4, xarray e numpy.") from exc
     wrf_files = find_wrf_files(model_key)
     file_idx = min(max(0, int(hours)), len(wrf_files) - 1)
     prev_idx = max(0, file_idx - 1)
     def frame_valid_time(path: Path) -> str:
         match = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
-        if not match:
-            return path.name
+        if not match: return path.name
         return f"{match.group(1)}T{match.group(2)}:{match.group(3)}:{match.group(4)}Z"
     dataset = xr.open_dataset(wrf_files[file_idx], engine="netcdf4")
     prev_dataset = xr.open_dataset(wrf_files[prev_idx], engine="netcdf4")
     try:
         def field(name: str) -> Any:
-            if name not in dataset:
-                raise RuntimeError(f"Variavel WRF ausente: {name}.")
+            if name not in dataset: raise RuntimeError(f"Variavel WRF ausente: {name}.")
             return dataset[name].isel(Time=0).to_numpy()
-        def optional_field(name: str) -> Any:
-            if name not in dataset:
-                return None
-            return dataset[name].isel(Time=0).to_numpy()
-        lats = field("XLAT")
-        lons = field("XLONG")
-        wrf_south = float(np.nanmin(lats))
-        wrf_north = float(np.nanmax(lats))
-        wrf_west = float(np.nanmin(lons))
-        wrf_east = float(np.nanmax(lons))
+        lats = field("XLAT"); lons = field("XLONG")
+        wrf_south, wrf_north = float(np.nanmin(lats)), float(np.nanmax(lats))
+        wrf_west, wrf_east = float(np.nanmin(lons)), float(np.nanmax(lons))
         margin = 0.05
-        if (
-            bounds["south"] < wrf_south - margin
-            or bounds["north"] > wrf_north + margin
-            or bounds["west"] < wrf_west - margin
-            or bounds["east"] > wrf_east + margin
-        ):
-            raise WRFDomainError(
-                "Os arquivos WRF atuais ainda cobrem apenas "
-                f"{wrf_south:.2f}..{wrf_north:.2f} lat / {wrf_west:.2f}..{wrf_east:.2f} lon. "
-                f"Gere uma rodada nova {model_key.upper()} + WRF Sul 4 km antes de usar o mapa do Sul inteiro."
-            )
-        u10 = field("U10")
-        v10 = field("V10")
-        t2m = field("T2") - 273.15
-        q2 = field("Q2")
-        psfc = field("PSFC")
+        if bounds["south"] < wrf_south - margin or bounds["north"] > wrf_north + margin or bounds["west"] < wrf_west - margin or bounds["east"] > wrf_east + margin:
+            raise WRFDomainError(f"Os arquivos WRF atuais ainda cobrem apenas {wrf_south:.2f}..{wrf_north:.2f} lat / {wrf_west:.2f}..{wrf_east:.2f} lon.")
+        u10 = field("U10"); v10 = field("V10"); t2m = field("T2") - 273.15; q2 = field("Q2"); psfc = field("PSFC")
         rain = field("RAINC") + field("RAINNC")
         prev_rain = prev_dataset["RAINC"].isel(Time=0).to_numpy() + prev_dataset["RAINNC"].isel(Time=0).to_numpy()
         precip_rate = np.maximum(0.0, rain - prev_rain)
@@ -1024,13 +656,10 @@ def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: i
             reflectivity = np.maximum(0.0, np.nanmax(dataset["REFL_10CM"].isel(Time=0).to_numpy(), axis=0))
             approx_reflectivity = approximate_reflectivity_dbz(dataset, t2m, precip_rate)
             if np.nanmax(reflectivity) < 20.0 and np.nanmax(approx_reflectivity) > np.nanmax(reflectivity):
-                reflectivity_source = "REFL_10CM+hydrometeors_approx"
-                reflectivity = np.maximum(reflectivity, approx_reflectivity)
+                reflectivity_source = "REFL_10CM+hydrometeors_approx"; reflectivity = np.maximum(reflectivity, approx_reflectivity)
         else:
             reflectivity = approximate_reflectivity_dbz(dataset, t2m, precip_rate)
-            if np.nanmax(reflectivity) < 1.0:
-                reflectivity_source = "precip_rate"
-                reflectivity = np.vectorize(precipitation_to_dbz)(precip_rate)
+            if np.nanmax(reflectivity) < 1.0: reflectivity_source = "precip_rate"; reflectivity = np.vectorize(precipitation_to_dbz)(precip_rate)
         temp_for_es = np.maximum(-80.0, t2m)
         es = 6.112 * np.exp((17.67 * temp_for_es) / (temp_for_es + 243.5))
         e = (q2 * psfc / 100.0) / (0.622 + q2)
@@ -1042,35 +671,21 @@ def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: i
         v_mass = 0.5 * (field("V")[:, :-1, :] + field("V")[:, 1:, :])
         level_500 = np.nanargmin(np.abs(pressure - 500.0), axis=0)
         rows, cols = np.indices(t2m.shape)
-        u500 = u_mass[level_500, rows, cols]
-        v500 = v_mass[level_500, rows, cols]
-        dx_m = float(getattr(dataset, "DX", 3000.0))
-        dy_m = float(getattr(dataset, "DY", 3000.0))
-        dvdx = np.gradient(v10, dx_m, axis=1)
-        dudy = np.gradient(u10, dy_m, axis=0)
+        u500 = u_mass[level_500, rows, cols]; v500 = v_mass[level_500, rows, cols]
+        dx_m = float(getattr(dataset, "DX", 3000.0)); dy_m = float(getattr(dataset, "DY", 3000.0))
+        dvdx = np.gradient(v10, dx_m, axis=1); dudy = np.gradient(u10, dy_m, axis=0)
         vort850 = dvdx - dudy
-        domain_mask = (
-            (lats >= bounds["south"])
-            & (lats <= bounds["north"])
-            & (lons >= bounds["west"])
-            & (lons <= bounds["east"])
-        )
-        selected_rows = np.where(np.any(domain_mask, axis=1))[0]
-        selected_cols = np.where(np.any(domain_mask, axis=0))[0]
-        if selected_rows.size == 0 or selected_cols.size == 0:
-            raise WRFDomainError("A area solicitada nao cruza a grade nativa do WRF.")
+        domain_mask = (lats >= bounds["south"]) & (lats <= bounds["north"]) & (lons >= bounds["west"]) & (lons <= bounds["east"])
+        selected_rows = np.where(np.any(domain_mask, axis=1))[0]; selected_cols = np.where(np.any(domain_mask, axis=0))[0]
+        if selected_rows.size == 0 or selected_cols.size == 0: raise WRFDomainError("A area solicitada nao cruza a grade nativa do WRF.")
         row_slice = slice(int(selected_rows[0]), int(selected_rows[-1]) + 1)
         col_slice = slice(int(selected_cols[0]), int(selected_cols[-1]) + 1)
-        lats_native = lats[row_slice, col_slice]
-        lons_native = lons[row_slice, col_slice]
+        lats_native = lats[row_slice, col_slice]; lons_native = lons[row_slice, col_slice]
         refl_interp = np.nan_to_num(reflectivity[row_slice, col_slice], nan=0.0)
-        u10_interp = np.nan_to_num(u10[row_slice, col_slice], nan=0.0)
-        v10_interp = np.nan_to_num(v10[row_slice, col_slice], nan=0.0)
+        u10_interp = np.nan_to_num(u10[row_slice, col_slice], nan=0.0); v10_interp = np.nan_to_num(v10[row_slice, col_slice], nan=0.0)
         precip_interp = np.nan_to_num(precip_rate[row_slice, col_slice], nan=0.0)
-        t2m_interp = np.nan_to_num(t2m[row_slice, col_slice], nan=0.0)
-        rh2_interp = np.nan_to_num(rh2[row_slice, col_slice], nan=0.0)
-        u500_interp = np.nan_to_num(u500[row_slice, col_slice], nan=0.0)
-        v500_interp = np.nan_to_num(v500[row_slice, col_slice], nan=0.0)
+        t2m_interp = np.nan_to_num(t2m[row_slice, col_slice], nan=0.0); rh2_interp = np.nan_to_num(rh2[row_slice, col_slice], nan=0.0)
+        u500_interp = np.nan_to_num(u500[row_slice, col_slice], nan=0.0); v500_interp = np.nan_to_num(v500[row_slice, col_slice], nan=0.0)
         vort850_interp = np.nan_to_num(vort850[row_slice, col_slice], nan=0.0)
         water_vapor_interp = np.nan_to_num(water_vapor[row_slice, col_slice], nan=0.0)
         bulk_shear = np.sqrt((u500_interp - u10_interp) ** 2 + (v500_interp - v10_interp) ** 2)
@@ -1079,70 +694,24 @@ def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: i
         cells: list[dict[str, float]] = []
         for i in range(native_grid_y):
             for j in range(native_grid_x):
-                cells.append(
-                    {
-                        "lat": float(lats_native[i, j]),
-                        "lon": float(lons_native[i, j]),
-                        "reflectivity": max(0.0, float(refl_interp[i, j])),
-                        "precipitation": max(0.0, float(precip_interp[i, j])),
-                        "cloudCover": 0.0,
-                        "windSpeed": float(math.hypot(u10_interp[i, j], v10_interp[i, j]) * 3.6),
-                        "windDirection": float(wind_direction_deg(u10_interp[i, j], v10_interp[i, j])),
-                        "bulkShear": float(bulk_shear[i, j]),
-                        "vorticity850": float(vort850_interp[i, j]),
-                        "temperature": float(t2m_interp[i, j]),
-                        "humidity": float(rh2_interp[i, j]),
-                        "mucape": float(mucape[i, j]),
-                        "waterVapor": float(water_vapor_interp[i, j]),
-                    }
-                )
-        return {
-            "cells": cells,
-            "gridX": int(native_grid_x),
-            "gridY": int(native_grid_y),
-            "source": reflectivity_source,
-            "model": model_key,
-            "nativeGrid": True,
-            "frameIndex": file_idx,
-            "frameCount": len(wrf_files),
-            "validTime": frame_valid_time(wrf_files[file_idx]),
-            "availableFrames": [
-                {"index": index, "validTime": frame_valid_time(path)}
-                for index, path in enumerate(wrf_files)
-            ],
-        }
-    finally:
-        dataset.close()
-        prev_dataset.close()
-
+                cells.append({"lat": float(lats_native[i, j]), "lon": float(lons_native[i, j]), "reflectivity": max(0.0, float(refl_interp[i, j])), "precipitation": max(0.0, float(precip_interp[i, j])), "cloudCover": 0.0, "windSpeed": float(math.hypot(u10_interp[i, j], v10_interp[i, j]) * 3.6), "windDirection": float(wind_direction_deg(u10_interp[i, j], v10_interp[i, j])), "bulkShear": float(bulk_shear[i, j]), "vorticity850": float(vort850_interp[i, j]), "temperature": float(t2m_interp[i, j]), "humidity": float(rh2_interp[i, j]), "mucape": float(mucape[i, j]), "waterVapor": float(water_vapor_interp[i, j])})
+        return {"cells": cells, "gridX": int(native_grid_x), "gridY": int(native_grid_y), "source": reflectivity_source, "model": model_key, "nativeGrid": True, "frameIndex": file_idx, "frameCount": len(wrf_files), "validTime": frame_valid_time(wrf_files[file_idx]), "availableFrames": [{"index": index, "validTime": frame_valid_time(path)} for index, path in enumerate(wrf_files)]}
+    finally: dataset.close(); prev_dataset.close()
 
 def build_gfs_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int) -> list[dict[str, float]]:
-    try:
-        import cfgrib
-        import numpy as np
-    except ImportError as exc:
-        raise RuntimeError("Dependencias GFS ausentes. Instale cfgrib e numpy para usar /api/gfs/cells.") from exc
+    try: import cfgrib; import numpy as np
+    except ImportError as exc: raise RuntimeError("Dependencias GFS ausentes. Instale cfgrib e numpy para usar /api/gfs/cells.") from exc
     gfs_file = find_gfs_file(hours)
-    print(f"Usando GFS direto: {gfs_file.name}")
     lats_to_sample = np.linspace(bounds["south"], bounds["north"], grid_y)
     lons_to_sample = np.linspace(bounds["west"], bounds["east"], grid_x)
-    def open_field(filter_by_keys: dict[str, Any]) -> Any:
-        return cfgrib.open_dataset(str(gfs_file), filter_by_keys=filter_by_keys, indexpath="")
+    def open_field(filter_by_keys: dict[str, Any]) -> Any: return cfgrib.open_dataset(str(gfs_file), filter_by_keys=filter_by_keys, indexpath="")
     def sample_regular_grid(data_array: Any, default: float) -> Any:
         longitude = ((data_array.longitude + 180) % 360) - 180
         data_array = data_array.assign_coords(longitude=longitude).sortby("longitude").sortby("latitude")
-        source_lats = data_array.latitude.to_numpy()
-        source_lons = data_array.longitude.to_numpy()
+        source_lats = data_array.latitude.to_numpy(); source_lons = data_array.longitude.to_numpy()
         values = np.squeeze(data_array.to_numpy())
-        lon_interpolated = np.vstack(
-            [np.interp(lons_to_sample, source_lons, row, left=np.nan, right=np.nan) for row in values]
-        )
-        sampled = np.vstack(
-            [
-                np.interp(lats_to_sample, source_lats, lon_interpolated[:, column], left=np.nan, right=np.nan)
-                for column in range(lon_interpolated.shape[1])
-            ]
-        ).T
+        lon_interpolated = np.vstack([np.interp(lons_to_sample, source_lons, row, left=np.nan, right=np.nan) for row in values])
+        sampled = np.vstack([np.interp(lats_to_sample, source_lats, lon_interpolated[:, column], left=np.nan, right=np.nan) for column in range(lon_interpolated.shape[1])]).T
         return np.nan_to_num(sampled, nan=default)
     def sample_field(filter_candidates: list[dict[str, Any]], field_name: str | None = None, default: float = 0.0) -> Any:
         last_error: Exception | None = None
@@ -1150,123 +719,521 @@ def build_gfs_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: i
             dataset = None
             try:
                 dataset = open_field(filter_by_keys)
-                if field_name and field_name in dataset:
-                    data_array = dataset[field_name]
+                if field_name and field_name in dataset: data_array = dataset[field_name]
                 else:
                     data_vars = list(dataset.data_vars)
-                    if not data_vars:
-                        continue
+                    if not data_vars: continue
                     data_array = dataset[data_vars[0]]
                 return sample_regular_grid(data_array, default)
-            except Exception as exc:
-                last_error = exc
+            except Exception as exc: last_error = exc
             finally:
-                if dataset is not None:
-                    dataset.close()
-        if last_error:
-            print(f"AVISO: falha ao ler campo GFS {filter_candidates}: {last_error}")
+                if dataset is not None: dataset.close()
         return np.full((grid_y, grid_x), default, dtype=float)
-    reflectivity = sample_field(
-        [
-            {"shortName": "refc", "typeOfLevel": "atmosphere"},
-            {"shortName": "refc"},
-            {"shortName": "refd"},
-        ],
-        default=0.0,
-    )
+    reflectivity = sample_field([{"shortName": "refc", "typeOfLevel": "atmosphere"}, {"shortName": "refc"}, {"shortName": "refd"}], default=0.0)
     u10 = sample_field([{"shortName": "10u", "typeOfLevel": "heightAboveGround", "level": 10}], default=0.0)
     v10 = sample_field([{"shortName": "10v", "typeOfLevel": "heightAboveGround", "level": 10}], default=0.0)
     cells: list[dict[str, float]] = []
     for i in range(grid_y):
         for j in range(grid_x):
             wind_speed = float(math.hypot(u10[i, j], v10[i, j]) * 3.6)
-            cells.append(
-                {
-                    "lat": float(lats_to_sample[i]),
-                    "lon": float(lons_to_sample[j]),
-                    "reflectivity": max(0.0, float(reflectivity[i, j])),
-                    "precipitation": 0.0,
-                    "cloudCover": 0.0,
-                    "windSpeed": wind_speed,
-                    "windDirection": float(wind_direction_deg(float(u10[i, j]), float(v10[i, j]))),
-                    "bulkShear": 0.0,
-                    "vorticity850": 0.0,
-                    "temperature": 0.0,
-                    "humidity": 0.0,
-                    "mucape": 0.0,
-                    "waterVapor": 0.0,
-                }
-            )
+            cells.append({"lat": float(lats_to_sample[i]), "lon": float(lons_to_sample[j]), "reflectivity": max(0.0, float(reflectivity[i, j])), "precipitation": 0.0, "cloudCover": 0.0, "windSpeed": wind_speed, "windDirection": float(wind_direction_deg(float(u10[i, j]), float(v10[i, j]))), "bulkShear": 0.0, "vorticity850": 0.0, "temperature": 0.0, "humidity": 0.0, "mucape": 0.0, "waterVapor": 0.0})
     return cells
 
-
 def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int) -> list[dict[str, float]]:
-    try:
-        import requests
-    except ImportError as exc:
-        raise RuntimeError("Dependencia ausente: instale requests para usar /api/meteoblue/cells.") from exc
     api_key = "4imCvOUtnMT3NjeA"
-    try:
-        response = requests.get(
-            "https://my.meteoblue.com/packages/basic-1h",
-            params={
-                "lat": (bounds["north"] + bounds["south"]) / 2,
-                "lon": (bounds["east"] + bounds["west"]) / 2,
-                "apikey": api_key,
-                "tz": "UTC",
-                "windspeed": "km/h",
-                "forecast_days": 3,
-            },
-            timeout=20,
-        )
-        response.raise_for_status()
-    except requests.exceptions.RequestException as exc:
-        raise ExternalAPIError(f"Erro ao conectar a API externa: {exc}") from exc
+    response = requests.get("https://my.meteoblue.com/packages/basic-1h", params={"lat": (bounds["north"] + bounds["south"]) / 2, "lon": (bounds["east"] + bounds["west"]) / 2, "apikey": api_key, "tz": "UTC", "windspeed": "km/h", "forecast_days": 3}, timeout=20)
+    response.raise_for_status()
     meteoblue_data = response.json()
     hourly_data = meteoblue_data.get("data_1h")
-    if not hourly_data:
-        message = meteoblue_data.get("error_message", "Erro desconhecido")
-        raise RuntimeError(f"Resposta invalida da API Meteoblue: {message}")
+    if not hourly_data: raise RuntimeError(f"Resposta invalida da API Meteoblue: {meteoblue_data.get('error_message', 'Erro desconhecido')}")
     times = hourly_data.get("time", [])
-    if not times:
-        raise RuntimeError("Nenhum horario retornado pela API Meteoblue.")
+    if not times: raise RuntimeError("Nenhum horario retornado pela API Meteoblue.")
     target_time = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=hours)
-    closest_hour_index = min(
-        range(len(times)),
-        key=lambda index: abs((dt.datetime.strptime(times[index], "%Y-%m-%d %H:%M") - target_time).total_seconds()),
-    )
+    closest_hour_index = min(range(len(times)), key=lambda index: abs((dt.datetime.strptime(times[index], "%Y-%m-%d %H:%M") - target_time).total_seconds()))
     def hour_value(field_name: str) -> float:
         values = hourly_data.get(field_name, [])
-        if closest_hour_index >= len(values):
-            return 0.0
-        return float(values[closest_hour_index] or 0.0)
-    precipitation = hour_value("precipitation")
-    wind_speed = hour_value("windspeed_10m")
-    wind_direction = hour_value("winddirection_10m")
+        return float(values[closest_hour_index] or 0.0) if closest_hour_index < len(values) else 0.0
+    precipitation = hour_value("precipitation"); wind_speed = hour_value("windspeed_10m"); wind_direction = hour_value("winddirection_10m")
     reflectivity = precipitation_to_dbz(precipitation)
     lat_step = (bounds["north"] - bounds["south"]) / (grid_y - 1) if grid_y > 1 else 0.0
     lon_step = (bounds["east"] - bounds["west"]) / (grid_x - 1) if grid_x > 1 else 0.0
     cells: list[dict[str, float]] = []
     for i in range(grid_y):
         for j in range(grid_x):
-            cells.append(
-                {
-                    "lat": bounds["south"] + i * lat_step,
-                    "lon": bounds["west"] + j * lon_step,
-                    "reflectivity": reflectivity,
-                    "precipitation": precipitation,
-                    "cloudCover": 0.0,
-                    "windSpeed": wind_speed,
-                    "windDirection": wind_direction,
-                    "bulkShear": 0.0,
-                    "vorticity850": 0.0,
-                    "temperature": 0.0,
-                    "humidity": 0.0,
-                    "mucape": 0.0,
-                    "waterVapor": 0.0,
-                }
-            )
+            cells.append({"lat": bounds["south"] + i * lat_step, "lon": bounds["west"] + j * lon_step, "reflectivity": reflectivity, "precipitation": precipitation, "cloudCover": 0.0, "windSpeed": wind_speed, "windDirection": wind_direction, "bulkShear": 0.0, "vorticity850": 0.0, "temperature": 0.0, "humidity": 0.0, "mucape": 0.0, "waterVapor": 0.0})
     return cells
+
+
+def _ecmwf_runtime_modules() -> dict[str, Any]:
+    """Importa as dependências do ECMWF/SHARPpy somente quando /api/sounding é usado."""
+    try:
+        import numpy as np
+        from ecmwfapi import ECMWFService
+        from eccodes import codes_get, codes_grib_find_nearest, codes_grib_new_from_file, codes_release
+        from sharppy.sharptab import profile as shp_profile
+    except ImportError as exc:
+        raise RuntimeError(
+            "Dependências do Skew-T ausentes. Instale ecmwf-api-client, eccodes, numpy e SHARPpy."
+        ) from exc
+    return {
+        "np": np,
+        "ECMWFService": ECMWFService,
+        "codes_get": codes_get,
+        "codes_grib_find_nearest": codes_grib_find_nearest,
+        "codes_grib_new_from_file": codes_grib_new_from_file,
+        "codes_release": codes_release,
+        "shp_profile": shp_profile,
+    }
+
+
+def _ecmwf_api_client(modules: dict[str, Any]) -> Any:
+    api_url = os.environ.get("ECMWF_API_URL", "https://api.ecmwf.int/v1").strip()
+    api_key = os.environ.get("ECMWF_API_KEY", "").strip()
+    api_email = os.environ.get("ECMWF_API_EMAIL", "").strip()
+    if not api_key or not api_email:
+        raise RuntimeError(
+            "ECMWF_API_KEY e ECMWF_API_EMAIL não estão configurados no Render."
+        )
+    return modules["ECMWFService"](
+        "mars",
+        url=api_url,
+        key=api_key,
+        email=api_email,
+    )
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or abs(number) > 1.0e20:
+        return None
+    return number
+
+
+def _dewpoint_from_temperature_rh(temp_c: float, rh_pct: float) -> float | None:
+    """Magnus: transforma temperatura e UR do IFS em ponto de orvalho para o SHARPpy."""
+    if not math.isfinite(temp_c) or not math.isfinite(rh_pct) or rh_pct <= 0:
+        return None
+    rh = max(0.1, min(100.0, rh_pct))
+    a, b = 17.625, 243.04
+    gamma = math.log(rh / 100.0) + (a * temp_c) / (b + temp_c)
+    dewpoint = (b * gamma) / (a - gamma)
+    return min(temp_c, dewpoint)
+
+
+def _ecmwf_cleanup_cache() -> None:
+    try:
+        ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cutoff = time.time() - 6 * 60 * 60
+        files = sorted(ECMWF_SOUNDING_CACHE_DIR.glob("*.grib"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for index, path in enumerate(files):
+            if path.stat().st_mtime < cutoff or index >= 24:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def _ecmwf_run_candidates(run_requested: str) -> list[dt.datetime]:
+    now = dt.datetime.now(dt.timezone.utc)
+    if run_requested != "latest":
+        hour = int(run_requested)
+        candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if candidate > now:
+            candidate -= dt.timedelta(days=1)
+        return [candidate]
+
+    # Para "latest", evita a rodada que ainda pode estar em disseminação e mantém fallbacks.
+    reference = now - dt.timedelta(hours=7)
+    base_hour = (reference.hour // 6) * 6
+    first = reference.replace(hour=base_hour, minute=0, second=0, microsecond=0)
+    return [first - dt.timedelta(hours=6 * index) for index in range(4)]
+
+
+def _ecmwf_cached_grib(path: Path) -> bool:
+    try:
+        return path.exists() and path.stat().st_size > 512 and (time.time() - path.stat().st_mtime) < ECMWF_GRIB_CACHE_SECONDS
+    except OSError:
+        return False
+
+
+def _ecmwf_point_tag(lat: float, lon: float) -> str:
+    return f"{lat:+07.2f}_{lon:+08.2f}".replace("+", "p").replace("-", "m").replace(".", "d")
+
+
+def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, lon: float) -> tuple[Path, Path, Path]:
+    ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = run_dt.strftime("%Y%m%d_%H")
+    point_tag = _ecmwf_point_tag(lat, lon)
+    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
+    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
+    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_{stamp}_{point_tag}_oro.grib"
+
+    north = min(90.0, lat + 0.30)
+    south = max(-90.0, lat - 0.30)
+    west = max(-180.0, lon - 0.30)
+    east = min(180.0, lon + 0.30)
+    area = f"{north:.2f}/{west:.2f}/{south:.2f}/{east:.2f}"
+
+    def execute_atomic(target: Path, request: dict[str, Any]) -> None:
+        if _ecmwf_cached_grib(target):
+            return
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        client.execute(request, str(tmp))
+        if not tmp.exists() or tmp.stat().st_size < 512:
+            raise RuntimeError(f"ECMWF retornou arquivo vazio para {target.name}.")
+        tmp.replace(target)
+
+    common_fc = {
+        "class": "od",
+        "date": run_dt.strftime("%Y%m%d"),
+        "expver": "1",
+        "stream": "oper",
+        "time": f"{run_dt.hour:02d}",
+        "type": "fc",
+        "step": str(fh),
+        "grid": "0.25/0.25",
+        "area": area,
+    }
+
+    with ecmwf_download_lock:
+        execute_atomic(
+            pressure_path,
+            {
+                **common_fc,
+                "levtype": "pl",
+                "levelist": "/".join(str(level) for level in ECMWF_PRESSURE_LEVELS),
+                # T / U / V / RH / geopotential height.
+                "param": "130.128/131.128/132.128/157.128/156.128",
+            },
+        )
+        execute_atomic(
+            surface_path,
+            {
+                **common_fc,
+                "levtype": "sfc",
+                # SP / 10U / 10V / 2T / 2D.
+                "param": "134.128/165.128/166.128/167.128/168.128",
+            },
+        )
+        execute_atomic(
+            orography_path,
+            {
+                "class": "od",
+                "date": run_dt.strftime("%Y%m%d"),
+                "expver": "1",
+                "stream": "oper",
+                "time": f"{run_dt.hour:02d}",
+                "type": "an",
+                "levtype": "sfc",
+                "param": "129.128",
+                "grid": "0.25/0.25",
+                "area": area,
+            },
+        )
+        _ecmwf_cleanup_cache()
+    return pressure_path, surface_path, orography_path
+
+
+def _ecmwf_read_nearest_grib(path: Path, lat: float, lon: float, modules: dict[str, Any]) -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    new_from_file = modules["codes_grib_new_from_file"]
+    codes_get = modules["codes_get"]
+    find_nearest = modules["codes_grib_find_nearest"]
+    release = modules["codes_release"]
+    with path.open("rb") as stream:
+        while True:
+            gid = new_from_file(stream)
+            if gid is None:
+                break
+            try:
+                short_name = str(codes_get(gid, "shortName"))
+                type_of_level = str(codes_get(gid, "typeOfLevel"))
+                try:
+                    level = _safe_float(codes_get(gid, "level"))
+                except Exception:
+                    level = None
+                nearest = find_nearest(gid, lat, lon)[0]
+                value = _safe_float(getattr(nearest, "value", None))
+                nearest_lat = _safe_float(getattr(nearest, "lat", None))
+                nearest_lon = _safe_float(getattr(nearest, "lon", None))
+                if value is None:
+                    continue
+                if type_of_level == "isobaricInPa" and level is not None:
+                    level /= 100.0
+                fields.append({
+                    "short_name": short_name,
+                    "type_of_level": type_of_level,
+                    "level": level,
+                    "value": value,
+                    "grid_lat": nearest_lat,
+                    "grid_lon": nearest_lon,
+                })
+            finally:
+                release(gid)
+    return fields
+
+
+def _sharppy_number(value: Any, np: Any) -> float | None:
+    try:
+        if np.ma.is_masked(value):
+            return None
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= -9000:
+        return None
+    return number
+
+
+def _sharppy_vector_magnitude(value: Any, np: Any) -> float | None:
+    try:
+        if value is None or len(value) < 2:
+            return None
+        u = _sharppy_number(value[0], np)
+        v = _sharppy_number(value[1], np)
+        return math.hypot(u, v) if u is not None and v is not None else None
+    except Exception:
+        return None
+
+
+def _parcel_json(parcel: Any, np: Any) -> dict[str, Any]:
+    def n(name: str) -> float | None:
+        return _sharppy_number(getattr(parcel, name, None), np)
+
+    pressure: list[float] = []
+    temperature: list[float] = []
+    try:
+        ptrace = getattr(parcel, "ptrace", [])
+        ttrace = getattr(parcel, "ttrace", [])
+        for p, t in zip(ptrace, ttrace):
+            pnum = _sharppy_number(p, np)
+            tnum = _sharppy_number(t, np)
+            if pnum is not None and tnum is not None:
+                pressure.append(round(pnum, 2))
+                temperature.append(round(tnum, 2))
+    except Exception:
+        pass
+    return {
+        "cape": n("bplus"),
+        "cin": n("bminus"),
+        "lcl": n("lclhght"),
+        "lfc": n("lfchght"),
+        "el": n("elhght"),
+        "li5": n("li5"),
+        "trace": {"pressure": pressure, "temperature": temperature},
+    }
+
+
+def _ecmwf_build_sounding_payload(
+    lat: float,
+    lon: float,
+    run_dt: dt.datetime,
+    fh: int,
+    pressure_path: Path,
+    surface_path: Path,
+    orography_path: Path,
+    modules: dict[str, Any],
+) -> dict[str, Any]:
+    np = modules["np"]
+    shp_profile = modules["shp_profile"]
+    pressure_fields = _ecmwf_read_nearest_grib(pressure_path, lat, lon, modules)
+    surface_fields = _ecmwf_read_nearest_grib(surface_path, lat, lon, modules)
+    orography_fields = _ecmwf_read_nearest_grib(orography_path, lat, lon, modules)
+
+    by_level: dict[int, dict[str, float]] = {}
+    grid_lat = None
+    grid_lon = None
+    for field in pressure_fields:
+        if field["level"] is None:
+            continue
+        level = int(round(float(field["level"])))
+        by_level.setdefault(level, {})[str(field["short_name"])] = float(field["value"])
+        if grid_lat is None and field.get("grid_lat") is not None:
+            grid_lat = float(field["grid_lat"])
+            grid_lon = float(field["grid_lon"])
+
+    surface: dict[str, float] = {str(f["short_name"]): float(f["value"]) for f in surface_fields}
+    orography: dict[str, float] = {str(f["short_name"]): float(f["value"]) for f in orography_fields}
+    required_surface = ["sp", "2t", "2d", "10u", "10v"]
+    missing_surface = [name for name in required_surface if name not in surface]
+    if missing_surface:
+        raise RuntimeError("ECMWF não retornou os campos de superfície: " + ", ".join(missing_surface))
+
+    surface_pressure = surface["sp"] / 100.0
+    surface_temp = surface["2t"] - 273.15
+    surface_dewpoint = min(surface_temp, surface["2d"] - 273.15)
+    surface_u = surface["10u"] * 1.9438444924406
+    surface_v = surface["10v"] * 1.9438444924406
+    surface_height = orography.get("z", 0.0) / 9.80665
+
+    points: list[dict[str, float]] = [{
+        "pressure": surface_pressure,
+        "height": surface_height,
+        "temperature": surface_temp,
+        "dewpoint": surface_dewpoint,
+        "u": surface_u,
+        "v": surface_v,
+    }]
+
+    for level in ECMWF_PRESSURE_LEVELS:
+        values = by_level.get(level, {})
+        if level > surface_pressure + 0.5:
+            continue  # nível subterrâneo
+        t_k = values.get("t")
+        rh = values.get("r")
+        u_ms = values.get("u")
+        v_ms = values.get("v")
+        gh = values.get("gh")
+        if None in (t_k, rh, u_ms, v_ms, gh):
+            continue
+        temp_c = float(t_k) - 273.15
+        dewpoint_c = _dewpoint_from_temperature_rh(temp_c, float(rh))
+        if dewpoint_c is None:
+            continue
+        points.append({
+            "pressure": float(level),
+            "height": float(gh),
+            "temperature": temp_c,
+            "dewpoint": dewpoint_c,
+            "u": float(u_ms) * 1.9438444924406,
+            "v": float(v_ms) * 1.9438444924406,
+        })
+
+    points.sort(key=lambda item: item["pressure"], reverse=True)
+    qc_points: list[dict[str, float]] = []
+    last_height = -1.0e9
+    for point in points:
+        if qc_points and abs(point["pressure"] - qc_points[-1]["pressure"]) < 0.75:
+            if point["height"] < qc_points[-1]["height"]:
+                qc_points[-1] = point
+            continue
+        if point["height"] <= last_height:
+            continue
+        qc_points.append(point)
+        last_height = point["height"]
+    points = qc_points
+
+    if len(points) < 8 or points[-1]["pressure"] > 300:
+        raise RuntimeError("Perfil ECMWF insuficiente para o SHARPpy.")
+
+    pres = np.array([p["pressure"] for p in points], dtype=float)
+    hght = np.array([p["height"] for p in points], dtype=float)
+    tmpc = np.array([p["temperature"] for p in points], dtype=float)
+    dwpc = np.array([p["dewpoint"] for p in points], dtype=float)
+    u = np.array([p["u"] for p in points], dtype=float)
+    v = np.array([p["v"] for p in points], dtype=float)
+
+    # Apenas o núcleo de cálculo do SHARPpy é usado; nenhuma GUI/Qt é iniciada.
+    prof = shp_profile.create_profile(
+        profile="convective",
+        pres=pres,
+        hght=hght,
+        tmpc=tmpc,
+        dwpc=dwpc,
+        u=u,
+        v=v,
+        latitude=float(lat),
+        date=run_dt + dt.timedelta(hours=fh),
+        location="ECMWF",
+        strictQC=False,
+    )
+
+    sb = _parcel_json(prof.sfcpcl, np)
+    ml = _parcel_json(prof.mlpcl, np)
+    mu = _parcel_json(prof.mupcl, np)
+    shear01 = _sharppy_vector_magnitude(getattr(prof, "sfc_1km_shear", None), np)
+    shear03 = _sharppy_vector_magnitude(getattr(prof, "sfc_3km_shear", None), np)
+    shear06 = _sharppy_vector_magnitude(getattr(prof, "sfc_6km_shear", None), np)
+
+    if lat < 0:
+        srh01_raw = _sharppy_number(getattr(prof, "left_srh1km", [None])[0], np)
+        srh03_raw = _sharppy_number(getattr(prof, "left_srh3km", [None])[0], np)
+        srh01 = -srh01_raw if srh01_raw is not None else None
+        srh03 = -srh03_raw if srh03_raw is not None else None
+        motion = getattr(prof, "srwind", [None, None, None, None])[2:4]
+    else:
+        srh01 = _sharppy_number(getattr(prof, "right_srh1km", [None])[0], np)
+        srh03 = _sharppy_number(getattr(prof, "right_srh3km", [None])[0], np)
+        motion = getattr(prof, "srwind", [None, None, None, None])[0:2]
+
+    storm_u = _sharppy_number(motion[0], np) if len(motion) > 0 else None
+    storm_v = _sharppy_number(motion[1], np) if len(motion) > 1 else None
+    storm_speed = math.hypot(storm_u, storm_v) if storm_u is not None and storm_v is not None else None
+    storm_dir = wind_direction_deg(storm_u, storm_v) if storm_u is not None and storm_v is not None else None
+
+    pwat_in = _sharppy_number(getattr(prof, "pwat", None), np)
+    stp = _sharppy_number(getattr(prof, "stp_cin", None), np)
+    scp = _sharppy_number(getattr(prof, "scp", None), np)
+    ehi03 = None
+    if mu.get("cape") is not None and srh03 is not None:
+        ehi03 = (float(mu["cape"]) * float(srh03)) / 160000.0
+
+    def r(value: Any, digits: int = 1) -> float | None:
+        number = _safe_float(value)
+        return round(number, digits) if number is not None else None
+
+    profile_json = {
+        "pressure": [r(p["pressure"], 1) for p in points],
+        "height": [r(p["height"], 0) for p in points],
+        "height_agl": [r(max(0.0, p["height"] - surface_height), 0) for p in points],
+        "temperature": [r(p["temperature"], 1) for p in points],
+        "dewpoint": [r(p["dewpoint"], 1) for p in points],
+        "u": [r(p["u"], 1) for p in points],
+        "v": [r(p["v"], 1) for p in points],
+        "wind_speed": [r(math.hypot(p["u"], p["v"]), 1) for p in points],
+        "wind_direction": [r(wind_direction_deg(p["u"], p["v"]), 0) for p in points],
+    }
+
+    # Arredonda os índices depois do cálculo, preservando null quando mascarados.
+    for parcel in (sb, ml, mu):
+        for key in ("cape", "cin", "lcl", "lfc", "el", "li5"):
+            parcel[key] = r(parcel.get(key), 1 if key == "li5" else 0)
+
+    valid_dt = run_dt + dt.timedelta(hours=fh)
+    return {
+        "model": "ECMWF IFS 0.25°",
+        "model_id": "ecmwf_ifs_api",
+        "latitude": lat,
+        "longitude": lon,
+        "grid_latitude": r(grid_lat, 3),
+        "grid_longitude": r(grid_lon, 3),
+        "run": run_dt.isoformat().replace("+00:00", "Z"),
+        "run_cycle": f"{run_dt.hour:02d}Z",
+        "forecast_hour": fh,
+        "valid": valid_dt.isoformat().replace("+00:00", "Z"),
+        "surface_elevation_m": r(surface_height, 0),
+        "surface_pressure_hpa": r(surface_pressure, 1),
+        "profile": profile_json,
+        "parcels": {"sb": sb, "ml": ml, "mu": mu},
+        "thermodynamics": {
+            "sbcape": sb["cape"], "sbcin": sb["cin"],
+            "mlcape": ml["cape"], "mlcin": ml["cin"],
+            "mucape": mu["cape"], "mucin": mu["cin"],
+            "lcl": ml["lcl"], "lfc": ml["lfc"], "el": ml["el"],
+            "lifted_index": sb["li5"],
+            "pwat": r(pwat_in * 25.4 if pwat_in is not None else None, 1),
+        },
+        "kinematics": {
+            "shear_01km": r(shear01, 1), "shear_03km": r(shear03, 1), "shear_06km": r(shear06, 1),
+            "srh_01km": r(srh01, 0), "srh_03km": r(srh03, 0),
+            "storm_motion_u": r(storm_u, 1), "storm_motion_v": r(storm_v, 1),
+            "storm_motion_speed": r(storm_speed, 1), "storm_motion_direction": r(storm_dir, 0),
+        },
+        "severe": {"stp": r(stp, 2), "scp": r(scp, 2), "ehi_03km": r(ehi03, 2)},
+        "source": "ECMWF Web API + SHARPpy",
+        "attribution": "ECMWF",
+        "cache": False,
+    }
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -1299,68 +1266,87 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path).path
-        if parsed_path == "/api/ipmet/meta":
-            self.handle_ipmet_meta()
-            return
-        if parsed_path == "/api/ipmet/wms":
-            self.handle_ipmet_wms(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/rainviewer/meta":
-            self.handle_public_json(RAINVIEWER_META_URL, "RainViewer")
-            return
-        if parsed_path == "/api/redemet/radar":
-            self.handle_redemet_radar(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/redemet/stsc":
-            self.handle_redemet_stsc(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/redemet/estacoes":
-            self.handle_redemet_stations(parse_qs(urlparse(self.path).query))
-            return
+        if parsed_path == "/api/ipmet/meta": self.handle_ipmet_meta(); return
+        if parsed_path == "/api/ipmet/wms": self.handle_ipmet_wms(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/rainviewer/meta": self.handle_public_json(RAINVIEWER_META_URL, "RainViewer"); return
+        if parsed_path == "/api/redemet/radar": self.handle_redemet_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/redemet/stsc": self.handle_redemet_stsc(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/redemet/estacoes": self.handle_redemet_stations(parse_qs(urlparse(self.path).query)); return
         if parsed_path.startswith("/api/redemet/estacao/"):
             icao_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
-            self.handle_redemet_station(icao_code)
-            return
-        if parsed_path.startswith("/api/rainviewer/tile/"):
-            self.handle_rainviewer_tile(parsed_path)
-            return
-        if parsed_path == "/api/inea/frames":
-            self.handle_inea_frames(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/inea/image":
-            self.handle_inea_image(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/simepar/meta":
-            self.handle_simepar_meta()
-            return
-        if parsed_path == "/api/simepar/image":
-            self.handle_simepar_image(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/xweather/lightning":
-            self.handle_xweather_lightning(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/health":
-            self.send_json(200, {"status": "ok", "service": "sideral", "domain": "sul4km"})
-            return
-        if parsed_path == "/api/inmet/estacoes":
-            self.handle_inmet_stations()
-            return
+            self.handle_redemet_station(icao_code); return
+        if parsed_path.startswith("/api/rainviewer/tile/"): self.handle_rainviewer_tile(parsed_path); return
+        if parsed_path == "/api/inea/frames": self.handle_inea_frames(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/inea/image": self.handle_inea_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/simepar/meta": self.handle_simepar_meta(); return
+        if parsed_path == "/api/simepar/image": self.handle_simepar_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/xweather/lightning": self.handle_xweather_lightning(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/health": self.send_json(200, {"status": "ok", "service": "sideral", "domain": "sul4km"}); return
+        if parsed_path == "/api/inmet/estacoes": self.handle_inmet_stations(); return
         if parsed_path.startswith("/api/inmet/observacao/"):
             station_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
-            self.handle_inmet_observation(station_code)
-            return
-        if parsed_path == "/api/sinotica/meta":
-            self.handle_synoptic_meta(parse_qs(urlparse(self.path).query))
-            return
-        if parsed_path == "/api/sinotica/chart.png":
-            self.handle_synoptic_png()
-            return
-        if parsed_path == "/api/sinotica/sideral.svg":
-            self.handle_synoptic_svg()
-            return
+            self.handle_inmet_observation(station_code); return
+        if parsed_path == "/api/sinotica/meta": self.handle_synoptic_meta(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
+        if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
+        
+        # --- NOVO ENDPOINT SKEW-T ---
+        if parsed_path == "/api/sounding":
+            self.handle_sounding(parse_qs(urlparse(self.path).query)); return
+
         if parsed_path == "/mapa_estacoes_inmet_com_dados.html":
             self.path = "/mapa_estacoes_inmet_corrigido.html"
         super().do_GET()
+
+    def handle_sounding(self, query: dict[str, list[str]]) -> None:
+        """Sondagem IFS obtida pela ECMWF Web API e processada pelo núcleo do SHARPpy."""
+        try:
+            lat = float(query.get("lat", ["-25.43"])[0])
+            lon = float(query.get("lon", ["-49.27"])[0])
+            run_requested = query.get("run", ["latest"])[0].lower().strip()
+            fh = int(query.get("fh", ["0"])[0])
+
+            if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+                self.send_json(400, {"error": "Latitude/longitude inválidas."}); return
+            if run_requested not in {"latest", "00", "06", "12", "18"}:
+                self.send_json(400, {"error": "Run inválida. Use latest, 00, 06, 12 ou 18."}); return
+            if fh < 0 or fh > 144 or fh % 3 != 0:
+                self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas."}); return
+
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v2")
+            cached = sounding_cache.get(cache_key)
+            if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
+                payload = dict(cached["data"])
+                payload["cache"] = True
+                self.send_json(200, payload); return
+
+            modules = _ecmwf_runtime_modules()
+            client = _ecmwf_api_client(modules)
+            last_error: Exception | None = None
+            payload = None
+            for run_dt in _ecmwf_run_candidates(run_requested):
+                try:
+                    pressure_path, surface_path, orography_path = _ecmwf_retrieve_grib(
+                        client, run_dt, fh, lat, lon
+                    )
+                    payload = _ecmwf_build_sounding_payload(
+                        lat, lon, run_dt, fh, pressure_path, surface_path, orography_path, modules
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if run_requested != "latest":
+                        raise
+            if payload is None:
+                raise RuntimeError(
+                    f"Nenhuma rodada ECMWF disponível pela API para esta solicitação: {last_error}"
+                )
+            sounding_cache[cache_key] = {"saved_at": time.monotonic(), "data": payload}
+            self.send_json(200, payload)
+        except RuntimeError as exc:
+            self.send_json(502, {"error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"error": f"Erro interno no ECMWF/SHARPpy: {type(exc).__name__}: {exc}"})
 
     def handle_ipmet_meta(self) -> None:
         try:
@@ -1368,45 +1354,25 @@ class Handler(SimpleHTTPRequestHandler):
             response.raise_for_status()
             utc_match = re.search(r"data_hora\s*=\s*['\"](\d{8}_\d{6})", response.text)
             local_match = re.search(r"data_local\s*=\s*['\"]([^'\"]+)", response.text)
-            if not utc_match:
-                raise ValueError("IPMet não publicou o horário da última varredura")
+            if not utc_match: raise ValueError("IPMet não publicou o horário da última varredura")
             scan_utc = dt.datetime.strptime(utc_match.group(1), "%Y%m%d_%H%M%S").replace(tzinfo=dt.timezone.utc)
             age_minutes = max(0, (dt.datetime.now(dt.timezone.utc) - scan_utc).total_seconds() / 60)
-            self.send_json(200, {
-                "available": True,
-                "provider": "IPMet/UNESP",
-                "product": "PPI combinado (merged)",
-                "scanTime": scan_utc.isoformat().replace("+00:00", "Z"),
-                "localLabel": local_match.group(1) if local_match else None,
-                "stale": age_minutes > 30,
-                "ageMinutes": round(age_minutes, 1),
-                "source": IPMET_RADAR_PAGE,
-            })
-        except Exception as exc:
-            self.send_json(502, {"available": False, "error": "Falha ao consultar o radar oficial do IPMet.", "details": f"{type(exc).__name__}: {exc}"})
+            self.send_json(200, {"available": True, "provider": "IPMet/UNESP", "product": "PPI combinado (merged)", "scanTime": scan_utc.isoformat().replace("+00:00", "Z"), "localLabel": local_match.group(1) if local_match else None, "stale": age_minutes > 30, "ageMinutes": round(age_minutes, 1), "source": IPMET_RADAR_PAGE})
+        except Exception as exc: self.send_json(502, {"available": False, "error": "Falha ao consultar o radar oficial do IPMet.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_ipmet_wms(self, query: dict[str, list[str]]) -> None:
         try:
             bbox_text = query.get("bbox", [""])[0]
             bbox = [float(value) for value in bbox_text.split(",")]
-            if len(bbox) != 4 or any(not math.isfinite(value) or abs(value) > 20037509 for value in bbox):
-                raise ValueError("bbox Web Mercator inválido")
+            if len(bbox) != 4 or any(not math.isfinite(value) or abs(value) > 20037509 for value in bbox): raise ValueError("bbox Web Mercator inválido")
             width = int(query.get("width", ["512"])[0])
             height = int(query.get("height", ["512"])[0])
-            if width not in (256, 512, 1024) or height not in (256, 512, 1024):
-                raise ValueError("dimensão de tile não permitida")
-            params = {
-                "map": IPMET_MAP_FILE, "SERVICE": "WMS", "VERSION": "1.1.1",
-                "REQUEST": "GetMap", "LAYERS": "merged", "STYLES": "",
-                "FORMAT": "image/png", "TRANSPARENT": "true", "SRS": "EPSG:900913",
-                "BBOX": ",".join(f"{value:.4f}" for value in bbox),
-                "WIDTH": str(width), "HEIGHT": str(height),
-            }
+            if width not in (256, 512, 1024) or height not in (256, 512, 1024): raise ValueError("dimensão de tile não permitida")
+            params = {"map": IPMET_MAP_FILE, "SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap", "LAYERS": "merged", "STYLES": "", "FORMAT": "image/png", "TRANSPARENT": "true", "SRS": "EPSG:900913", "BBOX": ",".join(f"{value:.4f}" for value in bbox), "WIDTH": str(width), "HEIGHT": str(height)}
             response = requests.get(IPMET_WMS_URL, params=params, headers=IPMET_HEADERS, timeout=22)
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "")
-            if "image/" not in content_type.lower() or len(response.content) < 100:
-                raise ValueError("IPMet não retornou uma imagem WMS válida")
+            if "image/" not in content_type.lower() or len(response.content) < 100: raise ValueError("IPMet não retornou uma imagem WMS válida")
             body = response.content
             self.send_response(200)
             self.send_header("Content-Type", content_type.split(";", 1)[0])
@@ -1414,10 +1380,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=90, stale-if-error=600")
             self.end_headers()
             self.wfile.write(body)
-        except (ValueError, TypeError) as exc:
-            self.send_json(400, {"error": str(exc)})
-        except requests.RequestException as exc:
-            self.send_json(502, {"error": "Radar IPMet temporariamente indisponível.", "details": str(exc)})
+        except (ValueError, TypeError) as exc: self.send_json(400, {"error": str(exc)})
+        except requests.RequestException as exc: self.send_json(502, {"error": "Radar IPMet temporariamente indisponível.", "details": str(exc)})
 
     def handle_rainviewer_tile(self, parsed_path: str) -> None:
         tile_path = parsed_path.removeprefix("/api/rainviewer/tile/")
@@ -1425,11 +1389,7 @@ class Handler(SimpleHTTPRequestHandler):
         valid_id = len(parts) > 2 and bool(parts[2]) and all(char in "0123456789abcdefABCDEF" for char in parts[2])
         valid_numbers = len(parts) == 9 and all(parts[index].isdigit() for index in (3, 4, 5, 6))
         if len(parts) != 9 or parts[0] != "v2" or parts[1] != "radar" or not valid_id or not valid_numbers or parts[3] not in ("256", "512") or parts[7] != "2" or parts[8] != "1_1.png":
-            self.send_json(400, {"error": "Tile RainViewer inválido."})
-            return
-        if parts[0] != "v2" or parts[1] != "radar" or not parts[-1].endswith(".png"):
-            self.send_json(400, {"error": "Caminho de tile não permitido."})
-            return
+            self.send_json(400, {"error": "Tile RainViewer inválido."}); return
         upstream = f"https://tilecache.rainviewer.com/{tile_path}"
         try:
             response = requests.get(upstream, timeout=15)
@@ -1442,84 +1402,58 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=120")
             self.end_headers()
             self.wfile.write(body)
-        except requests.RequestException as exc:
-            self.send_json(502, {"error": "Falha ao baixar tile do RainViewer.", "details": str(exc)})
+        except requests.RequestException as exc: self.send_json(502, {"error": "Falha ao baixar tile do RainViewer.", "details": str(exc)})
 
     def handle_public_json(self, url: str, provider: str) -> None:
         try:
             response = requests.get(url, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=20)
             response.raise_for_status()
             self.send_json(200, response.json())
-        except Exception as exc:
-            self.send_json(502, {"error": f"Falha ao consultar {provider}.", "details": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc: self.send_json(502, {"error": f"Falha ao consultar {provider}.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_inea_frames(self, query: dict[str, list[str]]) -> None:
         radar = query.get("radar", [""])[0].lower()
         product = query.get("product", ["zh"])[0].lower()
-        if radar not in {"gua", "mac"} or product not in {"zh", "rr"}:
-            self.send_json(400, {"error": "Radar ou produto INEA inválido."})
-            return
+        if radar not in {"gua", "mac"} or product not in {"zh", "rr"}: self.send_json(400, {"error": "Radar ou produto INEA inválido."}); return
         try:
-            response = requests.get(
-                f"{INEA_RADAR_TOOL_URL}/frames.php",
-                params={"type": "radar", "radar": radar, "product": product, "hours": 12, "max": 15},
-                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25, verify=False,
-            )
+            response = requests.get(f"{INEA_RADAR_TOOL_URL}/frames.php", params={"type": "radar", "radar": radar, "product": product, "hours": 12, "max": 15}, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25, verify=False)
             response.raise_for_status()
             payload = response.json()
             images = payload.get("images") if isinstance(payload, dict) else None
-            if not isinstance(images, list) or not images:
-                raise ValueError("INEA não publicou quadros para este radar")
-            safe_images = []
-            for image in images:
-                filename = str(image).rsplit("/", 1)[-1]
-                if re.fullmatch(r"[A-Za-z0-9_.-]+\.png", filename):
-                    safe_images.append(filename)
-            if not safe_images:
-                raise ValueError("INEA retornou nomes de imagem inválidos")
+            if not isinstance(images, list) or not images: raise ValueError("INEA não publicou quadros para este radar")
+            safe_images = [str(image).rsplit("/", 1)[-1] for image in images if re.fullmatch(r"[A-Za-z0-9_.-]+\.png", str(image).rsplit("/", 1)[-1])]
+            if not safe_images: raise ValueError("INEA retornou nomes de imagem inválidos")
             labels = payload.get("labels", [])
             self.send_json(200, {"radar": radar, "product": product, "images": safe_images, "labels": labels[-len(safe_images):], "step_min": payload.get("step_min")})
-        except Exception as exc:
-            self.send_json(502, {"error": "Falha ao consultar os quadros oficiais do INEA.", "details": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar os quadros oficiais do INEA.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_inea_image(self, query: dict[str, list[str]]) -> None:
         radar = query.get("radar", [""])[0].lower()
         product = query.get("product", ["zh"])[0].lower()
         filename = query.get("file", [""])[0]
-        if radar not in {"gua", "mac"} or product not in {"zh", "rr"} or not re.fullmatch(r"[A-Za-z0-9_.-]+\.png", filename):
-            self.send_json(400, {"error": "Imagem INEA inválida."})
-            return
+        if radar not in {"gua", "mac"} or product not in {"zh", "rr"} or not re.fullmatch(r"[A-Za-z0-9_.-]+\.png", filename): self.send_json(400, {"error": "Imagem INEA inválida."}); return
         try:
             cache_key = f"{radar}/{product}/{filename}"
             cached = inea_radar_image_cache.get(cache_key)
             if cached is not None:
-                self.send_response(200)
-                self.send_header("Content-Type", "image/png")
-                self.send_header("Content-Length", str(len(cached)))
-                self.end_headers()
-                self.wfile.write(cached)
-                return
+                self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(cached))); self.end_headers(); self.wfile.write(cached); return
             upstream = f"{INEA_RADAR_TOOL_URL}/img/img-radar-{radar}-{product}/{filename}"
             response = requests.get(upstream, headers={"User-Agent": INMET_HEADERS["User-Agent"]}, timeout=22, verify=False)
             response.raise_for_status()
-            if "image/png" not in response.headers.get("Content-Type", "").lower() or len(response.content) < 300:
-                raise ValueError("INEA não retornou PNG válido")
+            if "image/png" not in response.headers.get("Content-Type", "").lower() or len(response.content) < 300: raise ValueError("INEA não retornou PNG válido")
             body = png_black_to_transparent(response.content)
             inea_radar_image_cache[cache_key] = body
-            while len(inea_radar_image_cache) > 64:
-                inea_radar_image_cache.pop(next(iter(inea_radar_image_cache)))
+            while len(inea_radar_image_cache) > 64: inea_radar_image_cache.pop(next(iter(inea_radar_image_cache)))
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "public, max-age=300")
             self.end_headers()
             self.wfile.write(body)
-        except Exception as exc:
-            self.send_json(502, {"error": "Imagem do radar INEA indisponível.", "details": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc: self.send_json(502, {"error": "Imagem do radar INEA indisponível.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_simepar_meta(self) -> None:
-        frames = []
-        errors = []
+        frames, errors = [], []
         for frame_number in range(8, 0, -1):
             try:
                 response = requests.get(f"{SIMEPAR_RADAR_URL}/product{frame_number}.jpeg", headers={"User-Agent": INMET_HEADERS["User-Agent"]}, stream=True, timeout=12)
@@ -1528,121 +1462,75 @@ class Handler(SimpleHTTPRequestHandler):
                 date = parsedate_to_datetime(modified).astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z") if modified else None
                 frames.append({"frame": frame_number, "date": date})
                 response.close()
-            except Exception as exc:
-                errors.append(f"product{frame_number}: {type(exc).__name__}: {exc}")
-                continue
-        if not frames:
-            self.send_json(502, {"error": "SIMEPAR não publicou imagens acessíveis.", "details": errors[:2]})
-            return
+            except Exception as exc: errors.append(f"product{frame_number}: {type(exc).__name__}: {exc}"); continue
+        if not frames: self.send_json(502, {"error": "SIMEPAR não publicou imagens acessíveis.", "details": errors[:2]}); return
         self.send_json(200, {"frames": frames, "provider": "SIMEPAR", "note": "Mosaico oficial; Teixeira Soares está temporariamente desativado e a publicação atual é baseada em Cascavel."})
 
     def handle_simepar_image(self, query: dict[str, list[str]]) -> None:
         try:
             frame_number = int(query.get("frame", ["1"])[0])
-            if frame_number not in range(1, 9):
-                raise ValueError("Quadro SIMEPAR inválido")
+            if frame_number not in range(1, 9): raise ValueError("Quadro SIMEPAR inválido")
             response = requests.get(f"{SIMEPAR_RADAR_URL}/product{frame_number}.jpeg", timeout=22)
             response.raise_for_status()
-            if "image/jpeg" not in response.headers.get("Content-Type", "").lower() or len(response.content) < 1000:
-                raise ValueError("SIMEPAR não retornou JPEG válido")
+            if "image/jpeg" not in response.headers.get("Content-Type", "").lower() or len(response.content) < 1000: raise ValueError("SIMEPAR não retornou JPEG válido")
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(response.content)))
             self.send_header("Cache-Control", "public, max-age=180")
             self.end_headers()
             self.wfile.write(response.content)
-        except ValueError as exc:
-            self.send_json(400, {"error": str(exc)})
-        except Exception as exc:
-            self.send_json(502, {"error": "Imagem do SIMEPAR indisponível.", "details": f"{type(exc).__name__}: {exc}"})
+        except ValueError as exc: self.send_json(400, {"error": str(exc)})
+        except Exception as exc: self.send_json(502, {"error": "Imagem do SIMEPAR indisponível.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_redemet_radar(self, query: dict[str, list[str]]) -> None:
         product = query.get("product", ["03km"])[0].lower()
-        if product not in REDEMET_PRODUCTS:
-            self.send_json(400, {"error": "Produto REDEMET inválido."})
-            return
-        try:
-            anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
-        except ValueError:
-            self.send_json(400, {"error": "Quantidade de quadros inválida."})
-            return
+        if product not in REDEMET_PRODUCTS: self.send_json(400, {"error": "Produto REDEMET inválido."}); return
+        try: anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
+        except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
         self.handle_public_json(f"{REDEMET_API_URL}/produtos/radar/{product}?anima={anima}&api_key={REDEMET_API_KEY}", "REDEMET")
 
     def handle_redemet_stsc(self, query: dict[str, list[str]]) -> None:
-        try:
-            anima = min(6, max(1, int(query.get("anima", ["3"])[0])))
-        except ValueError:
-            self.send_json(400, {"error": "Quantidade de quadros inválida."})
-            return
+        try: anima = min(6, max(1, int(query.get("anima", ["3"])[0])))
+        except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
         self.handle_public_json(f"{REDEMET_API_URL}/produtos/stsc?anima={anima}&api_key={REDEMET_API_KEY}", "raios STSC/REDEMET")
 
     def fetch_redemet_json(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
-        response = requests.get(
-            f"{REDEMET_API_URL}{path}",
-            params=params,
-            headers={
-                "X-Api-Key": REDEMET_API_KEY,
-                "User-Agent": INMET_HEADERS["User-Agent"],
-                "Accept": "application/json",
-            },
-            timeout=25,
-        )
+        response = requests.get(f"{REDEMET_API_URL}{path}", params=params, headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25)
         response.raise_for_status()
         payload = response.json()
-        if not isinstance(payload, dict) or payload.get("status") is not True:
-            raise ValueError("A REDEMET retornou uma resposta sem dados válidos.")
+        if not isinstance(payload, dict) or payload.get("status") is not True: raise ValueError("A REDEMET retornou uma resposta sem dados válidos.")
         return payload
 
     @staticmethod
     def normalize_redemet_status(value: Any) -> str:
         status = str(value or "cinza").strip().lower()
-        if status in {"g", "green", "verde"}:
-            return "verde"
-        if status in {"y", "yellow", "amarelo"}:
-            return "amarelo"
-        if status in {"r", "red", "vermelho"}:
-            return "vermelho"
+        if status in {"g", "green", "verde"}: return "verde"
+        if status in {"y", "yellow", "amarelo"}: return "amarelo"
+        if status in {"r", "red", "vermelho"}: return "vermelho"
         return "cinza"
 
     def redemet_station_catalog(self) -> list[dict[str, Any]]:
         now_monotonic = time.monotonic()
         cached = redemet_station_catalog_cache.get("data")
-        if cached is not None and now_monotonic - float(redemet_station_catalog_cache.get("saved_at", 0.0)) < REDEMET_STATION_CACHE_SECONDS:
-            return cached
+        if cached is not None and now_monotonic - float(redemet_station_catalog_cache.get("saved_at", 0.0)) < REDEMET_STATION_CACHE_SECONDS: return cached
         payload = self.fetch_redemet_json("/aerodromos/status/pais/BRASIL")
         aerodromes_payload = self.fetch_redemet_json("/aerodromos/", {"pais": "BRASIL"})
         rows = payload.get("data")
-        if not isinstance(rows, list):
-            raise ValueError("Catálogo de aeródromos em formato inesperado.")
-        details = {
-            str(item.get("cod") or "").upper(): item
-            for item in aerodromes_payload.get("data", [])
-            if isinstance(item, dict) and item.get("cod")
-        }
+        if not isinstance(rows, list): raise ValueError("Catálogo de aeródromos em formato inesperado.")
+        details = {str(item.get("cod") or "").upper(): item for item in aerodromes_payload.get("data", []) if isinstance(item, dict) and item.get("cod")}
         stations: list[dict[str, Any]] = []
         seen: set[str] = set()
         for row in rows:
-            if not isinstance(row, list) or len(row) < 5:
-                continue
+            if not isinstance(row, list) or len(row) < 5: continue
             icao = str(row[0] or "").upper().strip()
             latitude = inmet_safe_float(row[2])
             longitude = inmet_safe_float(row[3])
-            if not REDEMET_ICAO_RE.fullmatch(icao) or latitude is None or longitude is None or icao in seen:
-                continue
+            if not REDEMET_ICAO_RE.fullmatch(icao) or latitude is None or longitude is None or icao in seen: continue
             seen.add(icao)
             detail = details.get(icao, {})
             city = str(detail.get("cidade") or "").strip() or None
             city_match = re.search(r"/([A-Z]{2})$", city or "", re.IGNORECASE)
-            stations.append({
-                "icao": icao,
-                "nome": str(detail.get("nome") or row[1] or icao).strip(),
-                "cidade": city,
-                "latitude": latitude,
-                "longitude": longitude,
-                "altitudeMetros": inmet_safe_float(detail.get("altitude_metros")),
-                "status": self.normalize_redemet_status(row[4]),
-                "uf": city_match.group(1).upper() if city_match else None,
-            })
+            stations.append({"icao": icao, "nome": str(detail.get("nome") or row[1] or icao).strip(), "cidade": city, "latitude": latitude, "longitude": longitude, "altitudeMetros": inmet_safe_float(detail.get("altitude_metros")), "status": self.normalize_redemet_status(row[4]), "uf": city_match.group(1).upper() if city_match else None})
         stations.sort(key=lambda station: (station["nome"].casefold(), station["icao"]))
         redemet_station_catalog_cache["saved_at"] = now_monotonic
         redemet_station_catalog_cache["data"] = stations
@@ -1651,72 +1539,33 @@ class Handler(SimpleHTTPRequestHandler):
     def handle_redemet_stations(self, query: dict[str, list[str]] | None = None) -> None:
         try:
             if (query or {}).get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}:
-                redemet_station_catalog_cache["saved_at"] = 0.0
-                redemet_station_catalog_cache["data"] = None
+                redemet_station_catalog_cache["saved_at"] = 0.0; redemet_station_catalog_cache["data"] = None
             stations = self.redemet_station_catalog()
             counts = {status: sum(station["status"] == status for station in stations) for status in ("verde", "amarelo", "vermelho", "cinza")}
-            self.send_json(200, {
-                "provider": "REDEMET / DECEA",
-                "source": "aerodromos/status/pais/BRASIL",
-                "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-                "count": len(stations),
-                "counts": counts,
-                "stations": stations,
-            })
-        except Exception as exc:
-            self.send_json(502, {"error": "Falha ao consultar as estações da REDEMET.", "details": f"{type(exc).__name__}: {exc}"})
+            self.send_json(200, {"provider": "REDEMET / DECEA", "source": "aerodromos/status/pais/BRASIL", "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"), "count": len(stations), "counts": counts, "stations": stations})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar as estações da REDEMET.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_redemet_station(self, icao_code: str) -> None:
-        if not REDEMET_ICAO_RE.fullmatch(icao_code):
-            self.send_json(400, {"error": "Código ICAO inválido."})
-            return
+        if not REDEMET_ICAO_RE.fullmatch(icao_code): self.send_json(400, {"error": "Código ICAO inválido."}); return
         now_monotonic = time.monotonic()
         cached = redemet_station_observation_cache.get(icao_code)
         if cached and now_monotonic - float(cached["saved_at"]) < 60:
-            data = dict(cached["data"])
-            data["cache"] = True
-            self.send_json(200, data)
-            return
+            data = dict(cached["data"]); data["cache"] = True; self.send_json(200, data); return
         try:
             payload = self.fetch_redemet_json("/aerodromos/info", {"localidade": icao_code, "metar": "sim", "taf": "sim"})
             raw = payload.get("data")
-            if not isinstance(raw, dict):
-                raise ValueError("Observação aeronáutica em formato inesperado.")
+            if not isinstance(raw, dict): raise ValueError("Observação aeronáutica em formato inesperado.")
             station = next((item for item in self.redemet_station_catalog() if item["icao"] == icao_code), None)
-            data = {
-                "provider": "REDEMET / DECEA",
-                "officialUrl": f"https://redemet.decea.mil.br/?i=facilidades&p=consulta-mensagem&localidade={icao_code}",
-                "cache": False,
-                "icao": icao_code,
-                "nome": raw.get("nome") or (station or {}).get("nome") or icao_code,
-                "cidade": raw.get("cidade"),
-                "latitude": (station or {}).get("latitude"),
-                "longitude": (station or {}).get("longitude"),
-                "status": (station or {}).get("status", "cinza"),
-                "observedAt": raw.get("data") or raw.get("data_hora"),
-                "temperatura": raw.get("temperatura"),
-                "umidade": raw.get("ur"),
-                "visibilidade": raw.get("visibilidade"),
-                "teto": raw.get("teto"),
-                "ceu": raw.get("ceu"),
-                "tempo": raw.get("condicoes_tempo"),
-                "vento": raw.get("vento"),
-                "metar": raw.get("metar"),
-                "taf": raw.get("taf"),
-            }
+            data = {"provider": "REDEMET / DECEA", "officialUrl": f"https://redemet.decea.mil.br/?i=facilidades&p=consulta-mensagem&localidade={icao_code}", "cache": False, "icao": icao_code, "nome": raw.get("nome") or (station or {}).get("nome") or icao_code, "cidade": raw.get("cidade"), "latitude": (station or {}).get("latitude"), "longitude": (station or {}).get("longitude"), "status": (station or {}).get("status", "cinza"), "observedAt": raw.get("data") or raw.get("data_hora"), "temperatura": raw.get("temperatura"), "umidade": raw.get("ur"), "visibilidade": raw.get("visibilidade"), "teto": raw.get("teto"), "ceu": raw.get("ceu"), "tempo": raw.get("condicoes_tempo"), "vento": raw.get("vento"), "metar": raw.get("metar"), "taf": raw.get("taf")}
             redemet_station_observation_cache[icao_code] = {"saved_at": now_monotonic, "data": data}
-            while len(redemet_station_observation_cache) > 200:
-                redemet_station_observation_cache.pop(next(iter(redemet_station_observation_cache)))
+            while len(redemet_station_observation_cache) > 200: redemet_station_observation_cache.pop(next(iter(redemet_station_observation_cache)))
             self.send_json(200, data)
-        except Exception as exc:
-            self.send_json(502, {"error": f"Falha ao consultar {icao_code} na REDEMET.", "details": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc: self.send_json(502, {"error": f"Falha ao consultar {icao_code} na REDEMET.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_xweather_lightning(self, query: dict[str, list[str]]) -> None:
         client_id = os.getenv("XWEATHER_CLIENT_ID", "").strip()
         client_secret = os.getenv("XWEATHER_CLIENT_SECRET", "").strip()
-        if not client_id or not client_secret:
-            self.send_json(503, {"error": "Configure XWEATHER_CLIENT_ID e XWEATHER_CLIENT_SECRET."})
-            return
+        if not client_id or not client_secret: self.send_json(503, {"error": "Configure XWEATHER_CLIENT_ID e XWEATHER_CLIENT_SECRET."}); return
         try:
             south, west = float(query.get("south", ["-34"])[0]), float(query.get("west", ["-74"])[0])
             north, east = float(query.get("north", ["6"])[0]), float(query.get("east", ["-34"])[0])
@@ -1738,17 +1587,14 @@ class Handler(SimpleHTTPRequestHandler):
                     lon += lon_step
                 lat += lat_step
             self.send_json(200, {"strikes": list(points.values()), "queries": len(points)})
-        except Exception as exc:
-            self.send_json(502, {"error": "Falha ao consultar raios Xweather.", "details": str(exc)})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar raios Xweather.", "details": str(exc)})
 
     def handle_synoptic_meta(self, query: dict[str, list[str]] | None = None) -> None:
         try:
             refresh = (query or {}).get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
             metadata = ensure_synoptic_chart(force=refresh)
             self.send_json(200, metadata)
-        except Exception as exc:
-            print(f"Erro ao gerar carta sinótica: {exc}")
-            self.send_json(502, {"error": "Falha ao gerar a carta sinótica.", "details": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao gerar a carta sinótica.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_synoptic_png(self) -> None:
         try:
@@ -1761,60 +1607,39 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Disposition", 'inline; filename="carta-sinotica-inmet.png"')
             self.end_headers()
             self.wfile.write(body)
-        except Exception as exc:
-            print(f"Erro ao servir carta sinótica oficial: {exc}")
-            self.send_json(502, {"error": "Falha ao carregar a carta sinótica oficial.", "details": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao carregar a carta sinótica oficial.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_synoptic_svg(self) -> None:
         self.send_response(302)
         self.send_header("Location", "/api/sinotica/chart.png")
         self.end_headers()
-        return
 
     def handle_inmet_stations(self) -> None:
         try:
             data = fetch_inmet_json(INMET_STATIONS_URL, timeout=25)
-            if not isinstance(data, list):
-                self.send_json(502, {"error": "Catálogo INMET em formato inesperado."})
-                return
+            if not isinstance(data, list): self.send_json(502, {"error": "Catálogo INMET em formato inesperado."}); return
             self.send_json(200, data)
-        except Exception as exc:
-            self.send_json(
-                502,
-                {
-                    "error": "Falha ao consultar o catálogo do INMET.",
-                    "details": f"{type(exc).__name__}: {exc}",
-                },
-            )
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar o catálogo do INMET.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_inmet_observation(self, station_code: str) -> None:
-        if not INMET_STATION_CODE_RE.fullmatch(station_code):
-            self.send_json(400, {"error": "Código de estação inválido."})
-            return
+        if not INMET_STATION_CODE_RE.fullmatch(station_code): self.send_json(400, {"error": "Código de estação inválido."}); return
         cached = inmet_observation_cache.get(station_code)
         now_monotonic = time.monotonic()
         if cached and now_monotonic - cached["saved_at"] < INMET_CACHE_SECONDS:
-            response = dict(cached["data"])
-            response["cache"] = True
-            self.send_json(200, response)
-            return
+            response = dict(cached["data"]); response["cache"] = True; self.send_json(200, response); return
         try:
             data = get_latest_inmet_observation(station_code)
             data["cache"] = False
             inmet_observation_cache[station_code] = {"saved_at": now_monotonic, "data": data}
             self.send_json(200, data)
-        except requests.exceptions.Timeout as exc:
-            self.send_json(504, {"error": "O INMET demorou demais para responder.", "details": str(exc)})
-        except requests.exceptions.RequestException as exc:
-            self.send_json(502, {"error": "Falha ao consultar observação do INMET.", "details": str(exc)})
-        except Exception as exc:
-            self.send_json(502, {"error": "Erro ao interpretar observação do INMET.", "details": f"{type(exc).__name__}: {exc}"})
+        except requests.exceptions.Timeout as exc: self.send_json(504, {"error": "O INMET demorou demais para responder.", "details": str(exc)})
+        except requests.exceptions.RequestException as exc: self.send_json(502, {"error": "Falha ao consultar observação do INMET.", "details": str(exc)})
+        except Exception as exc: self.send_json(502, {"error": "Erro ao interpretar observação do INMET.", "details": f"{type(exc).__name__}: {exc}"})
 
     def do_POST(self) -> None:
         path = self.path.lower().strip()
         if path not in {"/api/gfs/cells", "/api/wrf/cells", "/api/ecmwf/cells", "/api/meteoblue/cells"}:
-            self.send_json(404, {"error": f"Rota invalida: {self.path}"})
-            return
+            self.send_json(404, {"error": f"Rota invalida: {self.path}"}); return
         try:
             payload = self.read_json_body()
             bounds = self.parse_bounds(payload)
@@ -1822,21 +1647,13 @@ class Handler(SimpleHTTPRequestHandler):
             grid_x = max(1, min(260, int(payload.get("gridX", 64))))
             grid_y = max(1, min(240, int(payload.get("gridY", 63))))
             wrf_model = str(payload.get("wrfModel", "icon")).lower()
-            if wrf_model not in WRF_MODEL_OUTPUTS:
-                wrf_model = "icon"
-            print(f"Processando {path}: hours={hours}, grid={grid_x}x{grid_y}")
+            if wrf_model not in WRF_MODEL_OUTPUTS: wrf_model = "icon"
             response_extra: dict[str, Any] = {}
             if path == "/api/gfs/cells":
                 try:
                     cells = build_gfs_cells(bounds, hours, grid_x, grid_y)
-                    response_extra = {
-                        "gridX": grid_x,
-                        "gridY": grid_y,
-                        "source": "GFS_REFLECTIVITY",
-                        "model": "gfs_direct",
-                    }
+                    response_extra = {"gridX": grid_x, "gridY": grid_y, "source": "GFS_REFLECTIVITY", "model": "gfs_direct"}
                 except Exception as exc:
-                    print(f"Falha no GFS direto, usando WRF como fallback: {exc}")
                     wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, "gfs")
                     cells = wrf_payload["cells"]
                     response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
@@ -1844,42 +1661,29 @@ class Handler(SimpleHTTPRequestHandler):
                 wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
                 cells = wrf_payload["cells"]
                 response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
-            elif path == "/api/meteoblue/cells":
-                cells = build_meteoblue_cells(bounds, hours, grid_x, grid_y)
+            elif path == "/api/meteoblue/cells": cells = build_meteoblue_cells(bounds, hours, grid_x, grid_y)
             else:
                 wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, "ecmwf")
                 cells = wrf_payload["cells"]
                 response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
             self.send_json(200, {"cells": cells, "hours": hours, "stepUsed": hours, **response_extra})
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            self.send_json(400, {"error": f"Payload invalido: {exc}"})
-        except ExternalAPIError as exc:
-            print(f"Erro em API externa: {exc}")
-            self.send_json(502, {"error": str(exc)})
-        except WRFDomainError as exc:
-            print(f"Dominio WRF insuficiente: {exc}")
-            self.send_json(409, {"error": str(exc)})
-        except FileNotFoundError as exc:
-            print(f"Arquivos WRF ausentes: {exc}")
-            self.send_json(409, {"error": str(exc)})
-        except Exception as exc:
-            print(f"Erro interno: {exc}")
-            self.send_json(500, {"error": str(exc)})
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc: self.send_json(400, {"error": f"Payload invalido: {exc}"})
+        except ExternalAPIError as exc: self.send_json(502, {"error": str(exc)})
+        except WRFDomainError as exc: self.send_json(409, {"error": str(exc)})
+        except FileNotFoundError as exc: self.send_json(409, {"error": str(exc)})
+        except Exception as exc: self.send_json(500, {"error": str(exc)})
 
     def read_json_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
-        if length <= 0:
-            raise ValueError("corpo vazio")
+        if length <= 0: raise ValueError("corpo vazio")
         body = self.rfile.read(length).decode("utf-8")
         payload = json.loads(body)
-        if not isinstance(payload, dict):
-            raise ValueError("JSON precisa ser um objeto")
+        if not isinstance(payload, dict): raise ValueError("JSON precisa ser um objeto")
         return payload
 
     def parse_bounds(self, payload: dict[str, Any]) -> dict[str, float]:
         bounds = {key: float(payload[key]) for key in ("south", "west", "north", "east")}
-        if bounds["south"] >= bounds["north"] or bounds["west"] >= bounds["east"]:
-            raise ValueError("bounds invalidos")
+        if bounds["south"] >= bounds["north"] or bounds["west"] >= bounds["east"]: raise ValueError("bounds invalidos")
         return bounds
 
     def send_json(self, status_code: int, payload: Any) -> None:
@@ -1890,46 +1694,16 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-
 def main() -> None:
-    # Inicia a thread de keep-alive exatamente uma vez
-    threading.Thread(
-        target=render_keep_alive,
-        daemon=True,
-        name="render-keep-alive"
-    ).start()
-
+    threading.Thread(target=render_keep_alive, daemon=True, name='render-keep-alive').start()
     server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), Handler)
     print("\n" + "=" * 80)
     print("SERVIDOR SIDERAL RODANDO")
     print(f"  URL base: http://{DEFAULT_HOST}:{DEFAULT_PORT}/")
-    print("  Health check: /api/health")
-    print("  Endpoints GET:")
-    print("    - /api/ipmet/meta")
-    print("    - /api/ipmet/wms")
-    print("    - /api/rainviewer/meta")
-    print("    - /api/redemet/radar")
-    print("    - /api/redemet/stsc")
-    print("    - /api/redemet/estacoes")
-    print("    - /api/redemet/estacao/{icao}")
-    print("    - /api/inmet/estacoes")
-    print("    - /api/inmet/observacao/{codigo}")
-    print("    - /api/sinotica/meta")
-    print("    - /api/sinotica/chart.png")
-    print("  Endpoints POST:")
-    print("    - /api/gfs/cells")
-    print("    - /api/wrf/cells")
-    print("    - /api/ecmwf/cells")
-    print("    - /api/meteoblue/cells")
     print("=" * 80 + "\n")
-
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nServidor parado.")
-    finally:
-        server.server_close()
-
+    try: server.serve_forever()
+    except KeyboardInterrupt: print("\nServidor parado.")
+    finally: server.server_close()
 
 if __name__ == "__main__":
     main()
