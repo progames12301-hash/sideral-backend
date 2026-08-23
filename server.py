@@ -792,7 +792,7 @@ def _ecmwf_api_client(modules: dict[str, Any]) -> Any:
     api_email = os.environ.get("ECMWF_API_EMAIL", "").strip()
     if not api_key or not api_email:
         raise RuntimeError(
-            "ECMWF_API_KEY e ECMWF_API_EMAIL não estão configurados no Render."
+            "Credenciais ECMWF não configuradas no servidor."
         )
     return modules["ECMWFService"](
         "mars",
@@ -801,6 +801,31 @@ def _ecmwf_api_client(modules: dict[str, Any]) -> Any:
         email=api_email,
     )
 
+
+
+def _sanitize_server_error(value: Any) -> str:
+    """Remove e-mail, chaves e credenciais antes de registrar erros no Render."""
+    text = str(value or "")
+    for env_name in ("ECMWF_API_KEY", "ECMWF_API_EMAIL"):
+        secret = os.environ.get(env_name, "").strip()
+        if secret:
+            text = text.replace(secret, "[REDACTED]")
+    text = re.sub(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+        "[EMAIL-REDACTED]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(key|token|secret|password)\s*[:=]\s*['\"]?[^,'\"\s}]+",
+        r"\1=[REDACTED]",
+        text,
+    )
+    return text[:1200]
+
+
+def _log_sounding_error(prefix: str, exc: BaseException) -> None:
+    safe = _sanitize_server_error(exc)
+    print(f"[SKEWT] {prefix}: {type(exc).__name__}: {safe}")
 
 def _safe_float(value: Any) -> float | None:
     try:
@@ -1571,13 +1596,13 @@ class Handler(SimpleHTTPRequestHandler):
             fh = int(query.get("fh", ["0"])[0])
 
             if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
-                self.send_json(400, {"error": "Latitude/longitude inválidas."}); return
+                self.send_json(400, {"error": "Latitude/longitude inválidas.", "code": "BAD_COORDINATES"}); return
             if run_requested not in {"latest", "00", "06", "12", "18"}:
-                self.send_json(400, {"error": "Run inválida. Use latest, 00, 06, 12 ou 18."}); return
+                self.send_json(400, {"error": "Run inválida. Use latest, 00, 06, 12 ou 18.", "code": "BAD_RUN"}); return
             if fh < 0 or fh > 144 or fh % 3 != 0:
-                self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas."}); return
+                self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas.", "code": "BAD_FORECAST_HOUR"}); return
 
-            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v5-g010")
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v6-g010-private")
             cached = sounding_cache.get(cache_key)
             if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
                 payload = dict(cached["data"])
@@ -1586,8 +1611,9 @@ class Handler(SimpleHTTPRequestHandler):
 
             modules = _ecmwf_runtime_modules()
             client = _ecmwf_api_client(modules)
-            last_error: Exception | None = None
+
             payload = None
+            last_error: Exception | None = None
             for run_dt in _ecmwf_run_candidates(run_requested):
                 try:
                     pressure_path, surface_path, orography_path = _ecmwf_retrieve_grib(
@@ -1599,18 +1625,42 @@ class Handler(SimpleHTTPRequestHandler):
                     break
                 except Exception as exc:
                     last_error = exc
+                    _log_sounding_error(f"falha na rodada {run_dt:%Y%m%d_%H} F{fh:03d}", exc)
                     if run_requested != "latest":
-                        raise
+                        break
+
             if payload is None:
-                raise RuntimeError(
-                    f"Nenhuma rodada ECMWF disponível pela API para esta solicitação: {last_error}"
+                if last_error is not None:
+                    _log_sounding_error("nenhuma rodada utilizável", last_error)
+                self.send_json(
+                    502,
+                    {
+                        "error": "Não foi possível obter o perfil ECMWF agora. Tente outra rodada ou novamente em alguns minutos.",
+                        "code": "ECMWF_RETRIEVAL_FAILED",
+                    },
                 )
+                return
+
             sounding_cache[cache_key] = {"saved_at": time.monotonic(), "data": payload}
             self.send_json(200, payload)
+
         except RuntimeError as exc:
-            self.send_json(502, {"error": str(exc)})
+            _log_sounding_error("erro de dependência/dados", exc)
+            public_message = "O backend do Skew-T não conseguiu preparar os dados meteorológicos."
+            if "Credenciais ECMWF" in str(exc):
+                public_message = "O acesso à ECMWF não está configurado corretamente no servidor."
+            elif "Dependências do Skew-T" in str(exc):
+                public_message = "O backend do Skew-T está com uma dependência indisponível."
+            self.send_json(502, {"error": public_message, "code": "SOUNDING_BACKEND_ERROR"})
         except Exception as exc:
-            self.send_json(500, {"error": f"Erro interno no ECMWF/SHARPpy: {type(exc).__name__}: {exc}"})
+            _log_sounding_error("erro interno", exc)
+            self.send_json(
+                500,
+                {
+                    "error": "Erro interno ao processar o perfil meteorológico.",
+                    "code": "SOUNDING_INTERNAL",
+                },
+            )
 
     def handle_ipmet_meta(self) -> None:
         try:
