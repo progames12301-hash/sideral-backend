@@ -1,0 +1,319 @@
+name: WRF 4 km - PROXIMO DIA AUTOMATICO
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["WRF 4 km - REFL NATIVO - USE ESTE"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  next-day:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout wrf-runner atual
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Ler a rodada nativa que acabou de terminar
+        run: |
+          set -euxo pipefail
+          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?nextday=${GITHUB_RUN_ID}"
+          curl -fsSL --retry 6 --retry-delay 5 --connect-timeout 10 --max-time 60 "$URL" -o /tmp/source-metadata.json
+          python - <<'PY'
+          import json, os
+          d = json.load(open('/tmp/source-metadata.json', encoding='utf-8'))
+          assert d.get('reflectivitySource') == 'REFL_10CM_NATIVE', d
+          assert d.get('frameCount', 0) >= 3, d
+          cycle = str(d['runCycle']).replace('Z', '')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
+              f.write(f"FORCE_RUN_DATE={d['runDate']}\n")
+              f.write(f"FORCE_RUN_CYCLE={cycle}\n")
+          print('Rodada encadeada:', d['runDate'], d['runCycle'])
+          PY
+
+      - name: Preparar script WRF para F000-F042
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('wrf/run_gfs_test.sh')
+          text = path.read_text(encoding='utf-8')
+          if 'do_radar_ref = 1' not in text:
+              raise SystemExit('do_radar_ref=1 nao encontrado no wrf-runner')
+
+          # Usa exatamente a mesma rodada que acabou de gerar o produto curto.
+          selection = r'''log "Usando a mesma rodada GFS para o proximo dia"
+          RUN_DATE="${FORCE_RUN_DATE:?FORCE_RUN_DATE ausente}"
+          RUN_CYCLE="${FORCE_RUN_CYCLE:?FORCE_RUN_CYCLE ausente}"
+          BASE_URL="https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.${RUN_DATE}/${RUN_CYCLE}/atmos"
+          echo "Rodada fixa: ${RUN_DATE} ${RUN_CYCLE}Z"
+
+          # F042 pode terminar de publicar depois do F006. Aguarda ate 90 minutos.
+          F042_URL="$BASE_URL/gfs.t${RUN_CYCLE}z.pgrb2.0p25.f042"
+          READY=0
+          for TRY in $(seq 1 18); do
+            if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$F042_URL"; then
+              READY=1
+              echo "F042 disponivel na tentativa $TRY"
+              break
+            fi
+            echo "F042 ainda nao disponivel; aguardando 5 minutos ($TRY/18)"
+            sleep 300
+          done
+          if [[ "$READY" -ne 1 ]]; then
+            echo "F042 nao ficou disponivel para ${RUN_DATE} ${RUN_CYCLE}Z dentro da janela de espera." >&2
+            exit 22
+          fi
+          '''
+          pattern = re.compile(
+              r'log "Escolhendo rodada GFS mais recente com F006 disponível".*?'
+              r'(?=echo "RUN_DATE=\$RUN_DATE")',
+              re.S,
+          )
+          text, count = pattern.subn(selection + '\n', text, count=1)
+          if count != 1:
+              raise SystemExit(f'Nao foi possivel fixar a rodada GFS: {count}')
+
+          # A maior janela necessaria para obter 00/03/.../21 BRT do proximo dia
+          # em qualquer ciclo GFS e F042.
+          text = text.replace('+6 hours', '+42 hours')
+          text = text.replace('run_hours = 6,', 'run_hours = 42,')
+
+          download = r'''log "Baixando GFS F000-F042 de 3 em 3 horas"
+          mkdir -p "$WORK/gfs"
+          for H in $(seq 0 3 42); do
+            printf -v FH "%03d" "$H"
+            FILE="gfs.t${RUN_CYCLE}z.pgrb2.0p25.f${FH}"
+            curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 900 \
+              -o "$WORK/gfs/$FILE" "$BASE_URL/$FILE"
+            ls -lh "$WORK/gfs/$FILE"
+          done
+          '''
+          pattern = re.compile(
+              r'log "Baixando GFS F000 F003 F006".*?done\n',
+              re.S,
+          )
+          text, count = pattern.subn(download + '\n', text, count=1)
+          if count != 1:
+              raise SystemExit(f'Nao foi possivel ampliar downloads GFS: {count}')
+
+          # Corrige a raiz do pacote geografico oficial.
+          geog = r'''log "Baixando e validando geografia WPS low-res"
+          rm -rf "$WORK/geog_extract" "$WORK/WPS_GEOG"
+          mkdir -p "$WORK/geog_extract"
+          curl -fL --retry 3 --connect-timeout 20 --max-time 900 \
+            -o "$WORK/geog.tar.gz" \
+            https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
+          tar -xzf "$WORK/geog.tar.gz" -C "$WORK/geog_extract"
+          TOPO_INDEX="$(find "$WORK/geog_extract" -type f -path '*/topo_gmted2010_5m/index' -print -quit)"
+          test -n "$TOPO_INDEX" || { echo "topo_gmted2010_5m ausente" >&2; exit 31; }
+          GEOG_ROOT="$(dirname "$(dirname "$TOPO_INDEX")")"
+          mkdir -p "$WORK/WPS_GEOG"
+          cp -a "$GEOG_ROOT/." "$WORK/WPS_GEOG/"
+          REQUIRED_GEOG=(topo_gmted2010_5m modis_landuse_20class_5m_with_lakes soiltype_top_5m soiltype_bot_5m greenfrac_fpar_modis_5m soiltemp_1deg albedo_modis maxsnowalb_modis lai_modis_10m)
+          for DATASET in "${REQUIRED_GEOG[@]}"; do
+            test -f "$WORK/WPS_GEOG/$DATASET/index" || { echo "GEOG AUSENTE: $DATASET" >&2; exit 32; }
+          done
+          echo "WPS_GEOG VALIDADO COMPLETAMENTE"
+          '''
+          pattern = re.compile(
+              r'log "Baixando e extraindo geografia WPS low-res".*?'
+              r'(?=cat > "\$WORK/namelist\.wps" <<EOF)',
+              re.S,
+          )
+          text, count = pattern.subn(geog + '\n\n', text, count=1)
+          if count != 1:
+              raise SystemExit(f'Patch WPS_GEOG nao aplicado: {count}')
+
+          links = r'''log "Preparando nomes GRIBFILE F000-F042"
+          LETTERS=(AAA AAB AAC AAD AAE AAF AAG AAH AAI AAJ AAK AAL AAM AAN AAO)
+          IDX=0
+          for H in $(seq 0 3 42); do
+            printf -v FH "%03d" "$H"
+            FILE="gfs.t${RUN_CYCLE}z.pgrb2.0p25.f${FH}"
+            ln -sf "gfs/$FILE" "$WORK/GRIBFILE.${LETTERS[$IDX]}"
+            IDX=$((IDX + 1))
+          done
+          '''
+          pattern = re.compile(
+              r'log "Preparando nomes GRIBFILE".*?'
+              r'(?=log "Ajustando permissoes do volume para o container DTC")',
+              re.S,
+          )
+          text, count = pattern.subn(links + '\n', text, count=1)
+          if count != 1:
+              raise SystemExit(f'Links GRIBFILE nao ampliados: {count}')
+
+          text = text.replace(
+              'mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe',
+              'mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe',
+          )
+          text = text.replace(
+              'mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe',
+              'mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe',
+          )
+          text = text.replace('WRF 4 KM F000-F006', 'WRF 4 KM F000-F042')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          grep -q "run_hours = 42" wrf/run_gfs_test.sh
+          grep -q "do_radar_ref = 1" wrf/run_gfs_test.sh
+          grep -q "F000-F042" wrf/run_gfs_test.sh
+          grep -q -- "--oversubscribe --bind-to none -np 4" wrf/run_gfs_test.sh
+
+      - name: Liberar espaco
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          df -h
+
+      - name: Baixar container WRF WPS
+        run: |
+          set -euxo pipefail
+          docker pull dtcenter/wps_wrf:latest
+
+      - name: Rodar WRF 4 km ate F042
+        env:
+          FORCE_RUN_DATE: ${{ env.FORCE_RUN_DATE }}
+          FORCE_RUN_CYCLE: ${{ env.FORCE_RUN_CYCLE }}
+        run: |
+          set -euxo pipefail
+          chmod +x wrf/run_gfs_test.sh
+          ./wrf/run_gfs_test.sh
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar extrator
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy xarray netCDF4
+
+      - name: Extrair REFL_10CM e selecionar somente o proximo dia BRT
+        run: |
+          set -euxo pipefail
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py \
+            --run-dir wrf_work/run \
+            --run-env wrf_diagnostics/run.env \
+            --output-dir wrf_publish \
+            --grid-x 220 \
+            --grid-y 180
+          python - <<'PY'
+          import json
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          root = Path('wrf_publish')
+          meta_path = root / 'metadata.json'
+          meta = json.loads(meta_path.read_text(encoding='utf-8'))
+          assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', meta
+
+          brt = ZoneInfo('America/Sao_Paulo')
+          init_utc = datetime.fromisoformat(meta['initTime'].replace('Z', '+00:00'))
+          target_date = init_utc.astimezone(brt).date() + timedelta(days=1)
+
+          keep = []
+          keep_files = set()
+          for frame in meta['frames']:
+              valid = datetime.fromisoformat(frame['validTime'].replace('Z', '+00:00')).astimezone(brt)
+              if valid.date() == target_date:
+                  frame['index'] = len(keep)
+                  frame['localValidTime'] = valid.isoformat()
+                  keep.append(frame)
+                  keep_files.add(frame['file'])
+
+          if len(keep) != 8:
+              raise SystemExit(f'Esperados 8 horarios do proximo dia, encontrados {len(keep)}: {keep}')
+
+          for path in (root / 'gfs').glob('*.json.gz'):
+              rel = path.relative_to(root).as_posix()
+              if rel not in keep_files:
+                  path.unlink()
+
+          meta['frames'] = keep
+          meta['frameCount'] = len(keep)
+          meta['forecastLocalDate'] = target_date.isoformat()
+          meta['timezone'] = 'America/Sao_Paulo'
+          meta['scope'] = 'next_local_day'
+          meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+
+          print('PROXIMO DIA:', target_date)
+          for f in keep:
+              print(f"F{int(f['forecastHour']):03d}", f['validTime'], '=>', f['localValidTime'])
+          PY
+
+      - name: Publicar proximo dia em wrf-data
+        run: |
+          set -euxo pipefail
+          git config user.name "sideral-wrf-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/sideral-wrf-data
+          git worktree add --detach /tmp/sideral-wrf-data
+          cd /tmp/sideral-wrf-data
+          git checkout --orphan wrf-data-next
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
+          cat > README.md <<'EOF'
+          # Sideral WRF Data
+          Previsao WRF Sul 4 km do proximo dia em horario de Brasilia.
+          Refletividade: REFL_10CM nativo do WRF.
+          EOF
+          git add .
+          git commit -m "Publica WRF 4 km do proximo dia [skip render]"
+          git push --force origin HEAD:wrf-data
+
+      - name: Confirmar publicacao do proximo dia
+        run: |
+          set -euxo pipefail
+          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?nextdaycheck=${GITHUB_RUN_ID}"
+          for N in $(seq 1 12); do
+            if curl -fsSL --connect-timeout 10 --max-time 30 "$URL-$N" -o /tmp/remote.json; then
+              if python - <<'PY'
+          import json
+          d = json.load(open('/tmp/remote.json', encoding='utf-8'))
+          ok = (
+              d.get('scope') == 'next_local_day'
+              and d.get('timezone') == 'America/Sao_Paulo'
+              and d.get('frameCount') == 8
+              and d.get('reflectivitySource') == 'REFL_10CM_NATIVE'
+              and all(f.get('reflectivitySource') == 'REFL_10CM_NATIVE' for f in d.get('frames', []))
+          )
+          print('metadata remoto:', d)
+          raise SystemExit(0 if ok else 1)
+          PY
+              then
+                echo "PROXIMO DIA WRF PUBLICADO COM SUCESSO"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          exit 41
+
+      - name: Salvar diagnosticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrf-next-day-diagnostics
+          path: |
+            wrf_diagnostics/
+            wrf_publish/
+          retention-days: 7
+          if-no-files-found: warn
