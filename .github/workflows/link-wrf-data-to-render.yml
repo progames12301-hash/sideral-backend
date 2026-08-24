@@ -7,7 +7,7 @@ on:
     paths:
       - ".github/workflows/link-wrf-data-to-render.yml"
   workflow_run:
-    workflows: ["WRF 4 km - PUBLICAR JSON V5 - USE ESTE"]
+    workflows: ["WRF 4 km - REFL NATIVO - USE ESTE"]
     types: [completed]
 
 permissions:
@@ -36,8 +36,10 @@ jobs:
           d=json.load(open('/tmp/wrf-metadata.json', encoding='utf-8'))
           assert d.get('schema') == 'sideral-wrf-metadata-v1', d
           assert d.get('frameCount', 0) >= 3, d
-          print('WRF remoto confirmado:', d.get('initTime'), d.get('frameCount'))
-          print('Frames:', [(x.get('forecastHour'), x.get('validTime')) for x in d.get('frames', [])])
+          assert d.get('reflectivitySource') == 'REFL_10CM_NATIVE', d
+          assert all(x.get('reflectivitySource') == 'REFL_10CM_NATIVE' for x in d.get('frames', [])), d
+          print('WRF remoto nativo confirmado:', d.get('initTime'), d.get('frameCount'))
+          print('Frames:', [(x.get('forecastHour'), x.get('validTime'), x.get('reflectivityStats')) for x in d.get('frames', [])])
           PY
 
       - name: Obter patch da branch wrf-runner
@@ -86,6 +88,6 @@ jobs:
           git config user.name "sideral-wrf-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add server.py
-          git commit -m "Liga server.py aos dados WRF 4 km do GitHub"
+          git commit -m "Liga server.py aos dados WRF 4 km nativos do GitHub"
           git push origin main
-          echo "server.py atualizado. O Render pode iniciar o deploy automatico agora."
+          echo "server.py validado com REFL_10CM nativo."
