@@ -7,7 +7,7 @@ on:
     paths:
       - ".github/workflows/link-wrf-data-to-render.yml"
   workflow_run:
-    workflows: ["WRF 4 km - REFL NATIVO - USE ESTE"]
+    workflows: ["WRF 4 km - REFL NATIVO - USE ESTE", "WRF 4 km - PROXIMO DIA AUTOMATICO"]
     types: [completed]
 
 permissions:
