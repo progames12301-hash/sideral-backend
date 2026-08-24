@@ -35,6 +35,82 @@ jobs:
           grep -q "00Z/06Z/12Z/18Z" wrf/run_gfs_test.sh
           echo "SCRIPT CORRIGIDO CONFIRMADO"
 
+      - name: Corrigir e validar layout WPS_GEOG
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('wrf/run_gfs_test.sh')
+          text = path.read_text(encoding='utf-8')
+
+          replacement = r'''log "Baixando e extraindo geografia WPS low-res"
+          rm -rf "$WORK/geog_extract" "$WORK/WPS_GEOG"
+          mkdir -p "$WORK/geog_extract"
+          curl -fL --retry 3 --connect-timeout 20 --max-time 900 \
+            -o "$WORK/geog.tar.gz" \
+            https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
+
+          # O TAR oficial normalmente contem a propria pasta WPS_GEOG. Em vez de
+          # assumir o nivel de diretorio, encontramos a raiz real pelo dataset
+          # topografico obrigatorio e copiamos o conteudo para /work/WPS_GEOG.
+          tar -xzf "$WORK/geog.tar.gz" -C "$WORK/geog_extract"
+          TOPO_INDEX="$(find "$WORK/geog_extract" -type f -path '*/topo_gmted2010_5m/index' -print -quit)"
+          if [[ -z "$TOPO_INDEX" ]]; then
+            echo "ERRO: topo_gmted2010_5m/index nao foi encontrado dentro do pacote geografico." >&2
+            find "$WORK/geog_extract" -maxdepth 3 -type d | sort | sed -n '1,160p' >&2
+            exit 31
+          fi
+          GEOG_ROOT="$(dirname "$(dirname "$TOPO_INDEX")")"
+          echo "Raiz geografica detectada: $GEOG_ROOT"
+          mkdir -p "$WORK/WPS_GEOG"
+          cp -a "$GEOG_ROOT/." "$WORK/WPS_GEOG/"
+
+          # Valida de uma vez os campos obrigatorios usados pela configuracao lowres.
+          REQUIRED_GEOG=(
+            topo_gmted2010_5m
+            modis_landuse_20class_5m_with_lakes
+            soiltype_top_5m
+            soiltype_bot_5m
+            greenfrac_fpar_modis_5m
+            soiltemp_1deg
+            albedo_modis
+            maxsnowalb_modis
+            lai_modis_10m
+          )
+          MISSING=0
+          for DATASET in "${REQUIRED_GEOG[@]}"; do
+            if [[ -f "$WORK/WPS_GEOG/$DATASET/index" ]]; then
+              echo "GEOG OK: $DATASET"
+            else
+              echo "GEOG AUSENTE: $DATASET" >&2
+              MISSING=1
+            fi
+          done
+          if [[ "$MISSING" -ne 0 ]]; then
+            echo "ERRO: pacote geografico incompleto para este namelist." >&2
+            find "$WORK/WPS_GEOG" -maxdepth 2 -type f -name index | sort >&2
+            exit 32
+          fi
+          find "$WORK/WPS_GEOG" -maxdepth 2 -type f -name index | sort | tee "$DIAG/geog-indexes.txt"
+          echo "WPS_GEOG VALIDADO COMPLETAMENTE"
+          '''
+
+          pattern = re.compile(
+              r'log "Baixando e extraindo geografia WPS low-res".*?'
+              r'(?=cat > "\$WORK/namelist\.wps" <<EOF)',
+              re.S,
+          )
+          patched, count = pattern.subn(replacement + '\n\n', text, count=1)
+          if count != 1:
+              raise SystemExit(f'Nao foi possivel aplicar patch WPS_GEOG; substituicoes={count}')
+          path.write_text(patched, encoding='utf-8')
+          PY
+          grep -q "WPS_GEOG VALIDADO COMPLETAMENTE" wrf/run_gfs_test.sh
+          grep -q "GEOG_ROOT" wrf/run_gfs_test.sh
+          echo "PATCH WPS_GEOG APLICADO"
+
       - name: Liberar espaco do runner
         run: |
           set -euxo pipefail
