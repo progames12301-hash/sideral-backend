@@ -54,7 +54,7 @@ jobs:
             echo "=== EXECUTAVEIS ==="
             find / -type f \( -name wrf.exe -o -name real.exe -o -name geogrid.exe -o -name ungrib.exe -o -name metgrid.exe \) 2>/dev/null | sort
             echo "=== DIRETORIOS WRF/WPS ==="
-            find / -maxdepth 3 -type d \( -iname "*wrf*" -o -iname "*wps*" \) 2>/dev/null | sort | head -200
+            find / -maxdepth 3 -type d \( -iname "*wrf*" -o -iname "*wps*" \) 2>/dev/null | sort
           ' | tee diagnostics/wrf-container.txt
 
       - name: Testar pacote geografico WPS de baixa resolucao
@@ -65,7 +65,10 @@ jobs:
             -o diagnostics/geog/geog_low_res_mandatory.tar.gz \
             https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
           ls -lh diagnostics/geog/geog_low_res_mandatory.tar.gz
-          tar -tzf diagnostics/geog/geog_low_res_mandatory.tar.gz | head -100 > diagnostics/geog/geog-files.txt
+          tar -tzf diagnostics/geog/geog_low_res_mandatory.tar.gz > diagnostics/geog/geog-all-files.txt
+          sed -n '1,100p' diagnostics/geog/geog-all-files.txt > diagnostics/geog/geog-files.txt
+          echo "=== PRIMEIROS 100 ARQUIVOS DO PACOTE ==="
+          cat diagnostics/geog/geog-files.txt
           du -sh diagnostics/geog
           df -h
 
