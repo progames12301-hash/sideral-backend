@@ -1,4 +1,4 @@
-name: WRF 4 km - Bootstrap
+name: WRF 4 km - Bootstrap V2
 
 on:
   workflow_dispatch:
@@ -8,13 +8,18 @@ permissions:
 
 jobs:
   bootstrap:
-    name: Verificar ambiente WRF/WPS
+    name: Verificar ambiente WRF/WPS - V2
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Confirmar versao do workflow
+        run: |
+          echo "SIDERAL WRF BOOTSTRAP V2"
+          echo "Esta versao NAO usa tar | head."
 
       - name: Recursos do runner
         run: |
@@ -75,12 +80,12 @@ jobs:
       - name: Resumo
         if: always()
         run: |
-          echo "Bootstrap concluido. O proximo passo sera montar o dominio Sul do Brasil em 4 km e testar GFS F000-F006."
+          echo "Bootstrap V2 concluido. O proximo passo sera montar o dominio Sul do Brasil em 4 km e testar GFS para previsao de amanha."
 
       - name: Salvar diagnosticos
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wrf-bootstrap-diagnostics
+          name: wrf-bootstrap-v2-diagnostics
           path: diagnostics/
           retention-days: 7
