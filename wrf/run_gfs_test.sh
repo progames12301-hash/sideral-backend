@@ -5,6 +5,8 @@ IMAGE="dtcenter/wps_wrf:latest"
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
 WORK="$ROOT/wrf_work"
 DIAG="$ROOT/wrf_diagnostics"
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
 mkdir -p "$WORK" "$DIAG"
 rm -rf "$WORK"/*
 
@@ -14,6 +16,7 @@ log "Recursos antes do WRF"
 nproc
 free -h
 df -h
+printf 'HOST_UID=%s HOST_GID=%s\n' "$HOST_UID" "$HOST_GID"
 
 log "Escolhendo rodada GFS mais recente com F006 disponível"
 RUN_DATE=""
@@ -226,8 +229,15 @@ ln -sf "gfs/gfs.t${RUN_CYCLE}z.pgrb2.0p25.f000" "$WORK/GRIBFILE.AAA"
 ln -sf "gfs/gfs.t${RUN_CYCLE}z.pgrb2.0p25.f003" "$WORK/GRIBFILE.AAB"
 ln -sf "gfs/gfs.t${RUN_CYCLE}z.pgrb2.0p25.f006" "$WORK/GRIBFILE.AAC"
 
+log "Ajustando permissoes do volume para o container DTC"
+# A imagem oficial DTC usa LOCAL_USER_ID para executar com o mesmo UID do host.
+# Mantemos tambem permissao de escrita no volume como protecao adicional.
+chmod -R a+rwX "$WORK"
+ls -ld "$WORK" "$WORK/WPS_GEOG" "$WORK/gfs"
+
 log "Rodando WPS + real.exe + WRF"
 docker run --rm \
+  -e LOCAL_USER_ID="$HOST_UID" \
   -e OMPI_ALLOW_RUN_AS_ROOT=1 \
   -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
   -v "$WORK:/work" \
@@ -235,17 +245,49 @@ docker run --rm \
     set -euo pipefail
     cd /work
 
+    echo "=== IDENTIDADE / TESTE DE ESCRITA ==="
+    id
+    pwd
+    ls -ld /work /work/WPS_GEOG /work/gfs
+    test -r /work/namelist.wps
+    test -r /work/namelist.input
+    touch /work/.sideral-write-test
+    echo "container-write-ok" > /work/.sideral-write-test
+    cat /work/.sideral-write-test
+    rm -f /work/.sideral-write-test
+
     echo "=== GEOGRID ==="
-    /comsoftware/wrf/WPS-4.3/geogrid.exe 2>&1 | tee geogrid.stdout
+    /comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1 || {
+      STATUS=$?
+      echo "GEOGRID FALHOU status=$STATUS"
+      cat geogrid.stdout || true
+      cat geogrid.log || true
+      exit "$STATUS"
+    }
+    cat geogrid.stdout
     test -f geo_em.d01.nc
 
     echo "=== UNGRIB ==="
     ln -sf /comsoftware/wrf/WPS-4.3/ungrib/Variable_Tables/Vtable.GFS Vtable
-    /comsoftware/wrf/WPS-4.3/ungrib.exe 2>&1 | tee ungrib.stdout
+    /comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib.stdout 2>&1 || {
+      STATUS=$?
+      echo "UNGRIB FALHOU status=$STATUS"
+      cat ungrib.stdout || true
+      cat ungrib.log || true
+      exit "$STATUS"
+    }
+    cat ungrib.stdout
     ls FILE:* >/dev/null
 
     echo "=== METGRID ==="
-    /comsoftware/wrf/WPS-4.3/metgrid.exe 2>&1 | tee metgrid.stdout
+    /comsoftware/wrf/WPS-4.3/metgrid.exe > metgrid.stdout 2>&1 || {
+      STATUS=$?
+      echo "METGRID FALHOU status=$STATUS"
+      cat metgrid.stdout || true
+      cat metgrid.log || true
+      exit "$STATUS"
+    }
+    cat metgrid.stdout
     ls met_em.d01.*.nc
 
     echo "=== PREPARAR WRF RUN ==="
@@ -256,14 +298,24 @@ docker run --rm \
     cd run
 
     echo "=== REAL ==="
-    mpirun --allow-run-as-root -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe
+    mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe || {
+      STATUS=$?
+      echo "REAL.EXE FALHOU status=$STATUS"
+      tail -160 rsl.error.0000 || true
+      exit "$STATUS"
+    }
     tail -80 rsl.error.0000 || true
     test -f wrfinput_d01
     test -f wrfbdy_d01
 
     echo "=== WRF 4 KM F000-F006 ==="
     START_TS=$(date +%s)
-    mpirun --allow-run-as-root -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe
+    mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe || {
+      STATUS=$?
+      echo "WRF.EXE FALHOU status=$STATUS"
+      tail -200 rsl.error.0000 || true
+      exit "$STATUS"
+    }
     END_TS=$(date +%s)
     echo "WRF_RUNTIME_SECONDS=$((END_TS-START_TS))" | tee /work/wrf-runtime.env
     tail -100 rsl.error.0000 || true
