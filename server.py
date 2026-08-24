@@ -1100,7 +1100,6 @@ def _ecmwf_build_sounding_payload(
             f"wind_speed_{level}hPa",
             f"wind_direction_{level}hPa",
             f"geopotential_height_{level}hPa",
-            f"vertical_velocity_{level}hPa",
         ])
 
     params = {
@@ -1108,7 +1107,7 @@ def _ecmwf_build_sounding_payload(
         "longitude": f"{lon:.5f}",
         "run": run_dt.strftime("%Y-%m-%dT%H:00"),
         "models": "ecmwf_ifs025",
-        "forecast_hours": str(max(1, fh + 1)),
+        "forecast_hours": str(max(6, fh + 6)),
         "timezone": "GMT",
         "temporal_resolution": "native",
         "cell_selection": "nearest",
@@ -1175,7 +1174,7 @@ def _ecmwf_build_sounding_payload(
         surface_wind_speed,
         surface_wind_dir,
     ):
-        raise RuntimeError("Open-Meteo não retornou todos os campos de superfície necessários.")
+        raise RuntimeError(f"Open-Meteo não retornou todos os campos de superfície necessários em F{fh:03d}.")
 
     if surface_height is None:
         surface_height = 0.0
@@ -1208,7 +1207,7 @@ def _ecmwf_build_sounding_payload(
         wind_speed = hv(f"wind_speed_{level}hPa")
         wind_dir = hv(f"wind_direction_{level}hPa")
         gh = hv(f"geopotential_height_{level}hPa")
-        vertical_ms = hv(f"vertical_velocity_{level}hPa")
+        vertical_ms = None
 
         if None in (temp_c, rh, wind_speed, wind_dir, gh):
             continue
@@ -1601,7 +1600,7 @@ def _ecmwf_build_sounding_payload(
             "sars_hail_count": hail_sars["quality_count"], "sars_supercell_count": supercell_sars["quality_count"],
             "database_scope": "SARS/SHARPpy (base calibrada com casos dos EUA; usar apenas como analogia fora do CONUS)",
         },
-        "source": "ECMWF IFS 0.25° via Open-Meteo + SHARPpy",
+        "source": "ECMWF IFS 0.25° via Open-Meteo + SHARPpy (stable-v2)",
         "attribution": "ECMWF / Open-Meteo",
         "cache": False,
     }
@@ -1685,7 +1684,7 @@ class Handler(SimpleHTTPRequestHandler):
             if fh < 0 or fh > 144 or fh % 3 != 0:
                 self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas.", "code": "BAD_FORECAST_HOUR"}); return
 
-            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-ifs025-openmeteo-sharppy-v1")
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-ifs025-openmeteo-sharppy-v2-stable")
             cached = sounding_cache.get(cache_key)
             if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
                 payload = dict(cached["data"])
