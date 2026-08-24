@@ -2,7 +2,7 @@ name: Ligar WRF Data ao Render
 
 on:
   workflow_run:
-    workflows: ["WRF 4 km - PUBLICAR JSON V4 - USE ESTE"]
+    workflows: ["WRF 4 km - PUBLICAR JSON V5 - USE ESTE"]
     types: [completed]
 
 permissions:
