@@ -5,7 +5,6 @@ import argparse
 import datetime as dt
 import gzip
 import json
-import math
 import re
 from pathlib import Path
 
@@ -25,47 +24,36 @@ def wind_direction_deg(u: np.ndarray, v: np.ndarray) -> np.ndarray:
     return np.where(calm, 0.0, direction)
 
 
-def precipitation_to_dbz(rate: np.ndarray) -> np.ndarray:
-    rate = np.maximum(rate, 0.0)
-    out = np.zeros_like(rate, dtype=float)
-    mask = rate > 0
-    out[mask] = np.clip(25.0 + 10.0 * np.log10(rate[mask]), 0.0, 75.0)
-    return out
+def native_composite_reflectivity(dataset: xr.Dataset) -> np.ndarray:
+    """Retorna refletividade composta usando exclusivamente REFL_10CM do WRF.
 
+    REFL_10CM e calculado pelo proprio WRF quando do_radar_ref=1 para os
+    esquemas de microfisica suportados. Nao usamos conversao Z-R nem formula
+    empirica de hidrometeoros como fallback: se o campo nao existir, a
+    publicacao deve falhar para evitar divulgar uma refletividade enganosa.
+    """
+    if "REFL_10CM" not in dataset:
+        raise RuntimeError(
+            "REFL_10CM ausente no wrfout. Verifique do_radar_ref=1 e a microfisica; "
+            "a Sideral nao publica refletividade aproximada como substituta."
+        )
 
-def hydrometeor_reflectivity_dbz(dataset: xr.Dataset, t2m: np.ndarray) -> np.ndarray:
-    shape = np.asarray(t2m).shape
-    z_linear = np.zeros(shape, dtype=float)
-    species = {
-        "QRAIN": 4.0e11,
-        "QSNOW": 1.2e11,
-        "QGRAUP": 9.0e11,
-        "QHAIL": 1.4e12,
-    }
-    for name, scale in species.items():
-        if name not in dataset:
-            continue
-        mixing_ratio = np.maximum(dataset[name].isel(Time=0).to_numpy(), 0.0)
-        column_max = np.nanmax(mixing_ratio, axis=0)
-        z_linear += scale * np.power(column_max, 1.25)
-    if "QCLOUD" in dataset:
-        cloud = np.nanmax(np.maximum(dataset["QCLOUD"].isel(Time=0).to_numpy(), 0.0), axis=0)
-        z_linear += np.where(cloud > 2.5e-4, 1.2e8 * np.power(cloud, 1.5), 0.0)
-    out = np.zeros_like(z_linear)
-    positive = z_linear > 1.0
-    out[positive] = np.clip(10.0 * np.log10(z_linear[positive]), 0.0, 75.0)
-    return out
+    raw = np.asarray(dataset["REFL_10CM"].isel(Time=0).to_numpy(), dtype=float)
+    if raw.ndim == 3:
+        composite = np.nanmax(raw, axis=0)
+    elif raw.ndim == 2:
+        composite = raw
+    else:
+        raise RuntimeError(f"REFL_10CM possui dimensao inesperada: shape={raw.shape}")
 
+    finite = np.isfinite(composite)
+    if not np.any(finite):
+        raise RuntimeError("REFL_10CM nao possui nenhum valor finito.")
 
-def approximate_reflectivity_dbz(dataset: xr.Dataset, t2m: np.ndarray, precip_rate: np.ndarray) -> np.ndarray:
-    hydro = hydrometeor_reflectivity_dbz(dataset, t2m)
-    precip = precipitation_to_dbz(precip_rate)
-    mask = precip_rate > 0.02
-    for name in ("QRAIN", "QSNOW", "QGRAUP", "QHAIL"):
-        if name in dataset:
-            column_max = np.nanmax(np.maximum(dataset[name].isel(Time=0).to_numpy(), 0.0), axis=0)
-            mask |= column_max > 4.0e-6
-    return np.where(mask, np.maximum(hydro, precip), 0.0)
+    # Valores negativos representam ausencia/eco muito fraco. Mantemos o
+    # valor meteorologico nativo e apenas normalizamos o intervalo de exibicao.
+    composite = np.where(finite, composite, 0.0)
+    return np.clip(composite, 0.0, 95.0)
 
 
 def parse_run_env(path: Path) -> dict[str, str]:
@@ -154,6 +142,7 @@ def main() -> None:
             t2m = field("T2") - 273.15
             q2 = field("Q2")
             psfc = field("PSFC")
+
             rain_total = field("RAINC") + field("RAINNC")
             if previous_rain is None:
                 precip_rate = np.zeros_like(rain_total, dtype=float)
@@ -162,18 +151,21 @@ def main() -> None:
                 precip_rate = np.maximum(0.0, rain_total - previous_rain) / elapsed_h
             previous_rain = np.asarray(rain_total, dtype=float).copy()
 
-            reflectivity_source = "REFL_10CM" if "REFL_10CM" in dataset else "hydrometeors"
-            if "REFL_10CM" in dataset:
-                reflectivity = np.maximum(0.0, np.nanmax(dataset["REFL_10CM"].isel(Time=0).to_numpy(), axis=0))
-                approx = approximate_reflectivity_dbz(dataset, t2m, precip_rate)
-                if float(np.nanmax(reflectivity)) < 20.0 and float(np.nanmax(approx)) > float(np.nanmax(reflectivity)):
-                    reflectivity = np.maximum(reflectivity, approx)
-                    reflectivity_source = "REFL_10CM+hydrometeors_approx"
-            else:
-                reflectivity = approximate_reflectivity_dbz(dataset, t2m, precip_rate)
-                if float(np.nanmax(reflectivity)) < 1.0:
-                    reflectivity = precipitation_to_dbz(precip_rate)
-                    reflectivity_source = "precip_rate"
+            reflectivity = native_composite_reflectivity(dataset)
+            reflectivity_source = "REFL_10CM_NATIVE"
+            refl_positive = reflectivity[reflectivity > 0.0]
+            refl_stats = {
+                "maxDbz": round(float(np.nanmax(reflectivity)), 1),
+                "p99Dbz": round(float(np.nanpercentile(reflectivity, 99.0)), 1),
+                "fractionAbove5Dbz": round(float(np.mean(reflectivity >= 5.0)), 5),
+                "fractionAbove40Dbz": round(float(np.mean(reflectivity >= 40.0)), 5),
+                "positivePixels": int(refl_positive.size),
+            }
+            print(
+                f"REFL_10CM nativo F{forecast_hour:03d}: "
+                f"max={refl_stats['maxDbz']} dBZ p99={refl_stats['p99Dbz']} dBZ "
+                f">=40dBZ={refl_stats['fractionAbove40Dbz'] * 100:.2f}%"
+            )
 
             temp_for_es = np.maximum(-80.0, t2m)
             es = 6.112 * np.exp((17.67 * temp_for_es) / (temp_for_es + 243.5))
@@ -198,7 +190,8 @@ def main() -> None:
             dudy = np.gradient(u10, dy_m, axis=0)
             vorticity = dvdx - dudy
 
-            # Mantem compatibilidade com o produto atual. Depois podemos trocar por MUCAPE diagnostico real.
+            # Mantido por compatibilidade com o produto atual. Esta variavel ainda
+            # nao deve ser apresentada como MUCAPE diagnostico nativo do WRF.
             mucape = np.maximum(0.0, (t2m - 20.0) * rh2 * 8.0)
 
             native_y, native_x = t2m.shape
@@ -216,7 +209,9 @@ def main() -> None:
             payload = {
                 "schema": "sideral-wrf-grid-v1",
                 "model": "gfs",
-                "source": f"WRF 4 km GFS ({reflectivity_source})",
+                "source": "WRF 4 km GFS (REFL_10CM nativo)",
+                "reflectivitySource": reflectivity_source,
+                "reflectivityStats": refl_stats,
                 "runDate": run_date,
                 "runCycle": f"{run_cycle}Z",
                 "initTime": init_time.isoformat().replace("+00:00", "Z"),
@@ -258,6 +253,8 @@ def main() -> None:
             "gridX": payload["gridX"],
             "gridY": payload["gridY"],
             "source": payload["source"],
+            "reflectivitySource": payload["reflectivitySource"],
+            "reflectivityStats": payload["reflectivityStats"],
         })
 
     metadata = {
@@ -268,6 +265,7 @@ def main() -> None:
         "runCycle": f"{run_cycle}Z",
         "initTime": init_time.isoformat().replace("+00:00", "Z"),
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "reflectivitySource": "REFL_10CM_NATIVE",
         "frameCount": len(frames),
         "frames": frames,
     }
