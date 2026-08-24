@@ -35,7 +35,7 @@ jobs:
           grep -q "00Z/06Z/12Z/18Z" wrf/run_gfs_test.sh
           echo "SCRIPT CORRIGIDO CONFIRMADO"
 
-      - name: Corrigir e validar layout WPS_GEOG
+      - name: Corrigir e validar WPS_GEOG e MPI
         run: |
           set -euxo pipefail
           python - <<'PY'
@@ -105,11 +105,26 @@ jobs:
           patched, count = pattern.subn(replacement + '\n\n', text, count=1)
           if count != 1:
               raise SystemExit(f'Nao foi possivel aplicar patch WPS_GEOG; substituicoes={count}')
+
+          real_old = 'mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe'
+          wrf_old = 'mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe'
+          if patched.count(real_old) != 1 or patched.count(wrf_old) != 1:
+              raise SystemExit('Nao foi possivel localizar os dois comandos MPI esperados.')
+          patched = patched.replace(
+              real_old,
+              'mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe',
+          )
+          patched = patched.replace(
+              wrf_old,
+              'mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe',
+          )
+
           path.write_text(patched, encoding='utf-8')
           PY
           grep -q "WPS_GEOG VALIDADO COMPLETAMENTE" wrf/run_gfs_test.sh
           grep -q "GEOG_ROOT" wrf/run_gfs_test.sh
-          echo "PATCH WPS_GEOG APLICADO"
+          grep -q -- "--oversubscribe --bind-to none -np 4" wrf/run_gfs_test.sh
+          echo "PATCH WPS_GEOG + MPI APLICADO"
 
       - name: Liberar espaco do runner
         run: |
