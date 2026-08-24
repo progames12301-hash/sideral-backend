@@ -2,6 +2,10 @@ name: Ligar WRF Data ao Render
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/link-wrf-data-to-render.yml"
   workflow_run:
     workflows: ["WRF 4 km - PUBLICAR JSON V5 - USE ESTE"]
     types: [completed]
@@ -11,7 +15,7 @@ permissions:
 
 jobs:
   link-backend:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 15
 
@@ -52,14 +56,11 @@ jobs:
           path = Path('server.py')
           text = path.read_text(encoding='utf-8')
 
-          # O frontend envia a hora de previsão real (F000, F003, F006...),
-          # não a posição do quadro. Escolhemos o frame publicado mais próximo.
           old = '''    frame_index = min(max(0, int(hours)), len(frames) - 1)\n    frame_meta = frames[frame_index]\n'''
           new = '''    requested_hour = max(0, int(hours))\n    frame_index = min(\n        range(len(frames)),\n        key=lambda index: abs(int(frames[index].get("forecastHour") or 0) - requested_hour),\n    )\n    frame_meta = frames[frame_index]\n'''
           if old in text:
               text = text.replace(old, new, 1)
 
-          # Evita git diff --check falhar por espaços inseridos pelo patch.
           text = '\n'.join(line.rstrip() for line in text.splitlines()) + '\n'
           path.write_text(text, encoding='utf-8')
           PY
