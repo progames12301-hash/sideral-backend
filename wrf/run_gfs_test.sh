@@ -41,7 +41,6 @@ for CANDIDATE in "${GFS_CANDIDATES[@]}"; do
   URL="https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.${DATE}/${CYCLE}/atmos/gfs.t${CYCLE}z.pgrb2.0p25.f006"
   echo "Testando ${DATE} ${CYCLE}Z"
 
-  # Consulta um byte do F006. Isto evita considerar uma rodada ainda nao publicada.
   if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
     RUN_DATE="$DATE"
     RUN_CYCLE="$CYCLE"
@@ -177,6 +176,7 @@ cat > "$WORK/namelist.input" <<EOF
 &physics
  physics_suite = 'CONUS',
  mp_physics = 8,
+ do_radar_ref = 1,
  cu_physics = 0,
  ra_lw_physics = 4,
  ra_sw_physics = 4,
@@ -230,8 +230,6 @@ ln -sf "gfs/gfs.t${RUN_CYCLE}z.pgrb2.0p25.f003" "$WORK/GRIBFILE.AAB"
 ln -sf "gfs/gfs.t${RUN_CYCLE}z.pgrb2.0p25.f006" "$WORK/GRIBFILE.AAC"
 
 log "Ajustando permissoes do volume para o container DTC"
-# A imagem oficial DTC usa LOCAL_USER_ID para executar com o mesmo UID do host.
-# Mantemos tambem permissao de escrita no volume como protecao adicional.
 chmod -R a+rwX "$WORK"
 ls -ld "$WORK" "$WORK/WPS_GEOG" "$WORK/gfs"
 
