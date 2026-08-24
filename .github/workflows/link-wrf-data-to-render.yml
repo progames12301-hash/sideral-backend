@@ -2,7 +2,7 @@ name: Ligar WRF Data ao Render
 
 on:
   workflow_run:
-    workflows: ["WRF 4 km - PUBLICAR JSON V3"]
+    workflows: ["WRF 4 km - PUBLICAR JSON V4 - USE ESTE"]
     types: [completed]
 
 permissions:
@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euxo pipefail
           if git diff --quiet -- server.py; then
-            echo "server.py já estava integrado; nada para publicar."
+            echo "server.py ja estava integrado; nada para publicar."
             exit 0
           fi
           git config user.name "sideral-wrf-bot"
@@ -62,4 +62,4 @@ jobs:
           git add server.py
           git commit -m "Liga server.py aos dados WRF 4 km do GitHub"
           git push origin main
-          echo "server.py atualizado. O Render pode iniciar o deploy automático agora."
+          echo "server.py atualizado. O Render pode iniciar o deploy automatico agora."
