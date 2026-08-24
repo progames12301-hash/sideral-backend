@@ -1,0 +1,65 @@
+name: Ligar WRF Data ao Render
+
+on:
+  workflow_run:
+    workflows: ["WRF 4 km - PUBLICAR JSON V3"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  link-backend:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Confirmar dados WRF publicados
+        run: |
+          set -euxo pipefail
+          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?link=${GITHUB_RUN_ID}"
+          curl -fsSL --retry 5 --retry-delay 3 --connect-timeout 10 --max-time 30 "$URL" -o /tmp/wrf-metadata.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/wrf-metadata.json', encoding='utf-8'))
+          assert d.get('schema') == 'sideral-wrf-metadata-v1', d
+          assert d.get('frameCount', 0) >= 3, d
+          print('WRF remoto confirmado:', d.get('initTime'), d.get('frameCount'))
+          PY
+
+      - name: Obter patch da branch wrf-runner
+        run: |
+          set -euxo pipefail
+          git fetch origin wrf-runner
+          git show origin/wrf-runner:wrf/patch_server_remote.py > /tmp/patch_server_remote.py
+          python /tmp/patch_server_remote.py server.py
+
+      - name: Validar server.py
+        run: |
+          set -euxo pipefail
+          python -m py_compile server.py
+          grep -q "SIDERAL_WRF_GITHUB_REMOTE_V1" server.py
+          grep -q "build_remote_wrf_cells" server.py
+          git diff --check
+          git diff -- server.py | sed -n '1,260p'
+
+      - name: Publicar server.py no main
+        run: |
+          set -euxo pipefail
+          if git diff --quiet -- server.py; then
+            echo "server.py já estava integrado; nada para publicar."
+            exit 0
+          fi
+          git config user.name "sideral-wrf-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.py
+          git commit -m "Liga server.py aos dados WRF 4 km do GitHub"
+          git push origin main
+          echo "server.py atualizado. O Render pode iniciar o deploy automático agora."
