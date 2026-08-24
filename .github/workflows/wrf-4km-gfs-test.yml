@@ -1,0 +1,57 @@
+name: WRF 4 km - GFS F000-F006
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wrf-test:
+    name: Rodar WRF Sul 4 km F000-F006
+    runs-on: ubuntu-22.04
+    timeout-minutes: 330
+
+    steps:
+      - name: Checkout branch WRF
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+
+      - name: Identificar versao
+        run: |
+          echo "SIDERAL WRF 4KM GFS TEST V1"
+          echo "Branch de processamento: wrf-runner"
+          git rev-parse --short HEAD
+
+      - name: Liberar espaco do runner
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          df -h
+
+      - name: Baixar container WRF/WPS
+        run: |
+          set -euxo pipefail
+          docker pull dtcenter/wps_wrf:latest
+          docker image ls dtcenter/wps_wrf:latest
+          df -h
+
+      - name: Executar GFS WPS WRF 4 km
+        run: |
+          chmod +x wrf/run_gfs_test.sh
+          ./wrf/run_gfs_test.sh
+
+      - name: Salvar diagnosticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrf-4km-gfs-test-diagnostics
+          path: wrf_diagnostics/
+          retention-days: 7
+          if-no-files-found: warn
