@@ -765,23 +765,16 @@ def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, gri
 
 
 def _ecmwf_runtime_modules() -> dict[str, Any]:
-    """Importa as dependências do ECMWF/SHARPpy somente quando /api/sounding é usado."""
+    """Dependências necessárias ao Skew-T. Dados ECMWF vêm via Open-Meteo."""
     try:
         import numpy as np
-        from ecmwfapi import ECMWFService
-        from eccodes import codes_get, codes_grib_find_nearest, codes_grib_new_from_file, codes_release
         from sharppy.sharptab import profile as shp_profile
     except ImportError as exc:
         raise RuntimeError(
-            "Dependências do Skew-T ausentes. Instale ecmwf-api-client, eccodes, numpy e SHARPpy."
+            "Dependências do Skew-T ausentes. Instale numpy e SHARPpy."
         ) from exc
     return {
         "np": np,
-        "ECMWFService": ECMWFService,
-        "codes_get": codes_get,
-        "codes_grib_find_nearest": codes_grib_find_nearest,
-        "codes_grib_new_from_file": codes_grib_new_from_file,
-        "codes_release": codes_release,
         "shp_profile": shp_profile,
     }
 
@@ -872,12 +865,11 @@ def _ecmwf_run_candidates(run_requested: str) -> list[dt.datetime]:
             candidate -= dt.timedelta(days=1)
         return [candidate]
 
-    # Para "latest", usa uma rodada já disseminada e apenas um fallback.
-    # Isso evita que uma chamada web fique presa tentando 4 downloads MARS consecutivos.
+    # Para "latest", evita a rodada que ainda pode estar em disseminação e mantém fallbacks.
     reference = now - dt.timedelta(hours=7)
     base_hour = (reference.hour // 6) * 6
     first = reference.replace(hour=base_hour, minute=0, second=0, microsecond=0)
-    return [first, first - dt.timedelta(hours=6)]
+    return [first - dt.timedelta(hours=6 * index) for index in range(4)]
 
 
 def _ecmwf_cached_grib(path: Path) -> bool:
@@ -895,14 +887,14 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
     ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = run_dt.strftime("%Y%m%d_%H")
     point_tag = _ecmwf_point_tag(lat, lon)
-    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_o1280_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
-    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_o1280_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
-    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_o1280_{stamp}_{point_tag}_oro.grib"
+    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
+    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
+    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_{point_tag}_oro.grib"
 
-    north = min(90.0, lat + 0.15)
-    south = max(-90.0, lat - 0.15)
-    west = max(-180.0, lon - 0.15)
-    east = min(180.0, lon + 0.15)
+    north = min(90.0, lat + 0.30)
+    south = max(-90.0, lat - 0.30)
+    west = max(-180.0, lon - 0.30)
+    east = min(180.0, lon + 0.30)
     area = f"{north:.2f}/{west:.2f}/{south:.2f}/{east:.2f}"
 
     def execute_atomic(target: Path, request: dict[str, Any]) -> None:
@@ -927,7 +919,7 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
         "time": f"{run_dt.hour:02d}",
         "type": "fc",
         "step": str(fh),
-        "grid": "O1280",
+        "grid": "0.1/0.1",
         "area": area,
     }
 
@@ -962,7 +954,7 @@ def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, 
                 "type": "an",
                 "levtype": "sfc",
                 "param": "129.128",
-                "grid": "O1280",
+                "grid": "0.1/0.1",
                 "area": area,
             },
         )
@@ -1084,77 +1076,167 @@ def _ecmwf_build_sounding_payload(
     lon: float,
     run_dt: dt.datetime,
     fh: int,
-    pressure_path: Path,
-    surface_path: Path,
-    orography_path: Path,
     modules: dict[str, Any],
 ) -> dict[str, Any]:
+    """
+    Obtém um ponto do ECMWF IFS 0.25° via Open-Meteo Single Runs e
+    processa o perfil com SHARPpy. Não usa MARS e não requer chave ECMWF.
+    """
     np = modules["np"]
     shp_profile = modules["shp_profile"]
-    pressure_fields = _ecmwf_read_nearest_grib(pressure_path, lat, lon, modules)
-    surface_fields = _ecmwf_read_nearest_grib(surface_path, lat, lon, modules)
-    orography_fields = _ecmwf_read_nearest_grib(orography_path, lat, lon, modules)
 
-    by_level: dict[int, dict[str, float]] = {}
-    grid_lat = None
-    grid_lon = None
-    for field in pressure_fields:
-        if field["level"] is None:
-            continue
-        level = int(round(float(field["level"])))
-        by_level.setdefault(level, {})[str(field["short_name"])] = float(field["value"])
-        if grid_lat is None and field.get("grid_lat") is not None:
-            grid_lat = float(field["grid_lat"])
-            grid_lon = float(field["grid_lon"])
+    levels = ECMWF_PRESSURE_LEVELS
+    hourly_vars = [
+        "temperature_2m",
+        "dew_point_2m",
+        "surface_pressure",
+        "wind_speed_10m",
+        "wind_direction_10m",
+    ]
+    for level in levels:
+        hourly_vars.extend([
+            f"temperature_{level}hPa",
+            f"relative_humidity_{level}hPa",
+            f"wind_speed_{level}hPa",
+            f"wind_direction_{level}hPa",
+            f"geopotential_height_{level}hPa",
+            f"vertical_velocity_{level}hPa",
+        ])
 
-    surface: dict[str, float] = {str(f["short_name"]): float(f["value"]) for f in surface_fields}
-    orography: dict[str, float] = {str(f["short_name"]): float(f["value"]) for f in orography_fields}
-    required_surface = ["sp", "2t", "2d", "10u", "10v"]
-    missing_surface = [name for name in required_surface if name not in surface]
-    if missing_surface:
-        raise RuntimeError("ECMWF não retornou os campos de superfície: " + ", ".join(missing_surface))
+    params = {
+        "latitude": f"{lat:.5f}",
+        "longitude": f"{lon:.5f}",
+        "run": run_dt.strftime("%Y-%m-%dT%H:00"),
+        "models": "ecmwf_ifs025",
+        "forecast_hours": str(max(1, fh + 1)),
+        "timezone": "GMT",
+        "temporal_resolution": "native",
+        "cell_selection": "nearest",
+        "elevation": "nan",
+        "wind_speed_unit": "kn",
+        "hourly": ",".join(hourly_vars),
+    }
 
-    surface_pressure = surface["sp"] / 100.0
-    surface_temp = surface["2t"] - 273.15
-    surface_dewpoint = min(surface_temp, surface["2d"] - 273.15)
-    surface_u = surface["10u"] * 1.9438444924406
-    surface_v = surface["10v"] * 1.9438444924406
-    surface_height = orography.get("z", 0.0) / 9.80665
+    response = requests.get(
+        "https://single-runs-api.open-meteo.com/v1/forecast",
+        params=params,
+        headers={"User-Agent": "SideralMeteorologia/1.0"},
+        timeout=45,
+    )
+    if response.status_code != 200:
+        try:
+            reason = response.json().get("reason")
+        except Exception:
+            reason = None
+        raise RuntimeError(
+            f"Open-Meteo ECMWF respondeu HTTP {response.status_code}"
+            + (f": {reason}" if reason else "")
+        )
+
+    data = response.json()
+    hourly = data.get("hourly") or {}
+    times = hourly.get("time") or []
+    target_dt = run_dt + dt.timedelta(hours=fh)
+    target_iso = target_dt.strftime("%Y-%m-%dT%H:%M")
+
+    try:
+        idx = times.index(target_iso)
+    except ValueError:
+        # Alguns retornos podem omitir minutos (:00).
+        short_target = target_dt.strftime("%Y-%m-%dT%H")
+        idx = next(
+            (i for i, value in enumerate(times) if str(value).startswith(short_target)),
+            -1,
+        )
+    if idx < 0:
+        raise RuntimeError(
+            f"Open-Meteo não retornou o horário válido F{fh:03d} para a rodada solicitada."
+        )
+
+    def hv(name: str) -> float | None:
+        values = hourly.get(name)
+        if not isinstance(values, list) or idx >= len(values):
+            return None
+        return _safe_float(values[idx])
+
+    surface_pressure = hv("surface_pressure")
+    surface_temp = hv("temperature_2m")
+    surface_dewpoint = hv("dew_point_2m")
+    surface_wind_speed = hv("wind_speed_10m")
+    surface_wind_dir = hv("wind_direction_10m")
+    surface_height = _safe_float(data.get("elevation"))
+    grid_lat = _safe_float(data.get("latitude"))
+    grid_lon = _safe_float(data.get("longitude"))
+
+    if None in (
+        surface_pressure,
+        surface_temp,
+        surface_dewpoint,
+        surface_wind_speed,
+        surface_wind_dir,
+    ):
+        raise RuntimeError("Open-Meteo não retornou todos os campos de superfície necessários.")
+
+    if surface_height is None:
+        surface_height = 0.0
+
+    def uv_from_dir_speed(direction_deg: float, speed_kt: float) -> tuple[float, float]:
+        angle = math.radians(direction_deg)
+        return (
+            -speed_kt * math.sin(angle),
+            -speed_kt * math.cos(angle),
+        )
+
+    surface_u, surface_v = uv_from_dir_speed(surface_wind_dir, surface_wind_speed)
 
     points: list[dict[str, float]] = [{
-        "pressure": surface_pressure,
-        "height": surface_height,
-        "temperature": surface_temp,
-        "dewpoint": surface_dewpoint,
-        "u": surface_u,
-        "v": surface_v,
+        "pressure": float(surface_pressure),
+        "height": float(surface_height),
+        "temperature": float(surface_temp),
+        "dewpoint": min(float(surface_temp), float(surface_dewpoint)),
+        "u": float(surface_u),
+        "v": float(surface_v),
         "omega": math.nan,
     }]
 
-    for level in ECMWF_PRESSURE_LEVELS:
-        values = by_level.get(level, {})
-        if level > surface_pressure + 0.5:
-            continue  # nível subterrâneo
-        t_k = values.get("t")
-        rh = values.get("r")
-        u_ms = values.get("u")
-        v_ms = values.get("v")
-        gh = values.get("gh")
-        omega_pa_s = values.get("w")
-        if None in (t_k, rh, u_ms, v_ms, gh):
+    for level in levels:
+        if level > float(surface_pressure) + 0.5:
             continue
-        temp_c = float(t_k) - 273.15
-        dewpoint_c = _dewpoint_from_temperature_rh(temp_c, float(rh))
+
+        temp_c = hv(f"temperature_{level}hPa")
+        rh = hv(f"relative_humidity_{level}hPa")
+        wind_speed = hv(f"wind_speed_{level}hPa")
+        wind_dir = hv(f"wind_direction_{level}hPa")
+        gh = hv(f"geopotential_height_{level}hPa")
+        vertical_ms = hv(f"vertical_velocity_{level}hPa")
+
+        if None in (temp_c, rh, wind_speed, wind_dir, gh):
+            continue
+
+        dewpoint_c = _dewpoint_from_temperature_rh(float(temp_c), float(rh))
         if dewpoint_c is None:
             continue
+
+        u_kt, v_kt = uv_from_dir_speed(float(wind_dir), float(wind_speed))
+
+        omega_pa_s = math.nan
+        if vertical_ms is not None:
+            # Open-Meteo fornece velocidade vertical geométrica (m/s).
+            # Converte de volta para omega (Pa/s) para o SHARPpy:
+            # omega = -rho * g * w, usando T como aproximação de Tv.
+            t_k = float(temp_c) + 273.15
+            if t_k > 0:
+                rho = (float(level) * 100.0) / (287.05 * t_k)
+                omega_pa_s = -rho * 9.80665 * float(vertical_ms)
+
         points.append({
             "pressure": float(level),
             "height": float(gh),
-            "temperature": temp_c,
-            "dewpoint": dewpoint_c,
-            "u": float(u_ms) * 1.9438444924406,
-            "v": float(v_ms) * 1.9438444924406,
-            "omega": float(omega_pa_s) if omega_pa_s is not None else math.nan,
+            "temperature": float(temp_c),
+            "dewpoint": float(dewpoint_c),
+            "u": float(u_kt),
+            "v": float(v_kt),
+            "omega": float(omega_pa_s),
         })
 
     points.sort(key=lambda item: item["pressure"], reverse=True)
@@ -1441,8 +1523,8 @@ def _ecmwf_build_sounding_payload(
 
     valid_dt = run_dt + dt.timedelta(hours=fh)
     return {
-        "model": "ECMWF IFS O1280 (~9 km)",
-        "model_id": "ecmwf_ifs_api",
+        "model": "ECMWF IFS 0.25°",
+        "model_id": "ecmwf_ifs025_openmeteo",
         "latitude": lat,
         "longitude": lon,
         "grid_latitude": r(grid_lat, 3),
@@ -1519,8 +1601,8 @@ def _ecmwf_build_sounding_payload(
             "sars_hail_count": hail_sars["quality_count"], "sars_supercell_count": supercell_sars["quality_count"],
             "database_scope": "SARS/SHARPpy (base calibrada com casos dos EUA; usar apenas como analogia fora do CONUS)",
         },
-        "source": "ECMWF Web API + SHARPpy",
-        "attribution": "ECMWF",
+        "source": "ECMWF IFS 0.25° via Open-Meteo + SHARPpy",
+        "attribution": "ECMWF / Open-Meteo",
         "cache": False,
     }
 
@@ -1589,7 +1671,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def handle_sounding(self, query: dict[str, list[str]]) -> None:
-        """Sondagem IFS obtida pela ECMWF Web API e processada pelo núcleo do SHARPpy."""
+        """Sondagem IFS 0.25° via Open-Meteo, processada pelo núcleo do SHARPpy."""
         try:
             lat = float(query.get("lat", ["-25.43"])[0])
             lon = float(query.get("lon", ["-49.27"])[0])
@@ -1603,7 +1685,7 @@ class Handler(SimpleHTTPRequestHandler):
             if fh < 0 or fh > 144 or fh % 3 != 0:
                 self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas.", "code": "BAD_FORECAST_HOUR"}); return
 
-            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-api-sharppy-v7-o1280-private")
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-ifs025-openmeteo-sharppy-v1")
             cached = sounding_cache.get(cache_key)
             if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
                 payload = dict(cached["data"])
@@ -1611,17 +1693,13 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(200, payload); return
 
             modules = _ecmwf_runtime_modules()
-            client = _ecmwf_api_client(modules)
 
             payload = None
             last_error: Exception | None = None
             for run_dt in _ecmwf_run_candidates(run_requested):
                 try:
-                    pressure_path, surface_path, orography_path = _ecmwf_retrieve_grib(
-                        client, run_dt, fh, lat, lon
-                    )
                     payload = _ecmwf_build_sounding_payload(
-                        lat, lon, run_dt, fh, pressure_path, surface_path, orography_path, modules
+                        lat, lon, run_dt, fh, modules
                     )
                     break
                 except Exception as exc:
@@ -1636,7 +1714,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(
                     502,
                     {
-                        "error": "Não foi possível obter o perfil ECMWF agora. Tente outra rodada ou novamente em alguns minutos.",
+                        "error": "Não foi possível obter o perfil ECMWF IFS 0.25° agora. Tente outra rodada ou novamente em alguns minutos.",
                         "code": "ECMWF_RETRIEVAL_FAILED",
                     },
                 )
@@ -1648,9 +1726,7 @@ class Handler(SimpleHTTPRequestHandler):
         except RuntimeError as exc:
             _log_sounding_error("erro de dependência/dados", exc)
             public_message = "O backend do Skew-T não conseguiu preparar os dados meteorológicos."
-            if "Credenciais ECMWF" in str(exc):
-                public_message = "O acesso à ECMWF não está configurado corretamente no servidor."
-            elif "Dependências do Skew-T" in str(exc):
+            if "Dependências do Skew-T" in str(exc):
                 public_message = "O backend do Skew-T está com uma dependência indisponível."
             self.send_json(502, {"error": public_message, "code": "SOUNDING_BACKEND_ERROR"})
         except Exception as exc:
@@ -2006,8 +2082,11 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
 def main() -> None:
     threading.Thread(target=render_keep_alive, daemon=True, name='render-keep-alive').start()
