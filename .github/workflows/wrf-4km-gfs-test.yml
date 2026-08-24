@@ -1,4 +1,4 @@
-name: WRF 4 km - GFS F000-F006 + JSON
+name: WRF 4 km - PUBLICAR JSON V3
 
 on:
   workflow_dispatch:
@@ -21,7 +21,8 @@ jobs:
 
       - name: Identificar versao
         run: |
-          echo "SIDERAL WRF 4KM GFS JSON V2"
+          echo "SIDERAL WRF 4KM PUBLICAR JSON V3"
+          echo "Esta execucao TEM que terminar com metadata.json na branch wrf-data."
           echo "Branch de processamento: wrf-runner"
           git rev-parse --short HEAD
 
@@ -69,7 +70,7 @@ jobs:
             --grid-x 220 \
             --grid-y 180
           echo "=== ARQUIVOS PUBLICAVEIS ==="
-          find wrf_publish -type f -maxdepth 3 -print -exec ls -lh {} \;
+          find wrf_publish -maxdepth 3 -type f -print -exec ls -lh {} \;
           python - <<'PY'
           import gzip, json, pathlib
           meta = json.loads(pathlib.Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
@@ -100,10 +101,41 @@ jobs:
           Dados processados do WRF 4 km gerados automaticamente pelo GitHub Actions.
           Os arquivos GRIB, WPS e wrfout não são publicados nesta branch.
           EOF
+          test -f metadata.json
+          test -d gfs
           git add .
           git commit -m "Atualiza dados WRF 4 km GFS [skip render]"
           git push --force origin HEAD:wrf-data
-          echo "Dados publicados em wrf-data"
+          echo "Dados enviados para wrf-data."
+
+      - name: Verificar publicacao remota wrf-data
+        run: |
+          set -euxo pipefail
+          LOCAL_RUN=$(python -c "import json; print(json.load(open('wrf_publish/metadata.json'))['initTime'])")
+          REMOTE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json"
+          rm -f /tmp/remote-metadata.json
+          for N in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsSL --connect-timeout 10 --max-time 30 \
+              -H 'Cache-Control: no-cache' \
+              "${REMOTE_URL}?run=${GITHUB_RUN_ID}-${N}" \
+              -o /tmp/remote-metadata.json; then
+              if python - "$LOCAL_RUN" <<'PY'
+          import json, sys
+          local_run = sys.argv[1]
+          data = json.load(open('/tmp/remote-metadata.json', encoding='utf-8'))
+          print('metadata remoto:', data)
+          raise SystemExit(0 if data.get('initTime') == local_run and data.get('frameCount', 0) >= 3 else 1)
+          PY
+              then
+                echo "PUBLICACAO WRF-DATA CONFIRMADA"
+                exit 0
+              fi
+            fi
+            echo "Aguardando propagacao da branch wrf-data: tentativa $N/10"
+            sleep 5
+          done
+          echo "ERRO: o WRF rodou, mas metadata.json nao ficou acessivel na branch wrf-data." >&2
+          exit 41
 
       - name: Salvar JSON como diagnostico
         if: always()
