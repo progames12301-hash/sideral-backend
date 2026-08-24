@@ -52,6 +52,18 @@ GFS_DATA_DIRS = [GFS_DATA_DIR, GFS_WSL_DATA_DIR]
 DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8766"))
 
+
+# SIDERAL_WRF_GITHUB_REMOTE_V1
+# O WRF pesado roda no GitHub Actions. O Render baixa apenas JSON gzip compacto
+# publicado na branch wrf-data.
+WRF_GITHUB_RAW_BASE = os.environ.get(
+    "WRF_GITHUB_RAW_BASE",
+    "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-data",
+).rstrip("/")
+WRF_REMOTE_CACHE_SECONDS = int(os.environ.get("WRF_REMOTE_CACHE_SECONDS", "300"))
+wrf_remote_cache: dict[str, Any] = {"metadata": None, "frames": {}}
+wrf_remote_lock = threading.Lock()
+
 INMET_STATIONS_URL = "https://apitempo.inmet.gov.br/estacoes/T"
 INMET_OBSERVATION_URL = "https://apitempo.inmet.gov.br/estacao/{start}/{end}/{station}"
 INMET_HISTORICAL_ZIP_URL = "https://portal.inmet.gov.br/uploads/dadoshistoricos/{year}.zip"
@@ -624,6 +636,215 @@ def get_wrf_variable(ncfile_list: list[Any], var_name: str, timeidx: int) -> Any
     except Exception as exc:
         print(f"AVISO: falha ao extrair variavel '{var_name}' do WRF: {exc}")
         return None
+
+
+
+def _wrf_remote_metadata() -> dict[str, Any]:
+    now = time.monotonic()
+    cached = wrf_remote_cache.get("metadata")
+    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < WRF_REMOTE_CACHE_SECONDS:
+        data = cached.get("data")
+        if isinstance(data, dict):
+            return data
+
+    with wrf_remote_lock:
+        cached = wrf_remote_cache.get("metadata")
+        if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < WRF_REMOTE_CACHE_SECONDS:
+            data = cached.get("data")
+            if isinstance(data, dict):
+                return data
+
+        url = f"{WRF_GITHUB_RAW_BASE}/metadata.json?ts={int(time.time() // 60)}"
+        response = requests.get(
+            url,
+            headers={"User-Agent": "SideralMeteorologia/1.0", "Accept": "application/json"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict) or data.get("schema") != "sideral-wrf-metadata-v1":
+            raise RuntimeError("Metadata WRF remoto em formato inesperado.")
+        frames = data.get("frames")
+        if not isinstance(frames, list) or not frames:
+            raise RuntimeError("Metadata WRF remoto não contém quadros.")
+        wrf_remote_cache["metadata"] = {"saved_at": now, "data": data}
+        return data
+
+
+def _wrf_remote_frame(filename: str) -> dict[str, Any]:
+    safe_name = str(filename or "")
+    if not re.fullmatch(r"gfs/f\d{3}\.json\.gz", safe_name):
+        raise ValueError("Nome de quadro WRF remoto inválido.")
+
+    now = time.monotonic()
+    frames_cache = wrf_remote_cache.setdefault("frames", {})
+    cached = frames_cache.get(safe_name)
+    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < WRF_REMOTE_CACHE_SECONDS:
+        data = cached.get("data")
+        if isinstance(data, dict):
+            return data
+
+    url = f"{WRF_GITHUB_RAW_BASE}/{safe_name}?ts={int(time.time() // 60)}"
+    response = requests.get(
+        url,
+        headers={"User-Agent": "SideralMeteorologia/1.0", "Accept": "application/gzip,application/octet-stream"},
+        timeout=35,
+    )
+    response.raise_for_status()
+    try:
+        decoded = zlib.decompress(response.content, 16 + zlib.MAX_WBITS)
+        data = json.loads(decoded.decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Falha ao descompactar quadro WRF remoto: {exc}") from exc
+    if not isinstance(data, dict) or data.get("schema") != "sideral-wrf-grid-v1":
+        raise RuntimeError("Quadro WRF remoto em formato inesperado.")
+
+    frames_cache[safe_name] = {"saved_at": now, "data": data}
+    while len(frames_cache) > 12:
+        frames_cache.pop(next(iter(frames_cache)))
+    return data
+
+
+def build_remote_wrf_cells(
+    bounds: dict[str, float],
+    hours: int,
+    grid_x: int,
+    grid_y: int,
+    model_key: str = "gfs",
+) -> dict[str, Any]:
+    if (model_key or "gfs").lower() != "gfs":
+        raise FileNotFoundError(f"WRF remoto ainda não publicado para {model_key}.")
+
+    metadata = _wrf_remote_metadata()
+    frames = metadata.get("frames") or []
+    requested_hour = max(0, int(hours))
+    frame_index = min(
+        range(len(frames)),
+        key=lambda index: abs(int(frames[index].get("forecastHour") or 0) - requested_hour),
+    )
+    frame_meta = frames[frame_index]
+    frame = _wrf_remote_frame(str(frame_meta.get("file") or ""))
+
+    source_bounds = frame.get("bounds") or {}
+    margin = 0.15
+    try:
+        if (
+            bounds["south"] < float(source_bounds["south"]) - margin
+            or bounds["north"] > float(source_bounds["north"]) + margin
+            or bounds["west"] < float(source_bounds["west"]) - margin
+            or bounds["east"] > float(source_bounds["east"]) + margin
+        ):
+            raise WRFDomainError(
+                "Os dados WRF 4 km publicados não cobrem toda a área solicitada: "
+                f"{source_bounds.get('south')}..{source_bounds.get('north')} lat / "
+                f"{source_bounds.get('west')}..{source_bounds.get('east')} lon."
+            )
+    except KeyError as exc:
+        raise RuntimeError("Bounds ausentes no quadro WRF remoto.") from exc
+
+    source_grid_x = int(frame.get("gridX") or 0)
+    source_grid_y = int(frame.get("gridY") or 0)
+    fields = frame.get("fields")
+    if source_grid_x < 1 or source_grid_y < 1 or not isinstance(fields, dict):
+        raise RuntimeError("Grade WRF remota inválida.")
+
+    expected = source_grid_x * source_grid_y
+    latitudes = fields.get("lat")
+    longitudes = fields.get("lon")
+    if not isinstance(latitudes, list) or not isinstance(longitudes, list) or len(latitudes) != expected or len(longitudes) != expected:
+        raise RuntimeError("Coordenadas WRF remotas incompletas.")
+
+    row_hits: list[int] = []
+    col_hits: list[int] = []
+    for row in range(source_grid_y):
+        hit = False
+        base = row * source_grid_x
+        for col in range(source_grid_x):
+            idx = base + col
+            lat = float(latitudes[idx])
+            lon = float(longitudes[idx])
+            if bounds["south"] <= lat <= bounds["north"] and bounds["west"] <= lon <= bounds["east"]:
+                hit = True
+                break
+        if hit:
+            row_hits.append(row)
+
+    for col in range(source_grid_x):
+        hit = False
+        for row in range(source_grid_y):
+            idx = row * source_grid_x + col
+            lat = float(latitudes[idx])
+            lon = float(longitudes[idx])
+            if bounds["south"] <= lat <= bounds["north"] and bounds["west"] <= lon <= bounds["east"]:
+                hit = True
+                break
+        if hit:
+            col_hits.append(col)
+
+    if not row_hits or not col_hits:
+        raise WRFDomainError("A área solicitada não cruza a grade WRF 4 km publicada.")
+
+    row_start, row_end = min(row_hits), max(row_hits)
+    col_start, col_end = min(col_hits), max(col_hits)
+    out_grid_y = row_end - row_start + 1
+    out_grid_x = col_end - col_start + 1
+
+    field_names = (
+        "reflectivity", "precipitation", "windSpeed", "windDirection",
+        "bulkShear", "vorticity850", "temperature", "humidity", "mucape", "waterVapor",
+    )
+    for name in field_names:
+        values = fields.get(name)
+        if not isinstance(values, list) or len(values) != expected:
+            raise RuntimeError(f"Campo WRF remoto incompleto: {name}.")
+
+    cells: list[dict[str, float]] = []
+    for row in range(row_start, row_end + 1):
+        base = row * source_grid_x
+        for col in range(col_start, col_end + 1):
+            idx = base + col
+            cells.append({
+                "lat": float(latitudes[idx]),
+                "lon": float(longitudes[idx]),
+                "reflectivity": max(0.0, float(fields["reflectivity"][idx])),
+                "precipitation": max(0.0, float(fields["precipitation"][idx])),
+                "cloudCover": 0.0,
+                "windSpeed": float(fields["windSpeed"][idx]),
+                "windDirection": float(fields["windDirection"][idx]),
+                "bulkShear": float(fields["bulkShear"][idx]),
+                "vorticity850": float(fields["vorticity850"][idx]),
+                "temperature": float(fields["temperature"][idx]),
+                "humidity": float(fields["humidity"][idx]),
+                "mucape": float(fields["mucape"][idx]),
+                "waterVapor": float(fields["waterVapor"][idx]),
+            })
+
+    available_frames = [
+        {
+            "index": index,
+            "validTime": item.get("validTime"),
+            "forecastHour": item.get("forecastHour"),
+        }
+        for index, item in enumerate(frames)
+    ]
+    return {
+        "cells": cells,
+        "gridX": out_grid_x,
+        "gridY": out_grid_y,
+        "source": str(frame.get("source") or "WRF 4 km GFS via GitHub Actions"),
+        "model": "gfs",
+        "nativeGrid": False,
+        "remoteGrid": True,
+        "resolutionKm": metadata.get("resolutionKm", 4),
+        "runDate": metadata.get("runDate"),
+        "runCycle": metadata.get("runCycle"),
+        "initTime": metadata.get("initTime"),
+        "forecastHour": frame.get("forecastHour"),
+        "frameIndex": frame_index,
+        "frameCount": len(frames),
+        "validTime": frame.get("validTime"),
+        "availableFrames": available_frames,
+    }
 
 def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int, model_key: str = "icon") -> list[dict[str, float]]:
     try: import numpy as np; import xarray as xr
@@ -1653,6 +1874,23 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/simepar/image": self.handle_simepar_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/xweather/lightning": self.handle_xweather_lightning(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/health": self.send_json(200, {"status": "ok", "service": "sideral", "domain": "sul4km"}); return
+        if parsed_path == "/api/wrf/status":
+            try:
+                metadata = _wrf_remote_metadata()
+                self.send_json(200, {
+                    "status": "ok",
+                    "source": "github-wrf-data",
+                    "resolutionKm": metadata.get("resolutionKm"),
+                    "runDate": metadata.get("runDate"),
+                    "runCycle": metadata.get("runCycle"),
+                    "initTime": metadata.get("initTime"),
+                    "generatedAt": metadata.get("generatedAt"),
+                    "frameCount": metadata.get("frameCount"),
+                    "frames": metadata.get("frames"),
+                })
+            except Exception as exc:
+                self.send_json(502, {"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+            return
         if parsed_path == "/api/inmet/estacoes": self.handle_inmet_stations(); return
         if parsed_path.startswith("/api/inmet/observacao/"):
             station_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
@@ -1660,7 +1898,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/sinotica/meta": self.handle_synoptic_meta(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
         if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
-        
+
         # --- NOVO ENDPOINT SKEW-T ---
         if parsed_path == "/api/sounding":
             self.handle_sounding(parse_qs(urlparse(self.path).query)); return
@@ -2048,7 +2286,14 @@ class Handler(SimpleHTTPRequestHandler):
                     cells = wrf_payload["cells"]
                     response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
             elif path == "/api/wrf/cells":
-                wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
+                if wrf_model == "gfs":
+                    try:
+                        wrf_payload = build_remote_wrf_cells(bounds, hours, grid_x, grid_y, "gfs")
+                    except Exception as remote_exc:
+                        print(f"[WRF-REMOTE] falha; tentando wrfout local: {type(remote_exc).__name__}: {remote_exc}")
+                        wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, "gfs")
+                else:
+                    wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
                 cells = wrf_payload["cells"]
                 response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
             elif path == "/api/meteoblue/cells": cells = build_meteoblue_cells(bounds, hours, grid_x, grid_y)
