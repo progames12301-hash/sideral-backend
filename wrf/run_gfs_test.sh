@@ -16,26 +16,40 @@ free -h
 df -h
 
 log "Escolhendo rodada GFS mais recente com F006 disponível"
-NOW=$(date -u +%s)
 RUN_DATE=""
 RUN_CYCLE=""
 BASE_URL=""
-for OFFSET in 6 12 18 24 30 36; do
-  TS=$((NOW - OFFSET*3600))
-  DATE=$(date -u -d "@$TS" +%Y%m%d)
-  CYCLE=$(date -u -d "@$TS" +%H)
+
+# O GFS operacional possui apenas ciclos 00Z, 06Z, 12Z e 18Z.
+# Gera candidatos a partir do ciclo sinoptico mais recente e volta de 6 em 6 horas.
+mapfile -t GFS_CANDIDATES < <(python3 - <<'PY'
+import datetime as dt
+now = dt.datetime.now(dt.timezone.utc)
+base_hour = (now.hour // 6) * 6
+base = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
+for offset in range(0, 55, 6):
+    candidate = base - dt.timedelta(hours=offset)
+    print(candidate.strftime('%Y%m%d %H'))
+PY
+)
+
+for CANDIDATE in "${GFS_CANDIDATES[@]}"; do
+  read -r DATE CYCLE <<< "$CANDIDATE"
   URL="https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.${DATE}/${CYCLE}/atmos/gfs.t${CYCLE}z.pgrb2.0p25.f006"
   echo "Testando ${DATE} ${CYCLE}Z"
-  if curl -fsI --connect-timeout 15 --max-time 30 "$URL" >/dev/null; then
+
+  # Consulta um byte do F006. Isto evita considerar uma rodada ainda nao publicada.
+  if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
     RUN_DATE="$DATE"
     RUN_CYCLE="$CYCLE"
     BASE_URL="https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.${DATE}/${CYCLE}/atmos"
+    echo "Rodada selecionada: ${RUN_DATE} ${RUN_CYCLE}Z"
     break
   fi
 done
 
 if [[ -z "$RUN_DATE" ]]; then
-  echo "Nenhuma rodada GFS recente com F006 encontrada." >&2
+  echo "Nenhuma rodada GFS 00Z/06Z/12Z/18Z recente com F006 encontrada." >&2
   exit 20
 fi
 
