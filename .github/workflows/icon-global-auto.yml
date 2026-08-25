@@ -45,17 +45,31 @@ jobs:
           set -euxo pipefail
           rm -rf icon_publish
           python wrf/publish_global_model.py --model icon --output icon_publish
+          python wrf/add_derived_reflectivity.py --output icon_publish
           python - <<'PY'
+          import gzip
           import json
           from pathlib import Path
+
           d=json.loads(Path('icon_publish/metadata.json').read_text(encoding='utf-8'))
           assert d['schema']=='sideral-model-metadata-v1', d
           assert d['model']=='icon', d
           assert d['frameCount']==24, d
           assert d['temporalResolutionMinutes']==60, d
-          assert d['capabilities']['reflectivity'] is False, d
+          assert d['capabilities']['reflectivity'] is True, d
+          assert d['reflectivitySource']=='PRECIP_ZR_MARSHALL_PALMER_DERIVED', d
+          assert d['reflectivityNative'] is False, d
           assert d['capabilities']['mucape'] is True, d
+
+          for frame in d['frames']:
+              with gzip.open(Path('icon_publish')/frame['file'],'rt',encoding='utf-8') as fh:
+                  grid=json.load(fh)
+              assert grid['reflectivitySource']=='PRECIP_ZR_MARSHALL_PALMER_DERIVED', grid
+              assert grid['reflectivityNative'] is False, grid
+              assert len(grid['fields']['reflectivity']) == grid['gridX'] * grid['gridY'], grid
+
           print('ICON pronto:', d['initTime'], d['forecastLocalDate'], d['frameCount'])
+          print('Refletividade:', d['reflectivitySource'], d['reflectivityStats'])
           PY
 
       - name: Publicar em icon-data
@@ -74,7 +88,7 @@ jobs:
           # Sideral ICON Data
           ICON Global oficial do DWD para o proximo dia, atualizado automaticamente.
           Resolucao temporal: 1 hora. Resolucao horizontal nativa aproximada: 13 km.
-          O ICON Global nao e apresentado como fonte de refletividade composta de radar.
+          A camada de refletividade e simulada a partir da taxa de precipitacao com Marshall-Palmer (Z=200*R^1.6); nao e refletividade composta nativa do ICON Global.
           EOF
           git add .
           git commit -m "Atualiza ICON Global do proximo dia [skip render]"
@@ -89,12 +103,19 @@ jobs:
               if python - <<'PY'
           import json
           d=json.load(open('/tmp/icon-meta.json',encoding='utf-8'))
-          ok=d.get('model')=='icon' and d.get('frameCount')==24 and d.get('temporalResolutionMinutes')==60
+          ok=(
+              d.get('model')=='icon'
+              and d.get('frameCount')==24
+              and d.get('temporalResolutionMinutes')==60
+              and d.get('capabilities',{}).get('reflectivity') is True
+              and d.get('reflectivitySource')=='PRECIP_ZR_MARSHALL_PALMER_DERIVED'
+              and d.get('reflectivityNative') is False
+          )
           print(d)
           raise SystemExit(0 if ok else 1)
           PY
               then
-                echo "ICON-DATA PUBLICADO"
+                echo "ICON-DATA PUBLICADO COM REFLETIVIDADE DERIVADA"
                 exit 0
               fi
             fi
