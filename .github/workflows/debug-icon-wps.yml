@@ -1,0 +1,54 @@
+name: DEBUG ICON WPS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/debug-icon-wps.yml"
+
+jobs:
+  debug:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Preparar
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+          python -m pip install requests
+          docker pull dtcenter/wps_wrf:latest
+      - name: Rodar ate a falha e imprimir WPS
+        env:
+          WRF_RUN_HOURS: '6'
+        run: |
+          set +e
+          chmod +x wrf/run_icon_wrf.sh wrf/run_wrf_with_source.sh
+          ./wrf/run_icon_wrf.sh
+          STATUS=$?
+          set -e
+          echo "STATUS=$STATUS"
+          echo '===== SOURCE FILES ====='
+          ls -lh wrf_work/source/ || true
+          echo '===== SRC INTERMEDIATES ====='
+          ls -lh wrf_work/SRC:* 2>/dev/null || true
+          echo '===== SOIL INTERMEDIATES ====='
+          ls -lh wrf_work/SOIL:* 2>/dev/null || true
+          echo '===== UNGRIB SOURCE ====='
+          cat wrf_work/ungrib-source.stdout 2>/dev/null || true
+          cat wrf_work/ungrib.log 2>/dev/null || true
+          echo '===== UNGRIB SOIL ====='
+          cat wrf_work/ungrib-soil.stdout 2>/dev/null || true
+          echo '===== METGRID ====='
+          cat wrf_work/metgrid.stdout 2>/dev/null || true
+          cat wrf_work/metgrid.log 2>/dev/null || true
+          echo '===== MET HEADER ====='
+          ncdump -h wrf_work/met_em.d01.*.nc 2>/dev/null | sed -n '1,260p' || true
+          exit "$STATUS"
