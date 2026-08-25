@@ -54,6 +54,31 @@ jobs:
           set -euxo pipefail
           git fetch origin wrf-runner
           git show origin/wrf-runner:wrf/patch_server_remote_v2.py > /tmp/patch_server_remote_v2.py
+
+          # re.sub trata barras invertidas do texto de substituicao como escapes.
+          # Os blocos de codigo contem regex como \d{3}; usamos uma funcao de
+          # substituicao para inserir esses blocos literalmente.
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patch_server_remote_v2.py')
+          s=p.read_text(encoding='utf-8')
+          replacements = {
+              'config_pattern.subn(CONFIG_BLOCK.strip("\\n") + "\\n", text, count=1)':
+                  'config_pattern.subn(lambda _m: CONFIG_BLOCK.strip("\\n") + "\\n", text, count=1)',
+              'helper_pattern.subn(HELPER_BLOCK.strip("\\n") + "\\n\\n", text, count=1)':
+                  'helper_pattern.subn(lambda _m: HELPER_BLOCK.strip("\\n") + "\\n\\n", text, count=1)',
+              'status_pattern.subn(STATUS_BLOCK, text, count=1)':
+                  'status_pattern.subn(lambda _m: STATUS_BLOCK, text, count=1)',
+              'route_pattern.subn(ROUTE_BLOCK, text, count=1)':
+                  'route_pattern.subn(lambda _m: ROUTE_BLOCK, text, count=1)',
+          }
+          for old,new in replacements.items():
+              if old not in s:
+                  raise SystemExit(f'Linha esperada nao encontrada no patch: {old}')
+              s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+
           python /tmp/patch_server_remote_v2.py server.py
           python - <<'PY'
           from pathlib import Path
