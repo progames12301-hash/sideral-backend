@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sideral-wrf-next-day
+  cancel-in-progress: false
+
 jobs:
   next-day:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
@@ -52,7 +56,7 @@ jobs:
           set -euxo pipefail
           docker pull dtcenter/wps_wrf:latest
 
-      - name: Rodar mesma rodada ate F042
+      - name: Rodar mesma rodada ate F042 com saida horaria
         run: |
           set -euxo pipefail
           echo "Rodada fixa: ${FORCE_RUN_DATE} ${FORCE_RUN_CYCLE}Z"
@@ -69,7 +73,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy xarray netCDF4
 
-      - name: Extrair REFL_10CM nativo
+      - name: Extrair REFL_10CM nativo e selecionar 24 horas BRT
         run: |
           set -euxo pipefail
           rm -rf wrf_publish
@@ -86,10 +90,12 @@ jobs:
           d = json.loads(Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
           assert d.get('scope') == 'next_local_day', d
           assert d.get('timezone') == 'America/Sao_Paulo', d
-          assert d.get('frameCount') == 8, d
+          assert d.get('frameCount') == 24, d
+          assert d.get('temporalResolutionMinutes') == 60, d
+          assert d.get('localHours') == list(range(24)), d
           assert d.get('reflectivitySource') == 'REFL_10CM_NATIVE', d
           print('Data local publicada:', d['forecastLocalDate'])
-          print('Horas:', [(f['forecastHour'], f['localValidTime']) for f in d['frames']])
+          print('24 HORARIOS:', [(f['forecastHour'], f['localValidTime']) for f in d['frames']])
           PY
 
       - name: Publicar proximo dia em wrf-data
@@ -107,10 +113,11 @@ jobs:
           cat > README.md <<'EOF'
           # Sideral WRF Data
           Previsao WRF Sul 4 km do proximo dia em horario de Brasilia.
+          24 quadros horarios (00-23 BRT).
           Refletividade: REFL_10CM nativo do WRF.
           EOF
           git add .
-          git commit -m "Publica WRF 4 km do proximo dia [skip render]"
+          git commit -m "Publica WRF 4 km horario do proximo dia [skip render]"
           git push --force origin HEAD:wrf-data
 
       - name: Confirmar publicacao remota
@@ -125,7 +132,9 @@ jobs:
           ok = (
               d.get('scope') == 'next_local_day'
               and d.get('timezone') == 'America/Sao_Paulo'
-              and d.get('frameCount') == 8
+              and d.get('frameCount') == 24
+              and d.get('temporalResolutionMinutes') == 60
+              and d.get('localHours') == list(range(24))
               and d.get('reflectivitySource') == 'REFL_10CM_NATIVE'
               and all(f.get('reflectivitySource') == 'REFL_10CM_NATIVE' for f in d.get('frames', []))
           )
@@ -133,7 +142,7 @@ jobs:
           raise SystemExit(0 if ok else 1)
           PY
               then
-                echo "PROXIMO DIA WRF PUBLICADO COM SUCESSO"
+                echo "PROXIMO DIA WRF HORARIO PUBLICADO COM SUCESSO"
                 exit 0
               fi
             fi
