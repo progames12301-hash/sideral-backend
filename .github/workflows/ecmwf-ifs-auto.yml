@@ -1,0 +1,108 @@
+name: ECMWF IFS - PROXIMO DIA AUTOMATICO
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 22:10 UTC = 19:10 BRT. O cliente oficial escolhe a rodada IFS mais
+    # recente que ja contenha os campos necessarios para o proximo dia.
+    - cron: '10 22 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-ecmwf-ifs-daily
+  cancel-in-progress: false
+
+jobs:
+  ecmwf-next-day:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout wrf-runner
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias ECMWF
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy scipy requests eccodes ecmwf-opendata
+
+      - name: Baixar e processar IFS Open Data
+        run: |
+          set -euxo pipefail
+          rm -rf ecmwf_publish
+          python wrf/publish_global_model.py --model ecmwf --output ecmwf_publish
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('ecmwf_publish/metadata.json').read_text(encoding='utf-8'))
+          assert d['schema']=='sideral-model-metadata-v1', d
+          assert d['model']=='ecmwf', d
+          assert d['frameCount']==8, d
+          assert d['temporalResolutionMinutes']==180, d
+          assert d['capabilities']['reflectivity'] is False, d
+          assert d['capabilities']['waterVapor'] is True, d
+          print('ECMWF pronto:', d['initTime'], d['forecastLocalDate'], d['frameCount'])
+          PY
+
+      - name: Publicar em ecmwf-data
+        run: |
+          set -euxo pipefail
+          git config user.name "sideral-model-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/sideral-ecmwf-data
+          git worktree add --detach /tmp/sideral-ecmwf-data
+          cd /tmp/sideral-ecmwf-data
+          git checkout --orphan ecmwf-data-next
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/ecmwf_publish/." .
+          cat > README.md <<'EOF'
+          # Sideral ECMWF Data
+          ECMWF IFS 0.25 grau Open Data para o proximo dia, atualizado automaticamente.
+          Resolucao temporal: 3 horas. Resolucao horizontal aproximada: 28 km.
+          O IFS Open Data nao e apresentado como fonte de refletividade composta de radar.
+          EOF
+          git add .
+          git commit -m "Atualiza ECMWF IFS do proximo dia [skip render]"
+          git push --force origin HEAD:ecmwf-data
+
+      - name: Confirmar publicacao
+        run: |
+          set -euxo pipefail
+          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/ecmwf-data/metadata.json?run=${GITHUB_RUN_ID}"
+          for N in $(seq 1 12); do
+            if curl -fsSL --connect-timeout 10 --max-time 30 "$URL-$N" -o /tmp/ecmwf-meta.json; then
+              if python - <<'PY'
+          import json
+          d=json.load(open('/tmp/ecmwf-meta.json',encoding='utf-8'))
+          ok=d.get('model')=='ecmwf' and d.get('frameCount')==8 and d.get('temporalResolutionMinutes')==180
+          print(d)
+          raise SystemExit(0 if ok else 1)
+          PY
+              then
+                echo "ECMWF-DATA PUBLICADO"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          exit 41
+
+      - name: Salvar diagnostico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecmwf-ifs-preview
+          path: ecmwf_publish/
+          retention-days: 3
+          if-no-files-found: warn
