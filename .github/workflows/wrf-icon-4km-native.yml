@@ -172,27 +172,27 @@ jobs:
           python -m pip install requests numpy xarray netCDF4
           docker pull dtcenter/wps_wrf:latest
 
-      - name: Aguardar ICON F042 da mesma rodada
+      - name: Aguardar ICON F045 da mesma rodada
         env:
           FORCE_RUN_DATE: ${{ needs.short.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ needs.short.outputs.run_cycle }}
         run: |
           set -euxo pipefail
-          printf -v FH '%03d' 42
+          printf -v FH '%03d' 45
           URL="https://opendata.dwd.de/weather/nwp/icon/grib/${FORCE_RUN_CYCLE}/t_2m/icon_global_icosahedral_single-level_${FORCE_RUN_DATE}${FORCE_RUN_CYCLE}_${FH}_T_2M.grib2.bz2"
           for TRY in $(seq 1 18); do
             if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
-              echo "ICON F042 disponivel na tentativa $TRY"
+              echo "ICON F045 disponivel na tentativa $TRY"
               exit 0
             fi
-            echo "ICON F042 ainda nao disponivel; aguardando 5 minutos ($TRY/18)"
+            echo "ICON F045 ainda nao disponivel; aguardando 5 minutos ($TRY/18)"
             sleep 300
           done
           exit 22
 
-      - name: Continuar mesma rodada ICON ate F042
+      - name: Continuar mesma rodada ICON ate F045
         env:
-          WRF_RUN_HOURS: '42'
+          WRF_RUN_HOURS: '45'
           FORCE_RUN_DATE: ${{ needs.short.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ needs.short.outputs.run_cycle }}
         run: |
