@@ -1,0 +1,108 @@
+name: ICON Global - PROXIMO DIA AUTOMATICO
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 22:40 UTC = 19:40 BRT. Procura automaticamente a rodada ICON mais
+    # recente que ja tenha as 24 horas completas do proximo dia.
+    - cron: '40 22 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-icon-global-daily
+  cancel-in-progress: false
+
+jobs:
+  icon-next-day:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout wrf-runner
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Preparar Python e ecCodes
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy scipy requests eccodes
+
+      - name: Baixar e processar ICON oficial
+        run: |
+          set -euxo pipefail
+          rm -rf icon_publish
+          python wrf/publish_global_model.py --model icon --output icon_publish
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('icon_publish/metadata.json').read_text(encoding='utf-8'))
+          assert d['schema']=='sideral-model-metadata-v1', d
+          assert d['model']=='icon', d
+          assert d['frameCount']==24, d
+          assert d['temporalResolutionMinutes']==60, d
+          assert d['capabilities']['reflectivity'] is False, d
+          assert d['capabilities']['mucape'] is True, d
+          print('ICON pronto:', d['initTime'], d['forecastLocalDate'], d['frameCount'])
+          PY
+
+      - name: Publicar em icon-data
+        run: |
+          set -euxo pipefail
+          git config user.name "sideral-model-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/sideral-icon-data
+          git worktree add --detach /tmp/sideral-icon-data
+          cd /tmp/sideral-icon-data
+          git checkout --orphan icon-data-next
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/icon_publish/." .
+          cat > README.md <<'EOF'
+          # Sideral ICON Data
+          ICON Global oficial do DWD para o proximo dia, atualizado automaticamente.
+          Resolucao temporal: 1 hora. Resolucao horizontal nativa aproximada: 13 km.
+          O ICON Global nao e apresentado como fonte de refletividade composta de radar.
+          EOF
+          git add .
+          git commit -m "Atualiza ICON Global do proximo dia [skip render]"
+          git push --force origin HEAD:icon-data
+
+      - name: Confirmar publicacao
+        run: |
+          set -euxo pipefail
+          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/icon-data/metadata.json?run=${GITHUB_RUN_ID}"
+          for N in $(seq 1 12); do
+            if curl -fsSL --connect-timeout 10 --max-time 30 "$URL-$N" -o /tmp/icon-meta.json; then
+              if python - <<'PY'
+          import json
+          d=json.load(open('/tmp/icon-meta.json',encoding='utf-8'))
+          ok=d.get('model')=='icon' and d.get('frameCount')==24 and d.get('temporalResolutionMinutes')==60
+          print(d)
+          raise SystemExit(0 if ok else 1)
+          PY
+              then
+                echo "ICON-DATA PUBLICADO"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          exit 41
+
+      - name: Salvar diagnostico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: icon-global-preview
+          path: icon_publish/
+          retention-days: 3
+          if-no-files-found: warn
