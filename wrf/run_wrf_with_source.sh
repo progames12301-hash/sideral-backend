@@ -27,8 +27,8 @@ case "$SOURCE_MODEL" in
 esac
 
 case "$WRF_RUN_HOURS" in
-  6|42) ;;
-  *) echo "WRF_RUN_HOURS precisa ser 6 ou 42" >&2; exit 3 ;;
+  6|42|45) ;;
+  *) echo "WRF_RUN_HOURS precisa ser 6, 42 ou 45" >&2; exit 3 ;;
 esac
 
 log "Copiando atmosfera ${SOURCE_MODEL^^}"
@@ -264,10 +264,10 @@ docker run --rm \
     FIRST_MET=$(find . -maxdepth 1 -name "met_em.d01.*.nc" -print | sort | head -1)
     test -n "$FIRST_MET"
     ncdump -h "$FIRST_MET" > met-header.txt
-    NUM_LEVELS=$(sed -n "s/.*NUM_METGRID_LEVELS = \([0-9][0-9]*\).*/\1/p" met-header.txt | head -1)
-    NUM_SOIL=$(sed -n "s/.*NUM_METGRID_SOIL_LEVELS = \([0-9][0-9]*\).*/\1/p" met-header.txt | head -1)
-    test -n "$NUM_LEVELS" || { echo "NUM_METGRID_LEVELS nao detectado" >&2; cat met-header.txt; exit 47; }
-    test -n "$NUM_SOIL" || NUM_SOIL=4
+    NUM_LEVELS=$(sed -n "s/.*num_metgrid_levels = \([0-9][0-9]*\).*/\1/p" met-header.txt | head -1)
+    NUM_SOIL=$(sed -n "s/.*num_sm_layers = \([0-9][0-9]*\).*/\1/p" met-header.txt | head -1)
+    test -n "$NUM_LEVELS" || { echo "num_metgrid_levels nao detectado" >&2; cat met-header.txt; exit 47; }
+    test -n "$NUM_SOIL" || { echo "num_sm_layers nao detectado; usando 4"; NUM_SOIL=4; }
     echo "METGRID levels=$NUM_LEVELS soil=$NUM_SOIL"
     sed -i "s/num_metgrid_levels = [0-9][0-9]*/num_metgrid_levels = $NUM_LEVELS/" namelist.input
     sed -i "s/num_metgrid_soil_levels = [0-9][0-9]*/num_metgrid_soil_levels = $NUM_SOIL/" namelist.input
