@@ -53,16 +53,28 @@ DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8766"))
 
 
-# SIDERAL_WRF_GITHUB_REMOTE_V1
-# O WRF pesado roda no GitHub Actions. O Render baixa apenas JSON gzip compacto
-# publicado na branch wrf-data.
-WRF_GITHUB_RAW_BASE = os.environ.get(
-    "WRF_GITHUB_RAW_BASE",
-    "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-data",
-).rstrip("/")
-WRF_REMOTE_CACHE_SECONDS = int(os.environ.get("WRF_REMOTE_CACHE_SECONDS", "300"))
-wrf_remote_cache: dict[str, Any] = {"metadata": None, "frames": {}}
-wrf_remote_lock = threading.Lock()
+# SIDERAL_MODEL_GITHUB_REMOTE_V2
+# Os produtos leves publicados pelo GitHub Actions sao lidos pelo Render.
+# GFS usa WRF 4 km/REFL_10CM; ICON e ECMWF usam campos oficiais diretos.
+MODEL_REMOTE_BASES = {
+    "gfs": os.environ.get(
+        "WRF_GITHUB_RAW_BASE",
+        "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-data",
+    ).rstrip("/"),
+    "icon": os.environ.get(
+        "ICON_GITHUB_RAW_BASE",
+        "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/icon-data",
+    ).rstrip("/"),
+    "ecmwf": os.environ.get(
+        "ECMWF_GITHUB_RAW_BASE",
+        "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/ecmwf-data",
+    ).rstrip("/"),
+}
+MODEL_REMOTE_CACHE_SECONDS = int(os.environ.get("MODEL_REMOTE_CACHE_SECONDS", "120"))
+model_remote_cache: dict[str, dict[str, Any]] = {
+    key: {"metadata": None, "frames": {}} for key in MODEL_REMOTE_BASES
+}
+model_remote_lock = threading.Lock()
 
 INMET_STATIONS_URL = "https://apitempo.inmet.gov.br/estacoes/T"
 INMET_OBSERVATION_URL = "https://apitempo.inmet.gov.br/estacao/{start}/{end}/{station}"
@@ -639,55 +651,68 @@ def get_wrf_variable(ncfile_list: list[Any], var_name: str, timeidx: int) -> Any
 
 
 
-def _wrf_remote_metadata() -> dict[str, Any]:
+def _model_remote_key(model_key: str) -> str:
+    key = (model_key or "gfs").lower().strip()
+    if key not in MODEL_REMOTE_BASES:
+        raise ValueError(f"Modelo remoto invalido: {model_key}")
+    return key
+
+
+def _wrf_remote_metadata(model_key: str = "gfs") -> dict[str, Any]:
+    key = _model_remote_key(model_key)
     now = time.monotonic()
-    cached = wrf_remote_cache.get("metadata")
-    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < WRF_REMOTE_CACHE_SECONDS:
+    cache = model_remote_cache[key]
+    cached = cache.get("metadata")
+    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < MODEL_REMOTE_CACHE_SECONDS:
         data = cached.get("data")
         if isinstance(data, dict):
             return data
 
-    with wrf_remote_lock:
-        cached = wrf_remote_cache.get("metadata")
-        if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < WRF_REMOTE_CACHE_SECONDS:
+    with model_remote_lock:
+        cached = cache.get("metadata")
+        if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < MODEL_REMOTE_CACHE_SECONDS:
             data = cached.get("data")
             if isinstance(data, dict):
                 return data
 
-        url = f"{WRF_GITHUB_RAW_BASE}/metadata.json?ts={int(time.time() // 60)}"
+        url = f"{MODEL_REMOTE_BASES[key]}/metadata.json?ts={int(time.time() // 60)}"
         response = requests.get(
             url,
-            headers={"User-Agent": "SideralMeteorologia/1.0", "Accept": "application/json"},
+            headers={"User-Agent": "SideralMeteorologia/2.0", "Accept": "application/json"},
             timeout=20,
         )
         response.raise_for_status()
         data = response.json()
-        if not isinstance(data, dict) or data.get("schema") != "sideral-wrf-metadata-v1":
-            raise RuntimeError("Metadata WRF remoto em formato inesperado.")
+        allowed_schemas = {"sideral-wrf-metadata-v1", "sideral-model-metadata-v1"}
+        if not isinstance(data, dict) or data.get("schema") not in allowed_schemas:
+            raise RuntimeError(f"Metadata remoto de {key} em formato inesperado.")
+        if str(data.get("model") or key).lower() != key:
+            raise RuntimeError(f"Metadata remoto pertence a outro modelo: {data.get('model')}")
         frames = data.get("frames")
         if not isinstance(frames, list) or not frames:
-            raise RuntimeError("Metadata WRF remoto não contém quadros.")
-        wrf_remote_cache["metadata"] = {"saved_at": now, "data": data}
+            raise RuntimeError(f"Metadata remoto de {key} nao contem quadros.")
+        cache["metadata"] = {"saved_at": now, "data": data}
         return data
 
 
-def _wrf_remote_frame(filename: str) -> dict[str, Any]:
+def _wrf_remote_frame(model_key: str, filename: str) -> dict[str, Any]:
+    key = _model_remote_key(model_key)
     safe_name = str(filename or "")
-    if not re.fullmatch(r"gfs/f\d{3}\.json\.gz", safe_name):
-        raise ValueError("Nome de quadro WRF remoto inválido.")
+    if not re.fullmatch(rf"{re.escape(key)}/f\d{{3}}\.json\.gz", safe_name):
+        raise ValueError(f"Nome de quadro remoto invalido para {key}: {safe_name}")
 
     now = time.monotonic()
-    frames_cache = wrf_remote_cache.setdefault("frames", {})
+    frames_cache = model_remote_cache[key].setdefault("frames", {})
     cached = frames_cache.get(safe_name)
-    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < WRF_REMOTE_CACHE_SECONDS:
+    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < MODEL_REMOTE_CACHE_SECONDS:
         data = cached.get("data")
         if isinstance(data, dict):
             return data
 
-    url = f"{WRF_GITHUB_RAW_BASE}/{safe_name}?ts={int(time.time() // 60)}"
+    url = f"{MODEL_REMOTE_BASES[key]}/{safe_name}?ts={int(time.time() // 60)}"
     response = requests.get(
         url,
-        headers={"User-Agent": "SideralMeteorologia/1.0", "Accept": "application/gzip,application/octet-stream"},
+        headers={"User-Agent": "SideralMeteorologia/2.0", "Accept": "application/gzip,application/octet-stream"},
         timeout=35,
     )
     response.raise_for_status()
@@ -695,12 +720,15 @@ def _wrf_remote_frame(filename: str) -> dict[str, Any]:
         decoded = zlib.decompress(response.content, 16 + zlib.MAX_WBITS)
         data = json.loads(decoded.decode("utf-8"))
     except Exception as exc:
-        raise RuntimeError(f"Falha ao descompactar quadro WRF remoto: {exc}") from exc
-    if not isinstance(data, dict) or data.get("schema") != "sideral-wrf-grid-v1":
-        raise RuntimeError("Quadro WRF remoto em formato inesperado.")
+        raise RuntimeError(f"Falha ao descompactar quadro remoto {key}: {exc}") from exc
+
+    if not isinstance(data, dict) or data.get("schema") not in {"sideral-wrf-grid-v1", "sideral-model-grid-v1"}:
+        raise RuntimeError(f"Quadro remoto {key} em formato inesperado.")
+    if str(data.get("model") or key).lower() != key:
+        raise RuntimeError(f"Quadro remoto pertence a outro modelo: {data.get('model')}")
 
     frames_cache[safe_name] = {"saved_at": now, "data": data}
-    while len(frames_cache) > 12:
+    while len(frames_cache) > 40:
         frames_cache.pop(next(iter(frames_cache)))
     return data
 
@@ -712,10 +740,8 @@ def build_remote_wrf_cells(
     grid_y: int,
     model_key: str = "gfs",
 ) -> dict[str, Any]:
-    if (model_key or "gfs").lower() != "gfs":
-        raise FileNotFoundError(f"WRF remoto ainda não publicado para {model_key}.")
-
-    metadata = _wrf_remote_metadata()
+    key = _model_remote_key(model_key)
+    metadata = _wrf_remote_metadata(key)
     frames = metadata.get("frames") or []
     requested_hour = max(0, int(hours))
     frame_index = min(
@@ -723,10 +749,10 @@ def build_remote_wrf_cells(
         key=lambda index: abs(int(frames[index].get("forecastHour") or 0) - requested_hour),
     )
     frame_meta = frames[frame_index]
-    frame = _wrf_remote_frame(str(frame_meta.get("file") or ""))
+    frame = _wrf_remote_frame(key, str(frame_meta.get("file") or ""))
 
     source_bounds = frame.get("bounds") or {}
-    margin = 0.15
+    margin = 0.20
     try:
         if (
             bounds["south"] < float(source_bounds["south"]) - margin
@@ -735,54 +761,50 @@ def build_remote_wrf_cells(
             or bounds["east"] > float(source_bounds["east"]) + margin
         ):
             raise WRFDomainError(
-                "Os dados WRF 4 km publicados não cobrem toda a área solicitada: "
+                f"Os dados {key.upper()} publicados cobrem apenas "
                 f"{source_bounds.get('south')}..{source_bounds.get('north')} lat / "
                 f"{source_bounds.get('west')}..{source_bounds.get('east')} lon."
             )
     except KeyError as exc:
-        raise RuntimeError("Bounds ausentes no quadro WRF remoto.") from exc
+        raise RuntimeError(f"Bounds ausentes no quadro remoto {key}.") from exc
 
     source_grid_x = int(frame.get("gridX") or 0)
     source_grid_y = int(frame.get("gridY") or 0)
     fields = frame.get("fields")
     if source_grid_x < 1 or source_grid_y < 1 or not isinstance(fields, dict):
-        raise RuntimeError("Grade WRF remota inválida.")
+        raise RuntimeError(f"Grade remota {key} invalida.")
 
     expected = source_grid_x * source_grid_y
     latitudes = fields.get("lat")
     longitudes = fields.get("lon")
-    if not isinstance(latitudes, list) or not isinstance(longitudes, list) or len(latitudes) != expected or len(longitudes) != expected:
-        raise RuntimeError("Coordenadas WRF remotas incompletas.")
+    if (
+        not isinstance(latitudes, list)
+        or not isinstance(longitudes, list)
+        or len(latitudes) != expected
+        or len(longitudes) != expected
+    ):
+        raise RuntimeError(f"Coordenadas remotas {key} incompletas.")
 
     row_hits: list[int] = []
     col_hits: list[int] = []
     for row in range(source_grid_y):
-        hit = False
         base = row * source_grid_x
-        for col in range(source_grid_x):
-            idx = base + col
-            lat = float(latitudes[idx])
-            lon = float(longitudes[idx])
-            if bounds["south"] <= lat <= bounds["north"] and bounds["west"] <= lon <= bounds["east"]:
-                hit = True
-                break
-        if hit:
+        if any(
+            bounds["south"] <= float(latitudes[base + col]) <= bounds["north"]
+            and bounds["west"] <= float(longitudes[base + col]) <= bounds["east"]
+            for col in range(source_grid_x)
+        ):
             row_hits.append(row)
-
     for col in range(source_grid_x):
-        hit = False
-        for row in range(source_grid_y):
-            idx = row * source_grid_x + col
-            lat = float(latitudes[idx])
-            lon = float(longitudes[idx])
-            if bounds["south"] <= lat <= bounds["north"] and bounds["west"] <= lon <= bounds["east"]:
-                hit = True
-                break
-        if hit:
+        if any(
+            bounds["south"] <= float(latitudes[row * source_grid_x + col]) <= bounds["north"]
+            and bounds["west"] <= float(longitudes[row * source_grid_x + col]) <= bounds["east"]
+            for row in range(source_grid_y)
+        ):
             col_hits.append(col)
 
     if not row_hits or not col_hits:
-        raise WRFDomainError("A área solicitada não cruza a grade WRF 4 km publicada.")
+        raise WRFDomainError(f"A area solicitada nao cruza a grade remota {key}.")
 
     row_start, row_end = min(row_hits), max(row_hits)
     col_start, col_end = min(col_hits), max(col_hits)
@@ -796,7 +818,7 @@ def build_remote_wrf_cells(
     for name in field_names:
         values = fields.get(name)
         if not isinstance(values, list) or len(values) != expected:
-            raise RuntimeError(f"Campo WRF remoto incompleto: {name}.")
+            raise RuntimeError(f"Campo remoto {key} incompleto: {name}.")
 
     cells: list[dict[str, float]] = []
     for row in range(row_start, row_end + 1):
@@ -823,19 +845,35 @@ def build_remote_wrf_cells(
         {
             "index": index,
             "validTime": item.get("validTime"),
+            "localValidTime": item.get("localValidTime"),
             "forecastHour": item.get("forecastHour"),
         }
         for index, item in enumerate(frames)
     ]
+    default_capabilities = {
+        "reflectivity": key == "gfs",
+        "precipitation": True,
+        "wind": True,
+        "temperature": True,
+        "humidity": True,
+        "mucape": True,
+        "bulkShear": key == "gfs",
+        "vorticity850": key == "gfs",
+        "waterVapor": key in {"gfs", "ecmwf"},
+    }
+    capabilities = metadata.get("capabilities")
+    if not isinstance(capabilities, dict):
+        capabilities = default_capabilities
+
     return {
         "cells": cells,
         "gridX": out_grid_x,
         "gridY": out_grid_y,
-        "source": str(frame.get("source") or "WRF 4 km GFS via GitHub Actions"),
-        "model": "gfs",
+        "source": str(frame.get("source") or metadata.get("provider") or key.upper()),
+        "model": key,
         "nativeGrid": False,
         "remoteGrid": True,
-        "resolutionKm": metadata.get("resolutionKm", 4),
+        "resolutionKm": metadata.get("resolutionKm"),
         "runDate": metadata.get("runDate"),
         "runCycle": metadata.get("runCycle"),
         "initTime": metadata.get("initTime"),
@@ -844,6 +882,12 @@ def build_remote_wrf_cells(
         "frameCount": len(frames),
         "validTime": frame.get("validTime"),
         "availableFrames": available_frames,
+        "capabilities": capabilities,
+        "forecastLocalDate": metadata.get("forecastLocalDate"),
+        "timezone": metadata.get("timezone"),
+        "scope": metadata.get("scope"),
+        "temporalResolutionMinutes": metadata.get("temporalResolutionMinutes"),
+        "note": metadata.get("note"),
     }
 
 def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int, model_key: str = "icon") -> list[dict[str, float]]:
@@ -1876,17 +1920,42 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/health": self.send_json(200, {"status": "ok", "service": "sideral", "domain": "sul4km"}); return
         if parsed_path == "/api/wrf/status":
             try:
-                metadata = _wrf_remote_metadata()
+                status_query = parse_qs(urlparse(self.path).query)
+                model_key = str(status_query.get("model", ["gfs"])[0]).lower().strip()
+                if model_key not in MODEL_REMOTE_BASES:
+                    self.send_json(400, {"status": "error", "error": "Modelo invalido. Use gfs, icon ou ecmwf."})
+                    return
+                metadata = _wrf_remote_metadata(model_key)
+                capabilities = metadata.get("capabilities")
+                if not isinstance(capabilities, dict):
+                    capabilities = {
+                        "reflectivity": model_key == "gfs",
+                        "precipitation": True,
+                        "wind": True,
+                        "temperature": True,
+                        "humidity": True,
+                        "mucape": True,
+                        "bulkShear": model_key == "gfs",
+                        "vorticity850": model_key == "gfs",
+                        "waterVapor": model_key in {"gfs", "ecmwf"},
+                    }
                 self.send_json(200, {
                     "status": "ok",
-                    "source": "github-wrf-data",
+                    "source": "github-model-data",
+                    "model": model_key,
                     "resolutionKm": metadata.get("resolutionKm"),
                     "runDate": metadata.get("runDate"),
                     "runCycle": metadata.get("runCycle"),
                     "initTime": metadata.get("initTime"),
                     "generatedAt": metadata.get("generatedAt"),
+                    "forecastLocalDate": metadata.get("forecastLocalDate"),
+                    "timezone": metadata.get("timezone"),
+                    "scope": metadata.get("scope"),
+                    "temporalResolutionMinutes": metadata.get("temporalResolutionMinutes"),
                     "frameCount": metadata.get("frameCount"),
                     "frames": metadata.get("frames"),
+                    "capabilities": capabilities,
+                    "note": metadata.get("note"),
                 })
             except Exception as exc:
                 self.send_json(502, {"status": "error", "error": f"{type(exc).__name__}: {exc}"})
@@ -2274,7 +2343,7 @@ class Handler(SimpleHTTPRequestHandler):
             hours = max(0, int(payload.get("hours", 0)))
             grid_x = max(1, min(260, int(payload.get("gridX", 64))))
             grid_y = max(1, min(240, int(payload.get("gridY", 63))))
-            wrf_model = str(payload.get("wrfModel", "icon")).lower()
+            wrf_model = str(payload.get("wrfModel", "gfs")).lower()
             if wrf_model not in WRF_MODEL_OUTPUTS: wrf_model = "icon"
             response_extra: dict[str, Any] = {}
             if path == "/api/gfs/cells":
@@ -2286,14 +2355,9 @@ class Handler(SimpleHTTPRequestHandler):
                     cells = wrf_payload["cells"]
                     response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
             elif path == "/api/wrf/cells":
-                if wrf_model == "gfs":
-                    try:
-                        wrf_payload = build_remote_wrf_cells(bounds, hours, grid_x, grid_y, "gfs")
-                    except Exception as remote_exc:
-                        print(f"[WRF-REMOTE] falha; tentando wrfout local: {type(remote_exc).__name__}: {remote_exc}")
-                        wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, "gfs")
-                else:
-                    wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
+                # Todos os modelos publicados pelo GitHub usam a mesma interface.
+                # GFS = WRF 4 km com REFL_10CM. ICON/ECMWF = campos oficiais diretos.
+                wrf_payload = build_remote_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
                 cells = wrf_payload["cells"]
                 response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
             elif path == "/api/meteoblue/cells": cells = build_meteoblue_cells(bounds, hours, grid_x, grid_y)
