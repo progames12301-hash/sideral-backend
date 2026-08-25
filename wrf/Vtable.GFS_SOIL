@@ -1,0 +1,17 @@
+GRIB1| Level| From |  To  | metgrid  | metgrid | metgrid                                 |GRIB2|GRIB2|GRIB2|GRIB2|
+Param| Type |Level1|Level2| Name     | Units   | Description                             |Discp|Catgy|Param|Level|
+-----+------+------+------+----------+---------+-----------------------------------------+-----------------------+
+  11 |   1  |   0  |      | SKINTEMP | K       | Skin temperature                        |  0  |  0  |  0  |   1 |
+  81 |   1  |   0  |      | LANDSEA  | proprtn | Land/Sea flag                           |  2  |  0  |  0  |   1 |
+   7 |   1  |   0  |      | SOILHGT  | m       | Terrain field of source analysis        |  0  |  3  |  5  |   1 |
+  65 |   1  |   0  |      | SNOW     | kg m-2  | Water equivalent snow depth             |  0  |  1  | 13  |   1 |
+  91 |   1  |   0  |      | SEAICE   | proprtn | Sea ice flag                            | 10  |  2  |  0  |   1 |
+  11 | 112  |   0  |  10  | ST000010 | K       | Soil temperature 0-10 cm                |  0  |  0  |  0  | 106 |
+  11 | 112  |  10  |  40  | ST010040 | K       | Soil temperature 10-40 cm               |  0  |  0  |  0  | 106 |
+  11 | 112  |  40  | 100  | ST040100 | K       | Soil temperature 40-100 cm              |  0  |  0  |  0  | 106 |
+  11 | 112  | 100  | 200  | ST100200 | K       | Soil temperature 100-200 cm             |  0  |  0  |  0  | 106 |
+ 144 | 112  |   0  |  10  | SM000010 | fraction| Soil moisture 0-10 cm                   |  2  |  0  | 192 | 106 |
+ 144 | 112  |  10  |  40  | SM010040 | fraction| Soil moisture 10-40 cm                  |  2  |  0  | 192 | 106 |
+ 144 | 112  |  40  | 100  | SM040100 | fraction| Soil moisture 40-100 cm                 |  2  |  0  | 192 | 106 |
+ 144 | 112  | 100  | 200  | SM100200 | fraction| Soil moisture 100-200 cm                |  2  |  0  | 192 | 106 |
+-----+------+------+------+----------+---------+-----------------------------------------+-----------------------+
