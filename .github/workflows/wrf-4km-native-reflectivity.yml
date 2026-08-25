@@ -2,9 +2,18 @@ name: WRF 4 km - REFL NATIVO - USE ESTE
 
 on:
   workflow_dispatch:
+  schedule:
+    # 00:20 UTC = 21:20 BRT do dia anterior. Neste horario a rodada GFS 18Z
+    # normalmente ja possui F006 e o seletor interno recua automaticamente
+    # para a rodada sinoptica anterior se a 18Z ainda nao estiver pronta.
+    - cron: '20 0 * * *'
 
 permissions:
   contents: write
+
+concurrency:
+  group: sideral-wrf-native-daily
+  cancel-in-progress: false
 
 jobs:
   wrf-native-reflectivity:
@@ -12,16 +21,18 @@ jobs:
     timeout-minutes: 330
 
     steps:
-      - name: Checkout WRF com radar nativo
+      - name: Checkout WRF atual
         uses: actions/checkout@v4
         with:
-          ref: 790734fd9d1bd1d77d4fd5c2484bbe96b9621d1a
+          ref: wrf-runner
           fetch-depth: 0
 
       - name: Confirmar configuracao nativa
         run: |
           set -euxo pipefail
           echo "SIDERAL WRF 4 KM - REFL_10CM NATIVO"
+          echo "Execucao: ${GITHUB_EVENT_NAME}"
+          git rev-parse HEAD
           grep -q "do_radar_ref = 1" wrf/run_gfs_test.sh
           grep -q "mp_physics = 8" wrf/run_gfs_test.sh
           grep -q "REFL_10CM_NATIVE" wrf/extract_wrf_json.py
@@ -140,23 +151,15 @@ jobs:
           meta = json.loads(Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
           assert meta['frameCount'] >= 3, meta
           assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', meta
-
           for frame in meta['frames']:
               assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', frame
               path = Path('wrf_publish') / frame['file']
               with gzip.open(path, 'rt', encoding='utf-8') as fh:
                   data = json.load(fh)
               assert data.get('reflectivitySource') == 'REFL_10CM_NATIVE', data
-              values = data['fields']['reflectivity']
-              assert len(values) == data['gridX'] * data['gridY']
+              assert len(data['fields']['reflectivity']) == data['gridX'] * data['gridY']
               stats = data['reflectivityStats']
-              print(
-                  f"F{int(frame['forecastHour']):03d}",
-                  frame['validTime'],
-                  f"MAX={stats['maxDbz']} dBZ",
-                  f"P99={stats['p99Dbz']} dBZ",
-                  f">=40={stats['fractionAbove40Dbz'] * 100:.2f}%",
-              )
+              print(f"F{int(frame['forecastHour']):03d}", frame['validTime'], stats)
           print('VALIDACAO REFL_10CM NATIVO: OK')
           PY
 
@@ -176,7 +179,7 @@ jobs:
           # Sideral WRF Data
           Dados WRF Sul 4 km processados automaticamente.
           A refletividade publicada usa exclusivamente REFL_10CM nativo do WRF.
-          Arquivos GFS, WPS e wrfout permanecem temporarios no runner.
+          Esta rodada curta e substituida automaticamente pela previsao horaria do dia seguinte.
           EOF
           git add .
           git commit -m "Atualiza WRF 4 km com REFL_10CM nativo [skip render]"
