@@ -2,6 +2,10 @@ name: ECMWF IFS - PROXIMO DIA AUTOMATICO
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ecmwf-ifs-auto.yml"
   schedule:
     # 22:10 UTC = 19:10 BRT. O cliente oficial escolhe a rodada IFS mais
     # recente que ja contenha os campos necessarios para o proximo dia.
