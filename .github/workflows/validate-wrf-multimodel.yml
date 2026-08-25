@@ -1,0 +1,33 @@
+name: VALIDAR WRF MULTI-MODELO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/validate-wrf-multimodel.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout wrf-runner
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+      - name: Validar Bash
+        run: |
+          set -euxo pipefail
+          bash -n wrf/run_wrf_with_source.sh
+          bash -n wrf/run_icon_wrf.sh
+          bash -n wrf/run_ecmwf_wrf.sh
+      - name: Validar Python
+        run: |
+          set -euxo pipefail
+          python -m py_compile \
+            wrf/fetch_gfs_land_support.py \
+            wrf/fetch_icon_wrf_step.py \
+            wrf/fetch_ecmwf_wrf_input.py \
+            wrf/retag_wrf_model.py \
+            wrf/filter_next_day.py \
+            wrf/extract_wrf_json.py
