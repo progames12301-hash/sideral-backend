@@ -9,7 +9,7 @@ REG_DIR="$ROOT/ecmwf_source_regular"
 ENV_FILE="$ROOT/ecmwf_run.env"
 
 log(){ printf '\n===== %s =====\n' "$*"; }
-case "$WRF_RUN_HOURS" in 6|42) ;; *) echo "WRF_RUN_HOURS precisa ser 6 ou 42" >&2; exit 2;; esac
+case "$WRF_RUN_HOURS" in 6|42|45) ;; *) echo "WRF_RUN_HOURS precisa ser 6, 42 ou 45" >&2; exit 2;; esac
 
 rm -rf "$RAW_DIR" "$REG_DIR" "$ENV_FILE"
 mkdir -p "$RAW_DIR" "$REG_DIR"
