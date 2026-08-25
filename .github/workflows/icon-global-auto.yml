@@ -2,6 +2,10 @@ name: ICON Global - PROXIMO DIA AUTOMATICO
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/icon-global-auto.yml"
   schedule:
     # 22:40 UTC = 19:40 BRT. Procura automaticamente a rodada ICON mais
     # recente que ja tenha as 24 horas completas do proximo dia.
