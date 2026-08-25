@@ -48,7 +48,9 @@ def main() -> None:
             f'encontrados {len(keep)} quadros e horas {sorted(local_hours)}'
         )
 
-    for path in (root / 'gfs').glob('*.json.gz'):
+    model = str(meta.get('model') or 'gfs').lower()
+    model_dir = root / model
+    for path in model_dir.glob('*.json.gz'):
         rel = path.relative_to(root).as_posix()
         if rel not in keep_files:
             path.unlink()
@@ -62,6 +64,7 @@ def main() -> None:
     meta['localHours'] = list(range(24))
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
 
+    print('MODELO:', model)
     print('PROXIMO DIA:', target_date)
     print('RESOLUCAO TEMPORAL: 1 hora')
     for frame in keep:
