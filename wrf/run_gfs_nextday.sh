@@ -47,6 +47,10 @@ if count != 1:
 
 text = text.replace('+6 hours', '+42 hours')
 text = text.replace('run_hours = 6,', 'run_hours = 42,')
+# As condicoes de contorno GFS continuam de 3 em 3 horas, mas o WRF grava
+# uma saida por hora. Assim o produto do dia seguinte tem 24 quadros reais
+# da integracao WRF, sem interpolar artificialmente no navegador.
+text = text.replace('history_interval = 180,', 'history_interval = 60,')
 
 download = r'''log "Baixando GFS F000-F042 de 3 em 3 horas"
 mkdir -p "$WORK/gfs"
@@ -122,13 +126,14 @@ text = text.replace(
     'mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe',
     'mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe',
 )
-text = text.replace('WRF 4 KM F000-F006', 'WRF 4 KM F000-F042')
+text = text.replace('WRF 4 KM F000-F006', 'WRF 4 KM F000-F042 / SAIDA HORARIA')
 path.write_text(text, encoding='utf-8')
 PY
 
 grep -q "run_hours = 42" "$BASE_SCRIPT"
+grep -q "history_interval = 60" "$BASE_SCRIPT"
 grep -q "do_radar_ref = 1" "$BASE_SCRIPT"
-grep -q "F000-F042" "$BASE_SCRIPT"
+grep -q "F000-F042 / SAIDA HORARIA" "$BASE_SCRIPT"
 grep -q -- "--oversubscribe --bind-to none -np 4" "$BASE_SCRIPT"
 
 chmod +x "$BASE_SCRIPT"
