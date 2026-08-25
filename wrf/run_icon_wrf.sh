@@ -10,7 +10,7 @@ REGRID_DIR="$ROOT/icon_regrid"
 
 log(){ printf '\n===== %s =====\n' "$*"; }
 
-case "$WRF_RUN_HOURS" in 6|42) ;; *) echo "WRF_RUN_HOURS precisa ser 6 ou 42" >&2; exit 2;; esac
+case "$WRF_RUN_HOURS" in 6|42|45) ;; *) echo "WRF_RUN_HOURS precisa ser 6, 42 ou 45" >&2; exit 2;; esac
 
 if [[ -n "${FORCE_RUN_DATE:-}" && -n "${FORCE_RUN_CYCLE:-}" ]]; then
   RUN_DATE="$FORCE_RUN_DATE"
@@ -74,8 +74,6 @@ for H in $(seq 0 3 "$WRF_RUN_HOURS"); do
     --step "$H" \
     --output "$RAW"
 
-  # Desde 2026 o ICON usa CCSDS em parte dos GRIB2. O ungrib/g2lib do WPS
-  # da imagem DTC nao le esse packing; ecCodes apenas repacota, sem mudar dados.
   grib_set -r -s packingType=grid_simple "$RAW" "$SIMPLE"
 
   docker run --rm \
