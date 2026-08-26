@@ -14,7 +14,12 @@ case "$WRF_RUN_HOURS" in 6|42|45) ;; *) echo "WRF_RUN_HOURS precisa ser 6, 42 ou
 rm -rf "$RAW_DIR" "$REG_DIR" "$ENV_FILE"
 mkdir -p "$RAW_DIR" "$REG_DIR"
 RAW="$RAW_DIR/ecmwf_raw.grib2"
-SIMPLE="$RAW_DIR/ecmwf_simple.grib2"
+RAW_PRESSURE="$RAW_DIR/ecmwf_raw_pressure.grib2"
+RAW_SURFACE="$RAW_DIR/ecmwf_raw_surface.grib2"
+SIMPLE_PRESSURE="$RAW_DIR/ecmwf_pressure_simple.grib2"
+SIMPLE_SURFACE="$RAW_DIR/ecmwf_surface_simple.grib2"
+REG_PRESSURE="$REG_DIR/ecmwf_pressure_regional.grib2"
+REG_SURFACE="$REG_DIR/ecmwf_surface_regional.grib2"
 REGIONAL="$REG_DIR/ecmwf_regional.grib2"
 
 ARGS=(--max-hour "$WRF_RUN_HOURS" --output "$RAW" --run-env "$ENV_FILE")
@@ -28,22 +33,38 @@ source "$ENV_FILE"
 export RUN_DATE RUN_CYCLE
 
 echo "ECMWF selecionado: ${RUN_DATE} ${RUN_CYCLE}Z"
+test -s "$RAW_PRESSURE"
+test -s "$RAW_SURFACE"
 
-log "Reempacotando CCSDS para WPS"
-grib_set -r -s packingType=grid_simple "$RAW" "$SIMPLE"
+# Pressao e superficie sao tratadas separadamente. Misturar os dois conjuntos
+# antes do CDO fazia registros superficiais desaparecerem em alguns timesteps.
+log "Reempacotando ECMWF para WPS"
+grib_set -r -s packingType=grid_simple "$RAW_PRESSURE" "$SIMPLE_PRESSURE"
+grib_set -r -s packingType=grid_simple "$RAW_SURFACE" "$SIMPLE_SURFACE"
 
-log "Recortando somente o dominio regional antes do WPS"
+log "Recortando dominio regional ECMWF sem perder niveis/superficie"
 docker pull "$CDO_IMAGE"
 docker run --rm \
   -v "$RAW_DIR:/input" \
   -v "$REG_DIR:/output" \
   "$CDO_IMAGE" \
   cdo -f grb2 sellonlatbox,-65,-42,-38,-18 \
-    "/input/$(basename "$SIMPLE")" "/output/$(basename "$REGIONAL")"
+    "/input/$(basename "$SIMPLE_PRESSURE")" "/output/$(basename "$REG_PRESSURE")"
 
+docker run --rm \
+  -v "$RAW_DIR:/input" \
+  -v "$REG_DIR:/output" \
+  "$CDO_IMAGE" \
+  cdo -f grb2 sellonlatbox,-65,-42,-38,-18 \
+    "/input/$(basename "$SIMPLE_SURFACE")" "/output/$(basename "$REG_SURFACE")"
+
+test -s "$REG_PRESSURE"
+test -s "$REG_SURFACE"
+cat "$REG_PRESSURE" "$REG_SURFACE" > "$REGIONAL"
 test -s "$REGIONAL"
-rm -f "$RAW" "$SIMPLE"
-ls -lh "$REGIONAL"
+
+rm -f "$RAW" "$RAW_PRESSURE" "$RAW_SURFACE" "$SIMPLE_PRESSURE" "$SIMPLE_SURFACE"
+ls -lh "$REG_PRESSURE" "$REG_SURFACE" "$REGIONAL"
 
 log "Rodando WRF 4 km inicializado pelo ECMWF"
 export SOURCE_MODEL=ecmwf
