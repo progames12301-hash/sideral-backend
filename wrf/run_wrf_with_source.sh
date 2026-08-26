@@ -21,6 +21,17 @@ mkdir -p "$WORK/source" "$WORK/soil"
 
 log(){ printf '\n===== %s =====\n' "$*"; }
 
+copy_diag(){
+  cp -f "$WORK"/*.stdout "$DIAG/" 2>/dev/null || true
+  cp -f "$WORK"/*.log "$DIAG/" 2>/dev/null || true
+  cp -f "$WORK/met-header.txt" "$DIAG/" 2>/dev/null || true
+  cp -f "$WORK/wrf-runtime.env" "$DIAG/" 2>/dev/null || true
+  cp -f "$WORK/wrfout-files.txt" "$DIAG/" 2>/dev/null || true
+  cp -f "$WORK/run/rsl.error.0000" "$DIAG/" 2>/dev/null || true
+  cp -f "$WORK/run/rsl.out.0000" "$DIAG/" 2>/dev/null || true
+}
+trap copy_diag EXIT
+
 case "$SOURCE_MODEL" in
   icon|ecmwf) ;;
   *) echo "SOURCE_MODEL invalido: $SOURCE_MODEL" >&2; exit 2 ;;
@@ -235,6 +246,7 @@ docker run --rm \
     test -f geo_em.d01.nc
 
     echo "=== UNGRIB ATMOSFERA ==="
+    sed -i -E "s/^[[:space:]]*prefix[[:space:]]*=.*/ prefix = '\''SRC'\'',/" namelist.wps
     rm -f GRIBFILE.* Vtable
     IDX=0
     while IFS= read -r FILE; do
@@ -244,10 +256,10 @@ docker run --rm \
     done < <(find /work/source -maxdepth 1 -type f -name "*.grib2" -print | sort)
     ln -sf /work/Vtable.source Vtable
     /comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-source.stdout 2>&1 || { cat ungrib-source.stdout; cat ungrib.log || true; exit 43; }
-    ls SRC:* >/dev/null
+    ls -lh SRC:* || { cat ungrib-source.stdout; cat ungrib.log || true; exit 43; }
 
     echo "=== UNGRIB SOLO GFS ==="
-    sed -i "s/prefix = .SRC./prefix = '\''SOIL'\''/" namelist.wps
+    sed -i -E "s/^[[:space:]]*prefix[[:space:]]*=.*/ prefix = '\''SOIL'\'',/" namelist.wps
     rm -f GRIBFILE.* Vtable
     IDX=0
     while IFS= read -r FILE; do
@@ -257,20 +269,45 @@ docker run --rm \
     done < <(find /work/soil -maxdepth 1 -type f -name "*.grib2" -print | sort)
     ln -sf /work/Vtable.soil Vtable
     /comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-soil.stdout 2>&1 || { cat ungrib-soil.stdout; cat ungrib.log || true; exit 45; }
-    ls SOIL:* >/dev/null
+    ls -lh SOIL:* || { cat ungrib-soil.stdout; cat ungrib.log || true; exit 45; }
 
     echo "=== METGRID ==="
     /comsoftware/wrf/WPS-4.3/metgrid.exe > metgrid.stdout 2>&1 || { cat metgrid.stdout; cat metgrid.log || true; exit 46; }
     FIRST_MET=$(find . -maxdepth 1 -name "met_em.d01.*.nc" -print | sort | head -1)
-    test -n "$FIRST_MET"
-    ncdump -h "$FIRST_MET" > met-header.txt
-    NUM_LEVELS=$(sed -n "s/.*num_metgrid_levels = \([0-9][0-9]*\).*/\1/p" met-header.txt | head -1)
-    NUM_SOIL=$(sed -n "s/.*num_sm_layers = \([0-9][0-9]*\).*/\1/p" met-header.txt | head -1)
-    test -n "$NUM_LEVELS" || { echo "num_metgrid_levels nao detectado" >&2; cat met-header.txt; exit 47; }
-    test -n "$NUM_SOIL" || { echo "num_sm_layers nao detectado; usando 4"; NUM_SOIL=4; }
-    echo "METGRID levels=$NUM_LEVELS soil=$NUM_SOIL"
-    sed -i "s/num_metgrid_levels = [0-9][0-9]*/num_metgrid_levels = $NUM_LEVELS/" namelist.input
-    sed -i "s/num_metgrid_soil_levels = [0-9][0-9]*/num_metgrid_soil_levels = $NUM_SOIL/" namelist.input
+    test -n "$FIRST_MET" || { cat metgrid.stdout; cat metgrid.log || true; exit 46; }
+    if ! ncdump -h "$FIRST_MET" > met-header.txt; then
+      cat metgrid.stdout
+      cat metgrid.log || true
+      exit 47
+    fi
+
+    NUM_LEVELS=$(sed -n -E "s/.*:NUM_METGRID_LEVELS = ([0-9]+).*/\1/p" met-header.txt | head -1)
+    if test -z "$NUM_LEVELS"; then
+      NUM_LEVELS=$(sed -n -E "s/.*num_metgrid_levels = ([0-9]+).*/\1/p" met-header.txt | head -1)
+    fi
+    NUM_SOIL=$(sed -n -E "s/.*:NUM_METGRID_SOIL_LEVELS = ([0-9]+).*/\1/p" met-header.txt | head -1)
+
+    test -n "$NUM_LEVELS" || {
+      echo "NUM_METGRID_LEVELS nao detectado" >&2
+      cat met-header.txt
+      cat metgrid.stdout
+      cat metgrid.log || true
+      exit 47
+    }
+    test -n "$NUM_SOIL" || NUM_SOIL=0
+    if test "$NUM_SOIL" -lt 1; then
+      echo "NUM_METGRID_SOIL_LEVELS invalido: $NUM_SOIL" >&2
+      grep -E "NUM_METGRID|num_sm_layers|num_st_layers|SOIL|ST\(|SM\(" met-header.txt || true
+      cat metgrid.stdout
+      cat metgrid.log || true
+      exit 48
+    fi
+    grep -Eq "(float|double)[[:space:]]+ST\(" met-header.txt || { echo "Campo ST ausente do met_em" >&2; exit 49; }
+    grep -Eq "(float|double)[[:space:]]+SM\(" met-header.txt || { echo "Campo SM ausente do met_em" >&2; exit 50; }
+
+    echo "METGRID attributes: levels=$NUM_LEVELS soil=$NUM_SOIL"
+    sed -i -E "s/num_metgrid_levels = [0-9]+/num_metgrid_levels = $NUM_LEVELS/" namelist.input
+    sed -i -E "s/num_metgrid_soil_levels = [0-9]+/num_metgrid_soil_levels = $NUM_SOIL/" namelist.input
 
     echo "=== PREPARAR WRF ==="
     mkdir -p run
@@ -298,13 +335,8 @@ docker run --rm \
   '
 
 log "Copiando diagnosticos"
-cp -f "$WORK"/*.stdout "$DIAG/" 2>/dev/null || true
-cp -f "$WORK"/*.log "$DIAG/" 2>/dev/null || true
-cp -f "$WORK/met-header.txt" "$DIAG/" 2>/dev/null || true
-cp -f "$WORK/wrf-runtime.env" "$DIAG/" 2>/dev/null || true
-cp -f "$WORK/wrfout-files.txt" "$DIAG/" 2>/dev/null || true
-cp -f "$WORK/run/rsl.error.0000" "$DIAG/" 2>/dev/null || true
-cp -f "$WORK/run/rsl.out.0000" "$DIAG/" 2>/dev/null || true
+copy_diag
+trap - EXIT
 
 cat "$DIAG/run.env"
 cat "$DIAG/wrf-runtime.env" 2>/dev/null || true
