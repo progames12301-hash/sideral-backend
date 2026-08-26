@@ -73,6 +73,7 @@ for H in $(seq 0 3 "$WRF_RUN_HOURS"); do
   FI="$RAW_DIR/icon_f${FH}_fi.grib2"
   HGT0="$RAW_DIR/icon_f${FH}_hgt_values.grib2"
   HGT="$RAW_DIR/icon_f${FH}_hgt.grib2"
+  HGT_CHECK="$RAW_DIR/icon_f${FH}_hgt_check.grib2"
 
   python3 "$ROOT/wrf/fetch_icon_wrf_step.py" \
     --date "$RUN_DATE" \
@@ -96,7 +97,7 @@ for H in $(seq 0 3 "$WRF_RUN_HOURS"); do
   # WPS 4.3 nao possui o suporte ICON introduzido no WPS 4.5.
   # O ICON fornece FI (geopotencial, m2/s2). Criamos um campo GRIB2 padrao
   # de altura geopotencial (HGT, m), que o Vtable antigo consegue ingerir.
-  rm -f "$FI" "$HGT0" "$HGT"
+  rm -f "$FI" "$HGT0" "$HGT" "$HGT_CHECK"
   grib_copy -w discipline=0,parameterCategory=3,parameterNumber=4 "$OUT" "$FI" || true
   if [[ -s "$FI" ]]; then
     docker run --rm \
@@ -114,10 +115,14 @@ for H in $(seq 0 3 "$WRF_RUN_HOURS"); do
 
   # Verifica os campos essenciais antes de entregar ao WPS.
   grib_ls -w typeOfFirstFixedSurface=100 -p shortName,level "$OUT" | head -40
-  HGT_COUNT=$(grib_count -w discipline=0,parameterCategory=3,parameterNumber=5 "$OUT" || true)
+  grib_copy -w discipline=0,parameterCategory=3,parameterNumber=5 "$OUT" "$HGT_CHECK" || true
+  HGT_COUNT=0
+  if [[ -s "$HGT_CHECK" ]]; then
+    HGT_COUNT=$(grib_count "$HGT_CHECK")
+  fi
   test "${HGT_COUNT:-0}" -ge 10 || { echo "Poucos niveis HGT no ICON F${FH}: ${HGT_COUNT:-0}" >&2; exit 24; }
 
-  rm -f "$RAW" "$SIMPLE" "$FI" "$HGT0" "$HGT"
+  rm -f "$RAW" "$SIMPLE" "$FI" "$HGT0" "$HGT" "$HGT_CHECK"
 done
 
 log "Rodando WRF 4 km inicializado pelo ICON"
