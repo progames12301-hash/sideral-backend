@@ -13,6 +13,9 @@ BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 
 # O WRF recebe a atmosfera do ICON/ECMWF. Estes campos do GFS sao usados
 # somente para completar solo/terreno/snow que o WPS/real.exe exige.
+#
+# Usa pgrb2.0p25 (e nao sfluxgrb) porque esta e a familia de GRIB2 coberta
+# pela Vtable.GFS oficial do WPS, inclusive para ST/SM em 4 camadas.
 WANTED = (
     r":HGT:surface:",
     r":TMP:surface:",
@@ -82,7 +85,7 @@ def parse_idx(text: str) -> list[tuple[int, str]]:
 
 def fetch_step(session: requests.Session, date: str, cycle: str, step: int, output: Path) -> None:
     fh = f"{step:03d}"
-    name = f"gfs.t{cycle}z.sfluxgrbf{fh}.grib2"
+    name = f"gfs.t{cycle}z.pgrb2.0p25.f{fh}"
     url = f"{BASE}/gfs.{date}/{cycle}/atmos/{name}"
     idx_url = url + ".idx"
     entries = parse_idx(get_text(session, idx_url))
@@ -95,7 +98,8 @@ def fetch_step(session: requests.Session, date: str, cycle: str, step: int, outp
         end = None if next_start is None else next_start - 1
         selected.append((start, end, line))
 
-    if len(selected) < 8:
+    # 4x ST + 4x SM e os principais campos de superficie devem estar presentes.
+    if len(selected) < 12:
         lines = "\n".join(line for _, line in entries)
         raise RuntimeError(
             f"Poucos campos de solo selecionados em {name}: {len(selected)}.\n"
