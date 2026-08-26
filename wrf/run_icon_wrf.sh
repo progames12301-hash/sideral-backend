@@ -7,6 +7,8 @@ ICON_REGRID_IMAGE="deutscherwetterdienst/regrid:icon-grids"
 RAW_DIR="$ROOT/icon_source_raw"
 REG_DIR="$ROOT/icon_source_regular"
 REGRID_DIR="$ROOT/icon_regrid"
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
 
 log(){ printf '\n===== %s =====\n' "$*"; }
 
@@ -55,6 +57,7 @@ EOF
 
 docker pull "$ICON_REGRID_IMAGE"
 docker run --rm \
+  --user "$HOST_UID:$HOST_GID" \
   -v "$REGRID_DIR:/work" \
   "$ICON_REGRID_IMAGE" \
   cdo gennn,/work/target_grid.txt /data/grids/icon/icon_grid.nc /work/icon_weights.nc
@@ -80,6 +83,7 @@ for H in $(seq 0 3 "$WRF_RUN_HOURS"); do
   grib_set -r -s packingType=grid_simple "$RAW" "$SIMPLE"
 
   docker run --rm \
+    --user "$HOST_UID:$HOST_GID" \
     -v "$RAW_DIR:/input" \
     -v "$REG_DIR:/output" \
     -v "$REGRID_DIR:/weights" \
@@ -96,6 +100,7 @@ for H in $(seq 0 3 "$WRF_RUN_HOURS"); do
   grib_copy -w discipline=0,parameterCategory=3,parameterNumber=4 "$OUT" "$FI" || true
   if [[ -s "$FI" ]]; then
     docker run --rm \
+      --user "$HOST_UID:$HOST_GID" \
       -v "$RAW_DIR:/input" \
       "$ICON_REGRID_IMAGE" \
       cdo -f grb2 divc,9.80665 "/input/$(basename "$FI")" "/input/$(basename "$HGT0")"
