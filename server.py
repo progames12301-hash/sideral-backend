@@ -108,6 +108,8 @@ IPMET_HEADERS = {
 REDEMET_API_URL = "https://api-redemet.decea.mil.br"
 REDEMET_API_KEY = os.environ.get("REDEMET_API_KEY", "kvNQbm99G0YQQMjUrhqKWiZxjmnw0PRf8JxOe26Q")
 REDEMET_PRODUCTS = {"03km", "05km", "07km", "10km", "maxcappi"}
+REDEMET_SATELLITE_PRODUCTS = {"ir", "realcada", "vis"}
+REDEMET_SATELLITE_IMAGE_HOST = "estatico-redemet.decea.mil.br"
 REDEMET_ICAO_RE = re.compile(r"^[A-Z]{4}$")
 REDEMET_STATION_CACHE_SECONDS = 5 * 60
 
@@ -1906,6 +1908,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/ipmet/wms": self.handle_ipmet_wms(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/rainviewer/meta": self.handle_public_json(RAINVIEWER_META_URL, "RainViewer"); return
         if parsed_path == "/api/redemet/radar": self.handle_redemet_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/redemet/satelite": self.handle_redemet_satellite(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/stsc": self.handle_redemet_stsc(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/estacoes": self.handle_redemet_stations(parse_qs(urlparse(self.path).query)); return
         if parsed_path.startswith("/api/redemet/estacao/"):
@@ -2185,6 +2189,74 @@ class Handler(SimpleHTTPRequestHandler):
         try: anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
         except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
         self.handle_public_json(f"{REDEMET_API_URL}/produtos/radar/{product}?anima={anima}&api_key={REDEMET_API_KEY}", "REDEMET")
+
+    def handle_redemet_satellite(self, query: dict[str, list[str]]) -> None:
+        """Retorna quadros georreferenciados de satélite sem expor a chave REDEMET."""
+        product = query.get("product", ["realcada"])[0].lower().strip()
+        if product not in REDEMET_SATELLITE_PRODUCTS:
+            self.send_json(400, {"error": "Produto de satélite REDEMET inválido."}); return
+        try:
+            anima = min(15, max(1, int(query.get("anima", ["15"])[0])))
+        except ValueError:
+            self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
+
+        requested_date = query.get("data", [""])[0].strip()
+        if requested_date and not re.fullmatch(r"\d{10}", requested_date):
+            self.send_json(400, {"error": "Data inválida. Use YYYYMMDDHH."}); return
+
+        candidates: list[str | None] = [requested_date or None]
+        if not requested_date:
+            current_hour = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
+            candidates.extend((current_hour - dt.timedelta(hours=hours)).strftime("%Y%m%d%H") for hours in (1, 2, 3, 6, 12, 24))
+
+        last_payload: dict[str, Any] | None = None
+        try:
+            for candidate in dict.fromkeys(candidates):
+                params = {"anima": str(anima), "api_key": REDEMET_API_KEY}
+                if candidate: params["data"] = candidate
+                response = requests.get(
+                    f"{REDEMET_API_URL}/produtos/satelite/{product}",
+                    params=params,
+                    headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                    timeout=25,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict) or payload.get("status") is not True:
+                    raise ValueError("A REDEMET retornou uma resposta inválida para satélite.")
+                last_payload = payload
+                data = payload.get("data")
+                if isinstance(data, dict) and isinstance(data.get("satelite"), list) and data["satelite"]:
+                    payload["provider"] = "REDEMET / DECEA"
+                    payload["fallback_date"] = candidate if candidate and not requested_date else None
+                    self.send_json(200, payload); return
+            self.send_json(404, {"error": "A REDEMET não publicou imagens de satélite para o período consultado.", "provider": "REDEMET / DECEA", "upstream": last_payload}); return
+        except requests.RequestException:
+            self.send_json(502, {"error": "Não foi possível consultar as imagens da REDEMET agora."}); return
+        except (ValueError, TypeError, json.JSONDecodeError):
+            self.send_json(502, {"error": "Não foi possível interpretar as imagens recebidas da REDEMET."}); return
+
+    def handle_redemet_satellite_image(self, query: dict[str, list[str]]) -> None:
+        """Proxy restrito às imagens oficiais de satélite da REDEMET."""
+        image_url = query.get("url", [""])[0].strip()
+        parsed = urlparse(image_url)
+        valid_path = bool(re.fullmatch(r"/satelite/\d{4}/\d{2}/\d{2}/(?:ir|realcada|vis)/maps/[A-Za-z0-9_.-]+\.(?:png|jpe?g)", parsed.path, re.IGNORECASE))
+        if parsed.scheme != "https" or parsed.hostname != REDEMET_SATELLITE_IMAGE_HOST or parsed.query or parsed.fragment or not valid_path:
+            self.send_json(400, {"error": "URL de imagem de satélite inválida."}); return
+        try:
+            response = requests.get(image_url, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/png,image/jpeg"}, timeout=25)
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            if content_type not in {"image/png", "image/jpeg"} or len(response.content) < 1000:
+                raise ValueError("A origem não retornou uma imagem válida.")
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(response.content)))
+            self.send_header("Cache-Control", "public, max-age=600, stale-if-error=3600")
+            self.end_headers()
+            self.wfile.write(response.content)
+        except (requests.RequestException, ValueError):
+            self.send_json(502, {"error": "Não foi possível carregar esta imagem da REDEMET."})
 
     def handle_redemet_stsc(self, query: dict[str, list[str]]) -> None:
         try: anima = min(6, max(1, int(query.get("anima", ["3"])[0])))
