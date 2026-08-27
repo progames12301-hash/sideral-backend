@@ -11,6 +11,7 @@ import time
 import zipfile
 import struct
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import zlib
 import binascii
 from email.utils import parsedate_to_datetime
@@ -2214,41 +2215,64 @@ class Handler(SimpleHTTPRequestHandler):
             payload["cache"] = True
             self.send_json(200, payload); return
 
-        candidates: list[str | None] = [requested_date or None]
-        if not requested_date:
+        # A REDEMET pode devolver uma lista vazia para a hora corrente. Consultamos
+        # as janelas recentes em paralelo e escolhemos a publicação realmente mais
+        # nova; em caso de empate, preservamos a janela com mais quadros.
+        candidates: list[str | None]
+        if requested_date:
+            candidates = [requested_date]
+        else:
             current_hour = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
-            candidates.extend((current_hour - dt.timedelta(hours=hours)).strftime("%Y%m%d%H") for hours in (1, 2, 3, 6, 12, 24))
+            candidates = [(current_hour - dt.timedelta(hours=hours)).strftime("%Y%m%d%H") for hours in (0, 1, 2, 3, 6, 9, 12, 24)]
+            candidates.append(None)
 
         last_payload: dict[str, Any] | None = None
         last_error: Exception | None = None
         try:
-            for candidate in dict.fromkeys(candidates):
-                try:
-                    params = {"anima": str(anima), "api_key": REDEMET_API_KEY}
-                    if candidate: params["data"] = candidate
-                    response = requests.get(
-                        f"{REDEMET_API_URL}/produtos/satelite/{product}",
-                        params=params,
-                        headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
-                        timeout=25,
-                    )
-                    response.raise_for_status()
-                    payload = response.json()
-                except requests.RequestException as exc:
-                    last_error = exc
-                    continue
+            def fetch_candidate(candidate: str | None) -> tuple[str | None, dict[str, Any]]:
+                params = {"anima": str(anima), "api_key": REDEMET_API_KEY}
+                if candidate: params["data"] = candidate
+                response = requests.get(
+                    f"{REDEMET_API_URL}/produtos/satelite/{product}",
+                    params=params,
+                    headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                    timeout=25,
+                )
+                response.raise_for_status()
+                payload = response.json()
                 if not isinstance(payload, dict) or payload.get("status") is not True:
                     raise ValueError("A REDEMET retornou uma resposta inválida para satélite.")
-                last_payload = payload
-                data = payload.get("data")
-                if isinstance(data, dict) and isinstance(data.get("satelite"), list) and data["satelite"]:
-                    payload["provider"] = "REDEMET / DECEA"
-                    payload["fallback_date"] = candidate if candidate and not requested_date else None
-                    with redemet_satellite_cache_lock:
-                        redemet_satellite_catalog_cache[cache_key] = {"saved_at": time.time(), "payload": dict(payload)}
-                        while len(redemet_satellite_catalog_cache) > 18:
-                            redemet_satellite_catalog_cache.pop(next(iter(redemet_satellite_catalog_cache)))
-                    self.send_json(200, payload); return
+                return candidate, payload
+
+            results: list[tuple[str | None, dict[str, Any]]] = []
+            unique_candidates = list(dict.fromkeys(candidates))
+            with ThreadPoolExecutor(max_workers=min(5, len(unique_candidates))) as executor:
+                futures = [executor.submit(fetch_candidate, candidate) for candidate in unique_candidates]
+                for future in as_completed(futures):
+                    try:
+                        candidate, payload = future.result()
+                        last_payload = payload
+                        data = payload.get("data")
+                        if isinstance(data, dict) and isinstance(data.get("satelite"), list) and data["satelite"]:
+                            results.append((candidate, payload))
+                    except requests.RequestException as exc:
+                        last_error = exc
+
+            if results:
+                def publication_rank(result: tuple[str | None, dict[str, Any]]) -> tuple[str, int]:
+                    frames = result[1]["data"]["satelite"]
+                    newest = max((str(item.get("data") or "") for item in frames if isinstance(item, dict)), default="")
+                    return newest, len(frames)
+
+                candidate, payload = max(results, key=publication_rank)
+                payload = dict(payload)
+                payload["provider"] = "REDEMET / DECEA"
+                payload["fallback_date"] = candidate if candidate and not requested_date else None
+                with redemet_satellite_cache_lock:
+                    redemet_satellite_catalog_cache[cache_key] = {"saved_at": time.time(), "payload": dict(payload)}
+                    while len(redemet_satellite_catalog_cache) > 18:
+                        redemet_satellite_catalog_cache.pop(next(iter(redemet_satellite_catalog_cache)))
+                self.send_json(200, payload); return
             if cached:
                 payload = dict(cached["payload"])
                 payload["cache"] = True
