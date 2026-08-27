@@ -121,6 +121,8 @@ INMET_CACHE_SECONDS = 60
 inmet_observation_cache: dict[str, dict[str, Any]] = {}
 inmet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 inea_radar_image_cache: dict[str, bytes] = {}
+redemet_satellite_catalog_cache: dict[str, dict[str, Any]] = {}
+redemet_satellite_cache_lock = threading.Lock()
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
 
@@ -2204,24 +2206,37 @@ class Handler(SimpleHTTPRequestHandler):
         if requested_date and not re.fullmatch(r"\d{10}", requested_date):
             self.send_json(400, {"error": "Data inválida. Use YYYYMMDDHH."}); return
 
+        cache_key = f"{product}:{requested_date or 'latest'}:{anima}"
+        with redemet_satellite_cache_lock:
+            cached = redemet_satellite_catalog_cache.get(cache_key)
+        if cached and time.time() - float(cached.get("saved_at", 0)) < 180:
+            payload = dict(cached["payload"])
+            payload["cache"] = True
+            self.send_json(200, payload); return
+
         candidates: list[str | None] = [requested_date or None]
         if not requested_date:
             current_hour = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
             candidates.extend((current_hour - dt.timedelta(hours=hours)).strftime("%Y%m%d%H") for hours in (1, 2, 3, 6, 12, 24))
 
         last_payload: dict[str, Any] | None = None
+        last_error: Exception | None = None
         try:
             for candidate in dict.fromkeys(candidates):
-                params = {"anima": str(anima), "api_key": REDEMET_API_KEY}
-                if candidate: params["data"] = candidate
-                response = requests.get(
-                    f"{REDEMET_API_URL}/produtos/satelite/{product}",
-                    params=params,
-                    headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
-                    timeout=25,
-                )
-                response.raise_for_status()
-                payload = response.json()
+                try:
+                    params = {"anima": str(anima), "api_key": REDEMET_API_KEY}
+                    if candidate: params["data"] = candidate
+                    response = requests.get(
+                        f"{REDEMET_API_URL}/produtos/satelite/{product}",
+                        params=params,
+                        headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                        timeout=25,
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                except requests.RequestException as exc:
+                    last_error = exc
+                    continue
                 if not isinstance(payload, dict) or payload.get("status") is not True:
                     raise ValueError("A REDEMET retornou uma resposta inválida para satélite.")
                 last_payload = payload
@@ -2229,10 +2244,19 @@ class Handler(SimpleHTTPRequestHandler):
                 if isinstance(data, dict) and isinstance(data.get("satelite"), list) and data["satelite"]:
                     payload["provider"] = "REDEMET / DECEA"
                     payload["fallback_date"] = candidate if candidate and not requested_date else None
+                    with redemet_satellite_cache_lock:
+                        redemet_satellite_catalog_cache[cache_key] = {"saved_at": time.time(), "payload": dict(payload)}
+                        while len(redemet_satellite_catalog_cache) > 18:
+                            redemet_satellite_catalog_cache.pop(next(iter(redemet_satellite_catalog_cache)))
                     self.send_json(200, payload); return
+            if cached:
+                payload = dict(cached["payload"])
+                payload["cache"] = True
+                payload["stale"] = True
+                self.send_json(200, payload); return
+            if last_error:
+                self.send_json(502, {"error": "Não foi possível consultar as imagens da REDEMET agora."}); return
             self.send_json(404, {"error": "A REDEMET não publicou imagens de satélite para o período consultado.", "provider": "REDEMET / DECEA", "upstream": last_payload}); return
-        except requests.RequestException:
-            self.send_json(502, {"error": "Não foi possível consultar as imagens da REDEMET agora."}); return
         except (ValueError, TypeError, json.JSONDecodeError):
             self.send_json(502, {"error": "Não foi possível interpretar as imagens recebidas da REDEMET."}); return
 
