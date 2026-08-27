@@ -1,0 +1,44 @@
+name: Validar WRF Restart Segmentos
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/validate-wrf-restart-segments.yml'
+      - 'wrf/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validar sintaxe
+        run: |
+          set -euxo pipefail
+          python -m py_compile wrf/prepare_restart_segment.py wrf/merge_wrf_segments.py wrf/filter_next_day.py
+          bash -n wrf/run_icon_wrf.sh
+          bash -n wrf/run_ecmwf_wrf.sh
+          bash -n wrf/run_gfs_segment.sh
+      - name: Testar patch ICON ECMWF sem executar WRF
+        run: |
+          set -euxo pipefail
+          cp wrf/run_wrf_with_source.sh /tmp/common.orig
+          cp wrf/run_icon_wrf.sh /tmp/icon.orig
+          cp wrf/run_ecmwf_wrf.sh /tmp/ecmwf.orig
+          python wrf/prepare_restart_segment.py --start-hour 0 --end-hour 24
+          grep -q 'run_hours = ${WRF_SEGMENT_HOURS}' wrf/run_wrf_with_source.sh
+          grep -q 'restart_interval = 1440' wrf/run_wrf_with_source.sh
+          grep -q 'write_hist_at_0h_rst = .true.' wrf/run_wrf_with_source.sh
+          bash -n wrf/run_wrf_with_source.sh
+          mv /tmp/common.orig wrf/run_wrf_with_source.sh
+          mv /tmp/icon.orig wrf/run_icon_wrf.sh
+          mv /tmp/ecmwf.orig wrf/run_ecmwf_wrf.sh
+          python wrf/prepare_restart_segment.py --start-hour 24 --end-hour 48 --restart-file /dev/null || test $? -eq 1
+          echo 'Validacao estrutural concluida'
