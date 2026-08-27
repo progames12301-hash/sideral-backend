@@ -1,4 +1,4 @@
-name: WRF 4 km - PROXIMO DIA AUTOMATICO
+name: WRF 4 km - DOIS DIAS AUTOMATICO
 
 on:
   workflow_dispatch:
@@ -10,153 +10,224 @@ permissions:
   contents: write
 
 concurrency:
-  group: sideral-wrf-next-day
+  group: sideral-wrf-two-days
   cancel-in-progress: false
 
 jobs:
-  next-day:
+  run-info:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 350
-
+    outputs:
+      run_date: ${{ steps.info.outputs.run_date }}
+      run_cycle: ${{ steps.info.outputs.run_cycle }}
     steps:
-      - name: Checkout wrf-runner
-        uses: actions/checkout@v4
+      - name: Ler rodada curta publicada
+        id: info
+        run: |
+          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?run=${GITHUB_RUN_ID}"
+          curl -fsSL --retry 8 --retry-delay 5 "$URL" -o /tmp/meta.json
+          python - <<'PY'
+          import json, os
+          d=json.load(open('/tmp/meta.json',encoding='utf-8'))
+          assert d.get('reflectivitySource')=='REFL_10CM_NATIVE', d
+          cycle=str(d['runCycle']).replace('Z','')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+              f.write(f"run_date={d['runDate']}\nrun_cycle={cycle}\n")
+          print('GFS rodada', d['runDate'], d['runCycle'])
+          PY
+
+  segment-1:
+    name: GFS WRF segmento F000-F024
+    needs: run-info
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
         with:
           ref: wrf-runner
           fetch-depth: 0
-
-      - name: Ler a rodada que acabou de terminar
-        run: |
-          set -euxo pipefail
-          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?nextday=${GITHUB_RUN_ID}"
-          curl -fsSL --retry 6 --retry-delay 5 --connect-timeout 10 --max-time 60 "$URL" -o /tmp/source-metadata.json
-          python - <<'PY'
-          import json, os
-          d = json.load(open('/tmp/source-metadata.json', encoding='utf-8'))
-          assert d.get('reflectivitySource') == 'REFL_10CM_NATIVE', d
-          assert d.get('frameCount', 0) >= 3, d
-          cycle = str(d['runCycle']).replace('Z', '')
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
-              f.write(f"FORCE_RUN_DATE={d['runDate']}\n")
-              f.write(f"FORCE_RUN_CYCLE={cycle}\n")
-          print('Rodada encadeada:', d['runDate'], d['runCycle'])
-          PY
-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Liberar espaco
         run: |
-          set -euxo pipefail
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
           sudo apt-get clean || true
           docker system prune -af || true
-          df -h
-
-      - name: Baixar container WRF WPS
-        run: |
-          set -euxo pipefail
           docker pull dtcenter/wps_wrf:latest
-
-      - name: Rodar mesma rodada ate F042 com saida horaria
+          python -m pip install numpy xarray netCDF4
+      - name: Rodar F000-F024
+        env:
+          FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
+          WRF_START_HOUR: '0'
+          WRF_END_HOUR: '24'
         run: |
-          set -euxo pipefail
-          echo "Rodada fixa: ${FORCE_RUN_DATE} ${FORCE_RUN_CYCLE}Z"
-          chmod +x wrf/run_gfs_nextday.sh
-          ./wrf/run_gfs_nextday.sh
+          chmod +x wrf/run_gfs_segment.sh
+          ./wrf/run_gfs_segment.sh
+          ls -lh wrf_work/run/wrfrst_d01_*
+      - name: Extrair segmento
+        run: |
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gfs-restart-f024
+          path: wrf_work/run/wrfrst_d01_*
+          retention-days: 2
+          compression-level: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gfs-frames-f000-f024
+          path: wrf_publish/
+          retention-days: 2
 
-      - name: Preparar Python
-        uses: actions/setup-python@v5
+  segment-2:
+    name: GFS WRF segmento F024-F048
+    needs: [run-info, segment-1]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: gfs-restart-f024
+          path: restart_in
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Instalar extrator
+      - name: Preparar runner
         run: |
-          python -m pip install --upgrade pip
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          docker pull dtcenter/wps_wrf:latest
           python -m pip install numpy xarray netCDF4
-
-      - name: Extrair REFL_10CM nativo e selecionar 24 horas BRT
+      - name: Continuar F024-F048
+        env:
+          FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
+          WRF_START_HOUR: '24'
+          WRF_END_HOUR: '48'
         run: |
-          set -euxo pipefail
+          RST=$(find restart_in -type f -name 'wrfrst_d01_*' | head -1)
+          test -n "$RST"
+          export WRF_RESTART_FILE="$RST"
+          chmod +x wrf/run_gfs_segment.sh
+          ./wrf/run_gfs_segment.sh
+          ls -lh wrf_work/run/wrfrst_d01_*
+      - name: Extrair segmento
+        run: |
           rm -rf wrf_publish
-          python wrf/extract_wrf_json.py \
-            --run-dir wrf_work/run \
-            --run-env wrf_diagnostics/run.env \
-            --output-dir wrf_publish \
-            --grid-x 220 \
-            --grid-y 180
-          python wrf/filter_next_day.py --root wrf_publish
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gfs-restart-f048
+          path: wrf_work/run/wrfrst_d01_*
+          retention-days: 2
+          compression-level: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gfs-frames-f024-f048
+          path: wrf_publish/
+          retention-days: 2
+
+  segment-3:
+    name: GFS WRF segmento F048-F069
+    needs: [run-info, segment-2]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: gfs-restart-f048
+          path: restart_in
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Preparar runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          docker pull dtcenter/wps_wrf:latest
+          python -m pip install numpy xarray netCDF4
+      - name: Continuar F048-F069
+        env:
+          FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
+          WRF_START_HOUR: '48'
+          WRF_END_HOUR: '69'
+        run: |
+          RST=$(find restart_in -type f -name 'wrfrst_d01_*' | head -1)
+          test -n "$RST"
+          export WRF_RESTART_FILE="$RST"
+          chmod +x wrf/run_gfs_segment.sh
+          ./wrf/run_gfs_segment.sh
+      - name: Extrair segmento
+        run: |
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gfs-frames-f048-f069
+          path: wrf_publish/
+          retention-days: 2
+
+  publish-two-days:
+    name: GFS publicar dois dias completos
+    needs: [run-info, segment-1, segment-2, segment-3]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+      - uses: actions/download-artifact@v4
+        with:
+          name: gfs-frames-f000-f024
+          path: segments/a
+      - uses: actions/download-artifact@v4
+        with:
+          name: gfs-frames-f024-f048
+          path: segments/b
+      - uses: actions/download-artifact@v4
+        with:
+          name: gfs-frames-f048-f069
+          path: segments/c
+      - name: Unir e selecionar dois dias BRT
+        run: |
+          python wrf/merge_wrf_segments.py --input segments/a --input segments/b --input segments/c --output wrf_publish
+          python wrf/filter_next_day.py --root wrf_publish --days 2
           python - <<'PY'
           import json
-          from pathlib import Path
-          d = json.loads(Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
-          assert d.get('scope') == 'next_local_day', d
-          assert d.get('timezone') == 'America/Sao_Paulo', d
-          assert d.get('frameCount') == 24, d
-          assert d.get('temporalResolutionMinutes') == 60, d
-          assert d.get('localHours') == list(range(24)), d
-          assert d.get('reflectivitySource') == 'REFL_10CM_NATIVE', d
-          print('Data local publicada:', d['forecastLocalDate'])
-          print('24 HORARIOS:', [(f['forecastHour'], f['localValidTime']) for f in d['frames']])
+          d=json.load(open('wrf_publish/metadata.json',encoding='utf-8'))
+          assert d['model']=='gfs', d
+          assert d['reflectivitySource']=='REFL_10CM_NATIVE', d
+          assert d['scope']=='next_two_local_days', d
+          assert d['frameCount']==48, d
+          assert len(d['forecastLocalDates'])==2, d
+          print('GFS 48h OK',d['forecastLocalDates'])
           PY
-
-      - name: Publicar proximo dia em wrf-data
+      - name: Publicar 48 horas em wrf-data
         run: |
-          set -euxo pipefail
           git config user.name "sideral-wrf-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf /tmp/sideral-wrf-data
-          git worktree add --detach /tmp/sideral-wrf-data
-          cd /tmp/sideral-wrf-data
+          rm -rf /tmp/wrf-data
+          git worktree add --detach /tmp/wrf-data
+          cd /tmp/wrf-data
           git checkout --orphan wrf-data-next
           git rm -rf . || true
           git clean -fdx || true
           cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          cat > README.md <<'EOF'
-          # Sideral WRF Data
-          Previsao WRF Sul 4 km do proximo dia em horario de Brasilia.
-          24 quadros horarios (00-23 BRT).
-          Refletividade: REFL_10CM nativo do WRF.
-          EOF
+          printf '# Sideral WRF Data\nDois dias completos em BRT. WRF Sul 4 km / REFL_10CM nativo.\n' > README.md
           git add .
-          git commit -m "Publica WRF 4 km horario do proximo dia [skip render]"
+          git commit -m "GFS-WRF publica dois dias [skip render]"
           git push --force origin HEAD:wrf-data
-
-      - name: Confirmar publicacao remota
-        run: |
-          set -euxo pipefail
-          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?nextdaycheck=${GITHUB_RUN_ID}"
-          for N in $(seq 1 12); do
-            if curl -fsSL --connect-timeout 10 --max-time 30 "$URL-$N" -o /tmp/remote.json; then
-              if python - <<'PY'
-          import json
-          d = json.load(open('/tmp/remote.json', encoding='utf-8'))
-          ok = (
-              d.get('scope') == 'next_local_day'
-              and d.get('timezone') == 'America/Sao_Paulo'
-              and d.get('frameCount') == 24
-              and d.get('temporalResolutionMinutes') == 60
-              and d.get('localHours') == list(range(24))
-              and d.get('reflectivitySource') == 'REFL_10CM_NATIVE'
-              and all(f.get('reflectivitySource') == 'REFL_10CM_NATIVE' for f in d.get('frames', []))
-          )
-          print('metadata remoto:', d)
-          raise SystemExit(0 if ok else 1)
-          PY
-              then
-                echo "PROXIMO DIA WRF HORARIO PUBLICADO COM SUCESSO"
-                exit 0
-              fi
-            fi
-            sleep 5
-          done
-          exit 41
-
-      - name: Salvar diagnosticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrf-next-day-diagnostics
-          path: |
-            wrf_diagnostics/
-            wrf_publish/
-          retention-days: 7
-          if-no-files-found: warn
