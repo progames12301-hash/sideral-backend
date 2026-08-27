@@ -124,6 +124,7 @@ inmet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 inea_radar_image_cache: dict[str, bytes] = {}
 redemet_satellite_catalog_cache: dict[str, dict[str, Any]] = {}
 redemet_satellite_cache_lock = threading.Lock()
+redemet_satellite_refreshing: set[str] = set()
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
 
@@ -2208,11 +2209,38 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "Data inválida. Use YYYYMMDDHH."}); return
 
         cache_key = f"{product}:{requested_date or 'latest'}:{anima}"
+        force_refresh = query.get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
         with redemet_satellite_cache_lock:
             cached = redemet_satellite_catalog_cache.get(cache_key)
-        if cached and time.time() - float(cached.get("saved_at", 0)) < 180:
+        cache_age = time.time() - float(cached.get("saved_at", 0)) if cached else float("inf")
+        if cached and not force_refresh and cache_age < 180:
             payload = dict(cached["payload"])
             payload["cache"] = True
+            self.send_json(200, payload); return
+        if cached and not force_refresh:
+            render_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+            start_refresh = False
+            if render_url:
+                with redemet_satellite_cache_lock:
+                    if cache_key not in redemet_satellite_refreshing:
+                        redemet_satellite_refreshing.add(cache_key); start_refresh = True
+            if start_refresh:
+                def refresh_in_background() -> None:
+                    try:
+                        requests.get(
+                            f"{render_url}/api/redemet/satelite",
+                            params={"product": product, "anima": anima, **({"data": requested_date} if requested_date else {}), "refresh": "1"},
+                            headers={"User-Agent": INMET_HEADERS["User-Agent"]},
+                            timeout=45,
+                        )
+                    except requests.RequestException:
+                        pass
+                    finally:
+                        with redemet_satellite_cache_lock:
+                            redemet_satellite_refreshing.discard(cache_key)
+                threading.Thread(target=refresh_in_background, daemon=True, name=f"satellite-refresh-{product}").start()
+            payload = dict(cached["payload"])
+            payload["cache"] = True; payload["stale"] = True; payload["refreshing"] = start_refresh
             self.send_json(200, payload); return
 
         # A REDEMET pode devolver uma lista vazia para a hora corrente. Consultamos
