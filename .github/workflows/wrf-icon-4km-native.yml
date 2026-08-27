@@ -2,10 +2,6 @@ name: WRF 4 km ICON - REFL NATIVO
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wrf-icon-4km-native.yml"
   schedule:
     # 23:00 UTC = 20:00 BRT
     - cron: '0 23 * * *'
@@ -17,261 +13,283 @@ concurrency:
   group: sideral-wrf-icon-daily
   cancel-in-progress: false
 
+env:
+  PYTHON_VERSION: '3.11'
+
 jobs:
   short:
-    name: ICON para WRF - primeira previsao
+    name: ICON para WRF - primeira previsao F006
     runs-on: ubuntu-22.04
     timeout-minutes: 330
     outputs:
       run_date: ${{ steps.runinfo.outputs.run_date }}
       run_cycle: ${{ steps.runinfo.outputs.run_cycle }}
-
     steps:
-      - name: Checkout wrf-runner
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: wrf-runner
           fetch-depth: 0
-
       - name: Liberar espaco
         run: |
-          set -euxo pipefail
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
           sudo apt-get clean || true
           docker system prune -af || true
-          df -h
-
-      - name: Preparar Python e ecCodes
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Instalar ferramentas
         run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools
-          python -m pip install --upgrade pip
-          python -m pip install requests
-          grib_set -V
-          docker pull dtcenter/wps_wrf:latest
-
-      - name: Rodar ICON para WRF 4 km ate F006
-        env:
-          WRF_RUN_HOURS: '6'
-        run: |
-          set -euxo pipefail
-          chmod +x wrf/run_icon_wrf.sh wrf/run_wrf_with_source.sh
-          ./wrf/run_icon_wrf.sh
-
-      - name: Guardar rodada selecionada
-        id: runinfo
-        run: |
-          set -euxo pipefail
-          source wrf_diagnostics/run.env
-          test "$SOURCE_MODEL" = icon
-          echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
-          echo "run_cycle=$RUN_CYCLE" >> "$GITHUB_OUTPUT"
-          echo "ICON rodada ${RUN_DATE} ${RUN_CYCLE}Z"
-
-      - name: Instalar extrator WRF
-        run: |
-          python -m pip install numpy xarray netCDF4
-
-      - name: Extrair REFL_10CM nativo
-        run: |
-          set -euxo pipefail
-          rm -rf wrf_publish
-          python wrf/extract_wrf_json.py \
-            --run-dir wrf_work/run \
-            --run-env wrf_diagnostics/run.env \
-            --output-dir wrf_publish \
-            --grid-x 220 \
-            --grid-y 180
-          python wrf/retag_wrf_model.py --root wrf_publish --model icon
-          python - <<'PY'
-          import gzip, json
-          from pathlib import Path
-          d=json.loads(Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
-          assert d.get('model')=='icon', d
-          assert d.get('reflectivitySource')=='REFL_10CM_NATIVE', d
-          assert d.get('frameCount',0)>=7, d
-          for f in d['frames']:
-              assert f.get('reflectivitySource')=='REFL_10CM_NATIVE', f
-              with gzip.open(Path('wrf_publish')/f['file'],'rt',encoding='utf-8') as fh:
-                  x=json.load(fh)
-              assert x.get('model')=='icon', x
-              assert x.get('reflectivitySource')=='REFL_10CM_NATIVE', x
-          print('ICON->WRF curto OK:', d['initTime'], d['frameCount'])
-          PY
-
-      - name: Publicar primeira previsao em wrf-icon-data
-        run: |
-          set -euxo pipefail
-          git config user.name "sideral-wrf-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf /tmp/sideral-wrf-icon-data
-          git worktree add --detach /tmp/sideral-wrf-icon-data
-          cd /tmp/sideral-wrf-icon-data
-          git checkout --orphan wrf-icon-data-next
-          git rm -rf . || true
-          git clean -fdx || true
-          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          cat > README.md <<'EOF'
-          # Sideral WRF ICON Data
-          WRF Sul 4 km inicializado com atmosfera ICON Global.
-          Refletividade publicada: REFL_10CM nativo calculado pela microfisica do WRF.
-          EOF
-          git add .
-          git commit -m "Publica ICON para WRF 4 km REFL nativo [skip render]"
-          git push --force origin HEAD:wrf-icon-data
-
-      - name: Salvar diagnosticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrf-icon-short-diagnostics
-          path: |
-            wrf_diagnostics/
-            wrf_publish/
-          retention-days: 5
-          if-no-files-found: warn
-
-  next-day:
-    name: ICON para WRF - 24 horas do proximo dia
-    needs: short
-    runs-on: ubuntu-22.04
-    timeout-minutes: 350
-
-    steps:
-      - name: Checkout wrf-runner
-        uses: actions/checkout@v4
-        with:
-          ref: wrf-runner
-          fetch-depth: 0
-
-      - name: Liberar espaco
-        run: |
-          set -euxo pipefail
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
-          sudo apt-get clean || true
-          docker system prune -af || true
-          df -h
-
-      - name: Preparar Python e ecCodes
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instalar ferramentas
-        run: |
-          set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y libeccodes-tools
           python -m pip install --upgrade pip
           python -m pip install requests numpy xarray netCDF4
           docker pull dtcenter/wps_wrf:latest
-
-      - name: Aguardar ICON F045 da mesma rodada
+      - name: Rodar ICON ate F006
         env:
-          FORCE_RUN_DATE: ${{ needs.short.outputs.run_date }}
-          FORCE_RUN_CYCLE: ${{ needs.short.outputs.run_cycle }}
+          WRF_RUN_HOURS: '6'
         run: |
-          set -euxo pipefail
-          printf -v FH '%03d' 45
-          URL="https://opendata.dwd.de/weather/nwp/icon/grib/${FORCE_RUN_CYCLE}/t_2m/icon_global_icosahedral_single-level_${FORCE_RUN_DATE}${FORCE_RUN_CYCLE}_${FH}_T_2M.grib2.bz2"
-          for TRY in $(seq 1 18); do
-            if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
-              echo "ICON F045 disponivel na tentativa $TRY"
-              exit 0
-            fi
-            echo "ICON F045 ainda nao disponivel; aguardando 5 minutos ($TRY/18)"
-            sleep 300
-          done
-          exit 22
-
-      - name: Continuar mesma rodada ICON ate F045
-        env:
-          WRF_RUN_HOURS: '45'
-          FORCE_RUN_DATE: ${{ needs.short.outputs.run_date }}
-          FORCE_RUN_CYCLE: ${{ needs.short.outputs.run_cycle }}
-        run: |
-          set -euxo pipefail
           chmod +x wrf/run_icon_wrf.sh wrf/run_wrf_with_source.sh
           ./wrf/run_icon_wrf.sh
-
-      - name: Extrair 24 horarios REFL_10CM nativo
+      - name: Guardar rodada
+        id: runinfo
         run: |
-          set -euxo pipefail
+          source wrf_diagnostics/run.env
+          test "$SOURCE_MODEL" = icon
+          echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
+          echo "run_cycle=$RUN_CYCLE" >> "$GITHUB_OUTPUT"
+      - name: Extrair primeira previsao
+        run: |
           rm -rf wrf_publish
-          python wrf/extract_wrf_json.py \
-            --run-dir wrf_work/run \
-            --run-env wrf_diagnostics/run.env \
-            --output-dir wrf_publish \
-            --grid-x 220 \
-            --grid-y 180
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
           python wrf/retag_wrf_model.py --root wrf_publish --model icon
-          python wrf/filter_next_day.py --root wrf_publish
           python - <<'PY'
           import json
-          from pathlib import Path
-          d=json.loads(Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
-          assert d.get('model')=='icon', d
-          assert d.get('reflectivitySource')=='REFL_10CM_NATIVE', d
-          assert d.get('scope')=='next_local_day', d
-          assert d.get('frameCount')==24, d
-          assert d.get('localHours')==list(range(24)), d
-          print('ICON->WRF 24h OK:', d['forecastLocalDate'])
+          d=json.load(open('wrf_publish/metadata.json',encoding='utf-8'))
+          assert d['model']=='icon' and d['reflectivitySource']=='REFL_10CM_NATIVE' and d['frameCount']>=7, d
           PY
-
-      - name: Publicar 24 horas em wrf-icon-data
+      - name: Publicar primeira previsao
         run: |
-          set -euxo pipefail
           git config user.name "sideral-wrf-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf /tmp/sideral-wrf-icon-data
-          git worktree add --detach /tmp/sideral-wrf-icon-data
-          cd /tmp/sideral-wrf-icon-data
+          rm -rf /tmp/wrf-icon-data
+          git worktree add --detach /tmp/wrf-icon-data
+          cd /tmp/wrf-icon-data
           git checkout --orphan wrf-icon-data-next
           git rm -rf . || true
           git clean -fdx || true
           cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          cat > README.md <<'EOF'
-          # Sideral WRF ICON Data
-          Previsao WRF Sul 4 km inicializada pelo ICON Global.
-          24 quadros horarios do proximo dia em BRT.
-          Refletividade: REFL_10CM nativo do WRF.
-          EOF
+          printf '# Sideral WRF ICON Data\nWRF Sul 4 km inicializado pelo ICON. REFL_10CM nativo.\n' > README.md
           git add .
-          git commit -m "Publica ICON-WRF 4 km horario do proximo dia [skip render]"
+          git commit -m "ICON-WRF primeira previsao [skip render]"
           git push --force origin HEAD:wrf-icon-data
-
-      - name: Confirmar publicacao
-        run: |
-          set -euxo pipefail
-          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-icon-data/metadata.json?run=${GITHUB_RUN_ID}"
-          for N in $(seq 1 12); do
-            if curl -fsSL --connect-timeout 10 --max-time 30 "$URL-$N" -o /tmp/meta.json; then
-              if python - <<'PY'
-          import json
-          d=json.load(open('/tmp/meta.json',encoding='utf-8'))
-          ok=(d.get('model')=='icon' and d.get('frameCount')==24 and d.get('reflectivitySource')=='REFL_10CM_NATIVE' and d.get('localHours')==list(range(24)))
-          print(d)
-          raise SystemExit(0 if ok else 1)
-          PY
-              then exit 0; fi
-            fi
-            sleep 5
-          done
-          exit 41
-
-      - name: Salvar diagnosticos
+      - name: Diagnosticos
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wrf-icon-nextday-diagnostics
-          path: |
-            wrf_diagnostics/
-            wrf_publish/
-          retention-days: 5
+          name: wrf-icon-short-diagnostics
+          path: wrf_diagnostics/
+          retention-days: 3
           if-no-files-found: warn
+
+  segment-1:
+    name: ICON WRF segmento F000-F024
+    needs: short
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - name: Preparar runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Dependencias
+        run: python -m pip install requests numpy xarray netCDF4
+      - name: Rodar F000-F024 e gerar restart
+        env:
+          WRF_RUN_HOURS: '24'
+          FORCE_RUN_DATE: ${{ needs.short.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.short.outputs.run_cycle }}
+        run: |
+          python wrf/prepare_restart_segment.py --start-hour 0 --end-hour 24
+          chmod +x wrf/run_icon_wrf.sh wrf/run_wrf_with_source.sh
+          ./wrf/run_icon_wrf.sh
+          ls -lh wrf_work/run/wrfrst_d01_*
+      - name: Extrair segmento 1
+        run: |
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
+          python wrf/retag_wrf_model.py --root wrf_publish --model icon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icon-restart-f024
+          path: wrf_work/run/wrfrst_d01_*
+          retention-days: 2
+          compression-level: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icon-frames-f000-f024
+          path: wrf_publish/
+          retention-days: 2
+
+  segment-2:
+    name: ICON WRF segmento F024-F048
+    needs: [short, segment-1]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: icon-restart-f024
+          path: restart_in
+      - name: Preparar runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Dependencias
+        run: python -m pip install requests numpy xarray netCDF4
+      - name: Continuar F024-F048
+        env:
+          WRF_RUN_HOURS: '48'
+          FORCE_RUN_DATE: ${{ needs.short.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.short.outputs.run_cycle }}
+        run: |
+          RST=$(find restart_in -type f -name 'wrfrst_d01_*' | head -1)
+          test -n "$RST"
+          python wrf/prepare_restart_segment.py --start-hour 24 --end-hour 48 --restart-file "$RST"
+          chmod +x wrf/run_icon_wrf.sh wrf/run_wrf_with_source.sh
+          ./wrf/run_icon_wrf.sh
+          ls -lh wrf_work/run/wrfrst_d01_*
+      - name: Extrair segmento 2
+        run: |
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
+          python wrf/retag_wrf_model.py --root wrf_publish --model icon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icon-restart-f048
+          path: wrf_work/run/wrfrst_d01_*
+          retention-days: 2
+          compression-level: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icon-frames-f024-f048
+          path: wrf_publish/
+          retention-days: 2
+
+  segment-3:
+    name: ICON WRF segmento F048-F069
+    needs: [short, segment-2]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: icon-restart-f048
+          path: restart_in
+      - name: Preparar runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Dependencias
+        run: python -m pip install requests numpy xarray netCDF4
+      - name: Continuar F048-F069
+        env:
+          WRF_RUN_HOURS: '69'
+          FORCE_RUN_DATE: ${{ needs.short.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.short.outputs.run_cycle }}
+        run: |
+          RST=$(find restart_in -type f -name 'wrfrst_d01_*' | head -1)
+          test -n "$RST"
+          python wrf/prepare_restart_segment.py --start-hour 48 --end-hour 69 --restart-file "$RST"
+          chmod +x wrf/run_icon_wrf.sh wrf/run_wrf_with_source.sh
+          ./wrf/run_icon_wrf.sh
+      - name: Extrair segmento 3
+        run: |
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
+          python wrf/retag_wrf_model.py --root wrf_publish --model icon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icon-frames-f048-f069
+          path: wrf_publish/
+          retention-days: 2
+
+  publish-two-days:
+    name: ICON publicar dois dias completos
+    needs: [short, segment-1, segment-2, segment-3]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+      - uses: actions/download-artifact@v4
+        with:
+          name: icon-frames-f000-f024
+          path: segments/a
+      - uses: actions/download-artifact@v4
+        with:
+          name: icon-frames-f024-f048
+          path: segments/b
+      - uses: actions/download-artifact@v4
+        with:
+          name: icon-frames-f048-f069
+          path: segments/c
+      - name: Unir e filtrar 48 horarios BRT
+        run: |
+          python wrf/merge_wrf_segments.py --input segments/a --input segments/b --input segments/c --output wrf_publish
+          python wrf/filter_next_day.py --root wrf_publish --days 2
+          python - <<'PY'
+          import json
+          d=json.load(open('wrf_publish/metadata.json',encoding='utf-8'))
+          assert d['model']=='icon', d
+          assert d['reflectivitySource']=='REFL_10CM_NATIVE', d
+          assert d['scope']=='next_two_local_days', d
+          assert d['frameCount']==48, d
+          assert len(d['forecastLocalDates'])==2, d
+          print('ICON 48h OK', d['forecastLocalDates'])
+          PY
+      - name: Publicar 48 horas
+        run: |
+          git config user.name "sideral-wrf-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/wrf-icon-data
+          git worktree add --detach /tmp/wrf-icon-data
+          cd /tmp/wrf-icon-data
+          git checkout --orphan wrf-icon-data-next
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
+          printf '# Sideral WRF ICON Data\nDois dias completos em BRT. WRF Sul 4 km / REFL_10CM nativo.\n' > README.md
+          git add .
+          git commit -m "ICON-WRF publica dois dias [skip render]"
+          git push --force origin HEAD:wrf-icon-data
