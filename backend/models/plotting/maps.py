@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import json
 import threading
+from pathlib import Path
 from typing import Iterable
 
 import numpy as np
@@ -16,6 +18,23 @@ class PlottingUnavailable(RuntimeError):
 
 
 _PLOT_LOCK = threading.RLock()
+_BORDERS_PATH = Path(__file__).resolve().parents[1] / "assets" / "south_america_countries.geojson"
+
+
+def _draw_local_boundaries(axis) -> None:
+    try:
+        collection=json.loads(_BORDERS_PATH.read_text(encoding="utf-8"))
+        for feature in collection.get("features",[]):
+            geometry=feature.get("geometry") or {}
+            coordinates=geometry.get("coordinates") or []
+            polygons=[coordinates] if geometry.get("type")=="Polygon" else coordinates if geometry.get("type")=="MultiPolygon" else []
+            for polygon in polygons:
+                for ring in polygon:
+                    if len(ring)<2:continue
+                    longitude,latitude=zip(*ring)
+                    axis.plot(longitude,latitude,color="#111111",linewidth=.75,zorder=4)
+    except (OSError,ValueError,TypeError,json.JSONDecodeError):
+        pass
 
 
 def _plain_axis(figure, bounds):
@@ -24,37 +43,12 @@ def _plain_axis(figure, bounds):
     axis.set_xlabel("Longitude");axis.set_ylabel("Latitude")
     axis.grid(True,color="#505050",alpha=.25,linewidth=.4)
     axis.tick_params(labelsize=8)
+    _draw_local_boundaries(axis)
     return axis,None
 
 
 def _map_axis(figure, bounds):
-    try:
-        import cartopy.crs as ccrs
-        import cartopy.feature as cfeature
-
-        projection=ccrs.PlateCarree()
-        land=cfeature.LAND.with_scale("50m")
-        ocean=cfeature.OCEAN.with_scale("50m")
-        coastline=cfeature.COASTLINE.with_scale("50m")
-        borders=cfeature.BORDERS.with_scale("50m")
-        states=cfeature.STATES.with_scale("50m")
-        # Resolve os arquivos Natural Earth aqui; se não estiverem disponíveis,
-        # o mapa cartesiano continua sendo gerado normalmente.
-        for feature in (land,ocean,coastline,borders,states):
-            next(iter(feature.geometries()),None)
-        axis=figure.add_axes((0.035,0.15,0.93,0.72),projection=projection,facecolor="#dadada")
-        axis.set_extent([bounds["west"],bounds["east"],bounds["south"],bounds["north"]],crs=projection)
-        axis.add_feature(land,facecolor="#d6d6d6",edgecolor="none",zorder=0)
-        axis.add_feature(ocean,facecolor="#ffffff",edgecolor="none",zorder=0)
-        axis.add_feature(coastline,edgecolor="#111111",linewidth=.8,zorder=3)
-        axis.add_feature(borders,edgecolor="#111111",linewidth=.65,zorder=3)
-        axis.add_feature(states,edgecolor="#333333",linewidth=.35,facecolor="none",zorder=3)
-        gridlines=axis.gridlines(crs=projection,draw_labels=True,linewidth=.35,color="#5d5d5d",alpha=.28,linestyle="-")
-        gridlines.top_labels=False;gridlines.right_labels=False
-        gridlines.xlabel_style={"size":7};gridlines.ylabel_style={"size":7}
-        return axis,projection
-    except (ImportError,OSError):
-        return _plain_axis(figure,bounds)
+    return _plain_axis(figure,bounds)
 
 
 def render_field_png(
