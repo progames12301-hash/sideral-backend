@@ -138,5 +138,13 @@ text=text.replace(anchor,inject,1)
 path.write_text(text,encoding='utf-8')
 PY
 
+if [[ "${WRF_PATCH_ONLY:-0}" == "1" ]]; then
+  bash -n wrf/run_gfs_test.sh
+  grep -q 'restart = .false.' wrf/run_gfs_test.sh
+  grep -q 'F063-F072\|SEGMENTO F063-F072\|SEGMENTO F' wrf/run_gfs_test.sh
+  echo "PATCH DE SEGMENTO VALIDADO"
+  exit 0
+fi
+
 chmod +x wrf/run_gfs_test.sh
 exec wrf/run_gfs_test.sh
