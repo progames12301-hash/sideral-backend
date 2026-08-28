@@ -125,7 +125,9 @@ def nearest_indices(source_lat: np.ndarray, source_lon: np.ndarray, target_lat: 
 
 
 def next_local_day_steps(run: dt.datetime, interval_hours: int, maximum: int = 72) -> tuple[dt.date, list[int]]:
-    target = run.astimezone(BRT).date() + dt.timedelta(days=1)
+    # "Amanha" e relativo ao horario atual de Brasilia, nao a data local da
+    # inicializacao sinoptica (00Z ainda pertence ao dia anterior em BRT).
+    target = dt.datetime.now(BRT).date() + dt.timedelta(days=1)
     steps = [
         step for step in range(0, maximum + 1, interval_hours)
         if (run + dt.timedelta(hours=step)).astimezone(BRT).date() == target
