@@ -17,7 +17,7 @@ from .processing.field import Field
 from .processing.units import normalize_units
 from .sources import ModelStorage
 
-PLOT_SCHEMA = "south-america-v4"
+PLOT_SCHEMA = "south-america-v5-lowmem"
 
 
 class ServiceError(RuntimeError):
