@@ -17,6 +17,8 @@ from .processing.field import Field
 from .processing.units import normalize_units
 from .sources import ModelStorage
 
+PLOT_SCHEMA = "south-america-v2"
+
 
 class ServiceError(RuntimeError):
     status = 500
@@ -161,7 +163,7 @@ class ModelService:
             body=png.read_bytes()
             return body,"image/png",{"X-Sideral-Source":"preprocessed","ETag":hashlib.sha256(body).hexdigest()}
         field,fingerprint=self._single_field(model,run,product,region,forecast_hour)
-        key=self.cache.digest(["single",model,run,product,region,str(forecast_hour),fingerprint])
+        key=self.cache.digest([PLOT_SCHEMA,"single",model,run,product,region,str(forecast_hour),fingerprint])
         cached=self.cache.read("models",key,"png")
         if cached:return cached,"image/png",{"X-Sideral-Source":"cache","ETag":hashlib.sha256(cached).hexdigest()}
         try:body=render_field_png(field,PRODUCT_BY_ID[product],region,title_prefix=MODEL_BY_ID[model].name,models_used=[MODEL_BY_ID[model].name])
@@ -197,7 +199,7 @@ class ModelService:
         fields,models_used,fingerprints=self._multimodel_fields(run,product,region,forecast_hour)
         try:combined,_=combine_fields(fields,statistic,MIN_MULTIMODEL_MEMBERS)
         except ValueError as exc:raise Conflict(str(exc)) from exc
-        key=self.cache.digest(["multimodel",run,product,region,str(forecast_hour),statistic,*fingerprints])
+        key=self.cache.digest([PLOT_SCHEMA,"multimodel",run,product,region,str(forecast_hour),statistic,*fingerprints])
         cached=self.cache.read("multimodel",key,"png")
         headers={"X-Sideral-Models":",".join(models_used),"X-Sideral-Model-Count":str(len(models_used))}
         if cached:return cached,"image/png",{**headers,"X-Sideral-Source":"cache","ETag":hashlib.sha256(cached).hexdigest()}
@@ -218,7 +220,7 @@ class ModelService:
         try:result,_=probability_exceedance(fields,float(threshold),MIN_MULTIMODEL_MEMBERS)
         except ValueError as exc:raise Conflict(str(exc)) from exc
         period_label=f"/{period}h" if period else ""
-        key=self.cache.digest(["probability",run,variable,region,str(forecast_hour),str(threshold),str(period),*fingerprints])
+        key=self.cache.digest([PLOT_SCHEMA,"probability",run,variable,region,str(forecast_hour),str(threshold),str(period),*fingerprints])
         cached=self.cache.read("probability",key,"png")
         headers={"X-Sideral-Models":",".join(models_used),"X-Sideral-Model-Count":str(len(models_used))}
         if cached:return cached,"image/png",{**headers,"X-Sideral-Source":"cache","ETag":hashlib.sha256(cached).hexdigest()}
@@ -228,3 +230,4 @@ class ModelService:
         except PlottingUnavailable as exc:raise Unavailable(str(exc)) from exc
         self.cache.write("probability",key,"png",body)
         return body,"image/png",{**headers,"X-Sideral-Source":"generated","ETag":hashlib.sha256(body).hexdigest()}
+
