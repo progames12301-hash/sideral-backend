@@ -26,7 +26,7 @@ REMOTE_PRODUCTS: dict[str, tuple[str, str, float]] = {
     "qpf3": ("precipitation", "mm", 1.0),
     "qpf6": ("precipitation", "mm", 1.0),
     "mucape": ("mucape", "J/kg", 1.0),
-    "temp2m": ("temperature", "°C", 1.0),
+    "temp2m": ("temperature", "Â°C", 1.0),
     "humidity2m": ("humidity", "%", 1.0),
     "wind10m": ("windSpeed", "m/s", 1.0 / 3.6),
     "pwat": ("waterVapor", "mm", 1.0),
@@ -181,7 +181,10 @@ class GitHubModelSource:
             raise ValueError("Quadro remoto pertence a outro modelo.")
         with self._lock:
             self._frames[key] = (now, payload)
-            while len(self._frames) > 48:
+            # Cada JSON remoto contem varias matrizes e objetos Python. Manter
+            # dezenas deles derruba instancias pequenas do Render por memoria.
+            # Dois quadros preservam a navegacao adjacente sem reter uma rodada.
+            while len(self._frames) > 2:
                 self._frames.pop(next(iter(self._frames)))
         return payload
 
@@ -267,3 +270,4 @@ class GitHubModelSource:
             "updated": payload.get("generatedAt"),
             "source": "github-actions",
         }
+
