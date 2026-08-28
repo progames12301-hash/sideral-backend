@@ -98,7 +98,7 @@ jobs:
         run: |
           cutoff="$(date -u -d '72 hours ago' +%s)"
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --paginate \
-            --jq '.artifacts[] | select(.name | startswith("wrf-") or startswith("gfs-")) | [.id, .name, .created_at] | @tsv' |
+            --jq '.artifacts[] | select(.name | startswith("wrf-") or startswith("gfs-") or startswith("icon-") or startswith("ecmwf-")) | [.id, .name, .created_at] | @tsv' |
           while IFS=$'\t' read -r id name created_at; do
             [ -n "$id" ] || continue
             created="$(date -u -d "$created_at" +%s)"
@@ -107,3 +107,4 @@ jobs:
               echo "Removido: $name ($created_at)"
             fi
           done
+
