@@ -73,6 +73,16 @@ class ModelsBackendTest(unittest.TestCase):
         self.assertAlmostEqual(lat[0],-34.5);self.assertAlmostEqual(lon[0],-58.5)
         self.assertGreater(lat.size,10);self.assertGreater(lon.size,10)
 
+    def test_multimodel_aligns_different_runs_by_valid_time(self) -> None:
+        # ECMWF 00Z +24 h e GFS 06Z +18 h representam o mesmo instante.
+        self.publish_png("ecmwf","2026082700","qpf24",24)
+        self.publish_png("gfs","2026082706","qpf24",18)
+        payload=self.api.service.multimodel_runs("qpf24")
+        self.assertEqual(payload["time_reference"],"valid")
+        self.assertEqual(payload["runs"][0]["run"],"2026082800")
+        self.assertEqual(payload["runs"][0]["model_count"],2)
+
 
 if __name__ == "__main__":
     unittest.main()
+
