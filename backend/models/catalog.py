@@ -25,7 +25,7 @@ class ProductDefinition:
 MODELS = (
     ModelDefinition("ecmwf", "ECMWF IFS", "0.25°", "ECMWF"),
     ModelDefinition("gfs", "GFS", "0.25°", "NOAA/NCEP"),
-    ModelDefinition("icon", "ICON", "0.25°", "DWD"),
+    ModelDefinition("icon", "ICON", "13 km", "DWD"),
     ModelDefinition("aifs", "ECMWF AIFS", "0.25°", "ECMWF"),
     ModelDefinition("wrf3", "WRF Sideral 3 km", "3 km", "Sideral", planned=True),
     ModelDefinition("wrf9", "WRF Sideral 9 km", "9 km", "Sideral", planned=True),
@@ -92,3 +92,4 @@ MODEL_BY_ID = {item.id: item for item in MODELS}
 PRODUCT_BY_ID = {item.id: item for item in PRODUCTS}
 
 MULTIMODEL_STATS = {"mean", "median", "min", "max", "spread", "stddev", "p10", "p25", "p50", "p75", "p90"}
+
