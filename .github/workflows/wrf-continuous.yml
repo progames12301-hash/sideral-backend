@@ -1,4 +1,4 @@
-name: WRF contínuo — 72 horas
+name: WRF contínuo — encadear rodadas
 
 on:
   push:
@@ -7,160 +7,103 @@ on:
       - .github/workflows/wrf-continuous.yml
   schedule:
     - cron: "*/15 * * * *"
+  workflow_run:
+    workflows: ["WRF 4 km - DOIS DIAS AUTOMATICO"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
-  contents: write
   actions: write
+  contents: read
 
 concurrency:
   group: sideral-wrf-gfs
-  cancel-in-progress: false
-
-env:
-  MODEL: GFS
-  FORECAST_HOURS: "72"
-  FORECAST_INTERVAL: "3"
-  HISTORY_INTERVAL: "60"
-  MPI_PROCS: "4"
-  LD_LIBRARY_PATH: ${{ github.workspace }}/runtime/wrf_system/deps/jasper/lib
+  cancel-in-progress: true
 
 jobs:
-  wrf:
-    name: Rodada GFS + WRF
+  next-run:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
-
+    timeout-minutes: 15
     steps:
-      - name: Baixar o runtime isolado do WRF
-        uses: actions/checkout@v4
-        with:
-          ref: wrf-runtime
-          path: runtime
-
-      - name: Instalar dependências
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential gfortran git curl ca-certificates csh m4 perl \
-            libnetcdf-dev libnetcdff-dev libopenmpi-dev openmpi-bin \
-            cmake libjpeg-dev libpng-dev libopenjp2-7-dev zlib1g-dev libcurl4-openssl-dev \
-            python3-numpy python3-netcdf4 python3-matplotlib jq
-
-      - name: Restaurar WRF, WPS e geodados
-        id: cache-wrf
-        uses: actions/cache@v4
-        with:
-          path: |
-            runtime/wrf_system/wrf
-            runtime/wrf_system/wps
-            runtime/wrf_system/data/geog
-            runtime/wrf_system/deps/jasper
-          key: wrf-wps-v45-gfortran-${{ runner.os }}-${{ hashFiles('runtime/wrf_system/scripts/setup_wrf.sh', 'runtime/wrf_system/config/**') }}
-
-      - name: Compilar WRF/WPS e preparar geodados
-        if: steps.cache-wrf.outputs.cache-hit != 'true'
-        working-directory: runtime/wrf_system
-        shell: bash
-        run: |
-          chmod +x scripts/*.sh scripts/*.py
-          scripts/setup_wrf.sh
-          scripts/download_geog.sh
-          rm -rf wrf_source wps_source
-
-      - name: Detectar a rodada mais recente
+      - name: Comparar GFS disponível com a rodada publicada
         id: cycle
-        working-directory: runtime/wrf_system
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          chmod +x scripts/*.sh scripts/*.py
-          run_id="$(python3 scripts/latest_gfs_cycle.py)"
-          tag="wrf-gfs-${run_id}"
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          echo "run_date=${run_id:0:8}" >> "$GITHUB_OUTPUT"
-          echo "run_cycle=${run_id:8:2}" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "new=false" >> "$GITHUB_OUTPUT"
-            echo "A rodada $run_id ja esta publicada."
-          else
-            echo "new=true" >> "$GITHUB_OUTPUT"
+          candidate="$(python3 - <<'PY'
+          import datetime as dt
+          import urllib.request
+          now = dt.datetime.now(dt.timezone.utc)
+          base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+          for offset in range(0, 55, 6):
+              run = base - dt.timedelta(hours=offset)
+              date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
+              url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f006'
+              request = urllib.request.Request(url, method='HEAD')
+              try:
+                  with urllib.request.urlopen(request, timeout=15) as response:
+                      if response.status in (200, 206):
+                          print(date + cycle)
+                          break
+              except Exception:
+                  pass
+          else:
+              raise SystemExit('Nenhuma rodada GFS com F006 disponivel')
+          PY
+          )"
+
+          published=""
+          if curl -fsSL --retry 3 "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?check=${GITHUB_RUN_ID}" -o /tmp/meta.json; then
+            published="$(python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/meta.json',encoding='utf-8'))
+          print(str(data.get('runDate','')) + str(data.get('runCycle','')).replace('Z','').zfill(2))
+          PY
+            )"
           fi
+          echo "candidate=$candidate" >> "$GITHUB_OUTPUT"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+          if [ -z "$published" ] || [[ "$candidate" > "$published" ]]; then
+            echo "start=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "start=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "GFS disponivel: $candidate · publicado: ${published:-nenhum}"
 
-      - name: Executar 72 horas de WRF
-        if: steps.cycle.outputs.new == 'true'
-        working-directory: runtime/wrf_system
-        env:
-          RUN_DATE: ${{ steps.cycle.outputs.run_date }}
-          RUN_CYCLE: ${{ steps.cycle.outputs.run_cycle }}
-          RUN_HOURS: "72"
-          RUN_MINUTES: "0"
-        shell: bash
-        run: scripts/run_full_cycle.sh
-
-      - name: Empacotar imagens sem colocá-las no Git
-        if: steps.cycle.outputs.new == 'true'
-        working-directory: runtime/wrf_system
-        shell: bash
-        run: |
-          run_id="${{ steps.cycle.outputs.run_id }}"
-          mkdir -p release
-          cp "output/images/gfs/$run_id/manifest.json" release/manifest.json
-          tar -czf "release/wrf-gfs-${run_id}-imagens.tar.gz" -C "output/images/gfs/$run_id" .
-          sha256sum release/* > release/SHA256SUMS.txt
-
-      - name: Publicar a rodada no GitHub Releases
-        if: steps.cycle.outputs.new == 'true'
-        working-directory: runtime/wrf_system
+      - name: Verificar se já existe WRF ativo
+        if: steps.cycle.outputs.start == 'true'
+        id: active
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          run_id="${{ steps.cycle.outputs.run_id }}"
-          tag="${{ steps.cycle.outputs.tag }}"
-          gh release create "$tag" release/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "WRF GFS ${run_id}" \
-            --notes "Rodada GFS ${run_id} UTC · WRF Sul 4 km · previsão de 72 horas · quadros horários."
+          count="$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow wrf-4km-native-reflectivity.yml \
+            --limit 20 \
+            --json status \
+            --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting")] | length')"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
 
-      - name: Apagar rodadas com mais de 72 horas
+      - name: Iniciar a nova rodada imediatamente
+        if: steps.cycle.outputs.start == 'true' && steps.active.outputs.count == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run wrf-4km-native-reflectivity.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Excluir artefatos WRF com mais de três dias
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           cutoff="$(date -u -d '72 hours ago' +%s)"
-          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
-            --jq '.[] | select(.tag_name | startswith("wrf-gfs-")) | [.tag_name, .published_at] | @tsv' |
-          while IFS=$'\t' read -r tag published_at; do
-            [ -n "$tag" ] || continue
-            published="$(date -u -d "$published_at" +%s)"
-            if [ "$published" -lt "$cutoff" ]; then
-              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --paginate \
+            --jq '.artifacts[] | select(.name | startswith("wrf-") or startswith("gfs-")) | [.id, .name, .created_at] | @tsv' |
+          while IFS=$'\t' read -r id name created_at; do
+            [ -n "$id" ] || continue
+            created="$(date -u -d "$created_at" +%s)"
+            if [ "$created" -lt "$cutoff" ]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+              echo "Removido: $name ($created_at)"
             fi
           done
-
-      - name: Guardar logs quando houver falha
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrf-logs-${{ steps.cycle.outputs.run_id || github.run_id }}
-          path: runtime/wrf_system/logs
-          retention-days: 3
-
-      - name: Iniciar imediatamente a próxima rodada disponível
-        if: success() && steps.cycle.outputs.new == 'true'
-        working-directory: runtime/wrf_system
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          latest="$(python3 scripts/latest_gfs_cycle.py)"
-          completed="${{ steps.cycle.outputs.run_id }}"
-          if [[ "$latest" > "$completed" ]]; then
-            gh workflow run wrf-continuous.yml --repo "$GITHUB_REPOSITORY" --ref main
-          fi
-
