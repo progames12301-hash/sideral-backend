@@ -26,7 +26,7 @@ REMOTE_PRODUCTS: dict[str, tuple[str, str, float]] = {
     "qpf3": ("precipitation", "mm", 1.0),
     "qpf6": ("precipitation", "mm", 1.0),
     "mucape": ("mucape", "J/kg", 1.0),
-    "temp2m": ("temperature", "Â°C", 1.0),
+    "temp2m": ("temperature", "°C", 1.0),
     "humidity2m": ("humidity", "%", 1.0),
     "wind10m": ("windSpeed", "m/s", 1.0 / 3.6),
     "pwat": ("waterVapor", "mm", 1.0),
@@ -58,7 +58,6 @@ class GitHubModelSource:
         self.cache_seconds = max(30, int(cache_seconds))
         self.timeout = max(5, int(timeout))
         self._metadata: dict[str, tuple[float, dict[str, Any] | None]] = {}
-        self._frames: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
         self._lock = threading.RLock()
 
     @staticmethod
@@ -154,15 +153,9 @@ class GitHubModelSource:
             return []
         return sorted({int(item.get("forecastHour")) for item in self._frame_records(payload) if str(item.get("forecastHour", "")).isdigit()})
 
-    def _frame(self, model: str, filename: str) -> dict[str, Any]:
+    def _frame(self, model: str, filename: str, field_name: str) -> dict[str, Any]:
         if model not in self.base_urls or not FRAME_NAME_RE.fullmatch(filename) or not filename.startswith(f"{model}/"):
             raise ValueError("Nome de quadro remoto invalido.")
-        key = (model, filename)
-        now = time.monotonic()
-        with self._lock:
-            cached = self._frames.get(key)
-            if cached and now - cached[0] < self.cache_seconds:
-                return cached[1]
         response = requests.get(
             f"{self.base_urls[model]}/{filename}",
             headers={"User-Agent": "SideralMeteorologia/3.0", "Accept": "application/gzip"},
@@ -171,26 +164,35 @@ class GitHubModelSource:
         response.raise_for_status()
         if len(response.content) > MAX_COMPRESSED_BYTES:
             raise ValueError("Quadro remoto excede o limite compactado.")
-        decoded = gzip.decompress(response.content)
+        compressed = response.content
+        response.close()
+        decoded = gzip.decompress(compressed)
+        del compressed
         if len(decoded) > MAX_DECOMPRESSED_BYTES:
             raise ValueError("Quadro remoto excede o limite descompactado.")
         payload = json.loads(decoded.decode("utf-8"))
+        del decoded
         if not isinstance(payload, dict) or payload.get("schema") != "sideral-model-grid-v1":
             raise ValueError("Schema de quadro remoto invalido.")
         if str(payload.get("model") or "").lower() != model:
             raise ValueError("Quadro remoto pertence a outro modelo.")
-        with self._lock:
-            self._frames[key] = (now, payload)
-            # Cada JSON remoto contem varias matrizes e objetos Python. Manter
-            # dezenas deles derruba instancias pequenas do Render por memoria.
-            # Dois quadros preservam a navegacao adjacente sem reter uma rodada.
-            while len(self._frames) > 2:
-                self._frames.pop(next(iter(self._frames)))
+        # Um quadro remoto contém várias matrizes. O backend usa somente uma
+        # variável por requisição; descartar as demais evita reter dezenas de
+        # megabytes em objetos Python nas instâncias pequenas do Render.
+        fields = payload.get("fields")
+        if not isinstance(fields, dict):
+            raise ValueError("Quadro remoto sem campos.")
+        payload["fields"] = {
+            "lat": fields.get("lat"),
+            "lon": fields.get("lon"),
+            field_name: fields.get(field_name),
+        }
         return payload
 
     def _field_from_frame(self, model: str, run: str, product: str, record: dict[str, Any]) -> Field:
         filename = str(record.get("file") or "")
-        frame = self._frame(model, filename)
+        remote_name, unit, factor = REMOTE_PRODUCTS[product]
+        frame = self._frame(model, filename, remote_name)
         forecast_hour = int(record.get("forecastHour"))
         if int(frame.get("forecastHour") or -1) != forecast_hour:
             raise ValueError("Forecast hour remoto divergente.")
@@ -198,7 +200,6 @@ class GitHubModelSource:
         fields = frame.get("fields")
         if grid_x < 2 or grid_y < 2 or not isinstance(fields, dict):
             raise ValueError("Grade remota invalida.")
-        remote_name, unit, factor = REMOTE_PRODUCTS[product]
         expected = grid_x * grid_y
         lat = np.asarray(fields.get("lat"), dtype=float)
         lon = np.asarray(fields.get("lon"), dtype=float)
@@ -235,12 +236,19 @@ class GitHubModelSource:
             precipitation_product = str(payload.get("precipitationProduct") or "qpf1").lower()
             if precipitation_product not in {"qpf1", "qpf3", "qpf6"}:
                 return None
-            fields = [self._field_from_frame(model, run, precipitation_product, item) for item in records]
             interval = self._interval_hours(payload)
             multiplier = interval if payload.get("precipitationIsRate", True) else 1.0
-            values = np.sum([item.values * multiplier for item in fields], axis=0)
-            last = fields[-1]
-            return Field(last.lat, last.lon, values, "mm", last.valid_time, model, product, run, forecast_hour)
+            total: np.ndarray | None = None
+            last: Field | None = None
+            for record in records:
+                current = self._field_from_frame(model, run, precipitation_product, record)
+                if total is None:
+                    total = np.zeros_like(current.values, dtype=float)
+                total += current.values * multiplier
+                last = current
+            if total is None or last is None:
+                return None
+            return Field(last.lat, last.lon, total, "mm", last.valid_time, model, product, run, forecast_hour)
         if product not in REMOTE_PRODUCTS or forecast_hour not in self.product_hours(model, run, product):
             return None
         return self._field_from_frame(model, run, product, selected)
