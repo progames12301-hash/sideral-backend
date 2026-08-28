@@ -20,6 +20,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 import requests
+from backend.models import ModelApi
 
 # ==============================================================================
 # RENDER KEEP-ALIVE
@@ -52,6 +53,7 @@ GFS_WSL_DATA_DIR = Path(r"\wsl.localhost\Ubuntu-22.04\home\bryan\sideral_wrf\dat
 GFS_DATA_DIRS = [GFS_DATA_DIR, GFS_WSL_DATA_DIR]
 DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8766"))
+MODELS_API = ModelApi()
 
 
 # SIDERAL_MODEL_GITHUB_REMOTE_V2
@@ -107,7 +109,8 @@ IPMET_HEADERS = {
 }
 
 REDEMET_API_URL = "https://api-redemet.decea.mil.br"
-REDEMET_API_KEY = os.environ.get("REDEMET_API_KEY", "kvNQbm99G0YQQMjUrhqKWiZxjmnw0PRf8JxOe26Q")
+REDEMET_API_KEY = os.environ.get("REDEMET_API_KEY", "").strip()
+METEOBLUE_API_KEY = os.environ.get("METEOBLUE_API_KEY", "").strip()
 REDEMET_PRODUCTS = {"03km", "05km", "07km", "10km", "maxcappi"}
 REDEMET_SATELLITE_PRODUCTS = {"ir", "realcada", "vis"}
 REDEMET_SATELLITE_IMAGE_HOST = "estatico-redemet.decea.mil.br"
@@ -1011,8 +1014,9 @@ def build_gfs_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: i
     return cells
 
 def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int) -> list[dict[str, float]]:
-    api_key = "4imCvOUtnMT3NjeA"
-    response = requests.get("https://my.meteoblue.com/packages/basic-1h", params={"lat": (bounds["north"] + bounds["south"]) / 2, "lon": (bounds["east"] + bounds["west"]) / 2, "apikey": api_key, "tz": "UTC", "windspeed": "km/h", "forecast_days": 3}, timeout=20)
+    if not METEOBLUE_API_KEY:
+        raise RuntimeError("METEOBLUE_API_KEY nao configurada no servidor.")
+    response = requests.get("https://my.meteoblue.com/packages/basic-1h", params={"lat": (bounds["north"] + bounds["south"]) / 2, "lon": (bounds["east"] + bounds["west"]) / 2, "apikey": METEOBLUE_API_KEY, "tz": "UTC", "windspeed": "km/h", "forecast_days": 3}, timeout=20)
     response.raise_for_status()
     meteoblue_data = response.json()
     hourly_data = meteoblue_data.get("data_1h")
@@ -1908,6 +1912,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path).path
+        if parsed_path.startswith("/api/models") or parsed_path.startswith("/api/multimodel"):
+            self.handle_models_api(parsed_path, parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/ipmet/meta": self.handle_ipmet_meta(); return
         if parsed_path == "/api/ipmet/wms": self.handle_ipmet_wms(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/rainviewer/meta": self.handle_public_json(RAINVIEWER_META_URL, "RainViewer"); return
@@ -1983,6 +1989,19 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/mapa_estacoes_inmet_com_dados.html":
             self.path = "/mapa_estacoes_inmet_corrigido.html"
         super().do_GET()
+
+    def handle_models_api(self, path: str, query: dict[str, list[str]]) -> None:
+        response = MODELS_API.dispatch(path, query)
+        self.send_response(response.status)
+        self.send_header("Content-Type", response.content_type)
+        self.send_header("Content-Length", str(len(response.body)))
+        for name, value in response.headers.items():
+            self.send_header(name, value)
+        try:
+            self.end_headers()
+            self.wfile.write(response.body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def handle_sounding(self, query: dict[str, list[str]]) -> None:
         """Sondagem IFS 0.25° via Open-Meteo, processada pelo núcleo do SHARPpy."""
