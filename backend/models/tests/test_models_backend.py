@@ -21,7 +21,7 @@ class ModelsBackendTest(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         root=Path(self.temp.name)
         self.data=root/"data";self.cache=root/"cache"
-        self.api=ModelApi(self.data,self.cache)
+        self.api=ModelApi(self.data,self.cache,remote_enabled=False)
 
     def tearDown(self) -> None:
         self.temp.cleanup()

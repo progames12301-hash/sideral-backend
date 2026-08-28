@@ -1,6 +1,6 @@
 # Backend de Modelos Numéricos
 
-Este módulo não baixa nem simula dados. Ele publica somente rodadas e campos que já estejam presentes em `SIDERAL_MODEL_DATA_DIR`.
+Este módulo não simula dados. Ele publica rodadas locais presentes em `SIDERAL_MODEL_DATA_DIR` e também lê as branches de dados reais produzidas pelo GitHub Actions.
 
 ## Variáveis de ambiente
 
@@ -9,8 +9,19 @@ Este módulo não baixa nem simula dados. Ele publica somente rodadas e campos q
 - `SIDERAL_COMMON_GRID_DEGREES`: resolução comum; padrão `0.25`.
 - `SIDERAL_MIN_MULTIMODEL_MEMBERS`: mínimo de modelos válidos; nunca inferior a 2.
 - `SIDERAL_MODEL_CACHE_DAYS`: retenção dos produtos derivados; padrão 3 dias.
+- `SIDERAL_REMOTE_MODELS_ENABLED`: habilita as fontes remotas reais; padrão `1`.
+- `SIDERAL_ECMWF_DATA_URL`, `SIDERAL_ICON_DATA_URL`, `SIDERAL_GFS_DATA_URL`, `SIDERAL_AIFS_DATA_URL`: bases remotas opcionais.
 
 Nenhuma chave de provedor deve ser armazenada neste diretório ou enviada ao frontend.
+
+## Alimentação automática
+
+- ECMWF IFS: branch `ecmwf-data` já produzida pelo workflow oficial do projeto;
+- ICON: branch `icon-data` já produzida pelo workflow oficial do projeto;
+- GFS: `.github/workflows/gfs-global-models.yml`, dados NOAA/NCEP NOMADS;
+- AIFS: `.github/workflows/aifs-global-models.yml`, dados ECMWF Open Data.
+
+GFS e AIFS usam `backend.models.publish_remote` e publicam somente JSON compactado validado. Esses processos não executam nem modificam o WRF. Chuva de 24 horas é a soma dos intervalos reais publicados; períodos incompletos não são anunciados como 24 horas.
 
 ## Estrutura aceita
 

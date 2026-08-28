@@ -1,0 +1,58 @@
+name: GFS Global — dados para Modelos
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/models/publish_remote.py"
+      - ".github/workflows/gfs-global-models.yml"
+  schedule:
+    - cron: "35 4,10,16,22 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-gfs-global-models
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar leitor meteorologico
+        run: python -m pip install --disable-pip-version-check numpy scipy requests eccodes
+      - name: Baixar e validar GFS oficial
+        run: python -m backend.models.publish_remote --model gfs --output model_publish
+      - name: Publicar branch isolada
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "sideral-model-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git worktree add --detach /tmp/sideral-gfs-model-data
+          cd /tmp/sideral-gfs-model-data
+          git checkout --orphan gfs-model-data-next
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/model_publish/." .
+          printf '# Sideral GFS Data\nDados oficiais NOAA/NCEP processados automaticamente.\n' > README.md
+          git add .
+          git commit -m "Atualiza GFS global para Modelos [skip render]"
+          git push --force origin HEAD:gfs-model-data
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gfs-models-diagnostico
+          path: model_publish/metadata.json
+          retention-days: 3
+          if-no-files-found: warn

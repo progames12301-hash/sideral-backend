@@ -21,10 +21,11 @@ class ApiResponse:
 
 
 class ModelApi:
-    def __init__(self,data_dir: Path | None=None,cache_dir: Path | None=None) -> None:
+    def __init__(self,data_dir: Path | None=None,cache_dir: Path | None=None,remote_enabled: bool | None=None) -> None:
         kwargs={}
         if data_dir is not None:kwargs["data_dir"]=data_dir
         if cache_dir is not None:kwargs["cache_dir"]=cache_dir
+        if remote_enabled is not None:kwargs["remote_enabled"]=remote_enabled
         self.service=ModelService(**kwargs)
 
     @staticmethod

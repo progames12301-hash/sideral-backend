@@ -1,0 +1,58 @@
+name: ECMWF AIFS — dados para Modelos
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/models/publish_remote.py"
+      - ".github/workflows/aifs-global-models.yml"
+  schedule:
+    - cron: "20 9,21 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-aifs-global-models
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar leitor meteorologico
+        run: python -m pip install --disable-pip-version-check numpy scipy requests eccodes ecmwf-opendata
+      - name: Baixar e validar AIFS oficial
+        run: python -m backend.models.publish_remote --model aifs --output model_publish
+      - name: Publicar branch isolada
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "sideral-model-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git worktree add --detach /tmp/sideral-aifs-data
+          cd /tmp/sideral-aifs-data
+          git checkout --orphan aifs-data-next
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/model_publish/." .
+          printf '# Sideral AIFS Data\nDados oficiais ECMWF AIFS processados automaticamente.\n' > README.md
+          git add .
+          git commit -m "Atualiza AIFS para Modelos [skip render]"
+          git push --force origin HEAD:aifs-data
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aifs-models-diagnostico
+          path: model_publish/metadata.json
+          retention-days: 3
+          if-no-files-found: warn
