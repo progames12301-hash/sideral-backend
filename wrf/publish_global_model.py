@@ -140,7 +140,9 @@ def synoptic_candidates(now: dt.datetime | None = None) -> list[dt.datetime]:
 
 
 def next_local_day_steps(run: dt.datetime, interval_h: int, max_step: int) -> tuple[dt.date, list[int]]:
-    target = run.astimezone(BRT).date() + dt.timedelta(days=1)
+    # Sempre publicar amanha em Brasilia. Rodadas 00Z ainda pertencem ao dia
+    # anterior no horario local e nao podem definir o dia-alvo.
+    target = dt.datetime.now(BRT).date() + dt.timedelta(days=1)
     steps = []
     for step in range(0, max_step + 1, interval_h):
         valid = run + dt.timedelta(hours=step)
