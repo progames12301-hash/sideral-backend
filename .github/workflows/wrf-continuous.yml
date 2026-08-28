@@ -1,6 +1,10 @@
 name: WRF contínuo — 72 horas
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/wrf-continuous.yml
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
