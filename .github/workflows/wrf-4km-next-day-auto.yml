@@ -2,6 +2,15 @@ name: WRF 4 km - DOIS DIAS AUTOMATICO
 
 on:
   workflow_dispatch:
+    inputs:
+      run_date:
+        description: "Rodada GFS em YYYYMMDD (vazio = mais recente completa)"
+        required: false
+        type: string
+      run_cycle:
+        description: "Ciclo GFS: 00, 06, 12 ou 18 (vazio = mais recente completa)"
+        required: false
+        type: string
   workflow_run:
     workflows: ["WRF 4 km - REFL NATIVO - USE ESTE"]
     types: [completed]
@@ -22,8 +31,11 @@ jobs:
       run_cycle: ${{ steps.info.outputs.run_cycle }}
       run_id: ${{ steps.info.outputs.run_id }}
     steps:
-      - name: Descobrir a rodada GFS completa mais recente
+      - name: Escolher rodada GFS completa
         id: info
+        env:
+          INPUT_RUN_DATE: ${{ github.event.inputs.run_date || '' }}
+          INPUT_RUN_CYCLE: ${{ github.event.inputs.run_cycle || '' }}
         shell: bash
         run: |
           python3 - <<'PY'
@@ -31,29 +43,47 @@ jobs:
           import os
           import urllib.request
 
-          now = dt.datetime.now(dt.timezone.utc)
-          base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
-          selected = None
-          for offset in range(0, 91, 6):
-              run = base - dt.timedelta(hours=offset)
-              date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
+          requested_date = os.environ.get('INPUT_RUN_DATE', '').strip()
+          requested_cycle = os.environ.get('INPUT_RUN_CYCLE', '').strip().zfill(2)
+
+          def ready(date, cycle):
               url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f072'
               request = urllib.request.Request(url, method='HEAD')
               try:
                   with urllib.request.urlopen(request, timeout=20) as response:
-                      if response.status in (200, 206):
-                          selected = (date, cycle)
-                          break
+                      return response.status in (200, 206)
               except Exception:
-                  continue
+                  return False
+
+          selected = None
+          if requested_date or requested_cycle:
+              if len(requested_date) != 8 or not requested_date.isdigit():
+                  raise SystemExit('run_date deve estar em YYYYMMDD')
+              if requested_cycle not in {'00', '06', '12', '18'}:
+                  raise SystemExit('run_cycle deve ser 00, 06, 12 ou 18')
+              if not ready(requested_date, requested_cycle):
+                  raise SystemExit(f'GFS {requested_date} {requested_cycle}Z ainda nao possui F072')
+              selected = (requested_date, requested_cycle)
+          else:
+              now = dt.datetime.now(dt.timezone.utc)
+              base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+              for offset in range(0, 97, 6):
+                  run = base - dt.timedelta(hours=offset)
+                  date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
+                  if ready(date, cycle):
+                      selected = (date, cycle)
+                      break
+
           if selected is None:
-              raise SystemExit('Nenhuma rodada GFS completa até F072 está disponível')
+              raise SystemExit('Nenhuma rodada GFS completa ate F072 esta disponivel')
+
           date, cycle = selected
+          run_id = f'{date}{cycle}'
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f"run_date={date}\n")
-              output.write(f"run_cycle={cycle}\n")
-              output.write(f"run_id={date}{cycle}\n")
-          print(f'Rodada GFS completa selecionada: {date} {cycle}Z')
+              output.write(f'run_date={date}\n')
+              output.write(f'run_cycle={cycle}\n')
+              output.write(f'run_id={run_id}\n')
+          print(f'Rodada GFS selecionada: {date} {cycle}Z')
           PY
 
   segments:
@@ -116,18 +146,19 @@ jobs:
         with:
           name: gfs-frames-${{ matrix.id }}
           path: wrf_publish/
-          retention-days: 3
+          retention-days: 1
           if-no-files-found: error
 
   publish:
     name: Publicar WRF completo F000-F072
     needs: [run-info, segments]
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           ref: wrf-runner
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           pattern: gfs-frames-*
@@ -149,30 +180,148 @@ jobs:
           assert data['frameCount'] == 73, data
           assert hours == list(range(73)), hours
           data['scope'] = 'forecast_72_hours'
+          data['archiveIndex'] = 'runs.json'
+          data['archiveRetentionHours'] = 96
           json.dump(data, open('wrf_publish/metadata.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
           print('WRF 72H VALIDADO:', data['initTime'], data['frameCount'])
           PY
-      - name: Publicar no branch de dados
+
+      - name: Publicar e arquivar rodadas por quatro dias
+        env:
+          NEW_RUN_ID: ${{ needs.run-info.outputs.run_id }}
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name "sideral-wrf-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf /tmp/wrf-data
+
+          rm -rf /tmp/wrf-data /tmp/wrf-history /tmp/wrf-prev-root
+          mkdir -p /tmp/wrf-history/runs /tmp/wrf-prev-root
+
+          git fetch origin wrf-data:refs/remotes/origin/wrf-data || true
+
+          if git rev-parse --verify refs/remotes/origin/wrf-data >/dev/null 2>&1; then
+            git archive refs/remotes/origin/wrf-data runs 2>/dev/null | tar -x -C /tmp/wrf-history || true
+            git show refs/remotes/origin/wrf-data:metadata.json > /tmp/wrf-prev-root/metadata.json 2>/dev/null || true
+            git archive refs/remotes/origin/wrf-data gfs 2>/dev/null | tar -x -C /tmp/wrf-prev-root || true
+          fi
+
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import shutil
+          from pathlib import Path
+
+          history = Path('/tmp/wrf-history/runs')
+          previous = Path('/tmp/wrf-prev-root')
+          current = Path(os.environ['GITHUB_WORKSPACE']) / 'wrf_publish'
+          new_run_id = os.environ['NEW_RUN_ID']
+          history.mkdir(parents=True, exist_ok=True)
+
+          def parse_time(value):
+              return dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+
+          def run_id(meta):
+              date = str(meta.get('runDate') or '').replace('-', '')
+              cycle = ''.join(ch for ch in str(meta.get('runCycle') or '') if ch.isdigit()).zfill(2)
+              if len(date) == 8 and cycle:
+                  return f'{date}{cycle[:2]}'
+              stamp = parse_time(meta['initTime'])
+              return stamp.strftime('%Y%m%d%H')
+
+          prev_meta_path = previous / 'metadata.json'
+          if prev_meta_path.exists() and (previous / 'gfs').exists():
+              prev_meta = json.loads(prev_meta_path.read_text(encoding='utf-8'))
+              prev_id = run_id(prev_meta)
+              target = history / prev_id
+              if not target.exists():
+                  target.mkdir(parents=True)
+                  shutil.copy2(prev_meta_path, target / 'metadata.json')
+                  shutil.copytree(previous / 'gfs', target / 'gfs')
+                  print('Rodada anterior arquivada:', prev_id)
+
+          target = history / new_run_id
+          if target.exists():
+              shutil.rmtree(target)
+          shutil.copytree(current, target)
+          print('Nova rodada arquivada:', new_run_id)
+
+          cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=96)
+          for folder in list(history.iterdir()):
+              if not folder.is_dir():
+                  continue
+              meta_path = folder / 'metadata.json'
+              remove = False
+              try:
+                  meta = json.loads(meta_path.read_text(encoding='utf-8'))
+                  remove = parse_time(meta['initTime']) < cutoff
+              except Exception:
+                  remove = True
+              if remove:
+                  shutil.rmtree(folder, ignore_errors=True)
+                  print('Rodada >4 dias removida:', folder.name)
+          PY
+
           git worktree add --detach /tmp/wrf-data
           cd /tmp/wrf-data
           git checkout --orphan wrf-data-next
           git rm -rf . || true
           git clean -fdx || true
+
           cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          printf '# Sideral WRF Data\n72 horas · WRF Sul 4 km · REFL_10CM nativo.\n' > README.md
+          cp -a /tmp/wrf-history/runs ./runs
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          rows = []
+          for folder in Path('runs').iterdir():
+              if not folder.is_dir():
+                  continue
+              meta_path = folder / 'metadata.json'
+              try:
+                  meta = json.loads(meta_path.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              rows.append({
+                  'id': folder.name,
+                  'runDate': meta.get('runDate'),
+                  'runCycle': meta.get('runCycle'),
+                  'initTime': meta.get('initTime'),
+                  'generatedAt': meta.get('generatedAt'),
+                  'frameCount': meta.get('frameCount'),
+                  'reflectivitySource': meta.get('reflectivitySource'),
+                  'metadata': f'runs/{folder.name}/metadata.json',
+                  'basePath': f'runs/{folder.name}'
+              })
+          rows.sort(key=lambda item: item.get('initTime') or '', reverse=True)
+          index = {
+              'schema': 'sideral-wrf-run-index-v1',
+              'retentionHours': 96,
+              'latest': rows[0]['id'] if rows else None,
+              'runs': rows
+          }
+          Path('runs.json').write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding='utf-8')
+
+          meta = json.loads(Path('metadata.json').read_text(encoding='utf-8'))
+          meta['archiveIndex'] = 'runs.json'
+          meta['archiveRetentionHours'] = 96
+          meta['archivedRunCount'] = len(rows)
+          Path('metadata.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+          print('Rodadas disponiveis:', [row['id'] for row in rows])
+          PY
+
+          printf '# Sideral WRF Data\n72 horas · WRF Sul 4 km · REFL_10CM nativo.\nRodadas ficam disponíveis em runs/ por até quatro dias.\n' > README.md
           git add .
-          git commit -m "GFS-WRF publica 72 horas [skip render]"
+          git commit -m "GFS-WRF publica e arquiva $NEW_RUN_ID [skip render]"
           git push --force origin HEAD:wrf-data
-      - name: Guardar rodada por três dias
+
+      - name: Guardar rodada como artifact por quatro dias
         uses: actions/upload-artifact@v4
         with:
           name: wrf-gfs-${{ needs.run-info.outputs.run_id }}
           path: wrf_publish/
-          retention-days: 3
+          retention-days: 4
           compression-level: 6
-
