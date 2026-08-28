@@ -17,7 +17,7 @@ from .processing.field import Field
 from .processing.units import normalize_units
 from .sources import ModelStorage
 
-PLOT_SCHEMA = "south-america-v5-lowmem"
+PLOT_SCHEMA = "south-america-v6-fastcache"
 
 
 class ServiceError(RuntimeError):
@@ -198,20 +198,44 @@ class ModelService:
             raise Conflict(f"Modelos válidos insuficientes: {len(accepted)}/{MIN_MULTIMODEL_MEMBERS}.")
         return accepted,models_used,fingerprints
 
+    def _multimodel_cache_identity(self,run: str,product: str,forecast_hour: int) -> tuple[list[str],list[str]]:
+        """Identifica os membros sem baixar e descompactar suas grades.
+
+        A chave anterior só era conhecida depois de carregar todos os modelos.
+        Assim, até um PNG já pronto demorava quase um minuto e elevava o uso de
+        memória. Metadata é pequena e inclui a versão publicada de cada membro.
+        """
+        valid_id=self._valid_time(run,forecast_hour)[:13].replace("-","").replace("T","")
+        match=next((item for item in self.storage.common_valid_times(self._operational_models(),product,MIN_MULTIMODEL_MEMBERS) if item.get("valid_time")==valid_id),None)
+        if not match:return [],[]
+        members=sorted(match.get("members") or [],key=lambda item:str(item.get("model") or ""))
+        models: list[str]=[];versions: list[str]=[]
+        for member in members:
+            model=str(member.get("model") or "")
+            source_run=str(member.get("run") or "")
+            source_fh=int(member.get("forecast_hour") or 0)
+            manifest=self.storage.manifest(model,source_run)
+            version=str(manifest.get("generatedAt") or manifest.get("generated_at") or "")
+            models.append(model);versions.append(f"{model}:{source_run}:{source_fh}:{version}")
+        return models,versions
+
     def multimodel_frame(self,run: str,product: str,region: str,forecast_hour: int,statistic: str) -> tuple[bytes,str,dict[str,str]]:
         run=self._validate_run(run);product=self._validate_product(product);region=self._validate_region(region);forecast_hour=self._validate_fh(forecast_hour);statistic=str(statistic or "median").lower()
         if statistic not in MULTIMODEL_STATS:raise BadRequest("Estatística multi-modelo inválida.")
+        declared_models,source_versions=self._multimodel_cache_identity(run,product,forecast_hour)
+        fast_key=self.cache.digest([PLOT_SCHEMA,"multimodel",run,product,region,str(forecast_hour),statistic,*source_versions])
+        cached=self.cache.read("multimodel",fast_key,"png")
+        if cached:
+            headers={"X-Sideral-Models":",".join(declared_models),"X-Sideral-Model-Count":str(len(declared_models))}
+            return cached,"image/png",{**headers,"X-Sideral-Source":"cache","ETag":hashlib.sha256(cached).hexdigest()}
         fields,models_used,fingerprints=self._multimodel_fields(run,product,region,forecast_hour)
         try:combined,_=combine_fields(fields,statistic,MIN_MULTIMODEL_MEMBERS)
         except ValueError as exc:raise Conflict(str(exc)) from exc
         combined=Field(lat=combined.lat,lon=combined.lon,values=combined.values,unit=combined.unit,valid_time=self._valid_time(run,forecast_hour),model="multimodel",product=product,run=run,forecast_hour=forecast_hour)
-        key=self.cache.digest([PLOT_SCHEMA,"multimodel",run,product,region,str(forecast_hour),statistic,*fingerprints])
-        cached=self.cache.read("multimodel",key,"png")
         headers={"X-Sideral-Models":",".join(models_used),"X-Sideral-Model-Count":str(len(models_used))}
-        if cached:return cached,"image/png",{**headers,"X-Sideral-Source":"cache","ETag":hashlib.sha256(cached).hexdigest()}
         try:body=render_field_png(combined,PRODUCT_BY_ID[product],region,title_prefix="SIDERAL MULTI-MODEL",models_used=[MODEL_BY_ID[item].name for item in models_used],statistic=statistic)
         except PlottingUnavailable as exc:raise Unavailable(str(exc)) from exc
-        self.cache.write("multimodel",key,"png",body)
+        self.cache.write("multimodel",fast_key,"png",body)
         return body,"image/png",{**headers,"X-Sideral-Source":"generated","ETag":hashlib.sha256(body).hexdigest()}
 
     def probability(self,run: str,variable: str,region: str,forecast_hour: int,threshold: float,period: int | None = None) -> tuple[bytes,str,dict[str,str]]:
