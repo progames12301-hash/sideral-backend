@@ -1,4 +1,4 @@
-name: WRF contínuo — encadear rodadas
+name: Previsões contínuas — próximo dia
 
 on:
   push:
@@ -8,7 +8,11 @@ on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_run:
-    workflows: ["WRF 4 km - DOIS DIAS AUTOMATICO"]
+    workflows:
+      - "GFS Global — dados para Modelos"
+      - "ICON Global - PROXIMO DIA AUTOMATICO"
+      - "ECMWF IFS - PROXIMO DIA AUTOMATICO"
+      - "WRF 4 km - DOIS DIAS AUTOMATICO"
     types: [completed]
   workflow_dispatch:
 
@@ -17,80 +21,92 @@ permissions:
   contents: read
 
 concurrency:
-  group: sideral-wrf-gfs
+  group: sideral-forecast-controller
   cancel-in-progress: true
 
 jobs:
-  next-run:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+  ensure-next-day:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
-      - name: Comparar GFS disponível com a rodada publicada
-        id: cycle
+      - name: Conferir e iniciar previsões necessárias
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          candidate="$(python3 - <<'PY'
+          set -euo pipefail
+          target="$(TZ=America/Sao_Paulo date -d tomorrow +%F)"
+          echo "Data local necessária: $target"
+
+          has_target() {
+            local branch="$1" minimum="$2" metadata="/tmp/${branch}.json"
+            curl -fsSL --connect-timeout 10 --max-time 30 \
+              "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${branch}/metadata.json?controller=${GITHUB_RUN_ID}" \
+              -o "$metadata" || return 1
+            python3 - "$metadata" "$target" "$minimum" <<'PY'
           import datetime as dt
-          import urllib.request
-          now = dt.datetime.now(dt.timezone.utc)
-          base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
-          for offset in range(0, 55, 6):
-              run = base - dt.timedelta(hours=offset)
-              date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
-              url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f006'
-              request = urllib.request.Request(url, method='HEAD')
-              try:
-                  with urllib.request.urlopen(request, timeout=15) as response:
-                      if response.status in (200, 206):
-                          print(date + cycle)
-                          break
-              except Exception:
-                  pass
-          else:
-              raise SystemExit('Nenhuma rodada GFS com F006 disponivel')
-          PY
-          )"
-
-          published=""
-          if curl -fsSL --retry 3 "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?check=${GITHUB_RUN_ID}" -o /tmp/meta.json; then
-            published="$(python3 - <<'PY'
           import json
-          data=json.load(open('/tmp/meta.json',encoding='utf-8'))
-          print(str(data.get('runDate','')) + str(data.get('runCycle','')).replace('Z','').zfill(2))
+          import sys
+          from zoneinfo import ZoneInfo
+
+          path, target, minimum = sys.argv[1], sys.argv[2], int(sys.argv[3])
+          data = json.load(open(path, encoding='utf-8'))
+          if data.get('forecastLocalDate') == target and int(data.get('frameCount', 0)) >= minimum:
+              raise SystemExit(0)
+          if target in (data.get('forecastLocalDates') or []):
+              raise SystemExit(0)
+          count = 0
+          for frame in data.get('frames') or []:
+              value = frame.get('validTime') or frame.get('valid_time')
+              if not value:
+                  continue
+              try:
+                  parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+                  if parsed.astimezone(ZoneInfo('America/Sao_Paulo')).date().isoformat() == target:
+                      count += 1
+              except ValueError:
+                  pass
+          raise SystemExit(0 if count >= minimum else 1)
           PY
-            )"
-          fi
-          echo "candidate=$candidate" >> "$GITHUB_OUTPUT"
-          echo "published=$published" >> "$GITHUB_OUTPUT"
-          if [ -z "$published" ] || [[ "$candidate" > "$published" ]]; then
-            echo "start=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "start=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "GFS disponivel: $candidate · publicado: ${published:-nenhum}"
+          }
 
-      - name: Verificar se já existe WRF ativo
-        if: steps.cycle.outputs.start == 'true'
-        id: active
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          count="$(gh run list --repo "$GITHUB_REPOSITORY" \
-            --workflow wrf-4km-native-reflectivity.yml \
-            --limit 20 \
-            --json status \
-            --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting")] | length')"
-          echo "count=$count" >> "$GITHUB_OUTPUT"
+          may_dispatch() {
+            local workflow="$1" active latest_status latest_conclusion latest_updated now updated
+            active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 \
+              --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested" or .status == "pending")] | length')"
+            [ "$active" = "0" ] || return 1
+            IFS=$'\t' read -r latest_status latest_conclusion latest_updated < <(
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 1 \
+                --json status,conclusion,updatedAt --jq '.[0] | [.status, (.conclusion // ""), .updatedAt] | @tsv'
+            )
+            if [ "$latest_status" = "completed" ] && { [ "$latest_conclusion" = "failure" ] || [ "$latest_conclusion" = "cancelled" ] || [ "$latest_conclusion" = "timed_out" ]; }; then
+              now="$(date -u +%s)"
+              updated="$(date -u -d "$latest_updated" +%s)"
+              [ $((now - updated)) -ge 2700 ] || return 1
+            fi
+            return 0
+          }
 
-      - name: Iniciar a nova rodada imediatamente
-        if: steps.cycle.outputs.start == 'true' && steps.active.outputs.count == '0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run wrf-4km-native-reflectivity.yml --repo "$GITHUB_REPOSITORY" --ref main
+          ensure_forecast() {
+            local label="$1" branch="$2" workflow="$3" minimum="$4"
+            if has_target "$branch" "$minimum"; then
+              echo "$label já cobre $target."
+              return
+            fi
+            if may_dispatch "$workflow"; then
+              gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
+              echo "$label iniciado para atualizar $target."
+            else
+              echo "$label já está em execução ou aguardando nova tentativa."
+            fi
+          }
 
-      - name: Excluir artefatos WRF com mais de três dias
+          ensure_forecast "GFS" "gfs-model-data" "gfs-global-models.yml" 8
+          ensure_forecast "ICON" "icon-data" "icon-global-auto.yml" 24
+          ensure_forecast "ECMWF" "ecmwf-data" "ecmwf-ifs-auto.yml" 8
+          ensure_forecast "WRF 4 km" "wrf-data" "wrf-4km-next-day-auto.yml" 24
+
+      - name: Manter somente três dias de rodadas arquivadas
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -98,7 +114,7 @@ jobs:
         run: |
           cutoff="$(date -u -d '72 hours ago' +%s)"
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --paginate \
-            --jq '.artifacts[] | select(.name | startswith("wrf-") or startswith("gfs-") or startswith("icon-") or startswith("ecmwf-")) | [.id, .name, .created_at] | @tsv' |
+            --jq '.artifacts[] | select(.name | startswith("wrf-") or startswith("gfs-") or startswith("icon-") or startswith("ecmwf-") or startswith("aifs-")) | [.id, .name, .created_at] | @tsv' |
           while IFS=$'\t' read -r id name created_at; do
             [ -n "$id" ] || continue
             created="$(date -u -d "$created_at" +%s)"
