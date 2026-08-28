@@ -22,21 +22,38 @@ jobs:
       run_cycle: ${{ steps.info.outputs.run_cycle }}
       run_id: ${{ steps.info.outputs.run_id }}
     steps:
-      - name: Ler rodada curta publicada
+      - name: Descobrir a rodada GFS completa mais recente
         id: info
         shell: bash
         run: |
-          url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?run=${GITHUB_RUN_ID}"
-          curl -fsSL --retry 8 --retry-delay 5 "$url" -o /tmp/meta.json
           python3 - <<'PY'
-          import json, os
-          data = json.load(open('/tmp/meta.json', encoding='utf-8'))
-          assert data.get('reflectivitySource') == 'REFL_10CM_NATIVE', data
-          cycle = str(data['runCycle']).replace('Z', '').zfill(2)
+          import datetime as dt
+          import os
+          import urllib.request
+
+          now = dt.datetime.now(dt.timezone.utc)
+          base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+          selected = None
+          for offset in range(0, 91, 6):
+              run = base - dt.timedelta(hours=offset)
+              date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
+              url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f072'
+              request = urllib.request.Request(url, method='HEAD')
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      if response.status in (200, 206):
+                          selected = (date, cycle)
+                          break
+              except Exception:
+                  continue
+          if selected is None:
+              raise SystemExit('Nenhuma rodada GFS completa até F072 está disponível')
+          date, cycle = selected
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f"run_date={data['runDate']}\n")
+              output.write(f"run_date={date}\n")
               output.write(f"run_cycle={cycle}\n")
-              output.write(f"run_id={data['runDate']}{cycle}\n")
+              output.write(f"run_id={date}{cycle}\n")
+          print(f'Rodada GFS completa selecionada: {date} {cycle}Z')
           PY
 
   segments:
@@ -158,3 +175,4 @@ jobs:
           path: wrf_publish/
           retention-days: 3
           compression-level: 6
+
