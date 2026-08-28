@@ -30,8 +30,8 @@ def main() -> None:
     text = common.read_text(encoding='utf-8')
 
     # Permite horizontes usados pelos segmentos, sem alterar a fisica do WRF.
-    text = text.replace('  6|42|45) ;;', '  6|24|42|45|48|69|72) ;;')
-    text = text.replace('WRF_RUN_HOURS precisa ser 6, 42 ou 45', 'WRF_RUN_HOURS precisa ser 6, 24, 42, 45, 48, 69 ou 72')
+    text = text.replace('  6|42|45) ;;', '  6|18|21|24|36|42|45|48|69|72) ;;')
+    text = text.replace('WRF_RUN_HOURS precisa ser 6, 42 ou 45', 'WRF_RUN_HOURS precisa ser 6, 18, 21, 24, 36, 42, 45, 48, 69 ou 72')
 
     insert = ': "${WRF_RUN_HOURS:?WRF_RUN_HOURS ausente}"\n'
     replacement = insert + f'WRF_START_HOURS="{args.start_hour}"\nWRF_SEGMENT_HOURS="{args.end_hour - args.start_hour}"\n'
@@ -85,8 +85,8 @@ def main() -> None:
     for name in ('run_icon_wrf.sh', 'run_ecmwf_wrf.sh'):
         path = root / 'wrf' / name
         body = path.read_text(encoding='utf-8')
-        body = body.replace('6|42|45)', '6|24|42|45|48|69|72)')
-        body = body.replace('6, 42 ou 45', '6, 24, 42, 45, 48, 69 ou 72')
+        body = body.replace('6|42|45)', '6|18|21|24|36|42|45|48|69|72)')
+        body = body.replace('6, 42 ou 45', '6, 18, 21, 24, 36, 42, 45, 48, 69 ou 72')
         path.write_text(body, encoding='utf-8')
 
     restart_dir = root / 'wrf_work' / 'restart_input'
