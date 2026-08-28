@@ -52,7 +52,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gfs-models-diagnostico
-          path: model_publish/metadata.json
+          name: gfs-models-${{ github.run_id }}
+          path: model_publish/
           retention-days: 3
           if-no-files-found: warn
+
