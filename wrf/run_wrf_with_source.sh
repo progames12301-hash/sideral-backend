@@ -156,7 +156,7 @@ cat > "$WORK/namelist.input" <<EOF
  io_form_boundary = 2,
 /
 &domains
- time_step = 18,
+ time_step = 24,
  time_step_fract_num = 0,
  time_step_fract_den = 1,
  max_dom = 1,
