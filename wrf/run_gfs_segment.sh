@@ -12,11 +12,12 @@ fi
 if (( WRF_START_HOUR % 3 != 0 || WRF_END_HOUR % 3 != 0 )); then
   echo "Start/end precisam ser multiplos de 3" >&2; exit 3
 fi
-if (( WRF_START_HOUR > 0 )) && [[ -z "${WRF_RESTART_FILE:-}" ]]; then
-  echo "Continuacao exige WRF_RESTART_FILE" >&2; exit 4
+WRF_COLD_START="${WRF_COLD_START:-0}"
+if (( WRF_START_HOUR > 0 )) && [[ -z "${WRF_RESTART_FILE:-}" ]] && [[ "$WRF_COLD_START" != "1" ]]; then
+  echo "Continuacao exige WRF_RESTART_FILE ou WRF_COLD_START=1" >&2; exit 4
 fi
 
-export FORCE_RUN_DATE FORCE_RUN_CYCLE WRF_START_HOUR WRF_END_HOUR
+export FORCE_RUN_DATE FORCE_RUN_CYCLE WRF_START_HOUR WRF_END_HOUR WRF_COLD_START
 export WRF_SEGMENT_HOURS=$((WRF_END_HOUR-WRF_START_HOUR))
 
 python3 - <<'PY'
@@ -28,6 +29,7 @@ text=path.read_text(encoding='utf-8')
 start=int(os.environ['WRF_START_HOUR'])
 end=int(os.environ['WRF_END_HOUR'])
 duration=end-start
+cold=os.environ.get('WRF_COLD_START') == '1'
 
 if 'do_radar_ref = 1' not in text:
     raise SystemExit('do_radar_ref=1 ausente')
@@ -60,13 +62,14 @@ for suffix in ('+%Y-%m-%d_%H:%M:%S','+%Y','+%m','+%d','+%H'):
     text=text.replace(f'date -u -d "{base}" {suffix}', f'date -u -d "{seg}" {suffix}')
 text=text.replace('run_hours = 6,', f'run_hours = {duration},')
 text=text.replace('history_interval = 180,', 'history_interval = 60,')
-restart='.true.' if start>0 else '.false.'
+restart='.true.' if start>0 and not cold else '.false.'
 text=text.replace('restart = .false.,', f'restart = {restart},\n restart_interval = {duration*60},\n write_hist_at_0h_rst = .true.,')
 
-# Download ate o fim absoluto da rodada.
-download=f'''log "Baixando GFS F000-F{end:03d} de 3 em 3 horas"
+# Em segmentos independentes baixa somente as fronteiras do proprio trecho.
+download_start=start if cold else 0
+download=f'''log "Baixando GFS F{download_start:03d}-F{end:03d} de 3 em 3 horas"
 mkdir -p "$WORK/gfs"
-for H in $(seq 0 3 {end}); do
+for H in $(seq {download_start} 3 {end}); do
   printf -v FH "%03d" "$H"
   FILE="gfs.t${{RUN_CYCLE}}z.pgrb2.0p25.f${{FH}}"
   curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 900 \\
@@ -92,12 +95,13 @@ text,count=re.subn(r'log "Baixando e extraindo geografia WPS low-res".*?(?=cat >
 if count!=1: raise SystemExit('Falha patch geografia')
 
 letters=['AAA','AAB','AAC','AAD','AAE','AAF','AAG','AAH','AAI','AAJ','AAK','AAL','AAM','AAN','AAO','AAP','AAQ','AAR','AAS','AAT','AAU','AAV','AAW','AAX','AAY','AAZ']
-if end//3+1>len(letters): raise SystemExit('Horizonte excede GRIBFILE letters')
-arr=' '.join(letters[:end//3+1])
-links=f'''log "Preparando nomes GRIBFILE F000-F{end:03d}"
+file_count=(end-download_start)//3+1
+if file_count>len(letters): raise SystemExit('Horizonte excede GRIBFILE letters')
+arr=' '.join(letters[:file_count])
+links=f'''log "Preparando nomes GRIBFILE F{download_start:03d}-F{end:03d}"
 LETTERS=({arr})
 IDX=0
-for H in $(seq 0 3 {end}); do
+for H in $(seq {download_start} 3 {end}); do
   printf -v FH "%03d" "$H"
   FILE="gfs.t${{RUN_CYCLE}}z.pgrb2.0p25.f${{FH}}"
   ln -sf "gfs/$FILE" "$WORK/GRIBFILE.${{LETTERS[$IDX]}}"
