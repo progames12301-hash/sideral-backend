@@ -29,7 +29,9 @@ def main() -> None:
 
     brt = ZoneInfo('America/Sao_Paulo')
     init_utc = datetime.fromisoformat(meta['initTime'].replace('Z', '+00:00'))
-    first_date = init_utc.astimezone(brt).date() + timedelta(days=1)
+    # O arquivo publicado deve acompanhar o calendario atual em BRT, mesmo
+    # quando a rodada 00Z ainda cai no dia anterior no horario local.
+    first_date = datetime.now(brt).date() + timedelta(days=1)
     target_dates = [first_date + timedelta(days=n) for n in range(args.days)]
     target_set = set(target_dates)
 
