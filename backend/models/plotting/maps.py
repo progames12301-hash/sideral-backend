@@ -18,23 +18,28 @@ class PlottingUnavailable(RuntimeError):
 
 
 _PLOT_LOCK = threading.RLock()
-_BORDERS_PATH = Path(__file__).resolve().parents[1] / "assets" / "south_america_countries.geojson"
+_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+_BORDER_PATHS = (
+    (_ASSETS_DIR / "south_america_countries.geojson",.75),
+    (_ASSETS_DIR / "brazil_states.geojson",.32),
+)
 
 
 def _draw_local_boundaries(axis) -> None:
-    try:
-        collection=json.loads(_BORDERS_PATH.read_text(encoding="utf-8"))
-        for feature in collection.get("features",[]):
-            geometry=feature.get("geometry") or {}
-            coordinates=geometry.get("coordinates") or []
-            polygons=[coordinates] if geometry.get("type")=="Polygon" else coordinates if geometry.get("type")=="MultiPolygon" else []
-            for polygon in polygons:
-                for ring in polygon:
-                    if len(ring)<2:continue
-                    longitude,latitude=zip(*ring)
-                    axis.plot(longitude,latitude,color="#111111",linewidth=.75,zorder=4)
-    except (OSError,ValueError,TypeError,json.JSONDecodeError):
-        pass
+    for path,line_width in _BORDER_PATHS:
+        try:
+            collection=json.loads(path.read_text(encoding="utf-8"))
+            for feature in collection.get("features",[]):
+                geometry=feature.get("geometry") or {}
+                coordinates=geometry.get("coordinates") or []
+                polygons=[coordinates] if geometry.get("type")=="Polygon" else coordinates if geometry.get("type")=="MultiPolygon" else []
+                for polygon in polygons:
+                    for ring in polygon:
+                        if len(ring)<2:continue
+                        longitude,latitude=zip(*ring)
+                        axis.plot(longitude,latitude,color="#111111",linewidth=line_width,zorder=4)
+        except (OSError,ValueError,TypeError,json.JSONDecodeError):
+            continue
 
 
 def _plain_axis(figure, bounds):
