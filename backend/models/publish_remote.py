@@ -32,8 +32,8 @@ from scipy.spatial import cKDTree
 
 
 BRT = ZoneInfo("America/Sao_Paulo")
-SOUTH, NORTH, WEST, EAST = -36.5, -19.0, -62.0, -43.5
-GRID_X, GRID_Y = 220, 180
+SOUTH, NORTH, WEST, EAST = -60.0, 15.0, -85.0, -30.0
+GRID_X, GRID_Y = 221, 301
 UA = "SideralMeteorologia/3.0 (+https://sideralmeteorologiabrasil.web.app)"
 GFS_FILTER_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
 GFS_AWS_BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
@@ -125,8 +125,9 @@ def nearest_indices(source_lat: np.ndarray, source_lon: np.ndarray, target_lat: 
 
 
 def next_local_day_steps(run: dt.datetime, interval_hours: int, maximum: int = 72) -> tuple[dt.date, list[int]]:
-    # "Amanha" e relativo ao horario atual de Brasilia, nao a data local da
-    # inicializacao sinoptica (00Z ainda pertence ao dia anterior em BRT).
+    # O produto e sempre para amanha em Brasilia. Usar a data local da rodada
+    # fazia uma inicializacao 00Z ainda pertencer ao dia anterior em BRT e
+    # republicava uma previsao vencida.
     target = dt.datetime.now(BRT).date() + dt.timedelta(days=1)
     steps = [
         step for step in range(0, maximum + 1, interval_hours)
@@ -368,3 +369,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
