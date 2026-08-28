@@ -172,3 +172,42 @@ class ModelStorage:
             for run, members in sorted(membership.items(), reverse=True)
             if len(members) >= minimum
         ]
+
+    @staticmethod
+    def _valid_id(run: str, forecast_hour: int) -> str:
+        initial = dt.datetime.strptime(run, "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+        return (initial + dt.timedelta(hours=int(forecast_hour))).strftime("%Y%m%d%H")
+
+    def common_valid_times(self, models: list[str], product: str, minimum: int) -> list[dict[str, Any]]:
+        """Retorna instantes válidos comuns, mesmo quando os ciclos são diferentes."""
+        membership: dict[str, list[dict[str, Any]]] = {}
+        for model in models:
+            for run in self.list_runs(model)[:2]:
+                for forecast_hour in self.product_hours(model, run, product):
+                    valid = self._valid_id(run, forecast_hour)
+                    membership.setdefault(valid, []).append({
+                        "model": model,
+                        "run": run,
+                        "forecast_hour": int(forecast_hour),
+                    })
+        return [
+            {
+                "run": valid,
+                "valid_time": valid,
+                "models": sorted({item["model"] for item in members}),
+                "model_count": len({item["model"] for item in members}),
+                "members": members,
+            }
+            for valid, members in sorted(membership.items(), reverse=True)
+            if len({item["model"] for item in members}) >= minimum
+        ]
+
+    def field_at_valid_time(self, model: str, valid: str, product: str, region: str) -> tuple[Field, str] | None:
+        """Localiza o campo pelo instante válido, sem exigir o mesmo ciclo entre modelos."""
+        for run in self.list_runs(model)[:2]:
+            for forecast_hour in self.product_hours(model, run, product):
+                if self._valid_id(run, forecast_hour) != valid:
+                    continue
+                return self.field(model, run, product, region, forecast_hour)
+        return None
+
