@@ -103,9 +103,11 @@ def render_field_png(
     bounds=REGIONS[region]
 
     with _PLOT_LOCK:
-        figure=plt.figure(figsize=(16,10),dpi=150,facecolor="#ffffff")
+        # 1600×1000 mantém texto e contornos nítidos sem o pico de memória de
+        # uma tela 2400×1500, importante nas instâncias pequenas do Render.
+        figure=plt.figure(figsize=(16,10),dpi=100,facecolor="#ffffff")
         axis,projection=_map_axis(figure,bounds)
-        plot_options={"cmap":colormap,"norm":norm,"levels":spec["levels"],"zorder":1,"extend":"max"}
+        plot_options={"cmap":colormap,"norm":norm,"levels":spec["levels"],"zorder":1,"extend":"max","antialiased":False,"nchunk":8}
         if projection is not None:plot_options["transform"]=projection
         image=axis.contourf(lon_mesh,lat_mesh,field.values,**plot_options)
         for spine in axis.spines.values():spine.set_color("#111111");spine.set_linewidth(1.0)
