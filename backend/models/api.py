@@ -39,7 +39,7 @@ class ModelApi:
             if path == "/api/models/status":return ApiResponse.json(200,self.service.statuses())
             if path == "/api/models/runs":return ApiResponse.json(200,self.service.runs(self._one(query,"model")))
             if path == "/api/models/products":return ApiResponse.json(200,self.service.products(self._one(query,"model"),self._one(query,"run") or None))
-            if path == "/api/multimodel/runs":return ApiResponse.json(200,self.service.multimodel_runs())
+            if path == "/api/multimodel/runs":return ApiResponse.json(200,self.service.multimodel_runs(self._one(query,"product","qpf24")))
             if path == "/api/models/frame":
                 body,content_type,headers=self.service.frame(self._one(query,"model"),self._one(query,"run"),self._one(query,"product"),self._one(query,"region","brazil"),self._one(query,"fh","0"),metadata_only=self._one(query,"format").lower()=="json")
                 return ApiResponse.json(200,body,headers) if isinstance(body,dict) else ApiResponse(200,body,content_type,headers)
@@ -61,3 +61,4 @@ class ModelApi:
             return ApiResponse.json(400,{"error":str(exc),"code":"INVALID_MODEL_DATA"})
         except Exception:
             return ApiResponse.json(500,{"error":"Falha interna ao processar o produto meteorológico.","code":"MODEL_INTERNAL_ERROR"})
+
