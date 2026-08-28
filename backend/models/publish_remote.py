@@ -172,7 +172,13 @@ def select_message(messages: list[dict[str, Any]], names: tuple[str, ...], *, st
 
 def base_payload(model: str, source: str, run: dt.datetime, step: int, target_lat: np.ndarray, target_lon: np.ndarray, fields: dict[str, np.ndarray], capabilities: dict[str, bool]) -> dict[str, Any]:
     valid = run + dt.timedelta(hours=step)
-    zeros = np.zeros_like(target_lat)
+    published_fields = {
+        "lat": flatten(target_lat, 4),
+        "lon": flatten(target_lon, 4),
+    }
+    decimals = {"precipitation": 2, "windSpeed": 1, "windDirection": 0, "temperature": 1, "humidity": 0, "mucape": 0, "waterVapor": 1}
+    for name, values in fields.items():
+        published_fields[name] = flatten(values, decimals.get(name, 2))
     return {
         "schema": "sideral-model-grid-v1",
         "model": model,
@@ -186,20 +192,7 @@ def base_payload(model: str, source: str, run: dt.datetime, step: int, target_la
         "gridY": GRID_Y,
         "bounds": {"south": SOUTH, "west": WEST, "north": NORTH, "east": EAST},
         "capabilities": capabilities,
-        "fields": {
-            "lat": flatten(target_lat, 4),
-            "lon": flatten(target_lon, 4),
-            "reflectivity": flatten(zeros, 1),
-            "precipitation": flatten(fields["precipitation"], 2),
-            "windSpeed": flatten(fields["windSpeed"], 1),
-            "windDirection": flatten(fields["windDirection"], 0),
-            "bulkShear": flatten(zeros, 1),
-            "vorticity850": flatten(zeros, 7),
-            "temperature": flatten(fields["temperature"], 1),
-            "humidity": flatten(fields["humidity"], 0),
-            "mucape": flatten(fields.get("mucape", zeros), 0),
-            "waterVapor": flatten(fields.get("waterVapor", zeros), 1),
-        },
+        "fields": published_fields,
     }
 
 
