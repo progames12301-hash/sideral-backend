@@ -17,7 +17,7 @@ from .processing.field import Field
 from .processing.units import normalize_units
 from .sources import ModelStorage
 
-PLOT_SCHEMA = "south-america-v3"
+PLOT_SCHEMA = "south-america-v4"
 
 
 class ServiceError(RuntimeError):
@@ -127,14 +127,16 @@ class ModelService:
         run=self._validate_run(run)
         return {"model":model,"run":run,"products":self.storage.available_products(model,run),"catalog":[asdict(product) for product in PRODUCTS]}
 
-    def multimodel_runs(self) -> dict[str, Any]:
-        common=self.storage.common_runs(self._operational_models(),MIN_MULTIMODEL_MEMBERS)[:5]
-        hours: list[int]=[]
-        if common:
-            first=common[0]
-            member_hours=[set(self.storage.forecast_hours(model,first["run"])) for model in first["models"]]
-            hours=sorted(set.intersection(*member_hours)) if member_hours and all(member_hours) else []
-        return {"runs":common,"forecast_hours":hours,"minimum_members":MIN_MULTIMODEL_MEMBERS}
+    def multimodel_runs(self, product: str = "qpf24") -> dict[str, Any]:
+        product=self._validate_product(product)
+        common=self.storage.common_valid_times(self._operational_models(),product,MIN_MULTIMODEL_MEMBERS)[:12]
+        return {
+            "runs":common,
+            "forecast_hours":[0] if common else [],
+            "minimum_members":MIN_MULTIMODEL_MEMBERS,
+            "time_reference":"valid",
+            "product":product,
+        }
 
     def _single_field(self, model: str, run: str, product: str, region: str, forecast_hour: int) -> tuple[Field,str]:
         try:loaded=self.storage.field(model,run,product,region,forecast_hour)
@@ -177,13 +179,16 @@ class ModelService:
             raise BadRequest("Este produto composto ainda não pode ser combinado numericamente.")
         target_lat,target_lon=common_grid(region,COMMON_GRID_DEGREES)
         accepted: list[Field]=[];models_used: list[str]=[];fingerprints: list[str]=[]
+        valid_target=self._valid_time(run,forecast_hour)
+        valid_id=valid_target[:13].replace("-","").replace("T","")
         for model in self._operational_models():
             try:
-                loaded=self.storage.field(model,run,product,region,forecast_hour)
+                loaded=self.storage.field_at_valid_time(model,valid_id,product,region)
                 if not loaded:continue
                 field,fingerprint=loaded
+                if field.valid_time and field.valid_time[:13] != valid_target[:13]:continue
                 if not field.valid_time:
-                    field=Field(lat=field.lat,lon=field.lon,values=field.values,unit=field.unit,valid_time=self._valid_time(run,forecast_hour),model=field.model,product=field.product,run=field.run,forecast_hour=field.forecast_hour)
+                    field=Field(lat=field.lat,lon=field.lon,values=field.values,unit=field.unit,valid_time=valid_target,model=field.model,product=field.product,run=field.run,forecast_hour=field.forecast_hour)
                 field=normalize_units(field,definition.variable_kind,definition.unit)
                 field=regrid_to_common_grid(field,target_lat,target_lon)
                 if np.isfinite(field.values).mean() < .50:continue
@@ -199,6 +204,7 @@ class ModelService:
         fields,models_used,fingerprints=self._multimodel_fields(run,product,region,forecast_hour)
         try:combined,_=combine_fields(fields,statistic,MIN_MULTIMODEL_MEMBERS)
         except ValueError as exc:raise Conflict(str(exc)) from exc
+        combined=Field(lat=combined.lat,lon=combined.lon,values=combined.values,unit=combined.unit,valid_time=self._valid_time(run,forecast_hour),model="multimodel",product=product,run=run,forecast_hour=forecast_hour)
         key=self.cache.digest([PLOT_SCHEMA,"multimodel",run,product,region,str(forecast_hour),statistic,*fingerprints])
         cached=self.cache.read("multimodel",key,"png")
         headers={"X-Sideral-Models":",".join(models_used),"X-Sideral-Model-Count":str(len(models_used))}
@@ -219,6 +225,7 @@ class ModelService:
         fields,models_used,fingerprints=self._multimodel_fields(run,variable,region,forecast_hour)
         try:result,_=probability_exceedance(fields,float(threshold),MIN_MULTIMODEL_MEMBERS)
         except ValueError as exc:raise Conflict(str(exc)) from exc
+        result=Field(lat=result.lat,lon=result.lon,values=result.values,unit=result.unit,valid_time=self._valid_time(run,forecast_hour),model="multimodel",product=variable,run=run,forecast_hour=forecast_hour)
         period_label=f"/{period}h" if period else ""
         key=self.cache.digest([PLOT_SCHEMA,"probability",run,variable,region,str(forecast_hour),str(threshold),str(period),*fingerprints])
         cached=self.cache.read("probability",key,"png")
