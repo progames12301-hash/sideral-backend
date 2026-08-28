@@ -2,9 +2,10 @@ name: WRF 4 km ECMWF - REFL NATIVO
 
 on:
   workflow_dispatch:
-  schedule:
-    # 23:30 UTC = 20:30 BRT
-    - cron: '30 23 * * *'
+  workflow_run:
+    workflows:
+      - "ECMWF IFS - PROXIMO DIA AUTOMATICO"
+    types: [completed]
 
 permissions:
   contents: write
@@ -18,6 +19,7 @@ env:
 
 jobs:
   short:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     name: ECMWF para WRF - primeira previsao F006
     runs-on: ubuntu-22.04
     timeout-minutes: 330
