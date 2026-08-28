@@ -23,8 +23,8 @@ from eccodes import (
 from scipy.spatial import cKDTree
 
 BRT = ZoneInfo("America/Sao_Paulo")
-SOUTH, NORTH, WEST, EAST = -36.5, -19.0, -62.0, -43.5
-GRID_X, GRID_Y = 220, 180
+SOUTH, NORTH, WEST, EAST = -60.0, 15.0, -85.0, -30.0
+GRID_X, GRID_Y = 221, 301
 UA = "SideralMeteorologia/1.0 (+https://sideralmeteorologiabrasil.web.app)"
 
 ICON_BASE = "https://opendata.dwd.de/weather/nwp/icon/grib"
