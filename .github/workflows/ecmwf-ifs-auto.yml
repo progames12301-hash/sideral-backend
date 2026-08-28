@@ -1,5 +1,6 @@
 name: ECMWF IFS - PROXIMO DIA AUTOMATICO
 
+# Ao concluir com sucesso, o workflow WRF ECMWF 4 km e disparado por workflow_run.
 # Domínio operacional: América do Sul.
 on:
   workflow_dispatch:
