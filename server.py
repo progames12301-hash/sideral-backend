@@ -120,6 +120,25 @@ REDEMET_STATION_CACHE_SECONDS = 5 * 60
 RAINVIEWER_META_URL = "https://api.rainviewer.com/public/weather-maps.json"
 INEA_RADAR_TOOL_URL = "https://radartool.inea.rj.gov.br/radar-tool"
 SIMEPAR_RADAR_URL = "https://lb01.simepar.br/riak/pgw-radar"
+CEMADEN_LAYER_URL = "https://mapservices.cemaden.gov.br/MapaInterativoWS/resources/layer/id/{layer_id}"
+CEMADEN_WMS_URL = "https://gsc.cemaden.gov.br/geoserver/cemaden_dev/wms"
+CEMADEN_RADARS = {
+    "natal": {"layer_id": 3926, "name": "CEMADEN — Natal/RN", "latitude": -5.90448, "longitude": -35.25401, "bounds": [-37.5093293085, -8.144625555, -32.9863665585, -3.649208055]},
+    "petrolina": {"layer_id": 3959, "name": "CEMADEN — Petrolina/PE", "latitude": -9.367, "longitude": -40.573, "bounds": [-42.8412048965, -11.6044003425, -38.2813601465, -7.1090390925]},
+    "jaraguari": {"layer_id": 4081, "name": "CEMADEN — Jaraguari/MS", "latitude": -20.27855, "longitude": -54.47396, "bounds": [-56.8408209095, -22.5067280955, -52.0439566595, -18.0117463455]},
+    "maceio": {"layer_id": 4172, "name": "CEMADEN — Maceió/AL", "latitude": -9.55129, "longitude": -35.770681, "bounds": [-38.0398075295, -11.7885418455, -33.4775132795, -7.2931850955]},
+    "sao_francisco": {"layer_id": 4211, "name": "CEMADEN — São Francisco/MG", "latitude": -16.00889, "longitude": -44.69588, "bounds": [-47.0130665505, -18.24080922, -42.3322408005, -13.74563922]},
+    "salvador": {"layer_id": 4045, "name": "CEMADEN — Salvador/BA", "latitude": -12.9025, "longitude": -38.32666, "bounds": [-40.6329708, -15.14865967, -36.0203492, -10.65634]},
+    "tres_marias": {"layer_id": 4331, "name": "CEMADEN — Três Marias/MG", "latitude": -18.207259, "longitude": -45.460535, "bounds": [-47.801064708, -20.4371290295, -43.064502708, -15.9420482795]},
+    "santa_teresa": {"layer_id": 4253, "name": "CEMADEN — Santa Teresa/ES", "latitude": -19.98887, "longitude": -40.5794, "bounds": [-42.9424059735, -22.2173090855, -38.1544457235, -17.7223123355]},
+    "almenara": {"layer_id": 4292, "name": "CEMADEN — Almenara/MG", "latitude": -16.201531, "longitude": -40.674153, "bounds": [-42.993361596, -18.4337844745, -38.307967596, -13.9386212245]},
+}
+CPTEC_SATELLITE_PRODUCTS = {
+    "realcada": {"id": "1223", "latest": "ULT_CH13_COMP_2.jpg", "label": "GOES-19 — infravermelho realçado"},
+    "ir": {"id": "1213", "latest": "ULT_CH13_2.jpg", "label": "GOES-19 — canal 13 infravermelho"},
+    "vis": {"id": "1202", "latest": "ULT_CH2_2.jpg", "label": "GOES-19 — canal 2 visível"},
+}
+CPTEC_SATELLITE_HOST = "satelite.cptec.inpe.br"
 
 INMET_CACHE_SECONDS = 60
 inmet_observation_cache: dict[str, dict[str, Any]] = {}
@@ -130,6 +149,7 @@ redemet_satellite_cache_lock = threading.Lock()
 redemet_satellite_refreshing: set[str] = set()
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
+cptec_satellite_image_cache: dict[str, bytes] = {}
 
 # Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
 SOUNDING_CACHE_SECONDS = 15 * 60
@@ -1918,8 +1938,12 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/ipmet/wms": self.handle_ipmet_wms(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/rainviewer/meta": self.handle_public_json(RAINVIEWER_META_URL, "RainViewer"); return
         if parsed_path == "/api/redemet/radar": self.handle_redemet_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/radar": self.handle_cemaden_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/radar/imagem": self.handle_cemaden_radar_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite": self.handle_redemet_satellite(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cptec/satelite/imagem": self.handle_cptec_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/stsc": self.handle_redemet_stsc(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/estacoes": self.handle_redemet_stations(parse_qs(urlparse(self.path).query)); return
         if parsed_path.startswith("/api/redemet/estacao/"):
@@ -2212,6 +2236,102 @@ class Handler(SimpleHTTPRequestHandler):
         try: anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
         except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
         self.handle_public_json(f"{REDEMET_API_URL}/produtos/radar/{product}?anima={anima}&api_key={REDEMET_API_KEY}", "REDEMET")
+
+    def handle_cemaden_radar(self, query: dict[str, list[str]]) -> None:
+        """Catálogo público de CAPPI 3 km exibido pelo Mapa Interativo do CEMADEN."""
+        if query.get("product", ["cappi3"])[0].lower() != "cappi3":
+            self.send_json(400, {"error": "O portal público do CEMADEN disponibiliza somente CAPPI 3 km nesta rota."}); return
+
+        def fetch_radar(radar_id: str, config: dict[str, Any]) -> dict[str, Any] | None:
+            response = requests.get(CEMADEN_LAYER_URL.format(layer_id=config["layer_id"]), headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=18)
+            response.raise_for_status(); payload = response.json()
+            scan_ms = int(payload.get("imageDateTime") or 0); layer = str(payload.get("name") or "")
+            if not scan_ms or not re.fullmatch(r"cappi_[a-z0-9_-]+_3_0", layer): return None
+            scan = dt.datetime.fromtimestamp(scan_ms / 1000, tz=dt.timezone.utc)
+            age_minutes = (dt.datetime.now(dt.timezone.utc) - scan).total_seconds() / 60
+            if age_minutes > 360: return None
+            return {"id": radar_id, "code": radar_id, "provider": "CEMADEN", "name": config["name"], "latitude": config["latitude"], "longitude": config["longitude"], "rangeKm": 250, "bounds": config["bounds"], "layer": layer, "scanTime": scan.isoformat().replace("+00:00", "Z"), "ageMinutes": round(max(0, age_minutes), 1)}
+
+        radars: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(fetch_radar, radar_id, config) for radar_id, config in CEMADEN_RADARS.items()]
+            for future in as_completed(futures):
+                try:
+                    radar = future.result()
+                    if radar: radars.append(radar)
+                except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError):
+                    continue
+        if not radars:
+            self.send_json(502, {"error": "O CEMADEN não publicou radares recentes acessíveis no momento."}); return
+        radars.sort(key=lambda item: item["name"])
+        newest = max(dt.datetime.fromisoformat(item["scanTime"].replace("Z", "+00:00")) for item in radars)
+        frames = [{"index": index, "date": (newest - dt.timedelta(minutes=(4 - index) * 10)).isoformat().replace("+00:00", "Z")} for index in range(5)]
+        self.send_json(200, {"status": True, "provider": "CEMADEN / MCTI", "product": "CAPPI 3 km", "radars": radars, "frames": frames, "unavailableRadars": len(CEMADEN_RADARS) - len(radars), "officialUrl": "https://mapainterativo.cemaden.gov.br/"})
+
+    def handle_cemaden_radar_image(self, query: dict[str, list[str]]) -> None:
+        radar_id = query.get("radar", [""])[0].lower()
+        try: frame = int(query.get("frame", ["0"])[0]); size = int(query.get("size", ["1024"])[0])
+        except ValueError: self.send_json(400, {"error": "Parâmetros de imagem CEMADEN inválidos."}); return
+        config = CEMADEN_RADARS.get(radar_id)
+        if not config or frame not in range(5) or size not in {512, 768, 1024, 1536}:
+            self.send_json(400, {"error": "Radar, quadro ou resolução CEMADEN inválidos."}); return
+        try:
+            metadata = requests.get(CEMADEN_LAYER_URL.format(layer_id=config["layer_id"]), headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=18)
+            metadata.raise_for_status(); payload = metadata.json(); current_layer = str(payload.get("name") or "")
+            if not re.fullmatch(r"cappi_[a-z0-9_-]+_3_0", current_layer): raise ValueError("Camada CEMADEN inválida")
+            layer = re.sub(r"_0$", f"_{frame}", current_layer); west, south, east, north = config["bounds"]
+            params = {"SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap", "LAYERS": f"cemaden_dev:{layer}", "STYLES": "", "FORMAT": "image/png", "TRANSPARENT": "true", "SRS": "EPSG:4326", "BBOX": f"{west},{south},{east},{north}", "WIDTH": str(size), "HEIGHT": str(size)}
+            response = requests.get(CEMADEN_WMS_URL, params=params, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/png"}, timeout=28)
+            response.raise_for_status(); body = response.content
+            if "image/png" not in response.headers.get("Content-Type", "").lower() or len(body) < 500: raise ValueError("WMS CEMADEN não retornou PNG válido")
+            self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=90, stale-if-error=900"); self.end_headers(); self.wfile.write(body)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.send_json(502, {"error": "Imagem do radar CEMADEN indisponível.", "details": str(exc)})
+
+    def handle_cptec_satellite(self, query: dict[str, list[str]]) -> None:
+        product = query.get("product", ["realcada"])[0].lower(); config = CPTEC_SATELLITE_PRODUCTS.get(product)
+        if not config: self.send_json(400, {"error": "Produto de satélite CPTEC inválido."}); return
+        try: anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
+        except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
+        try:
+            response = requests.get(f"https://{CPTEC_SATELLITE_HOST}/collection/animacao", params={"i": "br", "id": config["id"], "nivel": "goes"}, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "text/html"}, timeout=25)
+            response.raise_for_status()
+            pattern = re.compile(r'logs\.push\(\{"fileDate":\s*"([^"]+)",\s*"fileTime":\s*"([^"]+)",\s*"filePath":\s*"[^"]+",\s*"url":\s*"([^"]+)"', re.IGNORECASE)
+            frames = [{"data": f"{day} {clock}", "path": url, "tamanho": None} for day, clock, url in pattern.findall(response.text)]
+            latest_url = f"https://{CPTEC_SATELLITE_HOST}/repositoriowebdsa/ultimas/{config['latest']}"
+            latest = requests.head(latest_url, headers={"User-Agent": INMET_HEADERS["User-Agent"]}, timeout=15); latest.raise_for_status()
+            modified = parsedate_to_datetime(latest.headers["Last-Modified"]).astimezone(dt.timezone.utc)
+            frames.append({"data": modified.strftime("%Y-%m-%d %H:%M:%S"), "path": latest_url, "tamanho": None})
+            unique = {item["path"]: item for item in frames}
+            frames = sorted(unique.values(), key=lambda item: item["data"])[-anima:]
+            self.send_json(200, {"status": True, "provider": "CPTEC/INPE", "product": config["label"], "data": {"satelite": frames, "lat_lon": {"lon_min": -100, "lat_min": -56, "lon_max": -25.24, "lat_max": 12.52}}, "officialUrl": "https://satelite.cptec.inpe.br/"})
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            self.send_json(502, {"error": "Não foi possível consultar as imagens do CPTEC/INPE agora.", "details": str(exc)})
+
+    def handle_cptec_satellite_image(self, query: dict[str, list[str]]) -> None:
+        image_url = query.get("url", [""])[0].strip(); parsed = urlparse(image_url)
+        try: max_size = int(query.get("size", ["1024"])[0])
+        except ValueError: self.send_json(400, {"error": "Resolução CPTEC inválida."}); return
+        valid_path = bool(re.fullmatch(r"/(?:repositoriogoes/goes19/goes19_web/[A-Za-z0-9_/-]+/S\d+_\d{12}\.jpg|repositoriowebdsa/ultimas/ULT_[A-Z0-9_]+\.jpg)", parsed.path, re.IGNORECASE))
+        if parsed.scheme != "https" or parsed.hostname != CPTEC_SATELLITE_HOST or parsed.query or parsed.fragment or not valid_path or max_size not in {768, 1024, 1536}:
+            self.send_json(400, {"error": "URL de imagem CPTEC inválida."}); return
+        try:
+            cache_key = f"{image_url}:{max_size}"; body = cptec_satellite_image_cache.get(cache_key)
+            if body is None:
+                response = requests.get(image_url, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/jpeg"}, timeout=25); response.raise_for_status(); body = response.content
+                try:
+                    from PIL import Image
+                    source = Image.open(io.BytesIO(body)); source.load()
+                    if max(source.size) > max_size:
+                        source.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                    output = io.BytesIO(); source.convert("RGB").save(output, format="JPEG", quality=86, optimize=True, progressive=True); body = output.getvalue()
+                except (ImportError, OSError, ValueError):
+                    pass
+                cptec_satellite_image_cache[cache_key] = body
+                while len(cptec_satellite_image_cache) > 48: cptec_satellite_image_cache.pop(next(iter(cptec_satellite_image_cache)))
+            if not body.startswith(b"\xff\xd8") or len(body) < 1000: raise ValueError("Imagem CPTEC inválida")
+            self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=60, stale-if-error=600"); self.end_headers(); self.wfile.write(body)
+        except (requests.RequestException, ValueError): self.send_json(502, {"error": "Imagem do CPTEC/INPE indisponível."})
 
     def handle_redemet_satellite(self, query: dict[str, list[str]]) -> None:
         """Retorna quadros georreferenciados de satélite sem expor a chave REDEMET."""
