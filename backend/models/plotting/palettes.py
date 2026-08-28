@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 PALETTES = {
-    "precipitation": {"levels": [0, 1, 5, 10, 25, 50, 75, 100, 150, 200, 300], "colors": ["#f7fbff", "#b9e7ff", "#63c7ff", "#2cdd82", "#f4e642", "#ff9c2a", "#ef3b2c", "#b6165c", "#6f2ca1", "#e9d7ff"]},
+    "precipitation": {"levels": [0.2, 1, 2.5, 5, 7.5, 12.5, 17.5, 22.5, 30, 40, 50, 75, 100, 150, 200, 250, 300], "colors": ["#bdbdbd", "#a8a8a8", "#8f8f8f", "#9cf29c", "#58e468", "#16c83f", "#068b2c", "#176ac6", "#318de5", "#6fc4f0", "#f8e96b", "#ffb63f", "#ff6a20", "#e51d13", "#8f0d0d", "#6f2596"]},
     "cape": {"levels": [0, 250, 500, 1000, 1500, 2000, 3000, 4000, 6000], "colors": ["#f5f5f5", "#c8efb3", "#79d978", "#f3e45a", "#f5ad3c", "#ed5a34", "#b32052", "#7b2d89"]},
     "cin": {"levels": [-500, -250, -150, -100, -50, -25, -10, 0], "colors": ["#2c1e66", "#5140a1", "#347ab7", "#43b3b0", "#99d8a5", "#e7efb0", "#f5f5f5"]},
     "srh": {"levels": [0, 50, 100, 150, 200, 300, 450, 650], "colors": ["#eef4f7", "#8dd3c7", "#5ab4ac", "#dfc27d", "#e08214", "#d73027", "#762a83"]},
@@ -21,3 +21,4 @@ def palette(name: str, probability: bool = False) -> dict[str, list]:
     if probability:
         return {"levels": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100], "colors": ["#f7fbff", "#d9edf7", "#b7ddec", "#83c9db", "#4badc6", "#2c8caa", "#f0d35c", "#eda142", "#e66a36", "#c9343f"]}
     return PALETTES.get(name, PALETTES["composite"])
+
