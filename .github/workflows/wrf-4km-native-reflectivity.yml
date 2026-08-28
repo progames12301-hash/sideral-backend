@@ -220,5 +220,5 @@ jobs:
           path: |
             wrf_diagnostics/
             wrf_publish/
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: warn
