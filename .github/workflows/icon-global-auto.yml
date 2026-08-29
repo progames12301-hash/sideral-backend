@@ -48,13 +48,17 @@ jobs:
           rm -rf icon_publish
           python wrf/publish_global_model.py --model icon --output icon_publish
           python - <<'PY'
+          import datetime as dt
           import json
           from pathlib import Path
+          from zoneinfo import ZoneInfo
           d=json.loads(Path('icon_publish/metadata.json').read_text(encoding='utf-8'))
+          expected=(dt.datetime.now(ZoneInfo('America/Sao_Paulo')).date()+dt.timedelta(days=1)).isoformat()
           assert d['schema']=='sideral-model-metadata-v1', d
           assert d['model']=='icon', d
           assert d['frameCount']==24, d
           assert d['temporalResolutionMinutes']==60, d
+          assert d['forecastLocalDate']==expected, (d, expected)
           assert d['capabilities']['reflectivity'] is False, d
           assert d['capabilities']['mucape'] is True, d
           print('ICON pronto:', d['initTime'], d['forecastLocalDate'], d['frameCount'])
