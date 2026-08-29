@@ -48,13 +48,19 @@ jobs:
           rm -rf ecmwf_publish
           python wrf/publish_global_model.py --model ecmwf --output ecmwf_publish
           python - <<'PY'
+          import datetime as dt
           import json
           from pathlib import Path
+          from zoneinfo import ZoneInfo
           d=json.loads(Path('ecmwf_publish/metadata.json').read_text(encoding='utf-8'))
+          expected=(dt.datetime.now(ZoneInfo('America/Sao_Paulo')).date()+dt.timedelta(days=1)).isoformat()
           assert d['schema']=='sideral-model-metadata-v1', d
           assert d['model']=='ecmwf', d
           assert d['frameCount']==8, d
           assert d['temporalResolutionMinutes']==180, d
+          assert d['forecastLocalDate']==expected, (d, expected)
+          assert d['resolutionKm']==9, d
+          assert d['publishedGridDegrees']==0.25, d
           assert d['capabilities']['reflectivity'] is False, d
           assert d['capabilities']['waterVapor'] is True, d
           print('ECMWF pronto:', d['initTime'], d['forecastLocalDate'], d['frameCount'])
@@ -74,8 +80,9 @@ jobs:
           cp -a "$GITHUB_WORKSPACE/ecmwf_publish/." .
           cat > README.md <<'EOF'
           # Sideral ECMWF Data
-          ECMWF IFS 0.25 grau Open Data para o proximo dia, atualizado automaticamente.
-          Resolucao temporal: 3 horas. Resolucao horizontal aproximada: 28 km.
+          ECMWF IFS HRES para o proximo dia, atualizado automaticamente.
+          Modelo atmosferico: aproximadamente 9 km. Produto Open Data publicado em grade 0.25 grau (~28 km).
+          Resolucao temporal: 3 horas.
           O IFS Open Data nao e apresentado como fonte de refletividade composta de radar.
           EOF
           git add .
