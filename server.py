@@ -122,6 +122,8 @@ INEA_RADAR_TOOL_URL = "https://radartool.inea.rj.gov.br/radar-tool"
 SIMEPAR_RADAR_URL = "https://lb01.simepar.br/riak/pgw-radar"
 CEMADEN_LAYER_URL = "https://mapservices.cemaden.gov.br/MapaInterativoWS/resources/layer/id/{layer_id}"
 CEMADEN_WMS_URL = "https://gsc.cemaden.gov.br/geoserver/cemaden_dev/wms"
+CEMADEN_HYDROLOGICAL_URL = "https://resources.cemaden.gov.br/dados/327mi_24.json"
+CEMADEN_HYDROLOGICAL_CACHE_SECONDS = 2 * 60
 CEMADEN_RADARS = {
     "natal": {"layer_id": 3926, "name": "CEMADEN — Natal/RN", "latitude": -5.90448, "longitude": -35.25401, "bounds": [-37.5093293085, -8.144625555, -32.9863665585, -3.649208055]},
     "petrolina": {"layer_id": 3959, "name": "CEMADEN — Petrolina/PE", "latitude": -9.367, "longitude": -40.573, "bounds": [-42.8412048965, -11.6044003425, -38.2813601465, -7.1090390925]},
@@ -150,6 +152,7 @@ redemet_satellite_refreshing: set[str] = set()
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
 cptec_satellite_image_cache: dict[str, bytes] = {}
+cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 
 # Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
 SOUNDING_CACHE_SECONDS = 15 * 60
@@ -1940,6 +1943,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/redemet/radar": self.handle_redemet_radar(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/radar": self.handle_cemaden_radar(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/radar/imagem": self.handle_cemaden_radar_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/hidrologia": self.handle_cemaden_hydrology(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite": self.handle_redemet_satellite(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
@@ -2268,6 +2272,61 @@ class Handler(SimpleHTTPRequestHandler):
         frames = [{"index": index, "date": (newest - dt.timedelta(minutes=(4 - index) * 10)).isoformat().replace("+00:00", "Z")} for index in range(5)]
         self.send_json(200, {"status": True, "provider": "CEMADEN / MCTI", "product": "CAPPI 3 km", "radars": radars, "frames": frames, "unavailableRadars": len(CEMADEN_RADARS) - len(radars), "officialUrl": "https://mapainterativo.cemaden.gov.br/"})
 
+    def handle_cemaden_hydrology(self, query: dict[str, list[str]]) -> None:
+        """EstaÃ§Ãµes hidrolÃ³gicas pÃºblicas do CEMADEN, sem repassar a origem ao navegador."""
+        refresh = query.get("refresh", ["0"])[0] == "1"
+        cached = cemaden_hydrological_cache.get("data")
+        age = time.monotonic() - float(cemaden_hydrological_cache.get("saved_at", 0.0))
+        if cached is not None and not refresh and age < CEMADEN_PLUVIOMETER_CACHE_SECONDS:
+            payload = dict(cached); payload["cache"] = True; self.send_json(200, payload); return
+        try:
+            response = requests.get(CEMADEN_HYDROLOGICAL_URL, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=35)
+            response.raise_for_status()
+            source = response.content.decode("utf-8")
+            match = re.fullmatch(r"\s*estacoes\((.*)\)\s*;?\s*", source, re.DOTALL)
+            if not match: raise ValueError("Resposta hidrolÃ³gica invÃ¡lida.")
+            raw = json.loads(match.group(1))
+            block = raw[0] if isinstance(raw, list) and raw and isinstance(raw[0], dict) else {}
+            stations: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in block.get("estacao", []):
+                if not isinstance(item, dict) or int(item.get("idtipoestacao") or 0) != 3 or int(item.get("status") or 0) != 0: continue
+                try: latitude = float(item.get("latitude")); longitude = float(item.get("longitude"))
+                except (TypeError, ValueError): continue
+                if not (-35.5 <= latitude <= 6.5 and -75 <= longitude <= -32): continue
+                code = str(item.get("codestacao") or item.get("idestacao") or "").strip()
+                if not code or code in seen: continue
+                seen.add(code)
+                def reading(name: str) -> float | None:
+                    value = item.get(name)
+                    try: return round(float(value), 3) if value is not None else None
+                    except (TypeError, ValueError): return None
+                raw_level = reading("nivel")
+                offset = reading("offset")
+                level = round(max(0.0, offset - raw_level), 3) if raw_level is not None and offset is not None and offset > 0 and 0 < raw_level < 35 else None
+                attention = reading("cotaatencao")
+                alert = reading("cotaalerta")
+                overflow = reading("cotatransbordamento")
+                accumulated = reading("acumulado")
+                valid_attention = attention is not None and attention > 0
+                valid_alert = alert is not None and alert > 0
+                valid_overflow = overflow is not None and overflow > 0
+                category = "missing" if level is None else "overflow" if valid_overflow and level >= overflow else "alert" if valid_alert and level >= alert else "attention" if valid_attention and level >= attention else "normal"
+                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "EstaÃ§Ã£o hidrolÃ³gica CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "level": level, "accumulated24h": accumulated, "attentionLevel": attention if valid_attention else None, "alertLevel": alert if valid_alert else None, "overflowLevel": overflow if valid_overflow else None, "category": category})
+            if not stations: raise ValueError("O catÃ¡logo nÃ£o contÃ©m estaÃ§Ãµes hidrolÃ³gicas vÃ¡lidas.")
+            stations.sort(key=lambda item: (item["uf"], item["city"], item["name"], item["code"]))
+            counts = {"normal": 0, "attention": 0, "alert": 0, "overflow": 0, "missing": 0}
+            for station in stations: counts[station["category"]] += 1
+            updated = str(block.get("atualizado") or "")
+            payload = {"status": True, "provider": "CEMADEN / MCTI", "updated": updated, "count": len(stations), "counts": counts, "stations": stations, "officialUrl": "https://mapainterativo.cemaden.gov.br/"}
+            cemaden_hydrological_cache["saved_at"] = time.monotonic(); cemaden_hydrological_cache["data"] = payload
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            if cached is not None:
+                payload = dict(cached); payload["cache"] = True; payload["stale"] = True; self.send_json(200, payload); return
+            self.send_json(502, {"error": "As estaÃ§Ãµes hidrolÃ³gicas do CEMADEN estÃ£o temporariamente indisponÃ­veis.", "details": str(exc)})
+
+
     def handle_cemaden_radar_image(self, query: dict[str, list[str]]) -> None:
         radar_id = query.get("radar", [""])[0].lower()
         try: frame = int(query.get("frame", ["0"])[0]); size = int(query.get("size", ["1024"])[0])
@@ -2324,7 +2383,7 @@ class Handler(SimpleHTTPRequestHandler):
                     source = Image.open(io.BytesIO(body)); source.load()
                     if max(source.size) > max_size:
                         source.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                    output = io.BytesIO(); source.convert("RGB").save(output, format="JPEG", quality=86, optimize=True, progressive=True); body = output.getvalue()
+                    output = io.BytesIO(); source.convert("RGB").save(output, format="JPEG", quality=92, subsampling=0, optimize=True, progressive=True); body = output.getvalue()
                 except (ImportError, OSError, ValueError):
                     pass
                 cptec_satellite_image_cache[cache_key] = body
