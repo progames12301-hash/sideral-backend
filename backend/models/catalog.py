@@ -23,7 +23,7 @@ class ProductDefinition:
 
 
 MODELS = (
-    ModelDefinition("ecmwf", "ECMWF IFS", "0.25°", "ECMWF"),
+    ModelDefinition("ecmwf", "ECMWF IFS", "~9 km", "ECMWF"),
     ModelDefinition("gfs", "GFS", "0.25°", "NOAA/NCEP"),
     ModelDefinition("icon", "ICON", "13 km", "DWD"),
     ModelDefinition("aifs", "ECMWF AIFS", "0.25°", "ECMWF"),
