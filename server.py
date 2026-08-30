@@ -153,6 +153,11 @@ CPTEC_SATELLITE_PRODUCTS = {
     "vis": {"id": "1202", "latest": "ULT_CH2_2.jpg", "label": "GOES-19 — canal 2 visível"},
 }
 CPTEC_SATELLITE_HOST = "satelite.cptec.inpe.br"
+CPTEC_GLM_INDEX_URL = "https://ftp.cptec.inpe.br/goes/goes19/broadcast/glm/"
+CPTEC_GLM_CACHE_DIR = Path(os.environ.get("GLM_CACHE_DIR", "/tmp/sideral_glm" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "glm_cache")))
+CPTEC_GLM_PNG_PATH = CPTEC_GLM_CACHE_DIR / "latest.png"
+CPTEC_GLM_CACHE_SECONDS = 120
+CPTEC_GLM_COORDINATES = [[-95.46, 24.46], [-13.54, 24.46], [-13.54, -57.46], [-95.46, -57.46]]
 
 INMET_CACHE_SECONDS = 60
 inmet_observation_cache: dict[str, dict[str, Any]] = {}
@@ -164,6 +169,8 @@ redemet_satellite_refreshing: set[str] = set()
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
 cptec_satellite_image_cache: dict[str, bytes] = {}
+cptec_glm_cache: dict[str, Any] = {"saved_at": 0.0, "metadata": None}
+cptec_glm_cache_lock = threading.Lock()
 regional_radar_cache: dict[str, dict[str, Any]] = {}
 cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
@@ -1964,6 +1971,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cptec/satelite/imagem": self.handle_cptec_satellite_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/glm/lightning": self.handle_glm_lightning(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/glm/image": self.handle_glm_image(); return
         if parsed_path == "/api/redemet/stsc": self.handle_redemet_stsc(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/estacoes": self.handle_redemet_stations(parse_qs(urlparse(self.path).query)); return
         if parsed_path.startswith("/api/redemet/estacao/"):
@@ -2713,6 +2722,75 @@ class Handler(SimpleHTTPRequestHandler):
         try: anima = min(6, max(1, int(query.get("anima", ["3"])[0])))
         except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
         self.handle_public_json(f"{REDEMET_API_URL}/produtos/stsc?anima={anima}&api_key={REDEMET_API_KEY}", "raios STSC/REDEMET")
+
+    def prepare_glm_lightning(self, force: bool = False) -> dict[str, Any]:
+        now = time.monotonic()
+        cached = cptec_glm_cache.get("metadata")
+        if cached and CPTEC_GLM_PNG_PATH.exists() and not force and now - float(cptec_glm_cache.get("saved_at", 0.0)) < CPTEC_GLM_CACHE_SECONDS:
+            return cached
+        with cptec_glm_cache_lock:
+            now = time.monotonic()
+            cached = cptec_glm_cache.get("metadata")
+            if cached and CPTEC_GLM_PNG_PATH.exists() and not force and now - float(cptec_glm_cache.get("saved_at", 0.0)) < CPTEC_GLM_CACHE_SECONDS:
+                return cached
+            index = requests.get(CPTEC_GLM_INDEX_URL, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "text/html"}, timeout=25)
+            index.raise_for_status()
+            filenames = sorted(set(re.findall(r"GLM_\d{12}\.jpg", index.text)))
+            if not filenames: raise ValueError("O CPTEC não publicou um quadro GLM recente.")
+            filename = filenames[-1]
+            response = requests.get(f"{CPTEC_GLM_INDEX_URL}{filename}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/jpeg"}, timeout=30)
+            response.raise_for_status()
+            if len(response.content) < 1000: raise ValueError("Quadro GLM inválido.")
+            from PIL import Image, ImageChops
+            source = Image.open(io.BytesIO(response.content)).convert("RGB")
+            source.thumbnail((2048, 2048), Image.Resampling.NEAREST)
+            red, green, blue = source.split()
+            intensity = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+            alpha = intensity.point(lambda value: 0 if value < 10 else min(255, (value - 8) * 5))
+            rgba = Image.merge("RGBA", (red, green, blue, alpha))
+            CPTEC_GLM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            rgba.save(CPTEC_GLM_PNG_PATH, "PNG", compress_level=3)
+            width, height = source.size
+            west, north = CPTEC_GLM_COORDINATES[0]
+            east, south = CPTEC_GLM_COORDINATES[2]
+            candidates: list[tuple[int, int, int]] = []
+            sample = intensity.load()
+            step = 8
+            for y in range(step // 2, height, step):
+                for x in range(step // 2, width, step):
+                    value = int(sample[x, y])
+                    if value >= 24: candidates.append((value, x, y))
+            candidates.sort(reverse=True)
+            hotspots = []
+            for value, x, y in candidates[:800]:
+                longitude = west + (x + .5) / width * (east - west)
+                latitude = north + (y + .5) / height * (south - north)
+                hotspots.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [longitude, latitude]}, "properties": {"density": value}})
+            observed = dt.datetime.strptime(filename[4:16], "%Y%m%d%H%M").replace(tzinfo=dt.timezone.utc)
+            metadata = {"status": True, "provider": "CPTEC/INPE — GOES-19 GLM", "product": "Densidade de grupos GLM — 5 minutos", "observedAt": observed.isoformat().replace("+00:00", "Z"), "image": f"/api/glm/image?v={filename[4:16]}", "coordinates": CPTEC_GLM_COORDINATES, "features": hotspots, "count": len(hotspots)}
+            cptec_glm_cache["saved_at"] = time.monotonic()
+            cptec_glm_cache["metadata"] = metadata
+            return metadata
+
+    def handle_glm_lightning(self, query: dict[str, list[str]]) -> None:
+        try:
+            force = query.get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
+            self.send_json(200, self.prepare_glm_lightning(force))
+        except Exception as exc:
+            self.send_json(502, {"error": "Falha ao consultar os raios GLM do CPTEC/INPE.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_glm_image(self) -> None:
+        try:
+            self.prepare_glm_lightning()
+            body = CPTEC_GLM_PNG_PATH.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=120, stale-if-error=900")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            self.send_json(502, {"error": "Falha ao carregar a imagem GLM.", "details": f"{type(exc).__name__}: {exc}"})
 
     def fetch_redemet_json(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
         response = requests.get(f"{REDEMET_API_URL}{path}", params=params, headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25)
