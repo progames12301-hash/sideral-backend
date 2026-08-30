@@ -133,6 +133,8 @@ REGIONAL_RS_RADAR = {"id": "dc-rs-porto-alegre", "name": "Defesa Civil RS — Po
 CEMADEN_LAYER_URL = "https://mapservices.cemaden.gov.br/MapaInterativoWS/resources/layer/id/{layer_id}"
 CEMADEN_WMS_URL = "https://gsc.cemaden.gov.br/geoserver/cemaden_dev/wms"
 CEMADEN_HYDROLOGICAL_URL = "https://resources.cemaden.gov.br/dados/327mi_24.json"
+CEMADEN_STATION_DETAIL_URL = "https://resources.cemaden.gov.br/graficos/cemaden/hidro/resources/json"
+CEMADEN_HYDRO_IMAGE_URL = "https://resources.cemaden.gov.br/imghidro"
 CEMADEN_HYDROLOGICAL_CACHE_SECONDS = 2 * 60
 CEMADEN_RADARS = {
     "natal": {"layer_id": 3926, "name": "CEMADEN — Natal/RN", "latitude": -5.90448, "longitude": -35.25401, "bounds": [-37.5093293085, -8.144625555, -32.9863665585, -3.649208055]},
@@ -164,6 +166,7 @@ redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
 cptec_satellite_image_cache: dict[str, bytes] = {}
 regional_radar_cache: dict[str, dict[str, Any]] = {}
 cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
 
 # Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
 SOUNDING_CACHE_SECONDS = 15 * 60
@@ -1955,6 +1958,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/cemaden/radar": self.handle_cemaden_radar(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/radar/imagem": self.handle_cemaden_radar_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/hidrologia": self.handle_cemaden_hydrology(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/estacao/detalhe": self.handle_cemaden_station_detail(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/hidrologia/imagem": self.handle_cemaden_hydrology_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite": self.handle_redemet_satellite(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
@@ -2016,6 +2021,9 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(502, {"status": "error", "error": f"{type(exc).__name__}: {exc}"})
             return
         if parsed_path == "/api/inmet/estacoes": self.handle_inmet_stations(); return
+        if parsed_path.startswith("/api/inmet/historico/"):
+            station_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
+            self.handle_inmet_history(station_code); return
         if parsed_path.startswith("/api/inmet/observacao/"):
             station_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
             self.handle_inmet_observation(station_code); return
@@ -2430,6 +2438,72 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(502, {"error": "As estaÃ§Ãµes hidrolÃ³gicas do CEMADEN estÃ£o temporariamente indisponÃ­veis.", "details": str(exc)})
 
 
+    def handle_cemaden_station_detail(self, query: dict[str, list[str]]) -> None:
+        """Serie horaria oficial; nivel e fotografias so existem nas estacoes hidrologicas."""
+        station_id = query.get("id", [""])[0].strip()
+        station_type = query.get("type", ["hydro"])[0].lower().strip()
+        try:
+            period = int(query.get("period", ["24"])[0])
+            image_count = int(query.get("images", ["5"])[0])
+        except ValueError:
+            self.send_json(400, {"error": "Periodo invalido."}); return
+        allowed_periods = {1, 3, 6, 12, 18, 24, 36, 48, 60, 72, 84, 96}
+        if not re.fullmatch(r"\d{1,12}", station_id) or period not in allowed_periods or image_count not in {5, 10, 15, 20, 30, 50} or station_type not in {"hydro", "rain"}:
+            self.send_json(400, {"error": "Parametros da estacao invalidos."}); return
+        key = f"{station_type}:{station_id}:{period}:{image_count}"
+        cached = cemaden_station_detail_cache.get(key)
+        if cached and time.monotonic() - float(cached.get("saved_at", 0)) < 90:
+            payload = dict(cached["payload"]); payload["cache"] = True; self.send_json(200, payload); return
+        try:
+            def fetch_resource(name: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+                response = requests.get(f"{CEMADEN_STATION_DETAIL_URL}/{name}", params=params, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25)
+                response.raise_for_status(); value = response.json()
+                return value if isinstance(value, list) else []
+
+            rain_rows = fetch_resource("AcumuladoResource.php", {"est": station_id, "pag": period})
+            if not rain_rows: raise ValueError("O CEMADEN nao retornou a serie pluviometrica.")
+            accumulated = 0.0; rainfall = []
+            for row in rain_rows:
+                try: hourly = max(0.0, float(row.get("valor") or 0))
+                except (TypeError, ValueError): hourly = 0.0
+                accumulated += hourly
+                rainfall.append({"time": str(row.get("datahora") or ""), "hourly": round(hourly, 3), "accumulated": round(accumulated, 3)})
+            first = rain_rows[0]
+            payload: dict[str, Any] = {"status": True, "provider": "CEMADEN / MCTI", "periodHours": period, "station": {"id": station_id, "code": first.get("codigo"), "name": first.get("estacao"), "city": first.get("cidade"), "uf": first.get("uf")}, "rainfall": rainfall, "levels": [], "images": []}
+            if station_type == "hydro":
+                level_rows = fetch_resource("MedidaResource.php", {"est": station_id, "sen": 20, "pag": period})
+                for row in level_rows:
+                    try:
+                        raw = float(row.get("valor")); offset = float(row.get("offset") or 0); level = round(max(0.0, offset - raw), 3)
+                    except (TypeError, ValueError): level = None
+                    payload["levels"].append({"time": str(row.get("datahora") or ""), "level": level})
+                image_rows = fetch_resource("ImagemResource.php", {"est": station_id, "pag": image_count})
+                for row in image_rows:
+                    source_path = str(row.get("path") or "").replace("\\/", "/")
+                    marker = "/sgrp/imghidro/"
+                    if marker not in source_path: continue
+                    relative = source_path.split(marker, 1)[1].lstrip("/")
+                    if not re.fullmatch(r"[A-Za-z0-9_./-]+\.jpe?g", relative, re.IGNORECASE): continue
+                    payload["images"].append({"time": str(row.get("datahora") or ""), "path": relative, "url": f"/api/cemaden/hidrologia/imagem?path={relative}"})
+            cemaden_station_detail_cache[key] = {"saved_at": time.monotonic(), "payload": payload}
+            while len(cemaden_station_detail_cache) > 160: cemaden_station_detail_cache.pop(next(iter(cemaden_station_detail_cache)))
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.send_json(502, {"error": "Nao foi possivel carregar o historico desta estacao.", "details": str(exc)})
+
+    def handle_cemaden_hydrology_image(self, query: dict[str, list[str]]) -> None:
+        relative = unquote(query.get("path", [""])[0]).lstrip("/")
+        if not re.fullmatch(r"[A-Za-z0-9_./-]+\.jpe?g", relative, re.IGNORECASE) or ".." in relative:
+            self.send_json(400, {"error": "Imagem hidrologica invalida."}); return
+        try:
+            response = requests.get(f"{CEMADEN_HYDRO_IMAGE_URL}/{relative}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/jpeg"}, timeout=25)
+            response.raise_for_status(); body = response.content
+            if not body.startswith(b"\xff\xd8") or len(body) < 1000: raise ValueError("O CEMADEN nao retornou JPEG valido.")
+            disposition = "attachment" if query.get("download", ["0"])[0] == "1" else "inline"
+            self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(body))); self.send_header("Content-Disposition", f'{disposition}; filename="{Path(relative).name}"'); self.send_header("Cache-Control", "public, max-age=3600, stale-if-error=86400"); self.end_headers(); self.wfile.write(body)
+        except (requests.RequestException, ValueError) as exc:
+            self.send_json(502, {"error": "Imagem hidrologica indisponivel.", "details": str(exc)})
+
     def handle_cemaden_radar_image(self, query: dict[str, list[str]]) -> None:
         radar_id = query.get("radar", [""])[0].lower()
         try: frame = int(query.get("frame", ["0"])[0]); size = int(query.get("size", ["1024"])[0])
@@ -2766,6 +2840,28 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(data, list): self.send_json(502, {"error": "Catálogo INMET em formato inesperado."}); return
             self.send_json(200, data)
         except Exception as exc: self.send_json(502, {"error": "Falha ao consultar o catálogo do INMET.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_inmet_history(self, station_code: str) -> None:
+        if not INMET_STATION_CODE_RE.fullmatch(station_code): self.send_json(400, {"error": "Codigo de estacao invalido."}); return
+        now = dt.datetime.now(dt.timezone.utc); start = (now - dt.timedelta(hours=30)).date(); end = now.date()
+        try:
+            source = fetch_inmet_json(INMET_OBSERVATION_URL.format(start=start.isoformat(), end=end.isoformat(), station=station_code), timeout=30)
+            if not isinstance(source, list): raise ValueError("Formato inesperado do INMET.")
+            records = []
+            for row in source:
+                if not isinstance(row, dict): continue
+                measured = inmet_record_datetime_utc(row)
+                if not measured or measured < now - dt.timedelta(hours=25): continue
+                def metric(*names: str) -> float | None:
+                    for name in names:
+                        value = inmet_safe_float(row.get(name))
+                        if value is not None and abs(value) < 9990: return value
+                    return None
+                records.append({"time": measured.isoformat().replace("+00:00", "Z"), "rain": metric("CHUVA"), "temperature": metric("TEM_INS", "TEMP_INS"), "humidity": metric("UMD_INS", "UMID_INS"), "pressure": metric("PRE_INS", "PRESSAO"), "wind": metric("VEN_VEL", "VEL_VENTO"), "gust": metric("VEN_RAJ", "RAJ_VENTO")})
+            records.sort(key=lambda item: item["time"])
+            self.send_json(200, {"status": True, "provider": "INMET", "station": station_code, "periodHours": 24, "records": records[-25:]})
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.send_json(502, {"error": "Historico horario do INMET indisponivel.", "details": str(exc)})
 
     def handle_inmet_observation(self, station_code: str) -> None:
         if not INMET_STATION_CODE_RE.fullmatch(station_code): self.send_json(400, {"error": "Código de estação inválido."}); return
