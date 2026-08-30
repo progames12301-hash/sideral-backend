@@ -157,7 +157,6 @@ CPTEC_GLM_INDEX_URL = "https://ftp.cptec.inpe.br/goes/goes19/broadcast/glm/"
 CPTEC_GLM_CACHE_DIR = Path(os.environ.get("GLM_CACHE_DIR", "/tmp/sideral_glm" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "glm_cache")))
 CPTEC_GLM_PNG_PATH = CPTEC_GLM_CACHE_DIR / "latest.png"
 CPTEC_GLM_CACHE_SECONDS = 120
-CPTEC_GLM_COORDINATES = [[-95.46, 24.46], [-13.54, 24.46], [-13.54, -57.46], [-95.46, -57.46]]
 
 INMET_CACHE_SECONDS = 60
 inmet_observation_cache: dict[str, dict[str, Any]] = {}
@@ -2738,38 +2737,30 @@ class Handler(SimpleHTTPRequestHandler):
             filenames = sorted(set(re.findall(r"GLM_\d{12}\.jpg", index.text)))
             if not filenames: raise ValueError("O CPTEC não publicou um quadro GLM recente.")
             filename = filenames[-1]
+            world_filename = filename.removesuffix(".jpg") + ".jgw"
             response = requests.get(f"{CPTEC_GLM_INDEX_URL}{filename}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/jpeg"}, timeout=30)
             response.raise_for_status()
             if len(response.content) < 1000: raise ValueError("Quadro GLM inválido.")
+            world_response = requests.get(f"{CPTEC_GLM_INDEX_URL}{world_filename}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "text/plain"}, timeout=20)
+            world_response.raise_for_status()
+            world_values = [float(value) for value in re.split(r"\s+", world_response.text.strip()) if value]
+            if len(world_values) != 6 or not all(math.isfinite(value) for value in world_values): raise ValueError("Arquivo JGW do GLM inválido.")
+            pixel_x, rotation_y, rotation_x, pixel_y, center_x, center_y = world_values
             from PIL import Image, ImageChops
             source = Image.open(io.BytesIO(response.content)).convert("RGB")
+            original_width, original_height = source.size
+            def world_corner(column: float, row: float) -> list[float]:
+                return [pixel_x * column + rotation_x * row + center_x, rotation_y * column + pixel_y * row + center_y]
+            coordinates = [world_corner(-.5, -.5), world_corner(original_width - .5, -.5), world_corner(original_width - .5, original_height - .5), world_corner(-.5, original_height - .5)]
             source.thumbnail((2048, 2048), Image.Resampling.NEAREST)
             red, green, blue = source.split()
             intensity = ImageChops.lighter(ImageChops.lighter(red, green), blue)
-            alpha = intensity.point(lambda value: 0 if value < 10 else min(255, (value - 8) * 5))
+            alpha = intensity.point(lambda value: 0 if value < 24 else min(220, (value - 18) * 5))
             rgba = Image.merge("RGBA", (red, green, blue, alpha))
             CPTEC_GLM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
             rgba.save(CPTEC_GLM_PNG_PATH, "PNG", compress_level=3)
-            width, height = source.size
-            west, north = CPTEC_GLM_COORDINATES[0]
-            east, south = CPTEC_GLM_COORDINATES[2]
-            candidates: list[tuple[int, int, int]] = []
-            sample = intensity.load()
-            step = 8
-            for y in range(step // 2, height, step):
-                for x in range(step // 2, width, step):
-                    value = int(sample[x, y])
-                    longitude = west + (x + .5) / width * (east - west)
-                    latitude = north + (y + .5) / height * (south - north)
-                    if value >= 24 and -75 <= longitude <= -32 and -35 <= latitude <= 7: candidates.append((value, x, y))
-            candidates.sort(reverse=True)
-            hotspots = []
-            for value, x, y in candidates[:800]:
-                longitude = west + (x + .5) / width * (east - west)
-                latitude = north + (y + .5) / height * (south - north)
-                hotspots.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [longitude, latitude]}, "properties": {"density": value}})
             observed = dt.datetime.strptime(filename[4:16], "%Y%m%d%H%M").replace(tzinfo=dt.timezone.utc)
-            metadata = {"status": True, "provider": "CPTEC/INPE — GOES-19 GLM", "product": "Densidade de grupos GLM — 5 minutos", "observedAt": observed.isoformat().replace("+00:00", "Z"), "image": f"/api/glm/image?v={filename[4:16]}", "coordinates": CPTEC_GLM_COORDINATES, "features": hotspots, "count": len(hotspots)}
+            metadata = {"status": True, "provider": "CPTEC/INPE — GOES-19 GLM", "product": "Densidade de grupos GLM — 5 minutos", "observedAt": observed.isoformat().replace("+00:00", "Z"), "image": f"/api/glm/image?v={filename[4:16]}", "coordinates": coordinates, "worldFile": world_filename}
             cptec_glm_cache["saved_at"] = time.monotonic()
             cptec_glm_cache["metadata"] = metadata
             return metadata
