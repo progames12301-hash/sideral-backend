@@ -2759,7 +2759,9 @@ class Handler(SimpleHTTPRequestHandler):
             for y in range(step // 2, height, step):
                 for x in range(step // 2, width, step):
                     value = int(sample[x, y])
-                    if value >= 24: candidates.append((value, x, y))
+                    longitude = west + (x + .5) / width * (east - west)
+                    latitude = north + (y + .5) / height * (south - north)
+                    if value >= 24 and -75 <= longitude <= -32 and -35 <= latitude <= 7: candidates.append((value, x, y))
             candidates.sort(reverse=True)
             hotspots = []
             for value, x, y in candidates[:800]:
