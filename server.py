@@ -2452,7 +2452,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "Parametros da estacao invalidos."}); return
         key = f"{station_type}:{station_id}:{period}:{image_count}"
         cached = cemaden_station_detail_cache.get(key)
-        if cached and time.monotonic() - float(cached.get("saved_at", 0)) < 90:
+        if cached and time.monotonic() - float(cached.get("saved_at", 0)) < 50:
             payload = dict(cached["payload"]); payload["cache"] = True; self.send_json(200, payload); return
         try:
             def fetch_resource(name: str, params: dict[str, Any]) -> list[dict[str, Any]]:
