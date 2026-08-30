@@ -120,6 +120,16 @@ REDEMET_STATION_CACHE_SECONDS = 5 * 60
 RAINVIEWER_META_URL = "https://api.rainviewer.com/public/weather-maps.json"
 INEA_RADAR_TOOL_URL = "https://radartool.inea.rj.gov.br/radar-tool"
 SIMEPAR_RADAR_URL = "https://lb01.simepar.br/riak/pgw-radar"
+REGIONAL_SC_RADAR_URL = "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar"
+REGIONAL_RS_RADAR_URL = "https://statics.climatempo.com.br/radar_poa/pngs/latest"
+REGIONAL_FUNCEME_URL = "https://nowcastsig.funceme.br/media/temporeal/camadas_sig/precipitacao_superficie_rmt0100ds.json"
+REGIONAL_SC_RADARS = {
+    "sc-chapeco": {"code": "CHP", "product": "0", "name": "Defesa Civil SC — Chapecó/SC", "latitude": -27.10, "longitude": -52.62, "rangeKm": 240, "bounds": [-55.0710069, -29.2106056, -50.1335368, -24.8625699]},
+    "sc-lontras": {"code": "LON", "product": "0", "name": "Defesa Civil SC — Lontras/SC", "latitude": -27.17, "longitude": -49.54, "rangeKm": 240, "bounds": [-51.9326542, -29.3957249, -46.9908037, -25.0438317]},
+    "sc-ararangua": {"code": "ARA", "product": "3", "name": "Defesa Civil SC — Araranguá/SC", "latitude": -28.94, "longitude": -49.49, "rangeKm": 120, "bounds": [-50.6064640, -30.0178010, -48.1181247, -27.8463000]},
+}
+REGIONAL_FUNCEME_RADAR = {"id": "funceme-quixeramobim", "name": "FUNCEME — Quixeramobim/CE", "latitude": -5.06917, "longitude": -39.26713, "rangeKm": 240, "bounds": [-41.65, -7.45, -36.85, -2.69]}
+REGIONAL_RS_RADAR = {"id": "dc-rs-porto-alegre", "name": "Defesa Civil RS — Porto Alegre/RS", "latitude": -30.0346, "longitude": -51.2177, "rangeKm": 150, "bounds": [-52.79, -31.39, -49.65, -28.68]}
 CEMADEN_LAYER_URL = "https://mapservices.cemaden.gov.br/MapaInterativoWS/resources/layer/id/{layer_id}"
 CEMADEN_WMS_URL = "https://gsc.cemaden.gov.br/geoserver/cemaden_dev/wms"
 CEMADEN_HYDROLOGICAL_URL = "https://resources.cemaden.gov.br/dados/327mi_24.json"
@@ -152,6 +162,7 @@ redemet_satellite_refreshing: set[str] = set()
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
 cptec_satellite_image_cache: dict[str, bytes] = {}
+regional_radar_cache: dict[str, dict[str, Any]] = {}
 cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 
 # Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
@@ -1958,6 +1969,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/inea/image": self.handle_inea_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/simepar/meta": self.handle_simepar_meta(); return
         if parsed_path == "/api/simepar/image": self.handle_simepar_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/regional/radar": self.handle_regional_radar(); return
+        if parsed_path == "/api/regional/radar/image": self.handle_regional_radar_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/xweather/lightning": self.handle_xweather_lightning(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/health": self.send_json(200, {"status": "ok", "service": "sideral", "domain": "sul4km"}); return
         if parsed_path == "/api/wrf/status":
@@ -2233,6 +2246,96 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(response.content)
         except ValueError as exc: self.send_json(400, {"error": str(exc)})
         except Exception as exc: self.send_json(502, {"error": "Imagem do SIMEPAR indisponível.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_regional_radar(self) -> None:
+        """Catálogo de radares estaduais com publicação pública verificável."""
+        cached = regional_radar_cache.get("catalog")
+        if cached and time.monotonic() - float(cached.get("saved_at", 0)) < 90:
+            self.send_json(200, cached["payload"]); return
+
+        def sc_catalog(radar_id: str, config: dict[str, Any]) -> dict[str, Any] | None:
+            response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getUltimasImagens", params={"prod": config["product"], "radar": config["code"], "data": ""}, headers=INMET_HEADERS, timeout=18, verify=False)
+            response.raise_for_status(); names = response.json()
+            safe = [str(name) for name in names if re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", str(name))]
+            if not safe: return None
+            frames = []
+            for filename in safe[-7:]:
+                try: observed = dt.datetime.strptime(filename[:14], "%Y%m%d%H%M%S").replace(tzinfo=dt.timezone.utc)
+                except ValueError: observed = dt.datetime.now(dt.timezone.utc)
+                frames.append({"key": filename, "date": observed.isoformat().replace("+00:00", "Z")})
+            return {"id": radar_id, "code": config["code"], "provider": "Defesa Civil SC", "name": config["name"], "latitude": config["latitude"], "longitude": config["longitude"], "rangeKm": config["rangeKm"], "bounds": config["bounds"], "kind": "sc", "product": config["product"], "frames": frames}
+
+        radars: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(sc_catalog, radar_id, config) for radar_id, config in REGIONAL_SC_RADARS.items()]
+            for future in as_completed(futures):
+                try:
+                    item = future.result()
+                    if item: radars.append(item)
+                except Exception: pass
+
+        try:
+            response = requests.get(REGIONAL_FUNCEME_URL, headers=INMET_HEADERS, timeout=20)
+            response.raise_for_status(); funceme = response.json()
+            if funceme.get("type") == "FeatureCollection" and funceme.get("features"):
+                modified = response.headers.get("Last-Modified")
+                try: observed = parsedate_to_datetime(modified).astimezone(dt.timezone.utc) if modified else dt.datetime.now(dt.timezone.utc)
+                except Exception: observed = dt.datetime.now(dt.timezone.utc)
+                config = REGIONAL_FUNCEME_RADAR
+                radars.append({**config, "code": config["id"], "provider": "FUNCEME", "kind": "funceme", "frames": [{"key": str(int(observed.timestamp())), "date": observed.isoformat().replace("+00:00", "Z")}]})
+        except Exception: pass
+
+        try:
+            response = requests.head(f"{REGIONAL_RS_RADAR_URL}/radar_poa_1.png", headers=INMET_HEADERS, timeout=15)
+            response.raise_for_status(); modified = response.headers.get("Last-Modified")
+            try: newest = parsedate_to_datetime(modified).astimezone(dt.timezone.utc) if modified else dt.datetime.now(dt.timezone.utc)
+            except Exception: newest = dt.datetime.now(dt.timezone.utc)
+            frames = [{"key": str(index), "date": (newest - dt.timedelta(minutes=(index - 1) * 5)).isoformat().replace("+00:00", "Z")} for index in range(24, 0, -1)]
+            config = REGIONAL_RS_RADAR
+            radars.append({**config, "code": config["id"], "provider": "Defesa Civil RS", "kind": "rs", "frames": frames})
+        except Exception: pass
+
+        if not radars:
+            self.send_json(502, {"error": "Os radares regionais não publicaram imagens acessíveis agora."}); return
+        radars.sort(key=lambda item: item["name"])
+        payload = {"status": True, "provider": "Redes estaduais", "radars": radars, "count": len(radars), "unavailableNetworks": ["CENSIPAM/SIPAM", "Alerta Rio", "SAISP", "USP/IAG", "SIMGE/IGAM", "APAC"]}
+        regional_radar_cache["catalog"] = {"saved_at": time.monotonic(), "payload": payload}
+        self.send_json(200, payload)
+
+    def handle_regional_radar_image(self, query: dict[str, list[str]]) -> None:
+        provider = query.get("provider", [""])[0].lower()
+        try:
+            if provider == "sc":
+                radar_id = query.get("radar", [""])[0]; filename = query.get("file", [""])[0]
+                config = REGIONAL_SC_RADARS.get(radar_id)
+                if not config or not re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", filename): raise ValueError("Imagem SC inválida")
+                response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getImagem", params={"prod": config["product"], "radar": config["code"], "file": filename}, headers=INMET_HEADERS, timeout=25, verify=False)
+            elif provider == "rs":
+                frame = int(query.get("frame", ["0"])[0])
+                if frame not in range(1, 25): raise ValueError("Quadro RS inválido")
+                response = requests.get(f"{REGIONAL_RS_RADAR_URL}/radar_poa_{frame}.png", headers=INMET_HEADERS, timeout=25)
+            elif provider == "funceme":
+                response = requests.get(REGIONAL_FUNCEME_URL, headers=INMET_HEADERS, timeout=25)
+                response.raise_for_status(); data = response.json()
+                from PIL import Image, ImageDraw
+                config = REGIONAL_FUNCEME_RADAR; west, south, east, north = config["bounds"]
+                image = Image.new("RGBA", (1000, 1000), (0, 0, 0, 0)); draw = ImageDraw.Draw(image)
+                for feature in data.get("features", []):
+                    geometry = feature.get("geometry") or {}; coordinates = geometry.get("coordinates") or []
+                    rings = coordinates if geometry.get("type") == "Polygon" else [ring for polygon in coordinates for ring in polygon] if geometry.get("type") == "MultiPolygon" else []
+                    color = str((feature.get("properties") or {}).get("fill") or "#00a8ff")
+                    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color): continue
+                    for ring in rings:
+                        points = [((float(lon) - west) / (east - west) * 999, (north - float(lat)) / (north - south) * 999) for lon, lat, *_ in ring]
+                        if len(points) >= 3: draw.polygon(points, fill=color + "FF")
+                output = io.BytesIO(); image.save(output, format="PNG", optimize=True); body = output.getvalue()
+                self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=60, stale-if-error=600"); self.end_headers(); self.wfile.write(body); return
+            else: raise ValueError("Fonte regional inválida")
+            response.raise_for_status(); body = response.content
+            if "image/png" not in response.headers.get("Content-Type", "").lower() or len(body) < 500: raise ValueError("A fonte não retornou PNG válido")
+            self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=90, stale-if-error=600"); self.end_headers(); self.wfile.write(body)
+        except Exception as exc:
+            self.send_json(502, {"error": "Imagem regional indisponível.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_redemet_radar(self, query: dict[str, list[str]]) -> None:
         product = query.get("product", ["03km"])[0].lower()
