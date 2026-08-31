@@ -132,6 +132,8 @@ REGIONAL_FUNCEME_RADAR = {"id": "funceme-quixeramobim", "name": "FUNCEME — Qui
 REGIONAL_RS_RADAR = {"id": "dc-rs-porto-alegre", "name": "Defesa Civil RS — Porto Alegre/RS", "latitude": -30.0346, "longitude": -51.2177, "rangeKm": 150, "bounds": [-52.79, -31.39, -49.65, -28.68]}
 CEMADEN_LAYER_URL = "https://mapservices.cemaden.gov.br/MapaInterativoWS/resources/layer/id/{layer_id}"
 CEMADEN_WMS_URL = "https://gsc.cemaden.gov.br/geoserver/cemaden_dev/wms"
+CEMADEN_PLUVIOMETERS_URL = "https://resources.cemaden.gov.br/dados/311_24.json"
+CEMADEN_PLUVIOMETER_CACHE_SECONDS = 55
 CEMADEN_HYDROLOGICAL_URL = "https://resources.cemaden.gov.br/dados/327mi_24.json"
 CEMADEN_STATION_DETAIL_URL = "https://resources.cemaden.gov.br/graficos/cemaden/hidro/resources/json"
 CEMADEN_HYDRO_IMAGE_URL = "https://resources.cemaden.gov.br/imghidro"
@@ -172,6 +174,7 @@ cptec_glm_cache: dict[str, Any] = {"saved_at": 0.0, "metadata": None}
 cptec_glm_cache_lock = threading.Lock()
 regional_radar_cache: dict[str, dict[str, Any]] = {}
 cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+cemaden_pluviometer_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
 
 # Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
@@ -1963,6 +1966,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/redemet/radar": self.handle_redemet_radar(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/radar": self.handle_cemaden_radar(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/radar/imagem": self.handle_cemaden_radar_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/pluviometros": self.handle_cemaden_pluviometers(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/hidrologia": self.handle_cemaden_hydrology(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/estacao/detalhe": self.handle_cemaden_station_detail(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/hidrologia/imagem": self.handle_cemaden_hydrology_image(parse_qs(urlparse(self.path).query)); return
@@ -2390,6 +2394,51 @@ class Handler(SimpleHTTPRequestHandler):
         newest = max(dt.datetime.fromisoformat(item["scanTime"].replace("Z", "+00:00")) for item in radars)
         frames = [{"index": index, "date": (newest - dt.timedelta(minutes=(4 - index) * 10)).isoformat().replace("+00:00", "Z")} for index in range(5)]
         self.send_json(200, {"status": True, "provider": "CEMADEN / MCTI", "product": "CAPPI 3 km", "radars": radars, "frames": frames, "unavailableRadars": len(CEMADEN_RADARS) - len(radars), "officialUrl": "https://mapainterativo.cemaden.gov.br/"})
+
+    def handle_cemaden_pluviometers(self, query: dict[str, list[str]]) -> None:
+        """PluviÃ´metros automÃ¡ticos e acumulado bruto de 24 horas do CEMADEN."""
+        refresh = query.get("refresh", ["0"])[0] == "1"
+        cached = cemaden_pluviometer_cache.get("data")
+        age = time.monotonic() - float(cemaden_pluviometer_cache.get("saved_at", 0.0))
+        if cached is not None and not refresh and age < CEMADEN_PLUVIOMETER_CACHE_SECONDS:
+            payload = dict(cached); payload["cache"] = True; self.send_json(200, payload); return
+        try:
+            response = requests.get(CEMADEN_PLUVIOMETERS_URL, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=35)
+            response.raise_for_status()
+            source = response.content.decode("utf-8")
+            match = re.fullmatch(r"\s*estacoes\((.*)\)\s*;?\s*", source, re.DOTALL)
+            if not match: raise ValueError("Resposta pluviomÃ©trica invÃ¡lida.")
+            raw = json.loads(match.group(1))
+            block = raw[0] if isinstance(raw, list) and raw and isinstance(raw[0], dict) else {}
+            stations: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in block.get("estacao", []):
+                if not isinstance(item, dict) or int(item.get("idtipoestacao") or 0) != 1 or int(item.get("status") or 0) != 0: continue
+                try: latitude = float(item.get("latitude")); longitude = float(item.get("longitude"))
+                except (TypeError, ValueError): continue
+                if not (-35.5 <= latitude <= 6.5 and -75 <= longitude <= -32): continue
+                code = str(item.get("codestacao") or item.get("idestacao") or "").strip()
+                if not code or code in seen: continue
+                seen.add(code)
+                accumulated = item.get("acumulado")
+                try: accumulated = round(max(0.0, float(accumulated)), 2) if accumulated is not None else None
+                except (TypeError, ValueError): accumulated = None
+                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "PluviÃ´metro CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "accumulated24h": accumulated})
+            if not stations: raise ValueError("O catÃ¡logo nÃ£o contÃ©m pluviÃ´metros vÃ¡lidos.")
+            stations.sort(key=lambda item: (item["uf"], item["city"], item["name"], item["code"]))
+            counts = {"dry": 0, "light": 0, "moderate": 0, "heavy": 0, "missing": 0}
+            for station in stations:
+                value = station["accumulated24h"]
+                bucket = "missing" if value is None else "dry" if value == 0 else "light" if value < 10 else "moderate" if value < 30 else "heavy"
+                counts[bucket] += 1; station["category"] = bucket
+            updated = str(block.get("atualizado") or "")
+            payload = {"status": True, "provider": "CEMADEN / MCTI", "periodHours": 24, "updated": updated, "count": len(stations), "counts": counts, "stations": stations, "officialUrl": "https://mapainterativo.cemaden.gov.br/"}
+            cemaden_pluviometer_cache["saved_at"] = time.monotonic(); cemaden_pluviometer_cache["data"] = payload
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            if cached is not None:
+                payload = dict(cached); payload["cache"] = True; payload["stale"] = True; self.send_json(200, payload); return
+            self.send_json(502, {"error": "Os pluviÃ´metros do CEMADEN estÃ£o temporariamente indisponÃ­veis.", "details": str(exc)})
 
     def handle_cemaden_hydrology(self, query: dict[str, list[str]]) -> None:
         """EstaÃ§Ãµes hidrolÃ³gicas pÃºblicas do CEMADEN, sem repassar a origem ao navegador."""
