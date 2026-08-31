@@ -212,7 +212,7 @@ def main() -> int:
                 "date": item.get("data"),
                 "sourcePath": source_path,
                 "key": f"redemet-{PRODUCT}-{localidade}-{filename}",
-                "url": f"https://raw.githubusercontent.com/progames12301-hash/sideral-backend/radar-pixels/radar-cache/{relative.as_posix()}",
+                "url": f"https://raw.githubusercontent.com/progames12301-hash/sideral-backend/radar-pixels/{relative.as_posix()}",
                 "bounds": list(bounds),
                 "radar": {"longitude": longitude, "latitude": latitude},
             })
