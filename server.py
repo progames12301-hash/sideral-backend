@@ -114,6 +114,11 @@ METEOBLUE_API_KEY = os.environ.get("METEOBLUE_API_KEY", "").strip()
 REDEMET_PRODUCTS = {"03km", "05km", "07km", "10km", "maxcappi"}
 REDEMET_SATELLITE_PRODUCTS = {"ir", "realcada", "vis"}
 REDEMET_SATELLITE_IMAGE_HOST = "estatico-redemet.decea.mil.br"
+RADAR_V2_IMAGE_HOSTS = {
+    "estatico-redemet.decea.mil.br",
+    "raw.githubusercontent.com",
+}
+RADAR_V2_IMAGE_LIMIT = 20 * 1024 * 1024
 REDEMET_ICAO_RE = re.compile(r"^[A-Z]{4}$")
 REDEMET_STATION_CACHE_SECONDS = 5 * 60
 
@@ -2072,6 +2077,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/ipmet/wms": self.handle_ipmet_wms(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/rainviewer/meta": self.handle_public_json(RAINVIEWER_META_URL, "RainViewer"); return
         if parsed_path == "/api/redemet/radar": self.handle_redemet_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/radar-v2/image": self.handle_radar_v2_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/radar": self.handle_cemaden_radar(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/radar/imagem": self.handle_cemaden_radar_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cemaden/pluviometros": self.handle_cemaden_pluviometers(parse_qs(urlparse(self.path).query)); return
@@ -2158,6 +2164,61 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/mapa_estacoes_inmet_com_dados.html":
             self.path = "/mapa_estacoes_inmet_corrigido.html"
         super().do_GET()
+
+    def handle_radar_v2_image(self, query: dict[str, list[str]]) -> None:
+        """Proxy CORS restrito para imagens usadas na correlação do BrazilScope V2."""
+        image_url = query.get("url", [""])[0].strip()
+        try:
+            parsed = urlparse(image_url)
+            hostname = (parsed.hostname or "").lower()
+            port = parsed.port
+        except ValueError:
+            self.send_json(400, {"error": "Endereço de imagem inválido."}); return
+        if (
+            parsed.scheme != "https"
+            or hostname not in RADAR_V2_IMAGE_HOSTS
+            or parsed.username
+            or parsed.password
+            or port not in (None, 443)
+            or parsed.fragment
+        ):
+            self.send_json(400, {"error": "Endereço de imagem não permitido."}); return
+        try:
+            with requests.get(
+                image_url,
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/png,image/jpeg,image/webp"},
+                timeout=30,
+                stream=True,
+                allow_redirects=True,
+            ) as response:
+                response.raise_for_status()
+                final = urlparse(response.url)
+                if final.scheme != "https" or (final.hostname or "").lower() not in RADAR_V2_IMAGE_HOSTS:
+                    self.send_json(502, {"error": "A origem da imagem redirecionou para um endereço não permitido."}); return
+                content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                if not content_type.startswith("image/"):
+                    self.send_json(502, {"error": "A origem não retornou uma imagem de radar."}); return
+                announced = int(response.headers.get("Content-Length", "0") or 0)
+                if announced > RADAR_V2_IMAGE_LIMIT:
+                    self.send_json(413, {"error": "A imagem excede o limite permitido."}); return
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_content(64 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > RADAR_V2_IMAGE_LIMIT:
+                        self.send_json(413, {"error": "A imagem excede o limite permitido."}); return
+                    chunks.append(chunk)
+                body = b"".join(chunks)
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=300, stale-if-error=86400")
+            self.end_headers()
+            self.wfile.write(body)
+        except (requests.RequestException, ValueError) as exc:
+            self.send_json(502, {"error": "Imagem de radar temporariamente indisponível.", "details": str(exc)})
 
     def handle_models_api(self, path: str, query: dict[str, list[str]]) -> None:
         response = MODELS_API.dispatch(path, query)
