@@ -109,7 +109,7 @@ def render_polar(source: Image.Image, item: dict[str, Any], profile: str = "supe
     sample_y = np.clip(sample_y, 0, height - 1)
     sampled = rgba[sample_y, sample_x]
 
-    rgb = sampled[..., :3].astype(np.int16)
+    rgb = sampled[..., :3].astype(np.int32)
     maximum = rgb.max(axis=2)
     minimum = rgb.min(axis=2)
     saturation = maximum - minimum
