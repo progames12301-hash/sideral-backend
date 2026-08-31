@@ -173,6 +173,8 @@ cptec_satellite_image_cache: dict[str, bytes] = {}
 cptec_glm_cache: dict[str, Any] = {"saved_at": 0.0, "metadata": None}
 cptec_glm_cache_lock = threading.Lock()
 regional_radar_cache: dict[str, dict[str, Any]] = {}
+regional_rs_image_cache: dict[str, tuple[float, bytes]] = {}
+regional_rs_image_cache_lock = threading.Lock()
 cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 cemaden_pluviometer_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
@@ -240,6 +242,112 @@ def png_black_to_transparent(body: bytes, threshold: int = 12) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xffffffff)
 
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(b"".join(rows), 6)) + chunk(b"IEND", b"")
+
+
+def clean_rs_radar_png(body: bytes) -> bytes:
+    """Remove fundo/cartografia e legendas do produto est�tico do radar de Porto Alegre.
+
+    O arquivo da Defesa Civil RS � uma imagem cartogr�fica pronta para leitura humana.
+    Para us�-lo como sobreposi��o no mapa, preservamos somente os pixels coloridos do
+    eco e gravamos o restante com alfa zero. A dimens�o original � mantida para n�o
+    alterar o georreferenciamento informado pelo cat�logo.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        # O deploy oficial inclui Pillow; em instala��es m�nimas, ainda devolvemos a
+        # imagem original em vez de interromper a atualiza��o do radar.
+        return body
+
+    image = Image.open(io.BytesIO(body)).convert("RGBA")
+    width, height = image.size
+    pixels = image.load()
+
+    # Detecta os pequenos marcadores vermelhos de cidades. Eles servem apenas para
+    # retirar o texto da anota��o sem apagar �reas maiores de refletividade vermelha.
+    red_mask = bytearray(width * height)
+    for y in range(height):
+        row_offset = y * width
+        for x in range(width):
+            red, green, blue, alpha = pixels[x, y]
+            if alpha and red >= 180 and green <= 90 and blue <= 90:
+                red_mask[row_offset + x] = 1
+
+    marker_boxes: list[tuple[int, int, int, int]] = []
+    seen = bytearray(width * height)
+    for y in range(height):
+        row_offset = y * width
+        for x in range(width):
+            start = row_offset + x
+            if not red_mask[start] or seen[start]:
+                continue
+            stack = [start]
+            seen[start] = 1
+            size = 0
+            min_x = min_y = width + height
+            max_x = max_y = 0
+            while stack:
+                index = stack.pop()
+                size += 1
+                point_y, point_x = divmod(index, width)
+                min_x = min(min_x, point_x)
+                max_x = max(max_x, point_x)
+                min_y = min(min_y, point_y)
+                max_y = max(max_y, point_y)
+                for delta_y in (-1, 0, 1):
+                    for delta_x in (-1, 0, 1):
+                        if not delta_x and not delta_y:
+                            continue
+                        neighbour_y = point_y + delta_y
+                        neighbour_x = point_x + delta_x
+                        if not (0 <= neighbour_y < height and 0 <= neighbour_x < width):
+                            continue
+                        neighbour = neighbour_y * width + neighbour_x
+                        if red_mask[neighbour] and not seen[neighbour]:
+                            seen[neighbour] = 1
+                            stack.append(neighbour)
+            # Marcadores das cidades s�o pequenos; manchas de eco vermelhas maiores
+            # ficam intactas.
+            if size <= 600:
+                marker_boxes.append((min_x, min_y, max_x, max_y))
+
+    for y in range(height):
+        for x in range(width):
+            red, green, blue, alpha = pixels[x, y]
+            maximum = max(red, green, blue)
+            minimum = min(red, green, blue)
+            # Satura��o aproximada em inteiros: remove branco, bege, �gua, bordas,
+            # textos e an�is, mantendo o conjunto de cores do eco meteorol�gico.
+            keep = bool(alpha and maximum >= 90 and (maximum - minimum) * 100 >= 42 * maximum)
+            # Dourado puro � usado nos nomes das cidades (e na escala da legenda).
+            if (red, green, blue) == (255, 215, 0):
+                keep = False
+            # A escala dBZ fica no canto inferior direito em todas as imagens RS.
+            if x >= int(width * 0.59) and y >= int(height * 0.77):
+                keep = False
+            pixels[x, y] = (red, green, blue, 255 if keep else 0)
+
+    # Retira apenas o tra�o colorido das etiquetas pr�ximas aos marcadores, sem criar
+    # ret�ngulos vazios sobre o eco.
+    for min_x, min_y, max_x, max_y in marker_boxes:
+        left, right = max(0, min_x - 15), min(width, max_x + 201)
+        top, bottom = max(0, min_y - 25), min(height, max_y + 26)
+        for y in range(top, bottom):
+            for x in range(left, right):
+                red, green, blue, alpha = pixels[x, y]
+                if not alpha:
+                    continue
+                maximum = max(red, green, blue)
+                minimum = min(red, green, blue)
+                if maximum == 0 or (maximum - minimum) * 100 < 45 * maximum:
+                    continue
+                # Matiz aproximado de amarelo/dourado (R e G altos, B baixo).
+                if red >= 90 and green >= 55 and blue <= int(maximum * 0.45):
+                    pixels[x, y] = (red, green, blue, 0)
+
+    output = io.BytesIO()
+    image.save(output, format="PNG", optimize=False)
+    return output.getvalue()
 
 
 class ExternalAPIError(RuntimeError): pass
@@ -2325,6 +2433,8 @@ class Handler(SimpleHTTPRequestHandler):
     def handle_regional_radar_image(self, query: dict[str, list[str]]) -> None:
         provider = query.get("provider", [""])[0].lower()
         try:
+            clean_rs = False
+            rs_frame_key = ""
             if provider == "sc":
                 radar_id = query.get("radar", [""])[0]; filename = query.get("file", [""])[0]
                 config = REGIONAL_SC_RADARS.get(radar_id)
@@ -2334,6 +2444,8 @@ class Handler(SimpleHTTPRequestHandler):
                 frame = int(query.get("frame", ["0"])[0])
                 if frame not in range(1, 25): raise ValueError("Quadro RS inválido")
                 response = requests.get(f"{REGIONAL_RS_RADAR_URL}/radar_poa_{frame}.png", headers=INMET_HEADERS, timeout=25)
+                clean_rs = True
+                rs_frame_key = str(frame)
             elif provider == "funceme":
                 response = requests.get(REGIONAL_FUNCEME_URL, headers=INMET_HEADERS, timeout=25)
                 response.raise_for_status(); data = response.json()
@@ -2352,6 +2464,16 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=60, stale-if-error=600"); self.end_headers(); self.wfile.write(body); return
             else: raise ValueError("Fonte regional inválida")
             response.raise_for_status(); body = response.content
+            if clean_rs:
+                now = time.monotonic()
+                with regional_rs_image_cache_lock:
+                    cached = regional_rs_image_cache.get(rs_frame_key)
+                if cached and now - cached[0] < 180:
+                    body = cached[1]
+                else:
+                    body = clean_rs_radar_png(body)
+                    with regional_rs_image_cache_lock:
+                        regional_rs_image_cache[rs_frame_key] = (now, body)
             if "image/png" not in response.headers.get("Content-Type", "").lower() or len(body) < 500: raise ValueError("A fonte não retornou PNG válido")
             self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=90, stale-if-error=600"); self.end_headers(); self.wfile.write(body)
         except Exception as exc:
