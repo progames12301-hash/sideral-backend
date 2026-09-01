@@ -2,6 +2,11 @@ name: WRF 4 km ICON - REFL NATIVO
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/wrf-icon-4km-native.yml"
+      - ".github/workflows/wrf-source-parallel-reusable.yml"
   workflow_run:
     workflows: ["ICON Global - PROXIMO DIA AUTOMATICO"]
     types: [completed]
@@ -23,4 +28,3 @@ jobs:
       publish_branch: wrf-icon-data
       run_script: run_icon_wrf.sh
     secrets: inherit
-
