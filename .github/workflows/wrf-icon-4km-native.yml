@@ -16,6 +16,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
+  WRF_HISTORY_INTERVAL_MINUTES: '180'
 
 jobs:
   short:
@@ -39,6 +40,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Validar intervalos publicados
+        run: python -m unittest discover -s wrf/tests -v
       - name: Instalar ferramentas
         run: |
           sudo apt-get update
@@ -67,7 +70,7 @@ jobs:
           python - <<'PY'
           import json
           d=json.load(open('wrf_publish/metadata.json',encoding='utf-8'))
-          assert d['model']=='icon' and d['reflectivitySource']=='REFL_10CM_NATIVE' and d['frameCount']>=7, d
+          assert d['model']=='icon' and d['reflectivitySource']=='REFL_10CM_NATIVE' and d['frameCount']==3, d
           PY
       - name: Publicar primeira previsao
         run: |
@@ -266,17 +269,18 @@ jobs:
         with:
           name: icon-frames-f048-f069
           path: segments/c
-      - name: Unir e filtrar 48 horarios BRT
+      - name: Unir e filtrar dois dias BRT em intervalos de 3 h
         run: |
           python wrf/merge_wrf_segments.py --input segments/a --input segments/b --input segments/c --output wrf_publish
-          python wrf/filter_next_day.py --root wrf_publish --days 2
+          python wrf/filter_next_day.py --root wrf_publish --days 2 --interval-hours 3
           python - <<'PY'
           import json
           d=json.load(open('wrf_publish/metadata.json',encoding='utf-8'))
           assert d['model']=='icon', d
           assert d['reflectivitySource']=='REFL_10CM_NATIVE', d
           assert d['scope']=='next_two_local_days', d
-          assert d['frameCount']==48, d
+          assert d['frameCount']==16, d
+          assert d['temporalResolutionMinutes']==180, d
           assert len(d['forecastLocalDates'])==2, d
           print('ICON 48h OK', d['forecastLocalDates'])
           PY

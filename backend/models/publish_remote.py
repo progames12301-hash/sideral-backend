@@ -196,7 +196,7 @@ def base_payload(model: str, source: str, run: dt.datetime, step: int, target_la
     }
 
 
-def publish_metadata(output: Path, model: str, provider: str, resolution_km: int, run: dt.datetime, target_date: dt.date, interval_minutes: int, frames: list[dict[str, Any]], capabilities: dict[str, bool], note: str, precipitation_product: str, precipitation_is_rate: bool) -> None:
+def publish_metadata(output: Path, model: str, provider: str, resolution_km: int, run: dt.datetime, target_date: dt.date, interval_minutes: int, frames: list[dict[str, Any]], capabilities: dict[str, bool], note: str, precipitation_product: str, precipitation_is_rate: bool, reflectivity_source: str | None = None) -> None:
     metadata = {
         "schema": "sideral-model-metadata-v1",
         "model": model,
@@ -217,6 +217,8 @@ def publish_metadata(output: Path, model: str, provider: str, resolution_km: int
         "precipitationIsRate": precipitation_is_rate,
         "note": note,
     }
+    if reflectivity_source:
+        metadata["reflectivitySource"] = reflectivity_source
     (output / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -249,8 +251,9 @@ def download_gfs(run: dt.datetime, step: int) -> list[dict[str, Any]]:
         "lev_2_m_above_ground": "on", "lev_10_m_above_ground": "on",
         "lev_surface": "on", "lev_180-0_mb_above_ground": "on",
         "lev_entire_atmosphere_(considered_as_a_single_layer)": "on",
+        "lev_entire_atmosphere": "on",
         "var_TMP": "on", "var_DPT": "on", "var_UGRD": "on", "var_VGRD": "on",
-        "var_APCP": "on", "var_CAPE": "on", "var_PWAT": "on",
+        "var_APCP": "on", "var_CAPE": "on", "var_PWAT": "on", "var_REFC": "on",
     }
     response = requests.get(GFS_FILTER_URL, params=params, headers={"User-Agent": UA}, timeout=180)
     response.raise_for_status()
@@ -262,7 +265,7 @@ def build_gfs(output: Path) -> None:
     target_lat, target_lon = target_grid()
     frames: list[dict[str, Any]] = []
     nearest: np.ndarray | None = None
-    capabilities = {"reflectivity": False, "precipitation": True, "wind": True, "temperature": True, "humidity": True, "mucape": True, "bulkShear": False, "vorticity850": False, "waterVapor": True}
+    capabilities = {"reflectivity": True, "precipitation": True, "wind": True, "temperature": True, "humidity": True, "mucape": True, "bulkShear": False, "vorticity850": False, "waterVapor": True}
     for step in steps:
         print(f"GFS F{step:03d}", flush=True)
         messages = download_gfs(run, step)
@@ -282,16 +285,23 @@ def build_gfs(output: Path) -> None:
         precipitation = np.maximum(np.asarray(precip_message["values"], dtype=float)[nearest].reshape(GRID_Y, GRID_X), 0.0)
         cape = np.maximum(values(("cape",)), 0.0)
         water = np.maximum(values(("pwat", "tcwv")), 0.0)
+        # REFC composto nativo NOAA; nunca substituir por chuva ou REFD de um nivel.
+        # A ausencia do campo aborta a publicacao e preserva a rodada anterior.
+        reflectivity = values(("refc",))
+        if not np.isfinite(reflectivity).all():
+            raise RuntimeError(f"GFS REFC com dados ausentes em F{step:03d}.")
         payload = base_payload(
             "gfs", "NOAA/NCEP GFS 0.25° via NOMADS", run, step, target_lat, target_lon,
             {"precipitation": precipitation, "windSpeed": np.hypot(u, v) * 3.6, "windDirection": wind_direction(u, v), "temperature": temperature, "humidity": relative_humidity(temperature, dewpoint), "mucape": cape, "waterVapor": water},
             capabilities,
         )
         filename = f"gfs/f{step:03d}.json.gz"
+        payload["fields"]["reflectivity"] = flatten(np.clip(reflectivity, 0.0, 95.0), 1)
+        payload["reflectivitySource"] = "GFS_REFC_NATIVE"
         write_gzip_json(output / filename, payload)
         valid = run + dt.timedelta(hours=step)
         frames.append({"index": len(frames), "forecastHour": step, "validTime": payload["validTime"], "localValidTime": valid.astimezone(BRT).isoformat(), "file": filename, "gridX": GRID_X, "gridY": GRID_Y})
-    publish_metadata(output, "gfs", "NOAA/NCEP", 28, run, target_date, 180, frames, capabilities, "GFS oficial 0.25 grau; nao representa refletividade de radar.", "qpf3", False)
+    publish_metadata(output, "gfs", "NOAA/NCEP", 28, run, target_date, 180, frames, capabilities, "GFS oficial 0.25 grau; REFC composto previsto pelo modelo, nao observacao de radar.", "qpf3", False, reflectivity_source="GFS_REFC_NATIVE")
 
 
 def build_aifs(output: Path) -> None:

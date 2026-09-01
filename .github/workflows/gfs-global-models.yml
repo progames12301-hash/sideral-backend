@@ -31,6 +31,8 @@ jobs:
           python-version: "3.11"
       - name: Instalar leitor meteorologico
         run: python -m pip install --disable-pip-version-check numpy scipy requests eccodes
+      - name: Validar suporte REFC nativo
+        run: python -m unittest backend.models.tests.test_gfs_native_publication -v
       - name: Baixar e validar GFS oficial
         run: python -m backend.models.publish_remote --model gfs --output model_publish
       - name: Publicar branch isolada
