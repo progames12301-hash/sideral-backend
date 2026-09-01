@@ -2368,7 +2368,7 @@ class Handler(SimpleHTTPRequestHandler):
     def handle_inea_frames(self, query: dict[str, list[str]]) -> None:
         radar = query.get("radar", [""])[0].lower()
         product = query.get("product", ["zh"])[0].lower()
-        if radar not in {"gua", "mac"} or product not in {"zh", "rr"}: self.send_json(400, {"error": "Radar ou produto INEA inválido."}); return
+        if radar not in {"gua", "mac"} or product not in {"zh", "rr", "vel"}: self.send_json(400, {"error": "Radar ou produto INEA inválido."}); return
         try:
             response = requests.get(f"{INEA_RADAR_TOOL_URL}/frames.php", params={"type": "radar", "radar": radar, "product": product, "hours": 12, "max": 15}, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25, verify=False)
             response.raise_for_status()
@@ -2385,7 +2385,7 @@ class Handler(SimpleHTTPRequestHandler):
         radar = query.get("radar", [""])[0].lower()
         product = query.get("product", ["zh"])[0].lower()
         filename = query.get("file", [""])[0]
-        if radar not in {"gua", "mac"} or product not in {"zh", "rr"} or not re.fullmatch(r"[A-Za-z0-9_.-]+\.png", filename): self.send_json(400, {"error": "Imagem INEA inválida."}); return
+        if radar not in {"gua", "mac"} or product not in {"zh", "rr", "vel"} or not re.fullmatch(r"[A-Za-z0-9_.-]+\.png", filename): self.send_json(400, {"error": "Imagem INEA inválida."}); return
         try:
             cache_key = f"{radar}/{product}/{filename}"
             cached = inea_radar_image_cache.get(cache_key)
