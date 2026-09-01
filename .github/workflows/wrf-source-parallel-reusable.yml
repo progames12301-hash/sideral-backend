@@ -1,0 +1,217 @@
+name: WRF ICON ECMWF paralelo
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        required: true
+        type: string
+      source_data_branch:
+        required: true
+        type: string
+      publish_branch:
+        required: true
+        type: string
+      run_script:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  WRF_HISTORY_INTERVAL_MINUTES: '180'
+
+jobs:
+  run-info:
+    runs-on: ubuntu-22.04
+    outputs:
+      run_date: ${{ steps.info.outputs.run_date }}
+      run_cycle: ${{ steps.info.outputs.run_cycle }}
+      init_time: ${{ steps.info.outputs.init_time }}
+    steps:
+      - name: Ler rodada global ja validada
+        id: info
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_data_branch }}
+          EXPECTED_MODEL: ${{ inputs.model }}
+          REPOSITORY: ${{ github.repository }}
+          CACHE_BUSTER: ${{ github.run_id }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.request
+          from zoneinfo import ZoneInfo
+
+          url = (
+              f"https://raw.githubusercontent.com/{os.environ['REPOSITORY']}/"
+              f"{os.environ['SOURCE_BRANCH']}/metadata.json?run={os.environ['CACHE_BUSTER']}"
+          )
+          request = urllib.request.Request(url, headers={'Cache-Control': 'no-cache'})
+          with urllib.request.urlopen(request, timeout=30) as response:
+              metadata = json.load(response)
+
+          expected = os.environ['EXPECTED_MODEL']
+          if str(metadata.get('model')).lower() != expected:
+              raise SystemExit(f"Branch fonte retornou modelo incorreto: {metadata.get('model')}")
+
+          local_tomorrow = dt.datetime.now(ZoneInfo('America/Sao_Paulo')).date() + dt.timedelta(days=1)
+          forecast_date = dt.date.fromisoformat(metadata['forecastLocalDate'])
+          if forecast_date < local_tomorrow:
+              raise SystemExit(f"Rodada fonte desatualizada: {forecast_date}; esperado {local_tomorrow}")
+
+          run_date = str(metadata['runDate']).replace('-', '')
+          run_cycle = ''.join(ch for ch in str(metadata['runCycle']) if ch.isdigit()).zfill(2)[:2]
+          if len(run_date) != 8 or run_cycle not in {'00', '06', '12', '18'}:
+              raise SystemExit(f"Identificacao de rodada invalida: {run_date} {run_cycle}")
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f"run_date={run_date}\n")
+              output.write(f"run_cycle={run_cycle}\n")
+              output.write(f"init_time={metadata['initTime']}\n")
+          print(f"{expected.upper()} selecionado: {metadata['initTime']} para {forecast_date}")
+          PY
+
+  segments:
+    name: ${{ inputs.model }} WRF F${{ matrix.start }}-F${{ matrix.end }}
+    needs: run-info
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - { id: "000-009", start: 0, end: 9 }
+          - { id: "009-018", start: 9, end: 18 }
+          - { id: "018-027", start: 18, end: 27 }
+          - { id: "027-036", start: 27, end: 36 }
+          - { id: "036-045", start: 36, end: 45 }
+          - { id: "045-054", start: 45, end: 54 }
+          - { id: "054-063", start: 54, end: 63 }
+          - { id: "063-072", start: 63, end: 72 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - name: Preparar runner
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+          docker pull dtcenter/wps_wrf:latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Instalar dependencias
+        run: python -m pip install --disable-pip-version-check requests numpy xarray netCDF4 ecmwf-opendata
+      - name: Rodar segmento independente
+        env:
+          FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
+          WRF_START_HOUR: ${{ matrix.start }}
+          WRF_END_HOUR: ${{ matrix.end }}
+          WRF_RUN_HOURS: ${{ matrix.end }}
+          SOURCE_MODEL: ${{ inputs.model }}
+          RUN_SCRIPT: ${{ inputs.run_script }}
+        shell: bash
+        run: |
+          chmod +x "wrf/$RUN_SCRIPT" wrf/run_wrf_with_source.sh
+          "wrf/$RUN_SCRIPT"
+      - name: Extrair REFL nativo
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py \
+            --run-dir wrf_work/run \
+            --run-env wrf_diagnostics/run.env \
+            --output-dir wrf_publish \
+            --grid-x 220 \
+            --grid-y 180
+          python wrf/retag_wrf_model.py --root wrf_publish --model "$SOURCE_MODEL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.model }}-frames-${{ matrix.id }}
+          path: wrf_publish/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Diagnosticos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.model }}-diagnostics-${{ matrix.id }}
+          path: wrf_diagnostics/
+          retention-days: 3
+          if-no-files-found: warn
+
+  publish:
+    name: Publicar ${{ inputs.model }} WRF atualizado
+    needs: [run-info, segments]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.model }}-frames-*
+          path: segments
+      - name: Unir e validar dois dias
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+          EXPECTED_INIT: ${{ needs.run-info.outputs.init_time }}
+        shell: bash
+        run: |
+          mapfile -t roots < <(find segments -type f -name metadata.json -printf '%h\n' | sort)
+          test "${#roots[@]}" -eq 8
+          args=()
+          for root in "${roots[@]}"; do args+=(--input "$root"); done
+          python wrf/merge_wrf_segments.py "${args[@]}" --output wrf_publish
+          python wrf/retag_wrf_model.py --root wrf_publish --model "$SOURCE_MODEL"
+          python wrf/filter_next_day.py --root wrf_publish --days 2 --interval-hours 3
+          python3 - <<'PY'
+          import json
+          import os
+          data = json.load(open('wrf_publish/metadata.json', encoding='utf-8'))
+          assert data['model'] == os.environ['SOURCE_MODEL'], data
+          assert data['initTime'] == os.environ['EXPECTED_INIT'], data
+          assert data['reflectivitySource'] == 'REFL_10CM_NATIVE', data
+          assert data['frameCount'] == 16, data
+          assert data['temporalResolutionMinutes'] == 180, data
+          assert len(data['forecastLocalDates']) == 2, data
+          print('WRF VALIDADO:', data['model'], data['initTime'], data['forecastLocalDates'])
+          PY
+      - name: Publicar branch isolada
+        env:
+          PUBLISH_BRANCH: ${{ inputs.publish_branch }}
+          SOURCE_MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "sideral-wrf-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          target="/tmp/wrf-${SOURCE_MODEL}-data"
+          rm -rf "$target"
+          git worktree add --detach "$target"
+          cd "$target"
+          git checkout --orphan "wrf-${SOURCE_MODEL}-data-next"
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
+          printf '# Sideral WRF %s Data\nDois dias em intervalos de 3 h. REFL_10CM nativo.\n' "${SOURCE_MODEL^^}" > README.md
+          git add .
+          git commit -m "${SOURCE_MODEL^^}-WRF atualiza dois dias [skip render]"
+          git push --force origin "HEAD:$PUBLISH_BRANCH"
+
