@@ -8,6 +8,13 @@ set -euo pipefail
 : "${SOURCE_DIR:?SOURCE_DIR ausente}"
 : "${SOURCE_VTABLE:?SOURCE_VTABLE ausente}"
 
+# Reduz NetCDF/quadros publicados sem alterar o passo numerico do WRF.
+WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}"
+case "$WRF_HISTORY_INTERVAL_MINUTES" in
+  60|180) ;;
+  *) echo "WRF_HISTORY_INTERVAL_MINUTES precisa ser 60 ou 180" >&2; exit 2 ;;
+esac
+
 IMAGE="dtcenter/wps_wrf:latest"
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
 WORK="$ROOT/wrf_work"
@@ -147,7 +154,7 @@ cat > "$WORK/namelist.input" <<EOF
  end_hour = ${END_H},
  interval_seconds = 10800,
  input_from_file = .true.,
- history_interval = 60,
+ history_interval = ${WRF_HISTORY_INTERVAL_MINUTES},
  frames_per_outfile = 1,
  restart = .false.,
  io_form_history = 2,

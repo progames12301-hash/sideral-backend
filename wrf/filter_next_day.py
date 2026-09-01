@@ -8,13 +8,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
-EXPECTED_HOURS_PER_DAY = 24
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', default='wrf_publish')
     parser.add_argument('--days', type=int, default=2)
+    parser.add_argument('--interval-hours', type=int, choices=(1, 3), default=1)
     args = parser.parse_args()
 
     if args.days not in (1, 2):
@@ -28,7 +26,6 @@ def main() -> None:
         raise SystemExit(f"Fonte de refletividade invalida: {meta.get('reflectivitySource')}")
 
     brt = ZoneInfo('America/Sao_Paulo')
-    init_utc = datetime.fromisoformat(meta['initTime'].replace('Z', '+00:00'))
     # O arquivo publicado deve acompanhar o calendario atual em BRT, mesmo
     # quando a rodada 00Z ainda cai no dia anterior no horario local.
     first_date = datetime.now(brt).date() + timedelta(days=1)
@@ -39,11 +36,12 @@ def main() -> None:
     keep_files: set[str] = set()
     hours_by_date = {date: set() for date in target_dates}
 
-    for frame in meta.get('frames', []):
+    expected_hours = set(range(0, 24, args.interval_hours))
+    for frame in sorted(meta.get('frames', []), key=lambda item: item['validTime']):
         if frame.get('reflectivitySource') != 'REFL_10CM_NATIVE':
             raise SystemExit(f'Frame sem REFL_10CM nativo: {frame}')
         valid = datetime.fromisoformat(frame['validTime'].replace('Z', '+00:00')).astimezone(brt)
-        if valid.date() in target_set:
+        if valid.date() in target_set and valid.hour in expected_hours and valid.minute == 0 and valid.second == 0:
             frame = dict(frame)
             frame['index'] = len(keep)
             frame['localValidTime'] = valid.isoformat()
@@ -58,12 +56,12 @@ def main() -> None:
     for date in target_dates:
         hours = hours_by_date[date]
         count = sum(1 for frame in keep if frame['localDate'] == date.isoformat())
-        if count != EXPECTED_HOURS_PER_DAY or hours != set(range(24)):
+        if count != len(expected_hours) or hours != expected_hours:
             errors.append(f'{date}: {count} quadros, horas {sorted(hours)}')
 
     if errors:
         raise SystemExit(
-            f'Esperados {24 * args.days} horarios completos em BRT; ' + '; '.join(errors)
+            f'Esperados {len(expected_hours) * args.days} horarios em BRT a cada {args.interval_hours} h; ' + '; '.join(errors)
         )
 
     model = str(meta.get('model') or 'gfs').lower()
@@ -79,15 +77,15 @@ def main() -> None:
     meta['forecastLocalDates'] = [date.isoformat() for date in target_dates]
     meta['timezone'] = 'America/Sao_Paulo'
     meta['scope'] = 'next_two_local_days' if args.days == 2 else 'next_local_day'
-    meta['temporalResolutionMinutes'] = 60
-    meta['localHours'] = list(range(24)) if args.days == 1 else list(range(24)) * 2
+    meta['temporalResolutionMinutes'] = args.interval_hours * 60
+    meta['localHours'] = [frame['localHour'] for frame in keep]
     meta['daysPublished'] = args.days
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
 
     print('MODELO:', model)
     print('DIAS:', ', '.join(str(x) for x in target_dates))
     print('QUADROS:', len(keep))
-    print('RESOLUCAO TEMPORAL: 1 hora')
+    print(f'RESOLUCAO TEMPORAL: {args.interval_hours} h')
     for frame in keep:
         print(f"F{int(frame['forecastHour']):03d} {frame['validTime']} => {frame['localValidTime']}")
 

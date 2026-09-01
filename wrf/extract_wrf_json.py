@@ -267,6 +267,10 @@ def main() -> None:
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
         "reflectivitySource": "REFL_10CM_NATIVE",
         "frameCount": len(frames),
+        "temporalResolutionMinutes": (
+            (frames[1]["forecastHour"] - frames[0]["forecastHour"]) * 60
+            if len(frames) > 1 else None
+        ),
         "frames": frames,
     }
     (output_dir / "metadata.json").write_text(
