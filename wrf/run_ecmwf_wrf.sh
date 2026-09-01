@@ -3,13 +3,17 @@ set -euo pipefail
 
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
 WRF_RUN_HOURS="${WRF_RUN_HOURS:-6}"
+WRF_START_HOUR="${WRF_START_HOUR:-0}"
+WRF_END_HOUR="${WRF_END_HOUR:-$WRF_RUN_HOURS}"
 CDO_IMAGE="deutscherwetterdienst/regrid:icon-grids"
 RAW_DIR="$ROOT/ecmwf_source_raw"
 REG_DIR="$ROOT/ecmwf_source_regular"
 ENV_FILE="$ROOT/ecmwf_run.env"
 
 log(){ printf '\n===== %s =====\n' "$*"; }
-case "$WRF_RUN_HOURS" in 6|42|45) ;; *) echo "WRF_RUN_HOURS precisa ser 6, 42 ou 45" >&2; exit 2;; esac
+(( WRF_START_HOUR >= 0 && WRF_END_HOUR > WRF_START_HOUR && WRF_END_HOUR <= 72 )) || {
+  echo "Segmento ECMWF invalido: F${WRF_START_HOUR}-F${WRF_END_HOUR}" >&2; exit 2;
+}
 
 rm -rf "$RAW_DIR" "$REG_DIR" "$ENV_FILE"
 mkdir -p "$RAW_DIR" "$REG_DIR"
@@ -19,7 +23,7 @@ RAW_SURFACE="$RAW_DIR/ecmwf_raw_surface.grib2"
 SIMPLE_PRESSURE="$RAW_DIR/ecmwf_pressure_simple.grib2"
 SIMPLE_SURFACE="$RAW_DIR/ecmwf_surface_simple.grib2"
 
-ARGS=(--max-hour "$WRF_RUN_HOURS" --output "$RAW" --run-env "$ENV_FILE")
+ARGS=(--max-hour "$WRF_END_HOUR" --output "$RAW" --run-env "$ENV_FILE")
 if [[ -n "${FORCE_RUN_DATE:-}" && -n "${FORCE_RUN_CYCLE:-}" ]]; then
   ARGS+=(--date "$FORCE_RUN_DATE" --cycle "$FORCE_RUN_CYCLE")
 fi
@@ -40,7 +44,7 @@ grib_set -r -s packingType=grid_simple "$RAW_SURFACE" "$SIMPLE_SURFACE"
 docker pull "$CDO_IMAGE"
 
 log "Separando cada forecast hour ECMWF antes do WPS"
-for H in $(seq 0 3 "$WRF_RUN_HOURS"); do
+for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
   printf -v FH '%03d' "$H"
   P_STEP="$RAW_DIR/ecmwf_pressure_f${FH}.grib2"
   S_STEP="$RAW_DIR/ecmwf_surface_f${FH}.grib2"
@@ -84,7 +88,7 @@ ls -lh "$REG_DIR"/ecmwf_f*.grib2
 
 log "Rodando WRF 4 km inicializado pelo ECMWF"
 export SOURCE_MODEL=ecmwf
-export WRF_RUN_HOURS
+export WRF_RUN_HOURS WRF_START_HOUR WRF_END_HOUR
 export SOURCE_DIR="$REG_DIR"
 export SOURCE_VTABLE="$ROOT/wrf/Vtable.ECMWF_OPEN"
 chmod +x "$ROOT/wrf/run_wrf_with_source.sh"
