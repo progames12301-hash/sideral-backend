@@ -1,0 +1,44 @@
+name: Validar WRF Sudeste
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/validate-wrf-sudeste.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+      - name: Validar sintaxe dos scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n wrf/run_gfs_segment_sudeste.sh
+          bash -n wrf/run_wrf_with_source_sudeste.sh
+          bash -n wrf/run_icon_wrf_sudeste.sh
+          bash -n wrf/run_ecmwf_wrf_sudeste.sh
+      - name: Validar patch GFS Sudeste sem executar modelo
+        env:
+          FORCE_RUN_DATE: "20260904"
+          FORCE_RUN_CYCLE: "00"
+          WRF_START_HOUR: "0"
+          WRF_END_HOUR: "9"
+          WRF_COLD_START: "1"
+          WRF_PATCH_ONLY: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrf/run_gfs_segment_sudeste.sh
+          grep -q "e_we              = 390" wrf/run_gfs_test.sh
+          grep -q "ref_lat   = -19.50" wrf/run_gfs_test.sh
+          grep -q "ref_lon   = -46.50" wrf/run_gfs_test.sh
+          grep -q "stand_lon = -46.50" wrf/run_gfs_test.sh
