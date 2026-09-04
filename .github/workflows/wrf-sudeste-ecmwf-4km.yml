@@ -1,0 +1,23 @@
+name: WRF Sudeste 4 km ECMWF - REFL NATIVO
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 11,23 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-wrf-sudeste-ecmwf
+  cancel-in-progress: true
+
+jobs:
+  wrf:
+    uses: ./.github/workflows/wrf-source-parallel-sudeste-reusable.yml
+    with:
+      model: ecmwf
+      source_data_branch: ecmwf-data
+      publish_branch: wrf-sudeste-ecmwf-data
+      run_script: run_ecmwf_wrf_sudeste.sh
+    secrets: inherit
