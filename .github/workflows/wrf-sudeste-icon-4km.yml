@@ -1,0 +1,23 @@
+name: WRF Sudeste 4 km ICON - REFL NATIVO
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 7,19 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-wrf-sudeste-icon
+  cancel-in-progress: true
+
+jobs:
+  wrf:
+    uses: ./.github/workflows/wrf-source-parallel-sudeste-reusable.yml
+    with:
+      model: icon
+      source_data_branch: icon-data
+      publish_branch: wrf-sudeste-icon-data
+      run_script: run_icon_wrf_sudeste.sh
+    secrets: inherit
