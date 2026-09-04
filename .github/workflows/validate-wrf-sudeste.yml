@@ -37,6 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          chmod +x wrf/run_gfs_segment_sudeste.sh
           wrf/run_gfs_segment_sudeste.sh
           grep -q "e_we              = 390" wrf/run_gfs_test.sh
           grep -q "ref_lat   = -19.50" wrf/run_gfs_test.sh
