@@ -1,0 +1,67 @@
+{
+  "schema": "sideral-model-metadata-v1",
+  "model": "aifs",
+  "provider": "ECMWF",
+  "resolutionKm": 28,
+  "runDate": "20260905",
+  "runCycle": "06Z",
+  "initTime": "2026-09-05T06:00:00Z",
+  "generatedAt": "2026-09-05T12:46:51.469894Z",
+  "forecastLocalDate": "2026-09-06",
+  "timezone": "America/Sao_Paulo",
+  "scope": "next_local_day",
+  "temporalResolutionMinutes": 360,
+  "frameCount": 4,
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 24,
+      "validTime": "2026-09-06T06:00:00Z",
+      "localValidTime": "2026-09-06T03:00:00-03:00",
+      "file": "aifs/f024.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 1,
+      "forecastHour": 30,
+      "validTime": "2026-09-06T12:00:00Z",
+      "localValidTime": "2026-09-06T09:00:00-03:00",
+      "file": "aifs/f030.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 2,
+      "forecastHour": 36,
+      "validTime": "2026-09-06T18:00:00Z",
+      "localValidTime": "2026-09-06T15:00:00-03:00",
+      "file": "aifs/f036.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 3,
+      "forecastHour": 42,
+      "validTime": "2026-09-07T00:00:00Z",
+      "localValidTime": "2026-09-06T21:00:00-03:00",
+      "file": "aifs/f042.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    }
+  ],
+  "capabilities": {
+    "reflectivity": false,
+    "precipitation": true,
+    "wind": true,
+    "temperature": true,
+    "humidity": true,
+    "mucape": false,
+    "bulkShear": false,
+    "vorticity850": false,
+    "waterVapor": false
+  },
+  "precipitationProduct": "qpf6",
+  "precipitationIsRate": false,
+  "note": "AIFS Single oficial 0.25 grau; nao representa refletividade de radar."
+}
