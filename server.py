@@ -2066,11 +2066,17 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_OPTIONS(self) -> None:
+        if urlparse(self.path).path.startswith('/api/radar/v3/'):
+            from backend.radar_v3.integration import dispatch
+            dispatch(self); return
         self.send_response(204)
         self.end_headers()
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path).path
+        if parsed_path.startswith('/api/radar/v3/'):
+            from backend.radar_v3.integration import dispatch
+            dispatch(self); return
         if parsed_path.startswith("/api/models") or parsed_path.startswith("/api/multimodel"):
             self.handle_models_api(parsed_path, parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/ipmet/meta": self.handle_ipmet_meta(); return
