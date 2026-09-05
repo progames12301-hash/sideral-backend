@@ -133,6 +133,7 @@ def handler_for(store):
                     path = store.cache/f'{key}.json'
                     if not path.exists(): return self.reply(dict(error='Quadro indisponível'),404)
                     metadata = json.loads(path.read_text('utf-8'))
+                    if metadata.get('kind')=='raster': metadata.pop('legendUrl',None)
                     if metadata.get('kind')!='raster': metadata['dataUrl'] = '/api/radar/v3/data?id='+key
                     return self.reply(metadata)
                 if route.path == '/api/radar/v3/data':

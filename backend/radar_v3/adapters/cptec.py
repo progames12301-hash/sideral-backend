@@ -105,11 +105,11 @@ class Adapter:
                             timestamp=stamp.isoformat(),coordinates=coordinates,crs='EPSG:3857',sourceCrs='EPSG:4326',
                             longitude=(coordinates[0][0]+coordinates[1][0])/2,latitude=(coordinates[0][1]+coordinates[2][1])/2,
                             unit='source-palette',quantitative=False,sourceUrl=url,georeferenceUrl=url[:-4]+'.pgw',
-                            dataUrl='/api/radar/v3/image?id='+key,
-                            legendUrl=BASE+'/dsaimg/legendas/'+('legenda-vento.png' if product=='velocity' else 'legenda-cappi.png'))
+                            dataUrl='/api/radar/v3/image?id='+key, palette='source-original')
                         tmp=image_path.with_suffix('.tmp');tmp.write_bytes(binary);tmp.replace(image_path)
                         tmp=meta_path.with_suffix('.tmp');tmp.write_text(json.dumps(metadata),encoding='utf-8');tmp.replace(meta_path)
-                    result.append(json.loads(meta_path.read_text('utf-8')))
+                    frame=json.loads(meta_path.read_text('utf-8'));frame.pop('legendUrl',None);frame['palette']='source-original'
+                    result.append(frame)
                 if result and product not in record['products']: record['products'].append(product)
             except (requests.RequestException,ValueError,KeyError,OSError):
                 result=entry[1] if entry else []
@@ -118,6 +118,7 @@ class Adapter:
             for path in self.cache.glob('*.json'):
                 try:
                     frame=json.loads(path.read_text('utf-8'))
+                    frame.pop('legendUrl',None)
                     if frame.get('radar')!=radar or frame.get('product')!=product or frame.get('kind')!='raster': continue
                     age=(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(frame['timestamp'])).total_seconds()
                     if 0<=age<=48*3600 and (self.cache/(frame['frameId']+'.png')).exists(): by_id[frame['frameId']]=frame

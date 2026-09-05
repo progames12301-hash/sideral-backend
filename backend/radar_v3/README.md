@@ -7,7 +7,7 @@
 - Importação: `python -m backend.radar_v3.ingest --provider cemaden --radar almenara --file arquivo.vol.h5`. Estruturas desconhecidas são recusadas para investigação.
 - ODIM: DBZH/DBZV/TH/TV e VRADH/VRADV/VRAD/VRADHC. Gain/offset, nodata/undetect, unidades, azimutes medidos e menor elevação disponível. Preserva NI/Nyquist, PRFs e wavelength, sem dealiasing adicional.
 - CPTEC/SIGMA: menu público e logs por código, conforme JavaScript oficial. Em 05/09/2026 foram baixados REF e VEL de Chapecó de 22:30 UTC: PNG RGBA + PGW.
-- PNG mantém paleta original; não é convertido em velocidades inventadas (`quantitative=false`, `kind=raster`). Legenda oficial acompanha o produto. PGW geográfico usa centros dos pixels; reprojeção Mercator por nearest-neighbor, preservando transparência.
+- PNG mantém paleta original; não é convertido em velocidades inventadas (`quantitative=false`, `kind=raster`). A legenda genérica de vento do SIGMA não corresponde ao raster Doppler verificado; por isso não é aplicada. A escala numérica só acompanha dados polares quantitativos. PGW geográfico usa centros dos pixels; reprojeção Mercator por nearest-neighbor, preservando transparência.
 - O diretório `/nowcasting/DADOS/velocidade_radial/` consultado contém setembro/2023. Não é usado como dado atual.
 - Volume polar local tem prioridade; raster oficial é a alternativa. Ausência de VEL não modifica REF nem gera velocidade.
 
