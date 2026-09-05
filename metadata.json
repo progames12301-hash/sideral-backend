@@ -1,0 +1,104 @@
+{
+  "schema": "sideral-model-metadata-v1",
+  "model": "gfs",
+  "provider": "NOAA/NCEP",
+  "resolutionKm": 28,
+  "runDate": "20260905",
+  "runCycle": "12Z",
+  "initTime": "2026-09-05T12:00:00Z",
+  "generatedAt": "2026-09-05T18:33:12.869788Z",
+  "forecastLocalDate": "2026-09-06",
+  "timezone": "America/Sao_Paulo",
+  "scope": "next_local_day",
+  "temporalResolutionMinutes": 180,
+  "frameCount": 8,
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 15,
+      "validTime": "2026-09-06T03:00:00Z",
+      "localValidTime": "2026-09-06T00:00:00-03:00",
+      "file": "gfs/f015.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 1,
+      "forecastHour": 18,
+      "validTime": "2026-09-06T06:00:00Z",
+      "localValidTime": "2026-09-06T03:00:00-03:00",
+      "file": "gfs/f018.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 2,
+      "forecastHour": 21,
+      "validTime": "2026-09-06T09:00:00Z",
+      "localValidTime": "2026-09-06T06:00:00-03:00",
+      "file": "gfs/f021.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 3,
+      "forecastHour": 24,
+      "validTime": "2026-09-06T12:00:00Z",
+      "localValidTime": "2026-09-06T09:00:00-03:00",
+      "file": "gfs/f024.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 4,
+      "forecastHour": 27,
+      "validTime": "2026-09-06T15:00:00Z",
+      "localValidTime": "2026-09-06T12:00:00-03:00",
+      "file": "gfs/f027.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 5,
+      "forecastHour": 30,
+      "validTime": "2026-09-06T18:00:00Z",
+      "localValidTime": "2026-09-06T15:00:00-03:00",
+      "file": "gfs/f030.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 6,
+      "forecastHour": 33,
+      "validTime": "2026-09-06T21:00:00Z",
+      "localValidTime": "2026-09-06T18:00:00-03:00",
+      "file": "gfs/f033.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 7,
+      "forecastHour": 36,
+      "validTime": "2026-09-07T00:00:00Z",
+      "localValidTime": "2026-09-06T21:00:00-03:00",
+      "file": "gfs/f036.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    }
+  ],
+  "capabilities": {
+    "reflectivity": true,
+    "precipitation": true,
+    "wind": true,
+    "temperature": true,
+    "humidity": true,
+    "mucape": true,
+    "bulkShear": false,
+    "vorticity850": false,
+    "waterVapor": true
+  },
+  "precipitationProduct": "qpf3",
+  "precipitationIsRate": false,
+  "note": "GFS oficial 0.25 grau; REFC composto previsto pelo modelo, nao observacao de radar.",
+  "reflectivitySource": "GFS_REFC_NATIVE"
+}
