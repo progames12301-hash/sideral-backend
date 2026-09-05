@@ -1,0 +1,34 @@
+name: WRF Sudeste GFS - AGENDADOR CORRIGIDO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/wrf-sudeste-gfs-scheduler-fix.yml"
+  schedule:
+    - cron: "30 3,15 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: sideral-wrf-sudeste-gfs-scheduler
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Disparar WRF Sudeste GFS como workflow_dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/wrf-sudeste-gfs-4km.yml/dispatches" \
+            -f ref=main
+          echo "WRF Sudeste GFS disparado via workflow_dispatch."
