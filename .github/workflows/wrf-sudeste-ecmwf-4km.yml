@@ -2,6 +2,8 @@ name: WRF Sudeste 4 km ECMWF - REFL NATIVO
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "30 11,23 * * *"
   workflow_run:
     workflows: ["ECMWF IFS - PROXIMO DIA AUTOMATICO"]
     types: [completed]
