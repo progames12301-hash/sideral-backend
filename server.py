@@ -55,30 +55,6 @@ DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8766"))
 MODELS_API = ModelApi()
 
-
-# SIDERAL_MODEL_GITHUB_REMOTE_V2
-# Os produtos leves publicados pelo GitHub Actions sao lidos pelo Render.
-# GFS usa WRF 4 km/REFL_10CM; ICON e ECMWF usam campos oficiais diretos.
-MODEL_REMOTE_BASES = {
-    "gfs": os.environ.get(
-        "WRF_GITHUB_RAW_BASE",
-        "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-data",
-    ).rstrip("/"),
-    "icon": os.environ.get(
-        "ICON_GITHUB_RAW_BASE",
-        "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/icon-data",
-    ).rstrip("/"),
-    "ecmwf": os.environ.get(
-        "ECMWF_GITHUB_RAW_BASE",
-        "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/ecmwf-data",
-    ).rstrip("/"),
-}
-MODEL_REMOTE_CACHE_SECONDS = int(os.environ.get("MODEL_REMOTE_CACHE_SECONDS", "120"))
-model_remote_cache: dict[str, dict[str, Any]] = {
-    key: {"metadata": None, "frames": {}} for key in MODEL_REMOTE_BASES
-}
-model_remote_lock = threading.Lock()
-
 INMET_STATIONS_URL = "https://apitempo.inmet.gov.br/estacoes/T"
 INMET_OBSERVATION_URL = "https://apitempo.inmet.gov.br/estacao/{start}/{end}/{station}"
 INMET_HISTORICAL_ZIP_URL = "https://portal.inmet.gov.br/uploads/dadoshistoricos/{year}.zip"
@@ -111,6 +87,8 @@ IPMET_HEADERS = {
 REDEMET_API_URL = "https://api-redemet.decea.mil.br"
 REDEMET_API_KEY = os.environ.get("REDEMET_API_KEY", "").strip()
 METEOBLUE_API_KEY = os.environ.get("METEOBLUE_API_KEY", "").strip()
+OPENWEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY", "").strip()
+OPENWEATHER_API_URL = "https://api.openweathermap.org"
 REDEMET_PRODUCTS = {"03km", "05km", "07km", "10km", "maxcappi"}
 REDEMET_SATELLITE_PRODUCTS = {"ir", "realcada", "vis"}
 REDEMET_SATELLITE_IMAGE_HOST = "estatico-redemet.decea.mil.br"
@@ -129,20 +107,19 @@ REGIONAL_SC_RADAR_URL = "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar"
 REGIONAL_RS_RADAR_URL = "https://statics.climatempo.com.br/radar_poa/pngs/latest"
 REGIONAL_FUNCEME_URL = "https://nowcastsig.funceme.br/media/temporeal/camadas_sig/precipitacao_superficie_rmt0100ds.json"
 REGIONAL_SC_RADARS = {
-    "sc-chapeco": {"code": "CHP", "product": "0", "name": "Defesa Civil SC — Chapecó/SC", "latitude": -27.10, "longitude": -52.62, "rangeKm": 240, "bounds": [-55.0710069, -29.2106056, -50.1335368, -24.8625699]},
-    "sc-lontras": {"code": "LON", "product": "0", "name": "Defesa Civil SC — Lontras/SC", "latitude": -27.17, "longitude": -49.54, "rangeKm": 240, "bounds": [-51.9326542, -29.3957249, -46.9908037, -25.0438317]},
-    "sc-ararangua": {"code": "ARA", "product": "3", "name": "Defesa Civil SC — Araranguá/SC", "latitude": -28.94, "longitude": -49.49, "rangeKm": 120, "bounds": [-50.6064640, -30.0178010, -48.1181247, -27.8463000]},
+    "sc-chapeco": {"code": "CHP", "product": "0", "reflectivityProduct": "0", "velocityProduct": "3", "name": "Defesa Civil SC — Chapecó/SC", "latitude": -27.10, "longitude": -52.62, "rangeKm": 240, "bounds": [-55.0710069, -29.2106056, -50.1335368, -24.8625699]},
+    "sc-lontras": {"code": "LON", "product": "0", "reflectivityProduct": "0", "velocityProduct": "3", "name": "Defesa Civil SC — Lontras/SC", "latitude": -27.17, "longitude": -49.54, "rangeKm": 240, "bounds": [-51.9326542, -29.3957249, -46.9908037, -25.0438317]},
+    "sc-ararangua": {"code": "ARA", "product": "3", "reflectivityProduct": "3", "velocityProduct": "0", "name": "Defesa Civil SC — Araranguá/SC", "latitude": -28.94, "longitude": -49.49, "rangeKm": 120, "bounds": [-50.6064640, -30.0178010, -48.1181247, -27.8463000]},
 }
 REGIONAL_FUNCEME_RADAR = {"id": "funceme-quixeramobim", "name": "FUNCEME — Quixeramobim/CE", "latitude": -5.06917, "longitude": -39.26713, "rangeKm": 240, "bounds": [-41.65, -7.45, -36.85, -2.69]}
 REGIONAL_RS_RADAR = {"id": "dc-rs-porto-alegre", "name": "Defesa Civil RS — Porto Alegre/RS", "latitude": -30.0346, "longitude": -51.2177, "rangeKm": 150, "bounds": [-52.79, -31.39, -49.65, -28.68]}
 CEMADEN_LAYER_URL = "https://mapservices.cemaden.gov.br/MapaInterativoWS/resources/layer/id/{layer_id}"
 CEMADEN_WMS_URL = "https://gsc.cemaden.gov.br/geoserver/cemaden_dev/wms"
 CEMADEN_PLUVIOMETERS_URL = "https://resources.cemaden.gov.br/dados/311_24.json"
-CEMADEN_PLUVIOMETER_CACHE_SECONDS = 55
 CEMADEN_HYDROLOGICAL_URL = "https://resources.cemaden.gov.br/dados/327mi_24.json"
 CEMADEN_STATION_DETAIL_URL = "https://resources.cemaden.gov.br/graficos/cemaden/hidro/resources/json"
 CEMADEN_HYDRO_IMAGE_URL = "https://resources.cemaden.gov.br/imghidro"
-CEMADEN_HYDROLOGICAL_CACHE_SECONDS = 2 * 60
+CEMADEN_PLUVIOMETER_CACHE_SECONDS = 55
 CEMADEN_RADARS = {
     "natal": {"layer_id": 3926, "name": "CEMADEN — Natal/RN", "latitude": -5.90448, "longitude": -35.25401, "bounds": [-37.5093293085, -8.144625555, -32.9863665585, -3.649208055]},
     "petrolina": {"layer_id": 3959, "name": "CEMADEN — Petrolina/PE", "latitude": -9.367, "longitude": -40.573, "bounds": [-42.8412048965, -11.6044003425, -38.2813601465, -7.1090390925]},
@@ -174,15 +151,15 @@ redemet_satellite_cache_lock = threading.Lock()
 redemet_satellite_refreshing: set[str] = set()
 redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
+cemaden_pluviometer_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
 cptec_satellite_image_cache: dict[str, bytes] = {}
 cptec_glm_cache: dict[str, Any] = {"saved_at": 0.0, "metadata": None}
 cptec_glm_cache_lock = threading.Lock()
 regional_radar_cache: dict[str, dict[str, Any]] = {}
 regional_rs_image_cache: dict[str, tuple[float, bytes]] = {}
 regional_rs_image_cache_lock = threading.Lock()
-cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
-cemaden_pluviometer_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
-cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
 
 # Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
 SOUNDING_CACHE_SECONDS = 15 * 60
@@ -250,18 +227,18 @@ def png_black_to_transparent(body: bytes, threshold: int = 12) -> bytes:
 
 
 def clean_rs_radar_png(body: bytes) -> bytes:
-    """Remove fundo/cartografia e legendas do produto est�tico do radar de Porto Alegre.
+    """Remove fundo/cartografia e legendas do produto estático do radar de Porto Alegre.
 
-    O arquivo da Defesa Civil RS � uma imagem cartogr�fica pronta para leitura humana.
-    Para us�-lo como sobreposi��o no mapa, preservamos somente os pixels coloridos do
-    eco e gravamos o restante com alfa zero. A dimens�o original � mantida para n�o
-    alterar o georreferenciamento informado pelo cat�logo.
+    O arquivo da Defesa Civil RS é uma imagem cartográfica pronta para leitura humana.
+    Para usá-lo como sobreposição no mapa, preservamos somente os pixels coloridos do
+    eco e gravamos o restante com alfa zero. A dimensão original é mantida para não
+    alterar o georreferenciamento informado pelo catálogo.
     """
     try:
         from PIL import Image
     except ImportError:
-        # O deploy oficial inclui Pillow; em instala��es m�nimas, ainda devolvemos a
-        # imagem original em vez de interromper a atualiza��o do radar.
+        # O deploy oficial inclui Pillow; em instalações mínimas, ainda devolvemos a
+        # imagem original em vez de interromper a atualização do radar.
         return body
 
     image = Image.open(io.BytesIO(body)).convert("RGBA")
@@ -269,7 +246,7 @@ def clean_rs_radar_png(body: bytes) -> bytes:
     pixels = image.load()
 
     # Detecta os pequenos marcadores vermelhos de cidades. Eles servem apenas para
-    # retirar o texto da anota��o sem apagar �reas maiores de refletividade vermelha.
+    # retirar o texto da anotação sem apagar áreas maiores de refletividade vermelha.
     red_mask = bytearray(width * height)
     for y in range(height):
         row_offset = y * width
@@ -311,7 +288,7 @@ def clean_rs_radar_png(body: bytes) -> bytes:
                         if red_mask[neighbour] and not seen[neighbour]:
                             seen[neighbour] = 1
                             stack.append(neighbour)
-            # Marcadores das cidades s�o pequenos; manchas de eco vermelhas maiores
+            # Marcadores das cidades são pequenos; manchas de eco vermelhas maiores
             # ficam intactas.
             if size <= 600:
                 marker_boxes.append((min_x, min_y, max_x, max_y))
@@ -321,10 +298,10 @@ def clean_rs_radar_png(body: bytes) -> bytes:
             red, green, blue, alpha = pixels[x, y]
             maximum = max(red, green, blue)
             minimum = min(red, green, blue)
-            # Satura��o aproximada em inteiros: remove branco, bege, �gua, bordas,
-            # textos e an�is, mantendo o conjunto de cores do eco meteorol�gico.
+            # Saturação aproximada em inteiros: remove branco, bege, água, bordas,
+            # textos e anéis, mantendo o conjunto de cores do eco meteorológico.
             keep = bool(alpha and maximum >= 90 and (maximum - minimum) * 100 >= 42 * maximum)
-            # Dourado puro � usado nos nomes das cidades (e na escala da legenda).
+            # Dourado puro é usado nos nomes das cidades (e na escala da legenda).
             if (red, green, blue) == (255, 215, 0):
                 keep = False
             # A escala dBZ fica no canto inferior direito em todas as imagens RS.
@@ -332,8 +309,8 @@ def clean_rs_radar_png(body: bytes) -> bytes:
                 keep = False
             pixels[x, y] = (red, green, blue, 255 if keep else 0)
 
-    # Retira apenas o tra�o colorido das etiquetas pr�ximas aos marcadores, sem criar
-    # ret�ngulos vazios sobre o eco.
+    # Retira apenas o traço colorido das etiquetas próximas aos marcadores, sem criar
+    # retângulos vazios sobre o eco.
     for min_x, min_y, max_x, max_y in marker_boxes:
         left, right = max(0, min_x - 15), min(width, max_x + 201)
         top, bottom = max(0, min_y - 25), min(height, max_y + 26)
@@ -817,247 +794,6 @@ def get_wrf_variable(ncfile_list: list[Any], var_name: str, timeidx: int) -> Any
         print(f"AVISO: falha ao extrair variavel '{var_name}' do WRF: {exc}")
         return None
 
-
-
-def _model_remote_key(model_key: str) -> str:
-    key = (model_key or "gfs").lower().strip()
-    if key not in MODEL_REMOTE_BASES:
-        raise ValueError(f"Modelo remoto invalido: {model_key}")
-    return key
-
-
-def _wrf_remote_metadata(model_key: str = "gfs") -> dict[str, Any]:
-    key = _model_remote_key(model_key)
-    now = time.monotonic()
-    cache = model_remote_cache[key]
-    cached = cache.get("metadata")
-    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < MODEL_REMOTE_CACHE_SECONDS:
-        data = cached.get("data")
-        if isinstance(data, dict):
-            return data
-
-    with model_remote_lock:
-        cached = cache.get("metadata")
-        if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < MODEL_REMOTE_CACHE_SECONDS:
-            data = cached.get("data")
-            if isinstance(data, dict):
-                return data
-
-        url = f"{MODEL_REMOTE_BASES[key]}/metadata.json?ts={int(time.time() // 60)}"
-        response = requests.get(
-            url,
-            headers={"User-Agent": "SideralMeteorologia/2.0", "Accept": "application/json"},
-            timeout=20,
-        )
-        response.raise_for_status()
-        data = response.json()
-        allowed_schemas = {"sideral-wrf-metadata-v1", "sideral-model-metadata-v1"}
-        if not isinstance(data, dict) or data.get("schema") not in allowed_schemas:
-            raise RuntimeError(f"Metadata remoto de {key} em formato inesperado.")
-        if str(data.get("model") or key).lower() != key:
-            raise RuntimeError(f"Metadata remoto pertence a outro modelo: {data.get('model')}")
-        frames = data.get("frames")
-        if not isinstance(frames, list) or not frames:
-            raise RuntimeError(f"Metadata remoto de {key} nao contem quadros.")
-        cache["metadata"] = {"saved_at": now, "data": data}
-        return data
-
-
-def _wrf_remote_frame(model_key: str, filename: str) -> dict[str, Any]:
-    key = _model_remote_key(model_key)
-    safe_name = str(filename or "")
-    if not re.fullmatch(rf"{re.escape(key)}/f\d{{3}}\.json\.gz", safe_name):
-        raise ValueError(f"Nome de quadro remoto invalido para {key}: {safe_name}")
-
-    now = time.monotonic()
-    frames_cache = model_remote_cache[key].setdefault("frames", {})
-    cached = frames_cache.get(safe_name)
-    if isinstance(cached, dict) and now - float(cached.get("saved_at", 0.0)) < MODEL_REMOTE_CACHE_SECONDS:
-        data = cached.get("data")
-        if isinstance(data, dict):
-            return data
-
-    url = f"{MODEL_REMOTE_BASES[key]}/{safe_name}?ts={int(time.time() // 60)}"
-    response = requests.get(
-        url,
-        headers={"User-Agent": "SideralMeteorologia/2.0", "Accept": "application/gzip,application/octet-stream"},
-        timeout=35,
-    )
-    response.raise_for_status()
-    try:
-        decoded = zlib.decompress(response.content, 16 + zlib.MAX_WBITS)
-        data = json.loads(decoded.decode("utf-8"))
-    except Exception as exc:
-        raise RuntimeError(f"Falha ao descompactar quadro remoto {key}: {exc}") from exc
-
-    if not isinstance(data, dict) or data.get("schema") not in {"sideral-wrf-grid-v1", "sideral-model-grid-v1"}:
-        raise RuntimeError(f"Quadro remoto {key} em formato inesperado.")
-    if str(data.get("model") or key).lower() != key:
-        raise RuntimeError(f"Quadro remoto pertence a outro modelo: {data.get('model')}")
-
-    frames_cache[safe_name] = {"saved_at": now, "data": data}
-    while len(frames_cache) > 40:
-        frames_cache.pop(next(iter(frames_cache)))
-    return data
-
-
-def build_remote_wrf_cells(
-    bounds: dict[str, float],
-    hours: int,
-    grid_x: int,
-    grid_y: int,
-    model_key: str = "gfs",
-) -> dict[str, Any]:
-    key = _model_remote_key(model_key)
-    metadata = _wrf_remote_metadata(key)
-    frames = metadata.get("frames") or []
-    requested_hour = max(0, int(hours))
-    frame_index = min(
-        range(len(frames)),
-        key=lambda index: abs(int(frames[index].get("forecastHour") or 0) - requested_hour),
-    )
-    frame_meta = frames[frame_index]
-    frame = _wrf_remote_frame(key, str(frame_meta.get("file") or ""))
-
-    source_bounds = frame.get("bounds") or {}
-    margin = 0.20
-    try:
-        if (
-            bounds["south"] < float(source_bounds["south"]) - margin
-            or bounds["north"] > float(source_bounds["north"]) + margin
-            or bounds["west"] < float(source_bounds["west"]) - margin
-            or bounds["east"] > float(source_bounds["east"]) + margin
-        ):
-            raise WRFDomainError(
-                f"Os dados {key.upper()} publicados cobrem apenas "
-                f"{source_bounds.get('south')}..{source_bounds.get('north')} lat / "
-                f"{source_bounds.get('west')}..{source_bounds.get('east')} lon."
-            )
-    except KeyError as exc:
-        raise RuntimeError(f"Bounds ausentes no quadro remoto {key}.") from exc
-
-    source_grid_x = int(frame.get("gridX") or 0)
-    source_grid_y = int(frame.get("gridY") or 0)
-    fields = frame.get("fields")
-    if source_grid_x < 1 or source_grid_y < 1 or not isinstance(fields, dict):
-        raise RuntimeError(f"Grade remota {key} invalida.")
-
-    expected = source_grid_x * source_grid_y
-    latitudes = fields.get("lat")
-    longitudes = fields.get("lon")
-    if (
-        not isinstance(latitudes, list)
-        or not isinstance(longitudes, list)
-        or len(latitudes) != expected
-        or len(longitudes) != expected
-    ):
-        raise RuntimeError(f"Coordenadas remotas {key} incompletas.")
-
-    row_hits: list[int] = []
-    col_hits: list[int] = []
-    for row in range(source_grid_y):
-        base = row * source_grid_x
-        if any(
-            bounds["south"] <= float(latitudes[base + col]) <= bounds["north"]
-            and bounds["west"] <= float(longitudes[base + col]) <= bounds["east"]
-            for col in range(source_grid_x)
-        ):
-            row_hits.append(row)
-    for col in range(source_grid_x):
-        if any(
-            bounds["south"] <= float(latitudes[row * source_grid_x + col]) <= bounds["north"]
-            and bounds["west"] <= float(longitudes[row * source_grid_x + col]) <= bounds["east"]
-            for row in range(source_grid_y)
-        ):
-            col_hits.append(col)
-
-    if not row_hits or not col_hits:
-        raise WRFDomainError(f"A area solicitada nao cruza a grade remota {key}.")
-
-    row_start, row_end = min(row_hits), max(row_hits)
-    col_start, col_end = min(col_hits), max(col_hits)
-    out_grid_y = row_end - row_start + 1
-    out_grid_x = col_end - col_start + 1
-
-    field_names = (
-        "reflectivity", "precipitation", "windSpeed", "windDirection",
-        "bulkShear", "vorticity850", "temperature", "humidity", "mucape", "waterVapor",
-    )
-    for name in field_names:
-        values = fields.get(name)
-        if not isinstance(values, list) or len(values) != expected:
-            raise RuntimeError(f"Campo remoto {key} incompleto: {name}.")
-
-    cells: list[dict[str, float]] = []
-    for row in range(row_start, row_end + 1):
-        base = row * source_grid_x
-        for col in range(col_start, col_end + 1):
-            idx = base + col
-            cells.append({
-                "lat": float(latitudes[idx]),
-                "lon": float(longitudes[idx]),
-                "reflectivity": max(0.0, float(fields["reflectivity"][idx])),
-                "precipitation": max(0.0, float(fields["precipitation"][idx])),
-                "cloudCover": 0.0,
-                "windSpeed": float(fields["windSpeed"][idx]),
-                "windDirection": float(fields["windDirection"][idx]),
-                "bulkShear": float(fields["bulkShear"][idx]),
-                "vorticity850": float(fields["vorticity850"][idx]),
-                "temperature": float(fields["temperature"][idx]),
-                "humidity": float(fields["humidity"][idx]),
-                "mucape": float(fields["mucape"][idx]),
-                "waterVapor": float(fields["waterVapor"][idx]),
-            })
-
-    available_frames = [
-        {
-            "index": index,
-            "validTime": item.get("validTime"),
-            "localValidTime": item.get("localValidTime"),
-            "forecastHour": item.get("forecastHour"),
-        }
-        for index, item in enumerate(frames)
-    ]
-    default_capabilities = {
-        "reflectivity": key == "gfs",
-        "precipitation": True,
-        "wind": True,
-        "temperature": True,
-        "humidity": True,
-        "mucape": True,
-        "bulkShear": key == "gfs",
-        "vorticity850": key == "gfs",
-        "waterVapor": key in {"gfs", "ecmwf"},
-    }
-    capabilities = metadata.get("capabilities")
-    if not isinstance(capabilities, dict):
-        capabilities = default_capabilities
-
-    return {
-        "cells": cells,
-        "gridX": out_grid_x,
-        "gridY": out_grid_y,
-        "source": str(frame.get("source") or metadata.get("provider") or key.upper()),
-        "model": key,
-        "nativeGrid": False,
-        "remoteGrid": True,
-        "resolutionKm": metadata.get("resolutionKm"),
-        "runDate": metadata.get("runDate"),
-        "runCycle": metadata.get("runCycle"),
-        "initTime": metadata.get("initTime"),
-        "forecastHour": frame.get("forecastHour"),
-        "frameIndex": frame_index,
-        "frameCount": len(frames),
-        "validTime": frame.get("validTime"),
-        "availableFrames": available_frames,
-        "capabilities": capabilities,
-        "forecastLocalDate": metadata.get("forecastLocalDate"),
-        "timezone": metadata.get("timezone"),
-        "scope": metadata.get("scope"),
-        "temporalResolutionMinutes": metadata.get("temporalResolutionMinutes"),
-        "note": metadata.get("note"),
-    }
-
 def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int, model_key: str = "icon") -> list[dict[str, float]]:
     try: import numpy as np; import xarray as xr
     except ImportError as exc: raise RuntimeError("Dependencias WRF ausentes. Instale netCDF4, xarray e numpy.") from exc
@@ -1174,12 +910,12 @@ def build_gfs_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: i
 
 def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int) -> list[dict[str, float]]:
     if not METEOBLUE_API_KEY:
-        raise RuntimeError("METEOBLUE_API_KEY nao configurada no servidor.")
+        raise RuntimeError("ServiÃ§o Meteoblue temporariamente indisponÃ­vel.")
     response = requests.get("https://my.meteoblue.com/packages/basic-1h", params={"lat": (bounds["north"] + bounds["south"]) / 2, "lon": (bounds["east"] + bounds["west"]) / 2, "apikey": METEOBLUE_API_KEY, "tz": "UTC", "windspeed": "km/h", "forecast_days": 3}, timeout=20)
     response.raise_for_status()
     meteoblue_data = response.json()
     hourly_data = meteoblue_data.get("data_1h")
-    if not hourly_data: raise RuntimeError(f"Resposta invalida da API Meteoblue: {meteoblue_data.get('error_message', 'Erro desconhecido')}")
+    if not hourly_data: raise RuntimeError(f"Resposta inválida da API Meteoblue: {meteoblue_data.get('error_message', 'Erro desconhecido')}")
     times = hourly_data.get("time", [])
     if not times: raise RuntimeError("Nenhum horario retornado pela API Meteoblue.")
     target_time = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=hours)
@@ -2097,6 +1833,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/glm/lightning": self.handle_glm_lightning(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/glm/image": self.handle_glm_image(); return
         if parsed_path == "/api/redemet/stsc": self.handle_redemet_stsc(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/previsao/geocode": self.handle_forecast_geocode(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/previsao": self.handle_forecast(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/estacoes": self.handle_redemet_stations(parse_qs(urlparse(self.path).query)); return
         if parsed_path.startswith("/api/redemet/estacao/"):
             icao_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
@@ -2106,52 +1844,10 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/inea/image": self.handle_inea_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/simepar/meta": self.handle_simepar_meta(); return
         if parsed_path == "/api/simepar/image": self.handle_simepar_image(parse_qs(urlparse(self.path).query)); return
-        if parsed_path == "/api/regional/radar": self.handle_regional_radar(); return
+        if parsed_path == "/api/regional/radar": self.handle_regional_radar(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/regional/radar/image": self.handle_regional_radar_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/xweather/lightning": self.handle_xweather_lightning(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/health": self.send_json(200, {"status": "ok", "service": "sideral", "domain": "sul4km"}); return
-        if parsed_path == "/api/wrf/status":
-            try:
-                status_query = parse_qs(urlparse(self.path).query)
-                model_key = str(status_query.get("model", ["gfs"])[0]).lower().strip()
-                if model_key not in MODEL_REMOTE_BASES:
-                    self.send_json(400, {"status": "error", "error": "Modelo invalido. Use gfs, icon ou ecmwf."})
-                    return
-                metadata = _wrf_remote_metadata(model_key)
-                capabilities = metadata.get("capabilities")
-                if not isinstance(capabilities, dict):
-                    capabilities = {
-                        "reflectivity": model_key == "gfs",
-                        "precipitation": True,
-                        "wind": True,
-                        "temperature": True,
-                        "humidity": True,
-                        "mucape": True,
-                        "bulkShear": model_key == "gfs",
-                        "vorticity850": model_key == "gfs",
-                        "waterVapor": model_key in {"gfs", "ecmwf"},
-                    }
-                self.send_json(200, {
-                    "status": "ok",
-                    "source": "github-model-data",
-                    "model": model_key,
-                    "resolutionKm": metadata.get("resolutionKm"),
-                    "runDate": metadata.get("runDate"),
-                    "runCycle": metadata.get("runCycle"),
-                    "initTime": metadata.get("initTime"),
-                    "generatedAt": metadata.get("generatedAt"),
-                    "forecastLocalDate": metadata.get("forecastLocalDate"),
-                    "timezone": metadata.get("timezone"),
-                    "scope": metadata.get("scope"),
-                    "temporalResolutionMinutes": metadata.get("temporalResolutionMinutes"),
-                    "frameCount": metadata.get("frameCount"),
-                    "frames": metadata.get("frames"),
-                    "capabilities": capabilities,
-                    "note": metadata.get("note"),
-                })
-            except Exception as exc:
-                self.send_json(502, {"status": "error", "error": f"{type(exc).__name__}: {exc}"})
-            return
         if parsed_path == "/api/inmet/estacoes": self.handle_inmet_stations(); return
         if parsed_path.startswith("/api/inmet/historico/"):
             station_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
@@ -2162,7 +1858,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/sinotica/meta": self.handle_synoptic_meta(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
         if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
-
+        
         # --- NOVO ENDPOINT SKEW-T ---
         if parsed_path == "/api/sounding":
             self.handle_sounding(parse_qs(urlparse(self.path).query)); return
@@ -2294,9 +1990,9 @@ class Handler(SimpleHTTPRequestHandler):
 
         except RuntimeError as exc:
             _log_sounding_error("erro de dependência/dados", exc)
-            public_message = "O backend do Skew-T não conseguiu preparar os dados meteorológicos."
+            public_message = "Não foi possível preparar os dados meteorológicos do Skew-T."
             if "Dependências do Skew-T" in str(exc):
-                public_message = "O backend do Skew-T está com uma dependência indisponível."
+                public_message = "O Skew-T está temporariamente indisponível."
             self.send_json(502, {"error": public_message, "code": "SOUNDING_BACKEND_ERROR"})
         except Exception as exc:
             _log_sounding_error("erro interno", exc)
@@ -2371,6 +2067,60 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(200, response.json())
         except Exception as exc: self.send_json(502, {"error": f"Falha ao consultar {provider}.", "details": f"{type(exc).__name__}: {exc}"})
 
+    def handle_forecast_geocode(self, query: dict[str, list[str]]) -> None:
+        if not OPENWEATHER_API_KEY:
+            self.send_json(503, {"error": "ServiÃ§o de previsÃ£o temporariamente indisponÃ­vel."}); return
+        city = query.get("q", [""])[0].strip()
+        if not city or len(city) > 120:
+            self.send_json(400, {"error": "Informe uma cidade vÃ¡lida."}); return
+        try:
+            response = requests.get(
+                f"{OPENWEATHER_API_URL}/geo/1.0/direct",
+                params={"q": city, "limit": "1", "appid": OPENWEATHER_API_KEY},
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                timeout=15,
+            )
+            response.raise_for_status()
+            self.send_json(200, response.json())
+        except (requests.RequestException, ValueError, json.JSONDecodeError):
+            self.send_json(502, {"error": "NÃ£o foi possÃ­vel localizar a cidade agora."})
+
+    def handle_forecast(self, query: dict[str, list[str]]) -> None:
+        if not OPENWEATHER_API_KEY:
+            self.send_json(503, {"error": "ServiÃ§o de previsÃ£o temporariamente indisponÃ­vel."}); return
+        try:
+            latitude = float(query.get("lat", [""])[0])
+            longitude = float(query.get("lon", [""])[0])
+            if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+                raise ValueError
+        except (TypeError, ValueError):
+            self.send_json(400, {"error": "Coordenadas invÃ¡lidas."}); return
+
+        params = {
+            "lat": str(latitude), "lon": str(longitude), "appid": OPENWEATHER_API_KEY,
+            "units": "metric", "lang": "pt_br",
+        }
+        try:
+            def fetch_weather(path: str) -> dict[str, Any]:
+                response = requests.get(
+                    f"{OPENWEATHER_API_URL}{path}", params=params,
+                    headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                    timeout=15,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict): raise ValueError("Resposta meteorolÃ³gica invÃ¡lida.")
+                return payload
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                current_future = executor.submit(fetch_weather, "/data/2.5/weather")
+                forecast_future = executor.submit(fetch_weather, "/data/2.5/forecast")
+                current = current_future.result()
+                forecast = forecast_future.result()
+            self.send_json(200, {"current": current, "forecast": forecast})
+        except (requests.RequestException, ValueError, json.JSONDecodeError):
+            self.send_json(502, {"error": "NÃ£o foi possÃ­vel atualizar a previsÃ£o agora."})
+
     def handle_inea_frames(self, query: dict[str, list[str]]) -> None:
         radar = query.get("radar", [""])[0].lower()
         product = query.get("product", ["zh"])[0].lower()
@@ -2442,14 +2192,18 @@ class Handler(SimpleHTTPRequestHandler):
         except ValueError as exc: self.send_json(400, {"error": str(exc)})
         except Exception as exc: self.send_json(502, {"error": "Imagem do SIMEPAR indisponível.", "details": f"{type(exc).__name__}: {exc}"})
 
-    def handle_regional_radar(self) -> None:
+    def handle_regional_radar(self, query: dict[str, list[str]] | None = None) -> None:
         """Catálogo de radares estaduais com publicação pública verificável."""
-        cached = regional_radar_cache.get("catalog")
+        requested = str((query or {}).get("product", ["reflectivity"])[0]).strip().lower()
+        is_velocity = requested in {"ppi_v", "ppi-v", "velocity", "doppler", "velocidade"}
+        cache_key = "velocity" if is_velocity else "reflectivity"
+        cached = regional_radar_cache.get(cache_key)
         if cached and time.monotonic() - float(cached.get("saved_at", 0)) < 90:
             self.send_json(200, cached["payload"]); return
 
         def sc_catalog(radar_id: str, config: dict[str, Any]) -> dict[str, Any] | None:
-            response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getUltimasImagens", params={"prod": config["product"], "radar": config["code"], "data": ""}, headers=INMET_HEADERS, timeout=18, verify=False)
+            product_code = config.get("velocityProduct") if is_velocity else config.get("reflectivityProduct", config.get("product", "0"))
+            response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getUltimasImagens", params={"prod": product_code, "radar": config["code"], "data": ""}, headers=INMET_HEADERS, timeout=18, verify=False)
             response.raise_for_status(); names = response.json()
             safe = [str(name) for name in names if re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", str(name))]
             if not safe: return None
@@ -2458,7 +2212,7 @@ class Handler(SimpleHTTPRequestHandler):
                 try: observed = dt.datetime.strptime(filename[:14], "%Y%m%d%H%M%S").replace(tzinfo=dt.timezone.utc)
                 except ValueError: observed = dt.datetime.now(dt.timezone.utc)
                 frames.append({"key": filename, "date": observed.isoformat().replace("+00:00", "Z")})
-            return {"id": radar_id, "code": config["code"], "provider": "Defesa Civil SC", "name": config["name"], "latitude": config["latitude"], "longitude": config["longitude"], "rangeKm": config["rangeKm"], "bounds": config["bounds"], "kind": "sc", "product": config["product"], "frames": frames}
+            return {"id": radar_id, "code": config["code"], "provider": "Defesa Civil SC", "name": config["name"], "latitude": config["latitude"], "longitude": config["longitude"], "rangeKm": config["rangeKm"], "bounds": config["bounds"], "kind": "sc", "product": product_code, "layer": "ppi_v" if is_velocity else "reflectivity", "frames": frames}
 
         radars: list[dict[str, Any]] = []
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -2493,8 +2247,8 @@ class Handler(SimpleHTTPRequestHandler):
         if not radars:
             self.send_json(502, {"error": "Os radares regionais não publicaram imagens acessíveis agora."}); return
         radars.sort(key=lambda item: item["name"])
-        payload = {"status": True, "provider": "Redes estaduais", "radars": radars, "count": len(radars), "unavailableNetworks": ["CENSIPAM/SIPAM", "Alerta Rio", "SAISP", "USP/IAG", "SIMGE/IGAM", "APAC"]}
-        regional_radar_cache["catalog"] = {"saved_at": time.monotonic(), "payload": payload}
+        payload = {"status": True, "provider": "Redes estaduais", "radars": radars, "count": len(radars), "layer": "ppi_v" if is_velocity else "reflectivity", "requestedProduct": requested, "unavailableNetworks": ["CENSIPAM/SIPAM", "Alerta Rio", "SAISP", "USP/IAG", "SIMGE/IGAM", "APAC"]}
+        regional_radar_cache[cache_key] = {"saved_at": time.monotonic(), "payload": payload}
         self.send_json(200, payload)
 
     def handle_regional_radar_image(self, query: dict[str, list[str]]) -> None:
@@ -2503,10 +2257,10 @@ class Handler(SimpleHTTPRequestHandler):
             clean_rs = False
             rs_frame_key = ""
             if provider == "sc":
-                radar_id = query.get("radar", [""])[0]; filename = query.get("file", [""])[0]
-                config = REGIONAL_SC_RADARS.get(radar_id)
+                radar_id = query.get("radar", [""])[0]; filename = query.get("file", [""])[0]; requested = str(query.get("product", ["reflectivity"])[0]).strip().lower(); is_velocity = requested in {"ppi_v", "ppi-v", "velocity", "doppler", "velocidade"}; config = REGIONAL_SC_RADARS.get(radar_id)
                 if not config or not re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", filename): raise ValueError("Imagem SC inválida")
-                response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getImagem", params={"prod": config["product"], "radar": config["code"], "file": filename}, headers=INMET_HEADERS, timeout=25, verify=False)
+                product_code = config.get("velocityProduct") if is_velocity else config.get("reflectivityProduct", config.get("product", "0"))
+                response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getImagem", params={"prod": product_code, "radar": config["code"], "file": filename}, headers=INMET_HEADERS, timeout=25, verify=False)
             elif provider == "rs":
                 frame = int(query.get("frame", ["0"])[0])
                 if frame not in range(1, 25): raise ValueError("Quadro RS inválido")
@@ -2551,7 +2305,7 @@ class Handler(SimpleHTTPRequestHandler):
         if product not in REDEMET_PRODUCTS: self.send_json(400, {"error": "Produto REDEMET inválido."}); return
         try: anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
         except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
-        self.handle_public_json(f"{REDEMET_API_URL}/produtos/radar/{product}?anima={anima}&api_key={REDEMET_API_KEY}", "REDEMET")
+        self.handle_redemet_json(f"/produtos/radar/{product}", {"anima": str(anima)}, "REDEMET")
 
     def handle_cemaden_radar(self, query: dict[str, list[str]]) -> None:
         """Catálogo público de CAPPI 3 km exibido pelo Mapa Interativo do CEMADEN."""
@@ -2585,7 +2339,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json(200, {"status": True, "provider": "CEMADEN / MCTI", "product": "CAPPI 3 km", "radars": radars, "frames": frames, "unavailableRadars": len(CEMADEN_RADARS) - len(radars), "officialUrl": "https://mapainterativo.cemaden.gov.br/"})
 
     def handle_cemaden_pluviometers(self, query: dict[str, list[str]]) -> None:
-        """PluviÃ´metros automÃ¡ticos e acumulado bruto de 24 horas do CEMADEN."""
+        """Pluviômetros automáticos e acumulado bruto de 24 horas do CEMADEN."""
         refresh = query.get("refresh", ["0"])[0] == "1"
         cached = cemaden_pluviometer_cache.get("data")
         age = time.monotonic() - float(cemaden_pluviometer_cache.get("saved_at", 0.0))
@@ -2596,7 +2350,7 @@ class Handler(SimpleHTTPRequestHandler):
             response.raise_for_status()
             source = response.content.decode("utf-8")
             match = re.fullmatch(r"\s*estacoes\((.*)\)\s*;?\s*", source, re.DOTALL)
-            if not match: raise ValueError("Resposta pluviomÃ©trica invÃ¡lida.")
+            if not match: raise ValueError("Resposta pluviométrica inválida.")
             raw = json.loads(match.group(1))
             block = raw[0] if isinstance(raw, list) and raw and isinstance(raw[0], dict) else {}
             stations: list[dict[str, Any]] = []
@@ -2612,8 +2366,8 @@ class Handler(SimpleHTTPRequestHandler):
                 accumulated = item.get("acumulado")
                 try: accumulated = round(max(0.0, float(accumulated)), 2) if accumulated is not None else None
                 except (TypeError, ValueError): accumulated = None
-                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "PluviÃ´metro CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "accumulated24h": accumulated})
-            if not stations: raise ValueError("O catÃ¡logo nÃ£o contÃ©m pluviÃ´metros vÃ¡lidos.")
+                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "Pluviômetro CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "accumulated24h": accumulated})
+            if not stations: raise ValueError("O catálogo não contém pluviômetros válidos.")
             stations.sort(key=lambda item: (item["uf"], item["city"], item["name"], item["code"]))
             counts = {"dry": 0, "light": 0, "moderate": 0, "heavy": 0, "missing": 0}
             for station in stations:
@@ -2627,10 +2381,10 @@ class Handler(SimpleHTTPRequestHandler):
         except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
             if cached is not None:
                 payload = dict(cached); payload["cache"] = True; payload["stale"] = True; self.send_json(200, payload); return
-            self.send_json(502, {"error": "Os pluviÃ´metros do CEMADEN estÃ£o temporariamente indisponÃ­veis.", "details": str(exc)})
+            self.send_json(502, {"error": "Os pluviômetros do CEMADEN estão temporariamente indisponíveis.", "details": str(exc)})
 
     def handle_cemaden_hydrology(self, query: dict[str, list[str]]) -> None:
-        """EstaÃ§Ãµes hidrolÃ³gicas pÃºblicas do CEMADEN, sem repassar a origem ao navegador."""
+        """Estações hidrológicas públicas do CEMADEN, sem repassar a origem ao navegador."""
         refresh = query.get("refresh", ["0"])[0] == "1"
         cached = cemaden_hydrological_cache.get("data")
         age = time.monotonic() - float(cemaden_hydrological_cache.get("saved_at", 0.0))
@@ -2641,7 +2395,7 @@ class Handler(SimpleHTTPRequestHandler):
             response.raise_for_status()
             source = response.content.decode("utf-8")
             match = re.fullmatch(r"\s*estacoes\((.*)\)\s*;?\s*", source, re.DOTALL)
-            if not match: raise ValueError("Resposta hidrolÃ³gica invÃ¡lida.")
+            if not match: raise ValueError("Resposta hidrológica inválida.")
             raw = json.loads(match.group(1))
             block = raw[0] if isinstance(raw, list) and raw and isinstance(raw[0], dict) else {}
             stations: list[dict[str, Any]] = []
@@ -2669,8 +2423,8 @@ class Handler(SimpleHTTPRequestHandler):
                 valid_alert = alert is not None and alert > 0
                 valid_overflow = overflow is not None and overflow > 0
                 category = "missing" if level is None else "overflow" if valid_overflow and level >= overflow else "alert" if valid_alert and level >= alert else "attention" if valid_attention and level >= attention else "normal"
-                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "EstaÃ§Ã£o hidrolÃ³gica CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "level": level, "accumulated24h": accumulated, "attentionLevel": attention if valid_attention else None, "alertLevel": alert if valid_alert else None, "overflowLevel": overflow if valid_overflow else None, "category": category})
-            if not stations: raise ValueError("O catÃ¡logo nÃ£o contÃ©m estaÃ§Ãµes hidrolÃ³gicas vÃ¡lidas.")
+                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "Estação hidrológica CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "level": level, "accumulated24h": accumulated, "attentionLevel": attention if valid_attention else None, "alertLevel": alert if valid_alert else None, "overflowLevel": overflow if valid_overflow else None, "category": category})
+            if not stations: raise ValueError("O catálogo não contém estações hidrológicas válidas.")
             stations.sort(key=lambda item: (item["uf"], item["city"], item["name"], item["code"]))
             counts = {"normal": 0, "attention": 0, "alert": 0, "overflow": 0, "missing": 0}
             for station in stations: counts[station["category"]] += 1
@@ -2681,8 +2435,7 @@ class Handler(SimpleHTTPRequestHandler):
         except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
             if cached is not None:
                 payload = dict(cached); payload["cache"] = True; payload["stale"] = True; self.send_json(200, payload); return
-            self.send_json(502, {"error": "As estaÃ§Ãµes hidrolÃ³gicas do CEMADEN estÃ£o temporariamente indisponÃ­veis.", "details": str(exc)})
-
+            self.send_json(502, {"error": "As estações hidrológicas do CEMADEN estão temporariamente indisponíveis.", "details": str(exc)})
 
     def handle_cemaden_station_detail(self, query: dict[str, list[str]]) -> None:
         """Serie horaria oficial; nivel e fotografias so existem nas estacoes hidrologicas."""
@@ -2795,7 +2548,7 @@ class Handler(SimpleHTTPRequestHandler):
         try: max_size = int(query.get("size", ["1024"])[0])
         except ValueError: self.send_json(400, {"error": "Resolução CPTEC inválida."}); return
         valid_path = bool(re.fullmatch(r"/(?:repositoriogoes/goes19/goes19_web/[A-Za-z0-9_/-]+/S\d+_\d{12}\.jpg|repositoriowebdsa/ultimas/ULT_[A-Z0-9_]+\.jpg)", parsed.path, re.IGNORECASE))
-        if parsed.scheme != "https" or parsed.hostname != CPTEC_SATELLITE_HOST or parsed.query or parsed.fragment or not valid_path or max_size not in {768, 1024, 1536}:
+        if parsed.scheme != "https" or parsed.hostname != CPTEC_SATELLITE_HOST or parsed.query or parsed.fragment or not valid_path or max_size not in {768, 1024, 1536, 2048, 4096}:
             self.send_json(400, {"error": "URL de imagem CPTEC inválida."}); return
         try:
             cache_key = f"{image_url}:{max_size}"; body = cptec_satellite_image_cache.get(cache_key)
@@ -2804,9 +2557,13 @@ class Handler(SimpleHTTPRequestHandler):
                 try:
                     from PIL import Image
                     source = Image.open(io.BytesIO(body)); source.load()
-                    if max(source.size) > max_size:
+                    resized = max(source.size) > max_size
+                    if resized:
                         source.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                    output = io.BytesIO(); source.convert("RGB").save(output, format="JPEG", quality=92, subsampling=0, optimize=True, progressive=True); body = output.getvalue()
+                    # Keep the original bytes at the highest tier.  Re-encoding
+                    # a satellite frame here needlessly destroys cloud texture.
+                    if resized:
+                        output = io.BytesIO(); source.convert("RGB").save(output, format="JPEG", quality=96, subsampling=0, optimize=True, progressive=True); body = output.getvalue()
                 except (ImportError, OSError, ValueError):
                     pass
                 cptec_satellite_image_cache[cache_key] = body
@@ -2817,6 +2574,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def handle_redemet_satellite(self, query: dict[str, list[str]]) -> None:
         """Retorna quadros georreferenciados de satélite sem expor a chave REDEMET."""
+        if not REDEMET_API_KEY:
+            self.send_json(503, {"error": "Servico REDEMET temporariamente indisponivel."}); return
         product = query.get("product", ["realcada"])[0].lower().strip()
         if product not in REDEMET_SATELLITE_PRODUCTS:
             self.send_json(400, {"error": "Produto de satélite REDEMET inválido."}); return
@@ -2958,7 +2717,7 @@ class Handler(SimpleHTTPRequestHandler):
     def handle_redemet_stsc(self, query: dict[str, list[str]]) -> None:
         try: anima = min(6, max(1, int(query.get("anima", ["3"])[0])))
         except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
-        self.handle_public_json(f"{REDEMET_API_URL}/produtos/stsc?anima={anima}&api_key={REDEMET_API_KEY}", "raios STSC/REDEMET")
+        self.handle_redemet_json("/produtos/stsc", {"anima": str(anima)}, "raios STSC/REDEMET")
 
     def prepare_glm_lightning(self, force: bool = False) -> dict[str, Any]:
         now = time.monotonic()
@@ -3023,7 +2782,26 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             self.send_json(502, {"error": "Falha ao carregar a imagem GLM.", "details": f"{type(exc).__name__}: {exc}"})
 
+    def handle_redemet_json(self, path: str, params: dict[str, str], provider: str) -> None:
+        if not REDEMET_API_KEY:
+            self.send_json(503, {"error": "Servico REDEMET temporariamente indisponivel."}); return
+        try:
+            safe_params = dict(params)
+            safe_params["api_key"] = REDEMET_API_KEY
+            response = requests.get(
+                f"{REDEMET_API_URL}{path}", params=safe_params,
+                headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                timeout=25,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("status") is not True: raise ValueError("Resposta REDEMET invalida.")
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, json.JSONDecodeError):
+            self.send_json(502, {"error": f"Falha ao consultar {provider}."})
+
     def fetch_redemet_json(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
+        if not REDEMET_API_KEY: raise RuntimeError("REDEMET nao configurada.")
         response = requests.get(f"{REDEMET_API_URL}{path}", params=params, headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25)
         response.raise_for_status()
         payload = response.json()
@@ -3197,7 +2975,7 @@ class Handler(SimpleHTTPRequestHandler):
             hours = max(0, int(payload.get("hours", 0)))
             grid_x = max(1, min(260, int(payload.get("gridX", 64))))
             grid_y = max(1, min(240, int(payload.get("gridY", 63))))
-            wrf_model = str(payload.get("wrfModel", "gfs")).lower()
+            wrf_model = str(payload.get("wrfModel", "icon")).lower()
             if wrf_model not in WRF_MODEL_OUTPUTS: wrf_model = "icon"
             response_extra: dict[str, Any] = {}
             if path == "/api/gfs/cells":
@@ -3209,9 +2987,7 @@ class Handler(SimpleHTTPRequestHandler):
                     cells = wrf_payload["cells"]
                     response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
             elif path == "/api/wrf/cells":
-                # Todos os modelos publicados pelo GitHub usam a mesma interface.
-                # GFS = WRF 4 km com REFL_10CM. ICON/ECMWF = campos oficiais diretos.
-                wrf_payload = build_remote_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
+                wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
                 cells = wrf_payload["cells"]
                 response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
             elif path == "/api/meteoblue/cells": cells = build_meteoblue_cells(bounds, hours, grid_x, grid_y)
