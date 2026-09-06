@@ -43,7 +43,9 @@ jobs:
           import urllib.request
 
           requested_date = os.environ.get('INPUT_RUN_DATE', '').strip()
-          requested_cycle = os.environ.get('INPUT_RUN_CYCLE', '').strip().zfill(2)
+          requested_cycle = os.environ.get('INPUT_RUN_CYCLE', '').strip()
+          if requested_cycle:
+              requested_cycle = requested_cycle.zfill(2)
 
           def ready(date, cycle):
               url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f072'
@@ -315,7 +317,7 @@ jobs:
           print('Rodadas disponiveis:', [row['id'] for row in rows])
           PY
 
-          printf '# Sideral WRF Sudeste Data\nDois dias · WRF Sudeste 4 km · REFL_10CM nativo.\nRodadas ficam disponíveis em runs/ por até quatro dias.\n' > README.md
+          printf '# Sideral WRF Sudeste Data\nDois dias - WRF Sudeste 4 km - REFL_10CM nativo.\nRodadas ficam disponiveis em runs/ por ate quatro dias.\n' > README.md
           git add .
           git commit -m "GFS-WRF Sudeste publica e arquiva $NEW_RUN_ID [skip render]"
           git push --force origin HEAD:wrf-sudeste-gfs-data
