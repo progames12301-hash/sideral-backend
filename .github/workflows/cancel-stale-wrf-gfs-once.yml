@@ -14,10 +14,10 @@ jobs:
   repair:
     runs-on: ubuntu-22.04
     steps:
-      - name: Forcar cancelamento da run antiga
+      - name: Forcar cancelamento da run antiga sem bloquear
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api --method POST repos/progames12301-hash/sideral-backend/actions/runs/34101333192/force-cancel || true
+        run: timeout 15s gh api --method POST repos/progames12301-hash/sideral-backend/actions/runs/34101333192/force-cancel || true
 
       - uses: actions/checkout@v4
         with:
