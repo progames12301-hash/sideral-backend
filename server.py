@@ -1829,6 +1829,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/redemet/satelite": self.handle_redemet_satellite(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
+        if parsed_path.startswith("/api/cptec/satelite/tile/"): self.handle_cptec_satellite_tile(parsed_path); return
         if parsed_path == "/api/cptec/satelite/imagem": self.handle_cptec_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/glm/lightning": self.handle_glm_lightning(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/glm/image": self.handle_glm_image(); return
@@ -2571,6 +2572,24 @@ class Handler(SimpleHTTPRequestHandler):
             if not body.startswith(b"\xff\xd8") or len(body) < 1000: raise ValueError("Imagem CPTEC inválida")
             self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=60, stale-if-error=600"); self.end_headers(); self.wfile.write(body)
         except (requests.RequestException, ValueError): self.send_json(502, {"error": "Imagem do CPTEC/INPE indisponível."})
+
+    def handle_cptec_satellite_tile(self, parsed_path: str) -> None:
+        """Proxy dos tiles PNG transparentes do DSAT, preservando CORS no mapa."""
+        prefix="/api/cptec/satelite/tile/"; relative=parsed_path[len(prefix):].strip("/"); parts=relative.split("/")
+        if len(parts)==6 and re.fullmatch(r"\d{8}",parts[0]) and re.fullmatch(r"[A-Za-z0-9_]+",parts[1]) and re.fullmatch(r"\d{4}",parts[2]):
+            day,product,time,z,x,y=parts
+            if not re.fullmatch(r"\d{1,2}",z) or not re.fullmatch(r"\d+",x) or not re.fullmatch(r"\d+\.png",y): self.send_json(400,{"error":"Tile CPTEC inválido."}); return
+            upstream=f"https://s1.cptec.inpe.br/goes/goes16/web_tiles/{day}/{product}/{time}/{z}/{x}/{y}"
+        elif len(parts)==5 and parts[0]=="references" and parts[1] in {"countries","labels"}:
+            z,x,y=parts[2:]
+            if not re.fullmatch(r"\d{1,2}",z) or not re.fullmatch(r"\d+",x) or not re.fullmatch(r"\d+\.png",y): self.send_json(400,{"error":"Tile de referência CPTEC inválido."}); return
+            upstream=f"https://s1.cptec.inpe.br/goes/goes16/web_tiles/references/{parts[1]}/{z}/{x}/{y}"
+        else: self.send_json(400,{"error":"Caminho de tile CPTEC inválido."}); return
+        try:
+            response=requests.get(upstream,headers={"User-Agent":INMET_HEADERS["User-Agent"],"Accept":"image/png"},timeout=20); response.raise_for_status(); body=response.content
+            if not body.startswith(b"\x89PNG") or len(body)<100: raise ValueError("PNG CPTEC inválido")
+            self.send_response(200);self.send_header("Content-Type","image/png");self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","public, max-age=300, stale-if-error=1800");self.end_headers();self.wfile.write(body)
+        except (requests.RequestException,ValueError): self.send_json(502,{"error":"Tile transparente CPTEC indisponível."})
 
     def handle_redemet_satellite(self, query: dict[str, list[str]]) -> None:
         """Retorna quadros georreferenciados de satélite sem expor a chave REDEMET."""
