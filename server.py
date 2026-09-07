@@ -1,5 +1,6 @@
 from __future__ import annotations
 import datetime as dt
+import gc
 import csv
 import io
 import html
@@ -2712,12 +2713,18 @@ class Handler(SimpleHTTPRequestHandler):
                 temporary.unlink(missing_ok=True)
                 raise ValueError("Arquivo GOES-19 incompleto.")
             temporary.replace(target)
+            # O Render possui memória/disco limitados: mantenha apenas os
+            # scans recentes; as grades processadas ficam em cache separado.
             files = sorted(GOES19_RAW_CACHE_DIR.glob("*.nc"), key=lambda path: path.stat().st_mtime, reverse=True)
             retained = 0
-            for old in files:
-                retained += old.stat().st_size
-                if retained > 450 * 1024 * 1024 and old != target:
+            for index, old in enumerate(files):
+                if old == target:
+                    retained += old.stat().st_size
+                    continue
+                if index >= 2 or retained + old.stat().st_size > 180 * 1024 * 1024:
                     old.unlink(missing_ok=True)
+                else:
+                    retained += old.stat().st_size
         return target
 
     def handle_goes19_file(self, query: dict[str, list[str]]) -> None:
@@ -2753,7 +2760,8 @@ class Handler(SimpleHTTPRequestHandler):
             west, south, east, north = bbox_values
             if not (-180 <= west < east <= 180 and -85 <= south < north <= 85):
                 raise ValueError("bbox fora dos limites.")
-            width = max(256, min(4096, int(query.get("width", ["2048"])[0])))
+            # 2048 px cobre a resolução regional sem criar picos de RAM.
+            width = max(256, min(2048, int(query.get("width", ["1536"])[0])))
             aspect = (north - south) / max(0.01, (east - west) * math.cos(math.radians((south + north) / 2)))
             height = max(256, min(4096, int(round(width * aspect))))
             GOES19_RAW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -2856,6 +2864,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=86400, immutable")
             self.end_headers()
             self.wfile.write(body)
+            del encoded
+            gc.collect()
         except (ValueError, OSError, requests.RequestException, ImportError) as exc:
             self.send_json(502, {"error": "Grade numérica GOES-19 indisponível.", "details": str(exc)})
 
