@@ -17,7 +17,7 @@ import binascii
 import hashlib
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
-from urllib.parse import unquote, urlparse, parse_qs
+from urllib.parse import unquote, quote, urlparse, parse_qs
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -2649,8 +2649,8 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             product = self._satellite_product_from_query(query); frame = self._goes19_catalog(product, 1).get("frames", [None])[0]
             if not frame: self.send_json(404, {"status": "unavailable", "error": "Nenhum scan GOES-19 disponível."}); return
-            stamp = dt.datetime.fromisoformat(frame["timestamp"].replace("Z", "+00:00")); age = max(0, int((dt.datetime.now(dt.timezone.utc) - stamp).total_seconds() // 60))
-            self.send_json(200, {"satellite": "GOES-19", "product": product.upper(), "scan_start": frame.get("scan_start"), "scan_end": frame.get("scan_end"), "timestamp": frame.get("timestamp"), "age_minutes": age, "key": frame.get("key"), "image_url": f"/api/satellite/image?product={product}&key={quote(frame.get('key',''))}", "status": "ok"})
+            stamp_text = frame.get("timestamp") or frame.get("data"); stamp = dt.datetime.fromisoformat(stamp_text.replace("Z", "+00:00")); age = max(0, int((dt.datetime.now(dt.timezone.utc) - stamp).total_seconds() // 60))
+            self.send_json(200, {"satellite": "GOES-19", "product": product.upper(), "scan_start": frame.get("scan_start") or stamp_text, "scan_end": frame.get("scan_end") or stamp_text, "timestamp": stamp_text, "age_minutes": age, "key": frame.get("key"), "image_url": f"/api/satellite/image?product={product}&key={quote(frame.get('key',''))}", "status": "ok"})
         except (ValueError, requests.RequestException, ET.ParseError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível localizar o último scan GOES-19.", "details": str(exc)})
 
     def handle_satellite_frames(self, query: dict[str, list[str]]) -> None:
