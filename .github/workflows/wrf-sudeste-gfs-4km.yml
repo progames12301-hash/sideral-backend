@@ -94,7 +94,7 @@ jobs:
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 2
       matrix:
         include:
           - { id: "000-009", start: 0, end: 9 }
