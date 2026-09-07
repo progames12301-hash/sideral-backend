@@ -14,6 +14,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import zlib
 import binascii
+import hashlib
+import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from urllib.parse import unquote, urlparse, parse_qs
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -137,6 +139,17 @@ CPTEC_SATELLITE_PRODUCTS = {
     "vis": {"id": "1202", "latest": "ULT_CH2_2.jpg", "label": "GOES-19 — canal 2 visível"},
 }
 CPTEC_SATELLITE_HOST = "satelite.cptec.inpe.br"
+GOES19_BUCKET = "noaa-goes19"
+GOES19_S3_HOST = f"{GOES19_BUCKET}.s3.amazonaws.com"
+GOES19_RAW_CACHE_DIR = Path(os.environ.get("GOES19_RAW_CACHE_DIR", "/tmp/sideral_goes19" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "goes19_cache")))
+GOES19_CHANNELS = {
+    "ir": {"channel": 13, "units": "K", "scale": 0.01, "offset": 150.0, "native_km": 2.0, "label": "Canal 13 infravermelho"},
+    "realcada": {"channel": 13, "units": "K", "scale": 0.01, "offset": 150.0, "native_km": 2.0, "label": "Canal 13 infravermelho realçado"},
+    "vis": {"channel": 2, "units": "1", "scale": 0.0001, "offset": 0.0, "native_km": 0.5, "label": "Canal 2 visível"},
+}
+goes19_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "payload": {}}
+goes19_download_lock = threading.Lock()
+goes19_processing_lock = threading.RLock()
 CPTEC_GLM_INDEX_URL = "https://ftp.cptec.inpe.br/goes/goes19/broadcast/glm/"
 CPTEC_GLM_CACHE_DIR = Path(os.environ.get("GLM_CACHE_DIR", "/tmp/sideral_glm" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "glm_cache")))
 CPTEC_GLM_PNG_PATH = CPTEC_GLM_CACHE_DIR / "latest.png"
@@ -1829,6 +1842,13 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/redemet/satelite": self.handle_redemet_satellite(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/goes19/catalog": self.handle_goes19_catalog(parse_qs(urlparse(self.path).query)); return
+        if parsed_path in {"/api/goes19/grid", "/api/goes19/file"}:
+            with goes19_processing_lock:
+                query = parse_qs(urlparse(self.path).query)
+                if parsed_path.endswith('/grid'): self.handle_goes19_grid(query)
+                else: self.handle_goes19_file(query)
+            return
         if parsed_path.startswith("/api/cptec/satelite/tile/"): self.handle_cptec_satellite_tile(parsed_path); return
         if parsed_path == "/api/cptec/satelite/imagem": self.handle_cptec_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/glm/lightning": self.handle_glm_lightning(parse_qs(urlparse(self.path).query)); return
@@ -2523,6 +2543,266 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=90, stale-if-error=900"); self.end_headers(); self.wfile.write(body)
         except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
             self.send_json(502, {"error": "Imagem do radar CEMADEN indisponível.", "details": str(exc)})
+
+    @staticmethod
+    def _goes19_config(product: str) -> dict[str, Any]:
+        config = GOES19_CHANNELS.get(product)
+        if not config:
+            raise ValueError("Produto GOES-19 inválido.")
+        return config
+
+    @staticmethod
+    def _goes19_key_allowed(key: str, channel: int | None = None) -> bool:
+        match = re.fullmatch(
+            r"ABI-L2-CMIPF/(20\d{2})/(\d{3})/(\d{2})/"
+            r"OR_ABI-L2-CMIPF-M\dC(\d{2})_G19_s\d{14}_e\d{14}_c\d{14}\.nc",
+            key,
+        )
+        return bool(match and (channel is None or int(match.group(4)) == channel))
+
+    @staticmethod
+    def _goes19_time_from_key(key: str) -> dt.datetime:
+        match = re.search(r"_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})", key)
+        if not match:
+            raise ValueError("Horário ausente no arquivo GOES-19.")
+        year, day, hour, minute, second = map(int, match.groups())
+        return dt.datetime(year, 1, 1, tzinfo=dt.timezone.utc) + dt.timedelta(days=day - 1, hours=hour, minutes=minute, seconds=second)
+
+    def _goes19_catalog(self, product: str, limit: int) -> dict[str, Any]:
+        config = self._goes19_config(product)
+        cache_key = f"{product}:{limit}"
+        cached = goes19_catalog_cache["payload"].get(cache_key)
+        if cached and time.monotonic() - goes19_catalog_cache["saved_at"] < 90:
+            return cached
+        now = dt.datetime.now(dt.timezone.utc)
+        entries: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        channel = int(config["channel"])
+        for hours_back in range(0, 8):
+            instant = now - dt.timedelta(hours=hours_back)
+            day = instant.timetuple().tm_yday
+            prefix = f"ABI-L2-CMIPF/{instant.year}/{day:03d}/{instant.hour:02d}/OR_ABI-L2-CMIPF-M6C{channel:02d}_G19"
+            response = requests.get(
+                f"https://{GOES19_S3_HOST}/",
+                params={"list-type": "2", "prefix": prefix, "max-keys": "100"},
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/xml"},
+                timeout=25,
+            )
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+            for node in root.findall("{*}Contents"):
+                key = (node.findtext("{*}Key") or "").strip()
+                if key in seen or not self._goes19_key_allowed(key, channel):
+                    continue
+                seen.add(key)
+                observed = self._goes19_time_from_key(key)
+                entries.append({
+                    "key": key,
+                    "data": observed.isoformat().replace("+00:00", "Z"),
+                    "bytes": int(node.findtext("{*}Size") or 0),
+                    "original": f"https://{GOES19_S3_HOST}/{key}",
+                })
+            if len(entries) >= limit:
+                break
+        entries.sort(key=lambda item: item["data"])
+        entries = entries[-limit:]
+        payload = {
+            "status": True,
+            "provider": "NOAA/NODD — GOES-19 ABI",
+            "product": config["label"],
+            "instrument": "ABI",
+            "channel": channel,
+            "units": config["units"],
+            "nativeResolutionKm": config["native_km"],
+            "frames": entries,
+        }
+        goes19_catalog_cache["saved_at"] = time.monotonic()
+        goes19_catalog_cache["payload"][cache_key] = payload
+        return payload
+
+    def handle_goes19_catalog(self, query: dict[str, list[str]]) -> None:
+        try:
+            product = query.get("product", ["ir"])[0].lower()
+            limit = max(1, min(24, int(query.get("limit", ["10"])[0])))
+            self.send_json(200, self._goes19_catalog(product, limit))
+        except (ValueError, requests.RequestException, ET.ParseError) as exc:
+            self.send_json(502, {"error": "Não foi possível consultar os arquivos brutos GOES-19.", "details": str(exc)})
+
+    def _goes19_local_file(self, key: str) -> Path:
+        if not self._goes19_key_allowed(key):
+            raise ValueError("Arquivo GOES-19 inválido.")
+        GOES19_RAW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        target = GOES19_RAW_CACHE_DIR / Path(key).name
+        if target.exists() and target.stat().st_size > 1_000_000:
+            return target
+        with goes19_download_lock:
+            if target.exists() and target.stat().st_size > 1_000_000:
+                return target
+            temporary = target.with_suffix(".part")
+            response = requests.get(
+                f"https://{GOES19_S3_HOST}/{key}",
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/x-netcdf"},
+                stream=True,
+                timeout=180,
+            )
+            response.raise_for_status()
+            expected = int(response.headers.get("Content-Length", "0") or 0)
+            if expected > 320 * 1024 * 1024:
+                raise ValueError("Arquivo GOES-19 excede o limite operacional.")
+            with temporary.open("wb") as output:
+                for chunk in response.iter_content(1024 * 1024):
+                    if chunk:
+                        output.write(chunk)
+            if temporary.stat().st_size < 1_000_000:
+                temporary.unlink(missing_ok=True)
+                raise ValueError("Arquivo GOES-19 incompleto.")
+            temporary.replace(target)
+            files = sorted(GOES19_RAW_CACHE_DIR.glob("*.nc"), key=lambda path: path.stat().st_mtime, reverse=True)
+            retained = 0
+            for old in files:
+                retained += old.stat().st_size
+                if retained > 450 * 1024 * 1024 and old != target:
+                    old.unlink(missing_ok=True)
+        return target
+
+    def handle_goes19_file(self, query: dict[str, list[str]]) -> None:
+        try:
+            key = unquote(query.get("key", [""])[0])
+            path = self._goes19_local_file(key)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-netcdf")
+            self.send_header("Content-Length", str(path.stat().st_size))
+            self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+            self.send_header("Cache-Control", "public, max-age=86400, immutable")
+            self.end_headers()
+            with path.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    self.wfile.write(chunk)
+        except (ValueError, OSError, requests.RequestException) as exc:
+            self.send_json(502, {"error": "Arquivo bruto GOES-19 indisponível.", "details": str(exc)})
+
+    def handle_goes19_grid(self, query: dict[str, list[str]]) -> None:
+        """Entrega valores físicos, não uma imagem. Formato: uint32 header + JSON + uint16 LE."""
+        try:
+            import numpy as np
+            from netCDF4 import Dataset
+
+            product = query.get("product", ["ir"])[0].lower()
+            config = self._goes19_config(product)
+            key = unquote(query.get("key", [""])[0])
+            if not self._goes19_key_allowed(key, int(config["channel"])):
+                raise ValueError("O canal do arquivo não corresponde ao produto.")
+            bbox_values = [float(value) for value in query.get("bbox", ["-100,-56,-25,15"])[0].split(",")]
+            if len(bbox_values) != 4:
+                raise ValueError("bbox inválido.")
+            west, south, east, north = bbox_values
+            if not (-180 <= west < east <= 180 and -85 <= south < north <= 85):
+                raise ValueError("bbox fora dos limites.")
+            width = max(256, min(4096, int(query.get("width", ["2048"])[0])))
+            aspect = (north - south) / max(0.01, (east - west) * math.cos(math.radians((south + north) / 2)))
+            height = max(256, min(4096, int(round(width * aspect))))
+            GOES19_RAW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            cache_digest = hashlib.sha1(f"mercator-v2|{key}|{product}|{west},{south},{east},{north}|{width}x{height}".encode("utf-8")).hexdigest()
+            grid_cache = GOES19_RAW_CACHE_DIR / f"grid-{cache_digest}.bin"
+            if grid_cache.exists() and grid_cache.stat().st_size > 1024:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.sideral.raster+octet-stream")
+                self.send_header("Content-Length", str(grid_cache.stat().st_size))
+                self.send_header("Cache-Control", "public, max-age=86400, immutable")
+                self.end_headers()
+                with grid_cache.open("rb") as cached_grid:
+                    while chunk := cached_grid.read(1024 * 1024):
+                        self.wfile.write(chunk)
+                return
+            path = self._goes19_local_file(key)
+
+            with Dataset(path, "r") as dataset:
+                projection = dataset.variables["goes_imager_projection"]
+                satellite_height = float(projection.perspective_point_height) + float(projection.semi_major_axis)
+                semi_major = float(projection.semi_major_axis)
+                semi_minor = float(projection.semi_minor_axis)
+                longitude_origin = math.radians(float(projection.longitude_of_projection_origin))
+                eccentricity_sq = (semi_major ** 2 - semi_minor ** 2) / semi_major ** 2
+
+                def project(longitude: Any, latitude: Any) -> tuple[Any, Any]:
+                    lon_rad = np.radians(longitude)
+                    lat_rad = np.radians(latitude)
+                    geocentric_lat = np.arctan((semi_minor ** 2 / semi_major ** 2) * np.tan(lat_rad))
+                    radius = semi_minor / np.sqrt(1 - eccentricity_sq * np.cos(geocentric_lat) ** 2)
+                    delta_lon = lon_rad - longitude_origin
+                    sx = satellite_height - radius * np.cos(geocentric_lat) * np.cos(delta_lon)
+                    sy = -radius * np.cos(geocentric_lat) * np.sin(delta_lon)
+                    sz = radius * np.sin(geocentric_lat)
+                    visible = satellite_height * (satellite_height - sx) >= sy * sy + (semi_major / semi_minor) ** 2 * sz * sz + (satellite_height - sx) ** 2
+                    return np.where(visible, np.arcsin(-sy / np.sqrt(sx * sx + sy * sy + sz * sz)), np.nan), np.where(visible, np.arctan2(sz, sx), np.nan)
+
+                x_axis = np.asarray(dataset.variables["x"][:], dtype=np.float64)
+                y_axis = np.asarray(dataset.variables["y"][:], dtype=np.float64)
+                variable = dataset.variables["CMI"]
+                # O recorte inclui somente o setor requerido. O Full Disk nunca é
+                # expandido inteiro na memória do Render.
+                edge_lon = np.concatenate((np.linspace(west, east, 181), np.full(181, west), np.full(181, east), np.linspace(west, east, 181)))
+                edge_lat = np.concatenate((np.full(181, south), np.linspace(south, north, 181), np.linspace(south, north, 181), np.full(181, north)))
+                edge_x, edge_y = project(edge_lon, edge_lat)
+                valid_edge = np.isfinite(edge_x) & np.isfinite(edge_y)
+                if not valid_edge.any():
+                    raise ValueError('Região fora da área visível do GOES-19.')
+                ix_edge = np.rint((edge_x[valid_edge] - x_axis[0]) / (x_axis[-1] - x_axis[0]) * (len(x_axis) - 1)).astype(int)
+                iy_edge = np.rint((edge_y[valid_edge] - y_axis[0]) / (y_axis[-1] - y_axis[0]) * (len(y_axis) - 1)).astype(int)
+                pad = 4
+                x0 = max(0, int(ix_edge.min()) - pad); x1 = min(len(x_axis), int(ix_edge.max()) + pad + 1)
+                y0 = max(0, int(iy_edge.min()) - pad); y1 = min(len(y_axis), int(iy_edge.max()) + pad + 1)
+                source_width, source_height = x1 - x0, y1 - y0
+                source_stride = max(1, int(math.ceil(max(source_width / width, source_height / height))))
+                crop = np.ma.filled(variable[y0:y1:source_stride, x0:x1:source_stride], np.nan).astype(np.float32, copy=False)
+
+                scale = float(config["scale"]); offset = float(config["offset"]); nodata = 65535
+                encoded = np.full((height, width), nodata, dtype="<u2")
+                longitudes = west + (np.arange(width, dtype=np.float64) + 0.5) * (east - west) / width
+                mercator_north = math.asinh(math.tan(math.radians(north)))
+                mercator_south = math.asinh(math.tan(math.radians(south)))
+                for row in range(height):
+                    mercator_y = mercator_north - (row + 0.5) * (mercator_north - mercator_south) / height
+                    latitude = math.degrees(math.atan(math.sinh(mercator_y)))
+                    projected_x, projected_y = project(longitudes, np.full(width, latitude))
+                    ix = np.rint(np.nan_to_num((projected_x - x_axis[0]) / (x_axis[-1] - x_axis[0]) * (len(x_axis) - 1), nan=-1)).astype(np.int32)
+                    iy = np.rint(np.nan_to_num((projected_y - y_axis[0]) / (y_axis[-1] - y_axis[0]) * (len(y_axis) - 1), nan=-1)).astype(np.int32)
+                    crop_x = (ix - x0) // source_stride; crop_y = (iy - y0) // source_stride
+                    valid = np.isfinite(projected_x) & np.isfinite(projected_y) & (crop_x >= 0) & (crop_x < crop.shape[1]) & (crop_y >= 0) & (crop_y < crop.shape[0])
+                    if not valid.any():
+                        continue
+                    values = np.full(width, np.nan, dtype=np.float32)
+                    values[valid] = crop[crop_y[valid], crop_x[valid]]
+                    finite = np.isfinite(values)
+                    quantized = np.clip(np.rint((values[finite] - offset) / scale), 0, nodata - 1).astype("<u2")
+                    encoded[row, finite] = quantized
+
+            metadata = {
+                "format": "sideral-grid-u16-v1", "width": width, "height": height,
+                "bbox": [west, south, east, north], "scale": scale, "offset": offset,
+                "nodata": nodata, "units": config["units"], "channel": config["channel"],
+                "nativeResolutionKm": config["native_km"], "projection": "EPSG:3857", "bboxCRS": "EPSG:4326",
+                "sourceSamplingStep": source_stride, "resampling": "nearest", "quantizationStep": scale,
+                "sourceProjection": "GOES-R ABI fixed grid", "observedAt": self._goes19_time_from_key(key).isoformat().replace("+00:00", "Z"),
+            }
+            header = json.dumps(metadata, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            if len(header) % 2:
+                header += b" "
+            body = struct.pack("<I", len(header)) + header + encoded.tobytes(order="C")
+            temporary_grid = grid_cache.with_suffix(".part")
+            temporary_grid.write_bytes(body)
+            temporary_grid.replace(grid_cache)
+            cached_grids = sorted(GOES19_RAW_CACHE_DIR.glob("grid-*.bin"), key=lambda item: item.stat().st_mtime, reverse=True)
+            for old_grid in cached_grids[6:]:
+                old_grid.unlink(missing_ok=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.sideral.raster+octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=86400, immutable")
+            self.end_headers()
+            self.wfile.write(body)
+        except (ValueError, OSError, requests.RequestException, ImportError) as exc:
+            self.send_json(502, {"error": "Grade numérica GOES-19 indisponível.", "details": str(exc)})
 
     def handle_cptec_satellite(self, query: dict[str, list[str]]) -> None:
         product = query.get("product", ["realcada"])[0].lower(); config = CPTEC_SATELLITE_PRODUCTS.get(product)
