@@ -41,30 +41,35 @@ jobs:
           python3 - <<'PY'
           import datetime as dt
           import json
+          from pathlib import Path
 
           runs = json.load(open('/tmp/wrf-runs.json', encoding='utf-8'))
+          decision = 'dispatch'
+          reason = 'nenhuma execucao ativa ou sucesso recente'
+
           active = [r for r in runs if r.get('status') in {'queued', 'in_progress', 'waiting', 'pending'}]
           if active:
-              print('WRF Sul GFS ja possui execucao ativa:', active[0])
-              raise SystemExit(10)
+              decision = 'skip'
+              reason = f"execucao ativa: {active[0]}"
+          else:
+              now = dt.datetime.now(dt.timezone.utc)
+              successes = [r for r in runs if r.get('status') == 'completed' and r.get('conclusion') == 'success']
+              for run in successes:
+                  created = dt.datetime.fromisoformat(run['createdAt'].replace('Z', '+00:00'))
+                  age_h = (now - created).total_seconds() / 3600
+                  if age_h <= 10:
+                      decision = 'skip'
+                      reason = f'ultimo sucesso iniciado ha {age_h:.1f} h'
+                      break
 
-          now = dt.datetime.now(dt.timezone.utc)
-          successes = [r for r in runs if r.get('status') == 'completed' and r.get('conclusion') == 'success']
-          for run in successes:
-              created = dt.datetime.fromisoformat(run['createdAt'].replace('Z', '+00:00'))
-              age_h = (now - created).total_seconds() / 3600
-              if age_h <= 10:
-                  print(f'WRF Sul GFS recente: {age_h:.1f} h; nao precisa disparar.')
-                  raise SystemExit(11)
-
-          print('Nenhuma execucao ativa ou sucesso recente: deve disparar.')
+          Path('/tmp/wrf-decision.txt').write_text(decision, encoding='utf-8')
+          print('Decisao:', decision, '-', reason)
           PY
-          rc=$?
-          if [ "$rc" -eq 10 ] || [ "$rc" -eq 11 ]; then
+
+          decision="$(cat /tmp/wrf-decision.txt)"
+          if [ "$decision" = "skip" ]; then
+            echo "WRF Sul GFS ja esta coberto; nenhum novo run necessario."
             exit 0
-          fi
-          if [ "$rc" -ne 0 ]; then
-            exit "$rc"
           fi
 
           echo "Disparando WRF Sul GFS completo..."
