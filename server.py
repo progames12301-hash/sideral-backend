@@ -1843,6 +1843,13 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/goes19/catalog": self.handle_goes19_catalog(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/products": self.handle_satellite_products(); return
+        if parsed_path == "/api/satellite/latest": self.handle_satellite_latest(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/frames": self.handle_satellite_frames(parse_qs(urlparse(self.path).query)); return
+        if parsed_path in {"/api/satellite/image", "/api/satellite/raw-grid"}: 
+            with goes19_processing_lock: self.handle_goes19_grid(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/value": self.handle_satellite_value(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/status": self.handle_satellite_status(); return
         if parsed_path in {"/api/goes19/grid", "/api/goes19/file"}:
             with goes19_processing_lock:
                 query = parse_qs(urlparse(self.path).query)
@@ -2627,6 +2634,54 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(200, self._goes19_catalog(product, limit))
         except (ValueError, requests.RequestException, ET.ParseError) as exc:
             self.send_json(502, {"error": "Não foi possível consultar os arquivos brutos GOES-19.", "details": str(exc)})
+
+    def handle_satellite_products(self) -> None:
+        self.send_json(200, {"satellite": "GOES-19", "instrument": "ABI", "provider": "NOAA/NODD", "products": [
+            {"id": "C13", "product": "ir", "label": "C13 — Clean Longwave IR", "wavelength_um": 10.3, "units": "K", "nativeResolutionKm": 2, "available": True},
+            {"id": "C02", "product": "vis", "label": "C02 — Red Visible", "wavelength_um": 0.64, "units": "reflectance", "nativeResolutionKm": 0.5, "available": True}
+        ], "note": "Os demais produtos serão habilitados após validação dos arquivos NetCDF reais."})
+
+    def _satellite_product_from_query(self, query: dict[str, list[str]]) -> str:
+        product = query.get("product", ["C13"])[0].lower()
+        return {"c13": "ir", "ir": "ir", "c02": "vis", "vis": "vis", "realcada": "ir"}.get(product, product)
+
+    def handle_satellite_latest(self, query: dict[str, list[str]]) -> None:
+        try:
+            product = self._satellite_product_from_query(query); frame = self._goes19_catalog(product, 1).get("frames", [None])[0]
+            if not frame: self.send_json(404, {"status": "unavailable", "error": "Nenhum scan GOES-19 disponível."}); return
+            stamp = dt.datetime.fromisoformat(frame["timestamp"].replace("Z", "+00:00")); age = max(0, int((dt.datetime.now(dt.timezone.utc) - stamp).total_seconds() // 60))
+            self.send_json(200, {"satellite": "GOES-19", "product": product.upper(), "scan_start": frame.get("scan_start"), "scan_end": frame.get("scan_end"), "timestamp": frame.get("timestamp"), "age_minutes": age, "key": frame.get("key"), "image_url": f"/api/satellite/image?product={product}&key={quote(frame.get('key',''))}", "status": "ok"})
+        except (ValueError, requests.RequestException, ET.ParseError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível localizar o último scan GOES-19.", "details": str(exc)})
+
+    def handle_satellite_frames(self, query: dict[str, list[str]]) -> None:
+        try:
+            product = self._satellite_product_from_query(query); limit = max(1, min(72, int(query.get("limit", ["36"])[0]))); self.send_json(200, self._goes19_catalog(product, limit))
+        except (ValueError, requests.RequestException, ET.ParseError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível consultar a timeline GOES-19.", "details": str(exc)})
+
+    def handle_satellite_status(self) -> None:
+        try:
+            frame = self._goes19_catalog("ir", 1).get("frames", [None])[0]; cached = len(list(GOES19_RAW_CACHE_DIR.glob("*.nc"))) if GOES19_RAW_CACHE_DIR.exists() else 0
+            self.send_json(200, {"status": "ok" if frame else "degraded", "satellite": "GOES-19", "latest_scan": frame.get("timestamp") if frame else None, "products_available": 2, "cache": {"frames": cached}})
+        except Exception as exc: self.send_json(502, {"status": "error", "error": "Status GOES-19 indisponível.", "details": str(exc)})
+
+    def handle_satellite_value(self, query: dict[str, list[str]]) -> None:
+        try:
+            import numpy as np
+            from netCDF4 import Dataset
+            lat = float(query.get("lat", [""])[0]); lon = float(query.get("lon", [""])[0])
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180): raise ValueError("Coordenadas inválidas.")
+            product = self._satellite_product_from_query(query); frame = self._goes19_catalog(product, 1).get("frames", [None])[0]
+            if not frame: self.send_json(404, {"status": "unavailable"}); return
+            config = self._goes19_config(product); path = self._goes19_local_file(frame["key"])
+            with Dataset(path, "r") as dataset:
+                projection = dataset.variables["goes_imager_projection"]; height = float(projection.perspective_point_height) + float(projection.semi_major_axis); a = float(projection.semi_major_axis); b = float(projection.semi_minor_axis); lon0 = math.radians(float(projection.longitude_of_projection_origin)); e2 = (a*a-b*b)/(a*a)
+                latr = math.radians(lat); lonr = math.radians(lon); geoc = math.atan((b*b/a/a)*math.tan(latr)); radius = b/math.sqrt(1-e2*math.cos(geoc)**2); dl = lonr-lon0; sx = height-radius*math.cos(geoc)*math.cos(dl); sy = -radius*math.cos(geoc)*math.sin(dl); sz = radius*math.sin(geoc); visible = height*(height-sx) >= sy*sy+(a/b)**2*sz*sz+(height-sx)**2
+                if not visible: self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame["timestamp"]}); return
+                x = math.asin(-sy/math.sqrt(sx*sx+sy*sy+sz*sz)); y = math.atan2(sz, sx); xs = np.asarray(dataset.variables["x"][:]); ys = np.asarray(dataset.variables["y"][:]); ix = int(round((x-xs[0])/(xs[-1]-xs[0])*(len(xs)-1))); iy = int(round((y-ys[0])/(ys[-1]-ys[0])*(len(ys)-1)))
+                if not (0 <= ix < len(xs) and 0 <= iy < len(ys)): self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame["timestamp"]}); return
+                raw = dataset.variables["CMI"][iy, ix]; value = float(raw) * float(config["scale"]) + float(config["offset"])
+            self.send_json(200, {"status": "ok", "lat": lat, "lon": lon, "product": product.upper(), "value": value, "units": config["units"], "timestamp": frame["timestamp"], "source": "NOAA/NODD — GOES-19 ABI"})
+        except (ValueError, OSError, requests.RequestException, ImportError, IndexError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível amostrar o pixel GOES-19.", "details": str(exc)})
 
     def _goes19_local_file(self, key: str) -> Path:
         if not self._goes19_key_allowed(key):
