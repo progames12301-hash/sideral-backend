@@ -11,6 +11,9 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from extract_wrf_severe import compute_frame as compute_severe_frame
+from extract_wrf_severe import flat_round as severe_flat_round
+
 
 def safe_round_array(values: np.ndarray, decimals: int) -> list[float]:
     arr = np.asarray(values, dtype=float)
@@ -25,19 +28,11 @@ def wind_direction_deg(u: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 
 def native_composite_reflectivity(dataset: xr.Dataset) -> np.ndarray:
-    """Retorna refletividade composta usando exclusivamente REFL_10CM do WRF.
-
-    REFL_10CM e calculado pelo proprio WRF quando do_radar_ref=1 para os
-    esquemas de microfisica suportados. Nao usamos conversao Z-R nem formula
-    empirica de hidrometeoros como fallback: se o campo nao existir, a
-    publicacao deve falhar para evitar divulgar uma refletividade enganosa.
-    """
     if "REFL_10CM" not in dataset:
         raise RuntimeError(
             "REFL_10CM ausente no wrfout. Verifique do_radar_ref=1 e a microfisica; "
             "a Sideral nao publica refletividade aproximada como substituta."
         )
-
     raw = np.asarray(dataset["REFL_10CM"].isel(Time=0).to_numpy(), dtype=float)
     if raw.ndim == 3:
         composite = np.nanmax(raw, axis=0)
@@ -45,15 +40,10 @@ def native_composite_reflectivity(dataset: xr.Dataset) -> np.ndarray:
         composite = raw
     else:
         raise RuntimeError(f"REFL_10CM possui dimensao inesperada: shape={raw.shape}")
-
     finite = np.isfinite(composite)
     if not np.any(finite):
         raise RuntimeError("REFL_10CM nao possui nenhum valor finito.")
-
-    # Valores negativos representam ausencia/eco muito fraco. Mantemos o
-    # valor meteorologico nativo e apenas normalizamos o intervalo de exibicao.
-    composite = np.where(finite, composite, 0.0)
-    return np.clip(composite, 0.0, 95.0)
+    return np.clip(np.where(finite, composite, 0.0), 0.0, 95.0)
 
 
 def parse_run_env(path: Path) -> dict[str, str]:
@@ -95,6 +85,61 @@ def sample2d(values: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarr
     return np.asarray(values)[np.ix_(rows, cols)]
 
 
+def severe_payload(fields: dict[str, np.ndarray], methods: dict, *, model: str, run_date: str, run_cycle: str,
+                   init_time: dt.datetime, valid_time: dt.datetime, forecast_hour: int,
+                   dx_m: float, dy_m: float, rows: np.ndarray, cols: np.ndarray) -> dict:
+    lat = fields['lat']
+    lon = fields['lon']
+    return {
+        'schema': 'sideral-wrf2-severe-grid-v1',
+        'model': model,
+        'source': f'WRF 2 Sudeste 4 km {model.upper()} · diagnósticos severos',
+        'runDate': run_date,
+        'runCycle': f'{run_cycle}Z',
+        'initTime': init_time.isoformat().replace('+00:00', 'Z'),
+        'forecastHour': forecast_hour,
+        'validTime': valid_time.isoformat().replace('+00:00', 'Z'),
+        'dxMeters': int(round(dx_m)),
+        'dyMeters': int(round(dy_m)),
+        'gridX': len(cols),
+        'gridY': len(rows),
+        'bounds': {
+            'south': round(float(np.nanmin(lat)), 4),
+            'west': round(float(np.nanmin(lon)), 4),
+            'north': round(float(np.nanmax(lat)), 4),
+            'east': round(float(np.nanmax(lon)), 4),
+        },
+        'diagnosticMethods': methods,
+        'fields': {
+            'lat': severe_flat_round(fields['lat'], 4),
+            'lon': severe_flat_round(fields['lon'], 4),
+            'stp': severe_flat_round(fields['stp'], 2, 0.0, 10.0),
+            'scp': severe_flat_round(fields['scp'], 2, 0.0, 50.0),
+            'srh01': severe_flat_round(fields['srh01'], 0, -1000.0, 1000.0),
+            'srh03': severe_flat_round(fields['srh03'], 0, -1500.0, 1500.0),
+            'bulkShear06': severe_flat_round(fields['bulkShear06'], 1, 0.0, 100.0),
+            'effectiveBulkShear': severe_flat_round(fields['effectiveBulkShear'], 1, 0.0, 100.0),
+            'lclHeight': severe_flat_round(fields['lclHeight'], 0, 0.0, 5000.0),
+            'cin': severe_flat_round(fields['cin'], 0, -600.0, 0.0),
+            'sbcape': severe_flat_round(fields['sbcape'], 0, 0.0, 8000.0),
+            'mlcape': severe_flat_round(fields['mlcape'], 0, 0.0, 8000.0),
+            'mucapeWrf2': severe_flat_round(fields['mucapeWrf2'], 0, 0.0, 8000.0),
+            'pwat': severe_flat_round(fields['pwat'], 1, 0.0, 100.0),
+            'thetaE850': severe_flat_round(fields['thetaE850'], 1, 250.0, 400.0),
+            'thetaEAdvection': severe_flat_round(fields['thetaEAdvection'], 2, -20.0, 20.0),
+            'wind850': severe_flat_round(fields['wind850'], 1, 0.0, 100.0),
+            'wind500': severe_flat_round(fields['wind500'], 1, 0.0, 120.0),
+            'vorticity500': severe_flat_round(fields['vorticity500'], 7, -0.002, 0.002),
+            'omega700': severe_flat_round(fields['omega700'], 3, -20.0, 20.0),
+            'mslp': severe_flat_round(fields['mslp'], 1, 850.0, 1080.0),
+            'thickness': severe_flat_round(fields['thickness'], 1, 450.0, 650.0),
+            'dewpoint2m': severe_flat_round(fields['dewpoint2m'], 1, -80.0, 40.0),
+            'kIndex': severe_flat_round(fields['kIndex'], 1, -50.0, 70.0),
+            'totalTotals': severe_flat_round(fields['totalTotals'], 1, -20.0, 80.0),
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", default="wrf_work/run")
@@ -123,6 +168,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     frames: list[dict] = []
     previous_rain: np.ndarray | None = None
+    severe_methods: dict | None = None
 
     for index, path in enumerate(files):
         valid_time = parse_valid_time(path)
@@ -161,11 +207,6 @@ def main() -> None:
                 "fractionAbove40Dbz": round(float(np.mean(reflectivity >= 40.0)), 5),
                 "positivePixels": int(refl_positive.size),
             }
-            print(
-                f"REFL_10CM nativo F{forecast_hour:03d}: "
-                f"max={refl_stats['maxDbz']} dBZ p99={refl_stats['p99Dbz']} dBZ "
-                f">=40dBZ={refl_stats['fractionAbove40Dbz'] * 100:.2f}%"
-            )
 
             temp_for_es = np.maximum(-80.0, t2m)
             es = 6.112 * np.exp((17.67 * temp_for_es) / (temp_for_es + 243.5))
@@ -190,8 +231,6 @@ def main() -> None:
             dudy = np.gradient(u10, dy_m, axis=0)
             vorticity = dvdx - dudy
 
-            # Mantido por compatibilidade com o produto atual. Esta variavel ainda
-            # nao deve ser apresentada como MUCAPE diagnostico nativo do WRF.
             mucape = np.maximum(0.0, (t2m - 20.0) * rh2 * 8.0)
 
             native_y, native_x = t2m.shape
@@ -243,8 +282,17 @@ def main() -> None:
                 },
             }
 
+            severe_fields, severe_methods = compute_severe_frame(dataset, rows, cols)
+            severe = severe_payload(
+                severe_fields, severe_methods, model='gfs', run_date=run_date, run_cycle=run_cycle,
+                init_time=init_time, valid_time=valid_time, forecast_hour=forecast_hour,
+                dx_m=dx_m, dy_m=dy_m, rows=rows, cols=cols,
+            )
+
         filename = f"gfs/f{forecast_hour:03d}.json.gz"
         write_gzip_json(output_dir / filename, payload)
+        severe_filename = f"severe/gfs/f{forecast_hour:03d}.json.gz"
+        write_gzip_json(output_dir / severe_filename, severe)
         frames.append({
             "index": len(frames),
             "forecastHour": forecast_hour,
@@ -255,6 +303,7 @@ def main() -> None:
             "source": payload["source"],
             "reflectivitySource": payload["reflectivitySource"],
             "reflectivityStats": payload["reflectivityStats"],
+            "severeFile": severe_filename,
         })
 
     metadata = {
@@ -266,6 +315,15 @@ def main() -> None:
         "initTime": init_time.isoformat().replace("+00:00", "Z"),
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
         "reflectivitySource": "REFL_10CM_NATIVE",
+        "wrf2SevereDiagnostics": True,
+        "wrf2SeverePathTemplate": "severe/{model}/f{forecastHour:03d}.json.gz",
+        "wrf2SevereFields": [
+            "stp", "scp", "srh01", "srh03", "bulkShear06", "effectiveBulkShear",
+            "lclHeight", "cin", "sbcape", "mlcape", "mucapeWrf2", "pwat",
+            "thetaE850", "thetaEAdvection", "wind850", "wind500", "vorticity500",
+            "omega700", "mslp", "thickness", "dewpoint2m", "kIndex", "totalTotals"
+        ],
+        "wrf2DiagnosticMethods": severe_methods or {},
         "frameCount": len(frames),
         "temporalResolutionMinutes": (
             (frames[1]["forecastHour"] - frames[0]["forecastHour"]) * 60
