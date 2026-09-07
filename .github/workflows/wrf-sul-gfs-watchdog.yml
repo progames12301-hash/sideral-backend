@@ -3,8 +3,8 @@ name: WRF Sul GFS - WATCHDOG AUTOMATICO
 on:
   workflow_dispatch:
   schedule:
-    # Confere quatro vezes por dia. So dispara se nao houver rodada ativa
-    # e se nenhuma rodada bem-sucedida tiver sido iniciada nas ultimas 10 h.
+    # Confere quatro vezes por dia. So dispara se nao houver rodada ativa,
+    # sucesso recente ou outros WRF regionais esperando runners.
     - cron: "5 0,6,12,18 * * *"
   push:
     branches: [main]
@@ -36,30 +36,55 @@ jobs:
           echo "Verificando $TARGET_WORKFLOW"
           gh run list --workflow "$TARGET_WORKFLOW" --limit 20 \
             --json databaseId,status,conclusion,createdAt,event > /tmp/wrf-runs.json
-          cat /tmp/wrf-runs.json
+
+          # O GFS Sul e o mais pesado. Se outros WRF regionais estiverem
+          # executando ou aguardando runner, ele espera a proxima checagem.
+          gh api "repos/$GH_REPO/actions/runs?status=queued&per_page=100" > /tmp/queued.json
+          gh api "repos/$GH_REPO/actions/runs?status=in_progress&per_page=100" > /tmp/in-progress.json
 
           python3 - <<'PY'
           import datetime as dt
           import json
           from pathlib import Path
 
-          runs = json.load(open('/tmp/wrf-runs.json', encoding='utf-8'))
+          target_runs = json.load(open('/tmp/wrf-runs.json', encoding='utf-8'))
+          queued = json.load(open('/tmp/queued.json', encoding='utf-8')).get('workflow_runs', [])
+          running = json.load(open('/tmp/in-progress.json', encoding='utf-8')).get('workflow_runs', [])
+
           decision = 'dispatch'
           reason = 'nenhuma execucao ativa ou sucesso recente'
 
-          active = [r for r in runs if r.get('status') in {'queued', 'in_progress', 'waiting', 'pending'}]
-          if active:
+          active_target = [r for r in target_runs if r.get('status') in {'queued', 'in_progress', 'waiting', 'pending'}]
+          if active_target:
               decision = 'skip'
-              reason = f"execucao ativa: {active[0]}"
-          else:
+              reason = f"GFS Sul ja ativo: {active_target[0]}"
+
+          if decision == 'dispatch':
+              # Nao deixa o GFS Sul de 8 segmentos tomar runners enquanto
+              # ICON/ECMWF/Sudeste ainda precisam sair da fila.
+              others = []
+              for run in queued + running:
+                  name = str(run.get('name') or '')
+                  if not name.startswith('WRF'):
+                      continue
+                  if name in {'WRF 4 km - DOIS DIAS AUTOMATICO', 'WRF Sul GFS - WATCHDOG AUTOMATICO'}:
+                      continue
+                  if 'RUNNER RELIEF' in name:
+                      continue
+                  others.append({'name': name, 'status': run.get('status'), 'id': run.get('id')})
+              if others:
+                  decision = 'skip'
+                  reason = f'outros WRF regionais precisam dos runners: {others[:6]}'
+
+          if decision == 'dispatch':
               now = dt.datetime.now(dt.timezone.utc)
-              successes = [r for r in runs if r.get('status') == 'completed' and r.get('conclusion') == 'success']
+              successes = [r for r in target_runs if r.get('status') == 'completed' and r.get('conclusion') == 'success']
               for run in successes:
                   created = dt.datetime.fromisoformat(run['createdAt'].replace('Z', '+00:00'))
                   age_h = (now - created).total_seconds() / 3600
                   if age_h <= 10:
                       decision = 'skip'
-                      reason = f'ultimo sucesso iniciado ha {age_h:.1f} h'
+                      reason = f'ultimo sucesso GFS Sul iniciado ha {age_h:.1f} h'
                       break
 
           Path('/tmp/wrf-decision.txt').write_text(decision, encoding='utf-8')
@@ -68,7 +93,7 @@ jobs:
 
           decision="$(cat /tmp/wrf-decision.txt)"
           if [ "$decision" = "skip" ]; then
-            echo "WRF Sul GFS ja esta coberto; nenhum novo run necessario."
+            echo "GFS Sul nao precisa ocupar novos runners agora."
             exit 0
           fi
 
