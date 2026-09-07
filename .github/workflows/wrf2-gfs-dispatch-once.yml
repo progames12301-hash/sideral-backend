@@ -17,4 +17,4 @@ jobs:
       - name: Disparar WRF Sudeste GFS no main atual
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run wrf-sudeste-gfs-4km.yml --ref main
+        run: gh workflow run wrf-sudeste-gfs-4km.yml -R progames12301-hash/sideral-backend --ref main
