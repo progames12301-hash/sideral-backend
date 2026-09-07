@@ -22,4 +22,4 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - run: echo "Runners do GFS Sul antigo liberados; watchdog manterá o ciclo automatico."
+      - run: echo "Liberacao solicitada. O GFS Sul volta automaticamente pelo watchdog quando a fila regional aliviar."
