@@ -1,0 +1,20 @@
+name: WRF2 GFS one-shot dispatcher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/wrf2-gfs-dispatch-once.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Disparar WRF Sudeste GFS no main atual
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run wrf-sudeste-gfs-4km.yml --ref main
