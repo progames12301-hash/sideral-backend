@@ -1,0 +1,25 @@
+name: WRF Sul GFS - RUNNER RELIEF
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/wrf-sul-gfs-runner-relief.yml"
+
+permissions:
+  contents: read
+
+# Usa propositalmente o mesmo grupo do WRF GFS Sul. O GitHub cancela
+# server-side a rodada antiga antes de iniciar esta execucao, liberando
+# os runners para ICON/ECMWF/Sudeste. O watchdog recoloca GFS Sul depois.
+concurrency:
+  group: sideral-wrf-two-days
+  cancel-in-progress: true
+
+jobs:
+  liberar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - run: echo "Runners do GFS Sul antigo liberados; watchdog manterá o ciclo automatico."
