@@ -1,0 +1,20 @@
+name: Cancel stale WRF GFS one-shot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cancel-stale-wrf-gfs-once.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Cancelar WRF GFS antigo travado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel 34101333192 -R progames12301-hash/sideral-backend
