@@ -150,6 +150,36 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+      - name: Extrair diagnosticos severos WRF2
+        if: always()
+        continue-on-error: true
+        env:
+          SEGMENT_START: ${{ matrix.start }}
+          SEGMENT_END: ${{ matrix.end }}
+        shell: bash
+        run: |
+          rm -rf wrf2_publish
+          python wrf/extract_wrf_severe.py \
+            --run-dir wrf_work/run \
+            --run-env wrf_diagnostics/run.env \
+            --output-dir wrf2_publish \
+            --grid-x 220 \
+            --grid-y 180 \
+            --model gfs \
+            --interval-hours 3 \
+            --expected-start "$SEGMENT_START" \
+            --expected-end "$SEGMENT_END"
+
+      - name: Guardar artifact severo do segmento
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: gfs-sudeste-severe-${{ matrix.id }}
+          path: wrf2_publish/
+          retention-days: 1
+          if-no-files-found: warn
+
   publish:
     name: Publicar WRF Sudeste F000-F072
     needs: [run-info, segments]
@@ -329,3 +359,86 @@ jobs:
           path: wrf_publish/
           retention-days: 4
           compression-level: 6
+
+  publish-severe:
+    continue-on-error: true
+    name: Publicar GFS WRF2 severo independente
+    if: always()
+    needs: [run-info, segments]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Baixar artifacts severos
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gfs-sudeste-severe-*
+          path: severe-segments
+
+      - name: Unir somente diagnosticos severos
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p severe-segments
+          mapfile -t roots < <(find severe-segments -type f -name metadata.json -printf '%h\n' 2>/dev/null | sort -u)
+          args=()
+          for root in "${roots[@]}"; do args+=(--input "$root"); done
+          python wrf/publish_wrf2_severe.py \
+            "${args[@]}" \
+            --output wrf2_publish \
+            --model gfs \
+            --temporal-resolution-minutes 180
+
+          python3 - <<'PY'
+          import json
+          meta = json.load(open('wrf2_publish/metadata.json', encoding='utf-8'))
+          required = {
+              'schema', 'model', 'source', 'runDate', 'runCycle', 'initTime',
+              'generatedAt', 'status', 'frameCount', 'temporalResolutionMinutes',
+              'variables', 'diagnosticMethods', 'diagnostics', 'reflectivity'
+          }
+          missing = sorted(required - set(meta))
+          assert not missing, missing
+          assert meta['status'] in {'complete', 'partial', 'unavailable'}, meta
+          assert meta['reflectivity']['status'] == 'independent', meta
+          assert meta['reflectivity']['source'] == 'REFL_10CM_NATIVE', meta
+          print('WRF2 GFS VALIDADO:', meta['status'], meta['frameCount'])
+          PY
+
+      - name: Guardar pacote severo consolidado
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: gfs-wrf2-severe-published
+          path: wrf2_publish/
+          retention-days: 3
+          if-no-files-found: warn
+
+      - name: Publicar branch WRF2 isolada
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "sideral-wrf-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          publish_branch="wrf2-gfs-data"
+          target="/tmp/${publish_branch}"
+          rm -rf "$target"
+          git worktree add --detach "$target"
+          cd "$target"
+          git checkout --orphan "${publish_branch}-next"
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf2_publish/." .
+          printf '# Sideral WRF2 Sudeste GFS\nDiagnosticos severos independentes; REFL_10CM_NATIVE permanece no produto nativo.\n' > README.md
+          git add .
+          git commit -m "GFS-WRF2 Sudeste publica diagnosticos severos [skip render]"
+          git push --force origin "HEAD:${publish_branch}"
