@@ -83,7 +83,8 @@ jobs:
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      max-parallel: 4
+      # Mantem vagas livres para Sul, GFS Sudeste e outros modelos.
+      max-parallel: 2
       matrix:
         include:
           - { id: "000-009", start: 0, end: 9 }
@@ -214,4 +215,3 @@ jobs:
           git add .
           git commit -m "${SOURCE_MODEL^^}-WRF Sudeste atualiza dois dias [skip render]"
           git push --force origin "HEAD:$PUBLISH_BRANCH"
-
