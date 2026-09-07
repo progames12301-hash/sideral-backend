@@ -1,390 +1,243 @@
+#!/usr/bin/env python3
 from __future__ import annotations
-import argparse
-import datetime as dt
-import gzip
-import json
-import math
-import re
+import argparse, datetime as dt, gzip, json, math, re, shutil, traceback
 from pathlib import Path
 import numpy as np
 import xarray as xr
-G = 9.80665
-RD = 287.05
-CP = 1004.0
-EPS = 0.622
-KAPPA = RD / CP
-LV = 2500000.0
 
-def parse_run_env(path: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    if not path.exists():
-        return result
-    for line in path.read_text(encoding='utf-8', errors='ignore').splitlines():
-        if '=' not in line:
-            continue
-        key, value = line.split('=', 1)
-        result[key.strip()] = value.strip()
-    return result
+G,RD,CP,EPS=9.80665,287.05,1004.0,0.622
+K=RD/CP
+FIELDS=["stp","scp","srh01","srh03","bulkShear06","effectiveBulkShear","lclHeight","cin","sbcape","mlcape","mucapeWrf2","pwat","thetaE850","thetaEAdvection","wind850","wind500","vorticity500","omega700","mslp","thickness","dewpoint2m","kIndex","totalTotals"]
+METHODS={
+"stp":{"classification":"derived","method":"fixed-layer STP","components":["MLCAPE","surface LCL height","cyclonic SRH 0-1 km","bulk shear 0-6 km","MLCIN"],"rule":"Only calculated where CAPE, LCL, SRH, shear and CIN components are finite."},
+"scp":{"classification":"derived","method":"SCP","components":["MUCAPE","cyclonic SRH 0-3 km","effective bulk shear proxy"],"rule":"Only calculated where MUCAPE, SRH 0-3 km and shear are finite."},
+"srh01":"Bunkers cyclonic motion; 250 m hodograph; 0-1 km AGL",
+"srh03":"Bunkers cyclonic motion; 250 m hodograph; 0-3 km AGL",
+"bulkShear06":"10 m to 6 km AGL vector difference",
+"effectiveBulkShear":"derived 0-6 km bulk-shear proxy; never native",
+"lclHeight":"Bolton surface parcel",
+"pwat":"vertical integral QVAPOR dp/g","thetaE850":"Bolton theta-e at 850 hPa",
+"thetaEAdvection":"-V.grad(theta-e) at 850 hPa","wind850":"interpolated wind magnitude at 850 hPa",
+"wind500":"interpolated wind magnitude at 500 hPa","vorticity500":"dvdx-dudy at 500 hPa",
+"omega700":"-rho*g*w at 700 hPa","mslp":"hypsometric reduction from PSFC/T2/HGT",
+"thickness":"Z500 minus extrapolated Z1000","dewpoint2m":"dewpoint from Q2/PSFC",
+"kIndex":"T850-T500+Td850-(T700-Td700)","totalTotals":"T850+Td850-2*T500"}
 
-def parse_valid_time(path: Path) -> dt.datetime:
-    match = re.search('wrfout_d01_(\\d{4}-\\d{2}-\\d{2})_(\\d{2})[-:](\\d{2})[-:](\\d{2})', path.name)
-    if not match:
-        raise ValueError(f'Nome wrfout inesperado: {path.name}')
-    return dt.datetime.strptime(f'{match.group(1)} {match.group(2)}:{match.group(3)}:{match.group(4)}', '%Y-%m-%d %H:%M:%S').replace(tzinfo=dt.timezone.utc)
-
-def write_gzip_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    body = json.dumps(payload, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')
-    with path.open('wb') as raw:
-        with gzip.GzipFile(filename='', mode='wb', fileobj=raw, compresslevel=9, mtime=0) as zipped:
-            zipped.write(body)
-
-def sample_indices(size: int, target: int) -> np.ndarray:
-    target = max(1, min(target, size))
-    return np.rint(np.linspace(0, size - 1, target)).astype(int)
-
-def sample2d(values: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
-    return np.asarray(values)[np.ix_(rows, cols)]
-
-def sample3d(values: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
-    arr = np.asarray(values)
-    return arr[:, rows, :][:, :, cols]
-
-def clean(values: np.ndarray, lo: float | None=None, hi: float | None=None) -> np.ndarray:
-    arr = np.asarray(values, dtype=np.float64)
-    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-    if lo is not None or hi is not None:
-        arr = np.clip(arr, -np.inf if lo is None else lo, np.inf if hi is None else hi)
-    return arr
-
-def flat_round(values: np.ndarray, decimals: int, lo: float | None=None, hi: float | None=None) -> list[float]:
-    arr = clean(values, lo, hi)
-    return np.round(arr, decimals).reshape(-1).tolist()
-
-def dewpoint_from_qp(q: np.ndarray, p_pa: np.ndarray) -> np.ndarray:
-    q = np.clip(np.asarray(q, dtype=np.float64), 1e-08, 0.08)
-    p = np.clip(np.asarray(p_pa, dtype=np.float64), 1000.0, 110000.0)
-    e = np.clip(q * p / (EPS + q), 1.0, p * 0.99)
-    ln = np.log(e / 611.2)
-    td_c = 243.5 * ln / (17.67 - ln)
-    return td_c + 273.15
-
-def saturation_vapor_pressure_pa(t_k: np.ndarray) -> np.ndarray:
-    tc = np.asarray(t_k, dtype=np.float64) - 273.15
-    return 611.2 * np.exp(17.67 * tc / (tc + 243.5))
-
-def saturation_mixing_ratio(p_pa: np.ndarray, t_k: np.ndarray) -> np.ndarray:
-    p = np.asarray(p_pa, dtype=np.float64)
-    es = np.clip(saturation_vapor_pressure_pa(t_k), 1.0, p * 0.98)
-    return np.clip(EPS * es / np.maximum(1.0, p - es), 0.0, 0.08)
-
-def theta_e_bolton(t_k: np.ndarray, q: np.ndarray, p_pa: np.ndarray) -> np.ndarray:
-    t = np.clip(np.asarray(t_k, dtype=np.float64), 180.0, 340.0)
-    p = np.clip(np.asarray(p_pa, dtype=np.float64), 1000.0, 110000.0)
-    r = np.clip(np.asarray(q, dtype=np.float64), 1e-08, 0.08)
-    td = np.clip(dewpoint_from_qp(r, p), 170.0, t)
-    tl = 1.0 / (1.0 / (td - 56.0) + np.log(t / td) / 800.0) + 56.0
-    theta = t * (100000.0 / p) ** (0.2854 * (1.0 - 0.28 * r))
-    return theta * np.exp((3376.0 / tl - 2.54) * r * (1.0 + 0.81 * r))
-
-def lcl_height_m(t_k: np.ndarray, q: np.ndarray, p_pa: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    t = np.clip(np.asarray(t_k, dtype=np.float64), 180.0, 340.0)
-    td = np.clip(dewpoint_from_qp(q, p_pa), 170.0, t)
-    tl = 1.0 / (1.0 / (td - 56.0) + np.log(t / td) / 800.0) + 56.0
-    dz = np.maximum(0.0, (t - tl) / (G / CP))
-    p_lcl = np.asarray(p_pa, dtype=np.float64) * (tl / t) ** (1.0 / KAPPA)
-    return (dz, tl, p_lcl)
-
-def interp_vertical(coord: np.ndarray, values: np.ndarray, target: float, log_coord: bool=False) -> np.ndarray:
-    c = np.asarray(coord, dtype=np.float64)
-    v = np.asarray(values, dtype=np.float64)
-    if log_coord:
-        c = np.log(np.clip(c, 1.0, None))
-        tgt = math.log(target)
-    else:
-        tgt = float(target)
-    out = np.full(c.shape[1:], np.nan, dtype=np.float64)
-    for k in range(c.shape[0] - 1):
-        c0, c1 = (c[k], c[k + 1])
-        v0, v1 = (v[k], v[k + 1])
-        between = ((tgt - c0) * (tgt - c1) <= 0.0) & np.isfinite(c0) & np.isfinite(c1)
-        denom = c1 - c0
-        frac = np.divide(tgt - c0, denom, out=np.zeros_like(c0), where=np.abs(denom) > 1e-12)
-        candidate = v0 + frac * (v1 - v0)
-        fill = between & ~np.isfinite(out)
-        out[fill] = candidate[fill]
+def now(): return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00","Z")
+def runenv(path):
+    out={}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8",errors="ignore").splitlines():
+            if "=" in line:
+                k,v=line.split("=",1); out[k.strip()]=v.strip()
     return out
+def validtime(path):
+    m=re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})",path.name)
+    if not m: raise ValueError(f"Nome wrfout inesperado: {path.name}")
+    return dt.datetime.strptime(f"{m[1]} {m[2]}:{m[3]}:{m[4]}","%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
+def idx(n,target): return np.rint(np.linspace(0,n-1,max(1,min(n,target)))).astype(int)
+def s2(a,r,c): return np.asarray(a)[np.ix_(r,c)]
+def s3(a,r,c): return np.asarray(a)[:,r,:][:,:,c]
+def nan(shape): return np.full(shape,np.nan,dtype=float)
+def count(a): return int(np.isfinite(np.asarray(a,dtype=float)).sum())
+def flat(a,d,lo=None,hi=None):
+    a=np.asarray(a,dtype=float); finite=np.isfinite(a)
+    if lo is not None: a=np.where(finite,np.maximum(a,lo),a)
+    if hi is not None: a=np.where(finite,np.minimum(a,hi),a)
+    return [float(x) if math.isfinite(float(x)) else None for x in np.round(a,d).ravel()]
+def write_json(path,obj):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_text(json.dumps(obj,ensure_ascii=False,indent=2,allow_nan=False),encoding="utf-8")
+def write_gz(path,obj):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    body=json.dumps(obj,ensure_ascii=False,separators=(",",":"),allow_nan=False).encode()
+    with path.open("wb") as raw:
+        with gzip.GzipFile(filename="",mode="wb",fileobj=raw,compresslevel=9,mtime=0) as z:z.write(body)
 
-def wind_profile_at_heights(z_agl: np.ndarray, u: np.ndarray, v: np.ndarray, u10: np.ndarray, v10: np.ndarray, heights: list[float]) -> tuple[np.ndarray, np.ndarray]:
-    us, vs = ([], [])
-    for h in heights:
-        if h <= 1.0:
-            us.append(np.asarray(u10, dtype=np.float64))
-            vs.append(np.asarray(v10, dtype=np.float64))
-        else:
-            us.append(interp_vertical(z_agl, u, h))
-            vs.append(interp_vertical(z_agl, v, h))
-    return (np.stack(us, axis=0), np.stack(vs, axis=0))
+def td(q,p):
+    q,p=np.asarray(q,float),np.asarray(p,float); ok=np.isfinite(q)&np.isfinite(p)&(q>0)&(p>1000)
+    out=np.full(np.broadcast(q,p).shape,np.nan); q2=np.clip(q,1e-8,.08); p2=np.clip(p,1000,110000)
+    e=np.clip(q2*p2/(EPS+q2),1,p2*.99); l=np.log(e/611.2); cand=243.5*l/(17.67-l)+273.15
+    out[ok]=cand[ok]; return out
+def qs(p,t):
+    p,t=np.asarray(p,float),np.asarray(t,float); ok=np.isfinite(p)&np.isfinite(t); out=np.full(np.broadcast(p,t).shape,np.nan)
+    tc=t-273.15; es=611.2*np.exp(17.67*tc/(tc+243.5)); es=np.clip(es,1,np.maximum(2,p*.98))
+    cand=np.clip(EPS*es/np.maximum(1,p-es),0,.08); out[ok]=cand[ok]; return out
+def thetae(t,q,p):
+    t,q,p=np.asarray(t,float),np.asarray(q,float),np.asarray(p,float); ok=np.isfinite(t)&np.isfinite(q)&np.isfinite(p)&(q>0)&(p>1000)
+    out=np.full(np.broadcast(t,q,p).shape,np.nan); t2=np.clip(t,180,340); q2=np.clip(q,1e-8,.08); p2=np.clip(p,1000,110000)
+    d=np.clip(td(q2,p2),170,t2); tl=1/(1/(d-56)+np.log(t2/d)/800)+56
+    th=t2*(100000/p2)**(.2854*(1-.28*q2)); cand=th*np.exp((3376/tl-2.54)*q2*(1+.81*q2)); out[ok]=cand[ok]; return out
+def lcl(t,q,p):
+    t,q,p=np.asarray(t,float),np.asarray(q,float),np.asarray(p,float); ok=np.isfinite(t)&np.isfinite(q)&np.isfinite(p)&(q>0)&(p>1000)
+    out=np.full(np.broadcast(t,q,p).shape,np.nan); t2=np.clip(t,180,340); d=np.clip(td(q,p),170,t2)
+    tl=1/(1/(d-56)+np.log(t2/d)/800)+56; cand=np.maximum(0,(t2-tl)/(G/CP)); out[ok]=cand[ok]; return out,tl
+def interp(coord,val,target,log=False):
+    c,v=np.asarray(coord,float),np.asarray(val,float); c=np.log(np.where(c>0,c,np.nan)) if log else c; target=math.log(target) if log else target
+    out=np.full(c.shape[1:],np.nan)
+    for k in range(c.shape[0]-1):
+        c0,c1,v0,v1=c[k],c[k+1],v[k],v[k+1]; ok=np.isfinite(c0)&np.isfinite(c1)&np.isfinite(v0)&np.isfinite(v1)&(((target-c0)*(target-c1))<=0)
+        den=c1-c0; f=np.divide(target-c0,den,out=np.full_like(c0,np.nan),where=np.abs(den)>1e-12); cand=v0+f*(v1-v0); fill=ok&~np.isfinite(out); out[fill]=cand[fill]
+    return out
+def profile(z,u,v,u10,v10,hs):
+    us=[];vs=[]
+    for h in hs:
+        if h==0: us.append(u10);vs.append(v10)
+        else: us.append(interp(z,u,h));vs.append(interp(z,v,h))
+    return np.stack(us),np.stack(vs)
+def bunkers(lat,u,v,hs):
+    hs=np.asarray(hs); mean=hs<=6000; low=hs<=500; high=hs>=5500
+    with np.errstate(invalid="ignore"):
+        um,vm=np.nanmean(u[mean],0),np.nanmean(v[mean],0); ul,vl=np.nanmean(u[low],0),np.nanmean(v[low],0); uh,vh=np.nanmean(u[high],0),np.nanmean(v[high],0)
+    du,dv=uh-ul,vh-vl; mag=np.hypot(du,dv); ok=np.isfinite(um)&np.isfinite(vm)&np.isfinite(mag)&(mag>1e-6); sign=np.where(lat<0,-1,1)
+    cu,cv=np.full_like(um,np.nan),np.full_like(vm,np.nan); cu[ok]=(um+sign*7.5*dv/mag)[ok]; cv[ok]=(vm-sign*7.5*du/mag)[ok]; return cu,cv
+def srh(u,v,hs,su,sv,top):
+    ids=np.where(np.asarray(hs)<=top)[0]; u,v=u[ids],v[ids]; total=np.zeros_like(su); used=np.zeros_like(su,dtype=int)
+    for k in range(len(ids)-1):
+        ok=np.isfinite(su)&np.isfinite(sv)&np.isfinite(u[k])&np.isfinite(v[k])&np.isfinite(u[k+1])&np.isfinite(v[k+1])
+        term=(u[k+1]-su)*(v[k]-sv)-(u[k]-su)*(v[k+1]-sv); total=np.where(ok,total+term,total); used+=ok
+    return np.where(used==max(1,len(ids)-1),total,np.nan)
 
-def bunkers_cyclonic_motion(lat: np.ndarray, u_prof: np.ndarray, v_prof: np.ndarray, heights: list[float]) -> tuple[np.ndarray, np.ndarray]:
-    hs = np.asarray(heights)
-    mean_mask = hs <= 6000.0
-    low_mask = hs <= 500.0
-    high_mask = hs >= 5500.0
-    u_mean = np.nanmean(u_prof[mean_mask], axis=0)
-    v_mean = np.nanmean(v_prof[mean_mask], axis=0)
-    u_low = np.nanmean(u_prof[low_mask], axis=0)
-    v_low = np.nanmean(v_prof[low_mask], axis=0)
-    u_high = np.nanmean(u_prof[high_mask], axis=0)
-    v_high = np.nanmean(v_prof[high_mask], axis=0)
-    du = u_high - u_low
-    dv = v_high - v_low
-    mag = np.hypot(du, dv)
-    mag = np.where(mag < 1e-06, np.nan, mag)
-    sign = np.where(np.asarray(lat) < 0.0, -1.0, 1.0)
-    d = 7.5
-    cu = u_mean + sign * d * (dv / mag)
-    cv = v_mean - sign * d * (du / mag)
-    cu = np.where(np.isfinite(cu), cu, u_mean)
-    cv = np.where(np.isfinite(cv), cv, v_mean)
-    return (cu, cv)
+def cape_cin(p3,t3,q3,z3,p0,t0,q0,z0):
+    p0,t0,q0,z0=map(lambda x:np.asarray(x,float),(p0,t0,q0,z0)); surf=np.isfinite(p0)&np.isfinite(t0)&np.isfinite(q0)&np.isfinite(z0)
+    ldz,tl=lcl(t0,q0,p0); zl=z0+ldz; dz3=z3-z0[None]; dry=t0[None]-G/CP*dz3; moist=tl[None]-.006*(z3-zl[None]); tp=np.where(z3<=zl[None],dry,moist)
+    qp=np.where(z3<=zl[None],q0[None],qs(p3,tp)); b=G*(tp*(1+.61*qp)-t3*(1+.61*q3))/(t3*(1+.61*q3))
+    b=np.where(surf[None]&np.isfinite(b)&np.isfinite(z3)&np.isfinite(p3)&(z3>=z0[None])&(p3<=p0[None]*1.01),b,np.nan)
+    cape=np.zeros_like(p0); cin=np.zeros_like(p0); seen=np.zeros_like(p0,dtype=bool); layers=np.zeros_like(p0,dtype=int)
+    for k in range(z3.shape[0]-1):
+        dz=z3[k+1]-z3[k]; area=.5*(b[k]+b[k+1])*dz; ok=np.isfinite(area)&np.isfinite(dz)&(dz>0)&(dz<3000); layers+=ok
+        pos=ok&(area>0); neg=ok&(area<0)&~seen; cape+=np.where(pos,area,0); cin+=np.where(neg,area,0); seen|=pos
+    ok=surf&(layers>=3); return np.where(ok,np.clip(cape,0,8000),np.nan),np.where(ok,np.clip(cin,-600,0),np.nan)
+def mixed(p,t,q,psfc,z0):
+    th=t*(100000/p)**K; mask=np.isfinite(th)&np.isfinite(q)&np.isfinite(p)&(p<=psfc[None]+1000)&(p>=psfc[None]-10000); n=mask.sum(0)
+    thm=np.divide(np.nansum(np.where(mask,th,np.nan),0),n,out=nan(psfc.shape),where=n>0); qm=np.divide(np.nansum(np.where(mask,q,np.nan),0),n,out=nan(psfc.shape),where=n>0)
+    return psfc,thm*(psfc/100000)**K,qm,z0
+def most_unstable(p,t,q,z,psfc):
+    te=thetae(t,q,p); mask=np.isfinite(te)&(p<=psfc[None]+1000)&(p>=psfc[None]-30000); score=np.where(mask,te,-np.inf); valid=mask.any(0); ids=np.argmax(score,0); yy,xx=np.indices(psfc.shape)
+    def pick(a): return np.where(valid,np.asarray(a)[ids,yy,xx],np.nan)
+    return pick(p),pick(t),pick(q),pick(z)
 
-def srh_from_profile(u_prof: np.ndarray, v_prof: np.ndarray, heights: list[float], storm_u: np.ndarray, storm_v: np.ndarray, top_m: float) -> np.ndarray:
-    hs = np.asarray(heights)
-    idx = np.where(hs <= top_m)[0]
-    u = u_prof[idx]
-    v = v_prof[idx]
-    total = np.zeros_like(storm_u, dtype=np.float64)
-    for k in range(len(idx) - 1):
-        term = (u[k + 1] - storm_u) * (v[k] - storm_v) - (u[k] - storm_u) * (v[k + 1] - storm_v)
-        total += np.nan_to_num(term, nan=0.0)
-    return total
-
-def parcel_cape_cin(p3: np.ndarray, t3: np.ndarray, q3: np.ndarray, z3: np.ndarray, p0: np.ndarray, t0: np.ndarray, q0: np.ndarray, z0: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    p0 = np.asarray(p0, dtype=np.float64)
-    t0 = np.asarray(t0, dtype=np.float64)
-    q0 = np.asarray(q0, dtype=np.float64)
-    z0 = np.asarray(z0, dtype=np.float64)
-    lcl_dz, tlcl, _ = lcl_height_m(t0, q0, p0)
-    zlcl = z0 + lcl_dz
-    zdelta = z3 - z0[None, :, :]
-    dry = t0[None, :, :] - G / CP * zdelta
-    moist = tlcl[None, :, :] - 0.006 * (z3 - zlcl[None, :, :])
-    tpar = np.where(z3 <= zlcl[None, :, :], dry, moist)
-    tpar = np.clip(tpar, 170.0, 350.0)
-    qsat = saturation_mixing_ratio(p3, tpar)
-    qpar = np.where(z3 <= zlcl[None, :, :], q0[None, :, :], qsat)
-    tv_par = tpar * (1.0 + 0.61 * qpar)
-    tv_env = t3 * (1.0 + 0.61 * np.clip(q3, 0.0, 0.08))
-    buoy = G * (tv_par - tv_env) / np.maximum(180.0, tv_env)
-    valid = (z3 >= z0[None, :, :]) & (p3 <= p0[None, :, :] * 1.01) & np.isfinite(buoy) & np.isfinite(z3)
-    buoy = np.where(valid, buoy, np.nan)
-    cape = np.zeros_like(p0, dtype=np.float64)
-    cin = np.zeros_like(p0, dtype=np.float64)
-    positive_seen = np.zeros_like(p0, dtype=bool)
-    for k in range(z3.shape[0] - 1):
-        dz = z3[k + 1] - z3[k]
-        b0, b1 = (buoy[k], buoy[k + 1])
-        area = 0.5 * (b0 + b1) * dz
-        ok = np.isfinite(area) & (dz > 0.0) & (dz < 3000.0)
-        pos = ok & (area > 0.0)
-        neg_before_lfc = ok & (area < 0.0) & ~positive_seen
-        cape += np.where(pos, area, 0.0)
-        cin += np.where(neg_before_lfc, area, 0.0)
-        positive_seen |= pos
-    return (np.clip(cape, 0.0, 8000.0), np.clip(cin, -600.0, 0.0))
-
-def mixed_layer_parcel(p3: np.ndarray, t3: np.ndarray, q3: np.ndarray, psfc: np.ndarray, z0: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    theta3 = t3 * (100000.0 / np.clip(p3, 1000.0, None)) ** KAPPA
-    mask = (p3 <= psfc[None, :, :] + 1000.0) & (p3 >= psfc[None, :, :] - 10000.0)
-    count = np.maximum(1, np.sum(mask, axis=0))
-    theta_mean = np.sum(np.where(mask, theta3, 0.0), axis=0) / count
-    q_mean = np.sum(np.where(mask, q3, 0.0), axis=0) / count
-    t0 = theta_mean * (psfc / 100000.0) ** KAPPA
-    return (psfc, t0, np.clip(q_mean, 1e-08, 0.08), z0)
-
-def most_unstable_parcel(p3: np.ndarray, t3: np.ndarray, q3: np.ndarray, z3: np.ndarray, psfc: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    thetae = theta_e_bolton(t3, q3, p3)
-    mask = (p3 <= psfc[None, :, :] + 1000.0) & (p3 >= psfc[None, :, :] - 30000.0)
-    score = np.where(mask, thetae, -np.inf)
-    idx = np.argmax(score, axis=0)
-    yy, xx = np.indices(psfc.shape)
-    p0 = p3[idx, yy, xx]
-    t0 = t3[idx, yy, xx]
-    q0 = q3[idx, yy, xx]
-    z0 = z3[idx, yy, xx]
-    return (p0, t0, q0, z0)
-
-def native_2d(dataset: xr.Dataset, names: list[str], rows: np.ndarray, cols: np.ndarray) -> np.ndarray | None:
-    for name in names:
-        if name not in dataset:
-            continue
-        raw = np.asarray(dataset[name].isel(Time=0).to_numpy(), dtype=np.float64)
-        if raw.ndim == 2:
-            return sample2d(raw, rows, cols)
-    return None
-
-def compute_frame(dataset: xr.Dataset, rows: np.ndarray, cols: np.ndarray) -> tuple[dict[str, np.ndarray], dict]:
-    def raw(name: str) -> np.ndarray:
-        if name not in dataset:
-            raise RuntimeError(f'Variavel WRF ausente para WRF2: {name}')
-        return dataset[name].isel(Time=0).to_numpy()
-    lat = sample2d(raw('XLAT'), rows, cols)
-    lon = sample2d(raw('XLONG'), rows, cols)
-    t2 = sample2d(raw('T2'), rows, cols)
-    q2 = sample2d(raw('Q2'), rows, cols)
-    psfc = sample2d(raw('PSFC'), rows, cols)
-    hgt = sample2d(raw('HGT'), rows, cols) if 'HGT' in dataset else np.zeros_like(t2)
-    u10 = sample2d(raw('U10'), rows, cols)
-    v10 = sample2d(raw('V10'), rows, cols)
-    pressure = sample3d(raw('P') + raw('PB'), rows, cols)
-    theta = sample3d(raw('T') + 300.0, rows, cols)
-    temp = theta * (pressure / 100000.0) ** KAPPA
-    qv = np.clip(sample3d(raw('QVAPOR'), rows, cols), 0.0, 0.08)
-    ph = raw('PH') + raw('PHB')
-    z_stag = sample3d(ph / G, rows, cols)
-    z_mass = 0.5 * (z_stag[:-1] + z_stag[1:])
-    z_agl = z_mass - hgt[None, :, :]
-    u_native = 0.5 * (raw('U')[:, :, :-1] + raw('U')[:, :, 1:])
-    v_native = 0.5 * (raw('V')[:, :-1, :] + raw('V')[:, 1:, :])
-    u = sample3d(u_native, rows, cols)
-    v = sample3d(v_native, rows, cols)
-    if 'W' in dataset:
-        w_raw = raw('W')
-        w_mass_native = 0.5 * (w_raw[:-1] + w_raw[1:])
-        w = sample3d(w_mass_native, rows, cols)
+def compute(ds,r,c):
+    shape=(len(r),len(c)); out={f:nan(shape) for f in FIELDS}; why={f:[] for f in FIELDS}; klass={f:"derived" for f in FIELDS}
+    def note(fs,msg):
+        for f in fs:
+            if msg not in why[f]: why[f].append(msg)
+    def two(name):
+        if name not in ds:return None
+        a=np.asarray(ds[name].isel(Time=0).to_numpy(),float); return s2(a,r,c) if a.ndim==2 else None
+    def native(names):
+        for name in names:
+            a=two(name)
+            if a is not None:return a,name
+        return None,None
+    lat,lon=two("XLAT"),two("XLONG")
+    if lat is None or lon is None: raise RuntimeError("XLAT/XLONG ausentes")
+    t2,q2,psfc,hgt,u10,v10=[two(x) for x in ("T2","Q2","PSFC","HGT","U10","V10")]
+    if t2 is not None and q2 is not None and psfc is not None:
+        out["dewpoint2m"]=td(q2,psfc)-273.15; out["lclHeight"]=lcl(t2,q2,psfc)[0]
+    else: note(["dewpoint2m","lclHeight","stp"],"T2/Q2/PSFC incompletos.")
+    if all(x is not None for x in (t2,q2,psfc,hgt)):
+        tv=t2*(1+.61*q2); out["mslp"]=psfc*np.exp(G*hgt/(RD*tv))/100
+    else: note(["mslp"],"T2/Q2/PSFC/HGT incompletos.")
+    native_map={"sbcape":["SBCAPE","AFWA_SBCAPE"],"cin":["SBCIN","CIN","AFWA_CIN"],"mlcape":["MLCAPE","AFWA_MLCAPE"],"mucapeWrf2":["MUCAPE","MCAPE","AFWA_CAPE"]}
+    nsrc={}
+    for f,names in native_map.items():
+        a,name=native(names); nsrc[f]=name
+        if a is not None: out[f]=a; klass[f]="native"
+    req=["P","PB","T","QVAPOR","PH","PHB","U","V"]; missing=[x for x in req if x not in ds]
+    if missing:
+        affected=["srh01","srh03","bulkShear06","effectiveBulkShear","pwat","thetaE850","thetaEAdvection","wind850","wind500","vorticity500","thickness","kIndex","totalTotals","stp","scp"]
+        note(affected,"Perfis verticais ausentes: "+", ".join(missing))
+        for f in ("sbcape","cin","mlcape","mucapeWrf2"):
+            if nsrc[f] is None: note([f],"Campo nativo ausente e perfil vertical insuficiente para derivação.")
     else:
-        w = np.zeros_like(temp)
-    t850 = interp_vertical(pressure, temp, 85000.0, log_coord=True)
-    t700 = interp_vertical(pressure, temp, 70000.0, log_coord=True)
-    t500 = interp_vertical(pressure, temp, 50000.0, log_coord=True)
-    q850 = interp_vertical(pressure, qv, 85000.0, log_coord=True)
-    q700 = interp_vertical(pressure, qv, 70000.0, log_coord=True)
-    u850 = interp_vertical(pressure, u, 85000.0, log_coord=True)
-    v850 = interp_vertical(pressure, v, 85000.0, log_coord=True)
-    u500 = interp_vertical(pressure, u, 50000.0, log_coord=True)
-    v500 = interp_vertical(pressure, v, 50000.0, log_coord=True)
-    z500 = interp_vertical(pressure, z_mass, 50000.0, log_coord=True)
-    w700 = interp_vertical(pressure, w, 70000.0, log_coord=True)
-    td2 = dewpoint_from_qp(q2, psfc)
-    td850 = dewpoint_from_qp(q850, np.full_like(q850, 85000.0))
-    td700 = dewpoint_from_qp(q700, np.full_like(q700, 70000.0))
-    lcl_h, _, _ = lcl_height_m(t2, q2, psfc)
-    thetae850 = theta_e_bolton(t850, q850, np.full_like(t850, 85000.0))
-    dx = float(dataset.attrs.get('DX', 4000.0))
-    dy = float(dataset.attrs.get('DY', 4000.0))
-    dthdx = np.gradient(thetae850, dx, axis=1)
-    dthdy = np.gradient(thetae850, dy, axis=0)
-    thetae_adv = -(u850 * dthdx + v850 * dthdy) * 3600.0
-    dvdx500 = np.gradient(v500, dx, axis=1)
-    dudy500 = np.gradient(u500, dy, axis=0)
-    vort500 = dvdx500 - dudy500
-    tv700 = t700 * (1.0 + 0.61 * np.clip(q700, 0.0, 0.08))
-    rho700 = 70000.0 / (RD * np.maximum(180.0, tv700))
-    omega700 = -rho700 * G * w700
-    pwat = -np.trapezoid(qv, pressure, axis=0) / G
-    pwat = np.clip(pwat, 0.0, 100.0)
-    heights = [0.0] + [float(h) for h in range(250, 6001, 250)]
-    up, vp = wind_profile_at_heights(z_agl, u, v, u10, v10, heights)
-    storm_u, storm_v = bunkers_cyclonic_motion(lat, up, vp, heights)
-    srh01 = srh_from_profile(up, vp, heights, storm_u, storm_v, 1000.0)
-    srh03 = srh_from_profile(up, vp, heights, storm_u, storm_v, 3000.0)
-    u6 = up[-1]
-    v6 = vp[-1]
-    shear06 = np.hypot(u6 - u10, v6 - v10)
-    z0 = hgt + 2.0
-    sbcape_native = native_2d(dataset, ['SBCAPE', 'AFWA_SBCAPE'], rows, cols)
-    cin_native = native_2d(dataset, ['SBCIN', 'CIN', 'AFWA_CIN'], rows, cols)
-    mlcape_native = native_2d(dataset, ['MLCAPE', 'AFWA_MLCAPE'], rows, cols)
-    mucape_native = native_2d(dataset, ['MUCAPE', 'MCAPE', 'AFWA_CAPE'], rows, cols)
-    sbcape_derived, sbcin_derived = parcel_cape_cin(pressure, temp, qv, z_mass, psfc, t2, q2, z0)
-    ml_p, ml_t, ml_q, ml_z = mixed_layer_parcel(pressure, temp, qv, psfc, z0)
-    mlcape_derived, mlcin_derived = parcel_cape_cin(pressure, temp, qv, z_mass, ml_p, ml_t, ml_q, ml_z)
-    mu_p, mu_t, mu_q, mu_z = most_unstable_parcel(pressure, temp, qv, z_mass, psfc)
-    mucape_derived, _ = parcel_cape_cin(pressure, temp, qv, z_mass, mu_p, mu_t, mu_q, mu_z)
-    sbcape = sbcape_native if sbcape_native is not None else sbcape_derived
-    cin = cin_native if cin_native is not None else sbcin_derived
-    mlcape = mlcape_native if mlcape_native is not None else mlcape_derived
-    mucape = mucape_native if mucape_native is not None else mucape_derived
-    effective_shear = shear06.copy()
-    cyclonic_srh01 = np.where(lat < 0.0, np.maximum(0.0, -srh01), np.maximum(0.0, srh01))
-    cyclonic_srh03 = np.where(lat < 0.0, np.maximum(0.0, -srh03), np.maximum(0.0, srh03))
-    lcl_term = np.clip((2000.0 - lcl_h) / 1000.0, 0.0, 1.0)
-    srh_term = np.clip(cyclonic_srh01 / 150.0, 0.0, 3.0)
-    cape_term = np.clip(mlcape / 1500.0, 0.0, 4.0)
-    shear_term = np.where(shear06 < 12.5, 0.0, np.where(shear06 > 30.0, 1.5, shear06 / 20.0))
-    cin_term = np.where(mlcin_derived >= -50.0, 1.0, np.where(mlcin_derived <= -200.0, 0.0, (200.0 + mlcin_derived) / 150.0))
-    stp = np.clip(cape_term * lcl_term * srh_term * shear_term * cin_term, 0.0, 10.0)
-    scp = np.clip(mucape / 1000.0 * np.clip(cyclonic_srh03 / 50.0, 0.0, 6.0) * np.clip(effective_shear / 20.0, 0.0, 2.5), 0.0, 50.0)
-    tv2 = t2 * (1.0 + 0.61 * np.clip(q2, 0.0, 0.08))
-    mslp = psfc * np.exp(G * np.maximum(-500.0, hgt) / (RD * np.maximum(220.0, tv2))) / 100.0
-    z1000 = hgt + RD * np.maximum(220.0, tv2) / G * np.log(np.clip(psfc, 1000.0, None) / 100000.0)
-    thickness = (z500 - z1000) / 10.0
-    t850c = t850 - 273.15
-    t700c = t700 - 273.15
-    t500c = t500 - 273.15
-    td850c = td850 - 273.15
-    td700c = td700 - 273.15
-    k_index = t850c - t500c + td850c - (t700c - td700c)
-    total_totals = t850c + td850c - 2.0 * t500c
-    fields = {'lat': lat, 'lon': lon, 'stp': stp, 'scp': scp, 'srh01': srh01, 'srh03': srh03, 'bulkShear06': shear06, 'effectiveBulkShear': effective_shear, 'lclHeight': lcl_h, 'cin': cin, 'sbcape': sbcape, 'mlcape': mlcape, 'mucapeWrf2': mucape, 'pwat': pwat, 'thetaE850': thetae850, 'thetaEAdvection': thetae_adv, 'wind850': np.hypot(u850, v850), 'wind500': np.hypot(u500, v500), 'vorticity500': vort500, 'omega700': omega700, 'mslp': mslp, 'thickness': thickness, 'dewpoint2m': td2 - 273.15, 'kIndex': k_index, 'totalTotals': total_totals}
-    methods = {'stp': 'derived_fixed_layer_STP_with_hemisphere_adjusted_cyclonic_SRH', 'scp': 'derived_SCP_using_MUCAPE_SRH03_and_effective_shear_proxy', 'srh': 'Bunkers_7.5mps_cyclonic_motion_250m_hodograph', 'bulkShear06': '10m_to_6km_AGL_vector_difference', 'effectiveBulkShear': 'proxy_bulk_shear_0_6km', 'lclHeight': 'Bolton_surface_parcel', 'cape': {'sbcape': 'native' if sbcape_native is not None else 'derived_vectorized_parcel_profile', 'mlcape': 'native' if mlcape_native is not None else 'derived_lowest_100hPa_mixed_layer', 'mucape': 'native' if mucape_native is not None else 'derived_max_thetae_lowest_300hPa', 'cin': 'native' if cin_native is not None else 'derived_surface_parcel'}, 'pwat': 'vertical_integral_QVAPOR_dp_over_g', 'thetaE850': 'Bolton_1980_interpolated_850hPa', 'thetaEAdvection': 'minus_V_dot_grad_thetaE_850', 'vorticity500': 'dvdx_minus_dudy_500hPa', 'omega700': 'hydrostatic_conversion_minus_rho_g_w_700hPa', 'mslp': 'hypsometric_reduction_from_PSFC_T2_HGT', 'thickness': 'Z500_minus_extrapolated_Z1000', 'kIndex': 'T850_T500_Td850_T700_Td700', 'totalTotals': 'T850_plus_Td850_minus_2T500'}
-    return (fields, methods)
+        p=s3(np.asarray(ds["P"].isel(Time=0))+np.asarray(ds["PB"].isel(Time=0)),r,c); th=s3(np.asarray(ds["T"].isel(Time=0))+300,r,c); t=th*(p/100000)**K; q=s3(np.asarray(ds["QVAPOR"].isel(Time=0)),r,c)
+        ph=np.asarray(ds["PH"].isel(Time=0))+np.asarray(ds["PHB"].isel(Time=0)); zs=s3(ph/G,r,c); z=.5*(zs[:-1]+zs[1:]); zagl=z-hgt[None] if hgt is not None else np.full_like(z,np.nan)
+        ur=np.asarray(ds["U"].isel(Time=0));vr=np.asarray(ds["V"].isel(Time=0));u=s3(.5*(ur[:,:,:-1]+ur[:,:,1:]),r,c);v=s3(.5*(vr[:,:-1,:]+vr[:,1:,:]),r,c)
+        t850,t700,t500=[interp(p,t,x,True) for x in (85000,70000,50000)]; q850,q700=[interp(p,q,x,True) for x in (85000,70000)]
+        u850,v850,u500,v500=[interp(p,a,lev,True) for a,lev in ((u,85000),(v,85000),(u,50000),(v,50000))];z500=interp(p,z,50000,True)
+        out["wind850"],out["wind500"]=np.hypot(u850,v850),np.hypot(u500,v500); out["thetaE850"]=thetae(t850,q850,np.full_like(t850,85000));out["pwat"]=-np.trapezoid(q,p,axis=0)/G
+        dx,dy=float(ds.attrs.get("DX",4000)),float(ds.attrs.get("DY",4000));out["thetaEAdvection"]=-(u850*np.gradient(out["thetaE850"],dx,axis=1)+v850*np.gradient(out["thetaE850"],dy,axis=0))*3600;out["vorticity500"]=np.gradient(v500,dx,axis=1)-np.gradient(u500,dy,axis=0)
+        if "W" in ds:
+            wr=np.asarray(ds["W"].isel(Time=0));w=s3(.5*(wr[:-1]+wr[1:]),r,c);w700=interp(p,w,70000,True);rho=70000/(RD*(t700*(1+.61*q700)));out["omega700"]=-rho*G*w700
+        else: note(["omega700"],"W ausente no wrfout.")
+        d850,d700=td(q850,np.full_like(q850,85000)),td(q700,np.full_like(q700,70000));out["kIndex"]=(t850-273.15)-(t500-273.15)+(d850-273.15)-((t700-273.15)-(d700-273.15));out["totalTotals"]=(t850-273.15)+(d850-273.15)-2*(t500-273.15)
+        if all(x is not None for x in (hgt,t2,q2,psfc)):
+            tv=t2*(1+.61*q2);z1000=hgt+RD*tv/G*np.log(psfc/100000);out["thickness"]=(z500-z1000)/10
+        else: note(["thickness"],"HGT/T2/Q2/PSFC incompletos.")
+        if hgt is not None and u10 is not None and v10 is not None:
+            hs=[0.]+[float(x) for x in range(250,6001,250)];up,vp=profile(zagl,u,v,u10,v10,hs);su,sv=bunkers(lat,up,vp,hs);out["srh01"]=srh(up,vp,hs,su,sv,1000);out["srh03"]=srh(up,vp,hs,su,sv,3000);out["bulkShear06"]=np.hypot(up[-1]-u10,vp[-1]-v10);out["effectiveBulkShear"]=out["bulkShear06"].copy()
+        else: note(["srh01","srh03","bulkShear06","effectiveBulkShear","stp","scp"],"HGT/U10/V10 incompletos; perfil AGL indisponível.")
+        if all(x is not None for x in (psfc,t2,q2,hgt)):
+            z0=hgt+2; sb,sbcin=cape_cin(p,t,q,z,psfc,t2,q2,z0)
+            if nsrc["sbcape"] is None:out["sbcape"]=sb
+            if nsrc["cin"] is None:out["cin"]=sbcin
+            mp,mt,mq,mz=mixed(p,t,q,psfc,z0);ml,mlcin=cape_cin(p,t,q,z,mp,mt,mq,mz)
+            if nsrc["mlcape"] is None:out["mlcape"]=ml
+            mup,mut,muq,muz=most_unstable(p,t,q,z,psfc);mu,_=cape_cin(p,t,q,z,mup,mut,muq,muz)
+            if nsrc["mucapeWrf2"] is None:out["mucapeWrf2"]=mu
+            sr1=np.where(lat<0,np.maximum(0,-out["srh01"]),np.maximum(0,out["srh01"]));sh=out["bulkShear06"]
+            ok=np.isfinite(out["mlcape"])&np.isfinite(out["lclHeight"])&np.isfinite(out["srh01"])&np.isfinite(sh)&np.isfinite(mlcin)
+            cand=np.clip(np.clip(out["mlcape"]/1500,0,4)*np.clip((2000-out["lclHeight"])/1000,0,1)*np.clip(sr1/150,0,3)*np.where(sh<12.5,0,np.where(sh>30,1.5,sh/20))*np.where(mlcin>=-50,1,np.where(mlcin<=-200,0,(200+mlcin)/150)),0,10);out["stp"]=np.where(ok,cand,np.nan)
+            sr3=np.where(lat<0,np.maximum(0,-out["srh03"]),np.maximum(0,out["srh03"]));es=out["effectiveBulkShear"];ok=np.isfinite(out["mucapeWrf2"])&np.isfinite(out["srh03"])&np.isfinite(es);cand=np.clip(out["mucapeWrf2"]/1000*np.clip(sr3/50,0,6)*np.clip(es/20,0,2.5),0,50);out["scp"]=np.where(ok,cand,np.nan)
+        else: note(["sbcape","cin","mlcape","mucapeWrf2","stp","scp"],"PSFC/T2/Q2/HGT incompletos para parcelas.")
+    variables={}
+    for f in FIELDS:
+        n=count(out[f]); k=klass[f] if n else "unavailable"; variables[f]={"classification":k,"status":"available" if n else "unavailable","finiteValueCount":n}
+        if nsrc.get(f):variables[f]["nativeSource"]=nsrc[f]
+        if why[f]:variables[f]["diagnostics"]=why[f]
+    methods=dict(METHODS);methods["cape"]={f:{"classification":variables[f]["classification"],"nativeSource":nsrc.get(f)} for f in ("sbcape","mlcape","mucapeWrf2","cin")}
+    out["lat"],out["lon"]=lat,lon
+    return out,variables,methods,{"missingWrfVariables":missing,"variables":{f:why[f] for f in FIELDS if why[f]}}
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--run-dir', default='wrf_work/run')
-    parser.add_argument('--run-env', default='wrf_diagnostics/run.env')
-    parser.add_argument('--output-dir', default='wrf2_publish')
-    parser.add_argument('--grid-x', type=int, default=220)
-    parser.add_argument('--grid-y', type=int, default=180)
-    parser.add_argument('--model', default='gfs', choices=('gfs', 'icon', 'ecmwf'))
-    parser.add_argument('--interval-hours', type=int, default=3)
-    args = parser.parse_args()
-    run_dir = Path(args.run_dir)
-    files = sorted(run_dir.glob('wrfout_d01_*'), key=parse_valid_time)
-    if not files:
-        raise SystemExit(f'Nenhum wrfout encontrado em {run_dir}')
-    env = parse_run_env(Path(args.run_env))
-    run_date = env.get('RUN_DATE', '')
-    run_cycle = env.get('RUN_CYCLE', '')
-    if run_date and run_cycle:
-        init_time = dt.datetime.strptime(f'{run_date}{run_cycle}', '%Y%m%d%H').replace(tzinfo=dt.timezone.utc)
-    else:
-        init_time = parse_valid_time(files[0])
-        run_date = init_time.strftime('%Y%m%d')
-        run_cycle = init_time.strftime('%H')
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    frames: list[dict] = []
-    method_summary = None
-    rows = cols = None
+def payload(model,date,cycle,init,fh,valid,fields,vars,methods,dx,dy):
+    lat,lon=fields["lat"],fields["lon"]
+    specs={"stp":(2,0,10),"scp":(2,0,50),"srh01":(0,-1000,1000),"srh03":(0,-1500,1500),"bulkShear06":(1,0,100),"effectiveBulkShear":(1,0,100),"lclHeight":(0,0,5000),"cin":(0,-600,0),"sbcape":(0,0,8000),"mlcape":(0,0,8000),"mucapeWrf2":(0,0,8000),"pwat":(1,0,100),"thetaE850":(1,250,400),"thetaEAdvection":(2,-20,20),"wind850":(1,0,100),"wind500":(1,0,120),"vorticity500":(7,-.002,.002),"omega700":(3,-20,20),"mslp":(1,850,1080),"thickness":(1,450,650),"dewpoint2m":(1,-80,40),"kIndex":(1,-50,70),"totalTotals":(1,-20,80)}
+    fld={"lat":flat(lat,4),"lon":flat(lon,4)}
+    for f,(d,lo,hi) in specs.items():fld[f]=flat(fields[f],d,lo,hi)
+    return {"schema":"sideral-wrf2-severe-grid-v2","model":model,"source":f"WRF 2 Sudeste 4 km {model.upper()} · diagnósticos severos","runDate":date,"runCycle":f"{cycle}Z" if cycle else None,"initTime":init,"forecastHour":fh,"validTime":valid,"dxMeters":round(dx),"dyMeters":round(dy),"gridX":lat.shape[1],"gridY":lat.shape[0],"bounds":{"south":round(float(np.nanmin(lat)),4),"west":round(float(np.nanmin(lon)),4),"north":round(float(np.nanmax(lat)),4),"east":round(float(np.nanmax(lon)),4)},"variables":vars,"diagnosticMethods":methods,"fields":fld}
+
+def main():
+    ap=argparse.ArgumentParser();ap.add_argument("--run-dir",default="wrf_work/run");ap.add_argument("--run-env",default="wrf_diagnostics/run.env");ap.add_argument("--output-dir",default="wrf2_publish");ap.add_argument("--grid-x",type=int,default=220);ap.add_argument("--grid-y",type=int,default=180);ap.add_argument("--model",choices=("gfs","icon","ecmwf"),default="gfs");ap.add_argument("--interval-hours",type=int,default=3);ap.add_argument("--expected-start",type=int);ap.add_argument("--expected-end",type=int);a=ap.parse_args()
+    out=Path(a.output_dir);shutil.rmtree(out,ignore_errors=True);out.mkdir(parents=True); env=runenv(Path(a.run_env));date,cycle=env.get("RUN_DATE"),env.get("RUN_CYCLE");init=None
+    if date and cycle:
+        try:init=dt.datetime.strptime(date+cycle,"%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+        except ValueError:pass
+    diag={"schema":"sideral-wrf2-severe-diagnostics-v1","model":a.model,"generatedAt":now(),"frameErrors":[],"missingFrames":[],"notes":["Ausência nunca é convertida em zero.","Valores não calculáveis são null.","REFL_10CM_NATIVE é independente e não é alterada por este módulo."]}
+    try: files=sorted(Path(a.run_dir).glob("wrfout_d01_*"),key=validtime)
+    except Exception as e: files=[];diag["frameErrors"].append({"file":None,"error":str(e)})
+    if init is None and files:
+        try:init=validtime(files[0]);date,cycle=init.strftime("%Y%m%d"),init.strftime("%H")
+        except Exception as e:diag["frameErrors"].append({"file":files[0].name,"error":str(e)})
+    init_s=init.isoformat().replace("+00:00","Z") if init else None; selected=[]
     for path in files:
-        valid_time = parse_valid_time(path)
-        fh = max(0, int(round((valid_time - init_time).total_seconds() / 3600.0)))
-        if args.interval_hours > 1 and fh % args.interval_hours != 0:
-            continue
-        print(f'[WRF2] Extraindo {path.name} => F{fh:03d}')
-        with xr.open_dataset(path, engine='netcdf4', decode_times=False) as dataset:
-            if rows is None or cols is None:
-                lats_native = dataset['XLAT'].isel(Time=0).to_numpy()
-                native_y, native_x = lats_native.shape
-                rows = sample_indices(native_y, args.grid_y)
-                cols = sample_indices(native_x, args.grid_x)
-            fields, methods = compute_frame(dataset, rows, cols)
-            method_summary = methods
-            dx = float(dataset.attrs.get('DX', 4000.0))
-            dy = float(dataset.attrs.get('DY', 4000.0))
-        lat = fields['lat']
-        lon = fields['lon']
-        payload = {'schema': 'sideral-wrf2-severe-grid-v1', 'model': args.model, 'source': f'WRF 2 Sudeste 4 km {args.model.upper()} · diagnósticos severos', 'runDate': run_date, 'runCycle': f'{run_cycle}Z', 'initTime': init_time.isoformat().replace('+00:00', 'Z'), 'forecastHour': fh, 'validTime': valid_time.isoformat().replace('+00:00', 'Z'), 'dxMeters': int(round(dx)), 'dyMeters': int(round(dy)), 'gridX': len(cols), 'gridY': len(rows), 'bounds': {'south': round(float(np.nanmin(lat)), 4), 'west': round(float(np.nanmin(lon)), 4), 'north': round(float(np.nanmax(lat)), 4), 'east': round(float(np.nanmax(lon)), 4)}, 'diagnosticMethods': methods, 'fields': {'lat': flat_round(fields['lat'], 4), 'lon': flat_round(fields['lon'], 4), 'stp': flat_round(fields['stp'], 2, 0.0, 10.0), 'scp': flat_round(fields['scp'], 2, 0.0, 50.0), 'srh01': flat_round(fields['srh01'], 0, -1000.0, 1000.0), 'srh03': flat_round(fields['srh03'], 0, -1500.0, 1500.0), 'bulkShear06': flat_round(fields['bulkShear06'], 1, 0.0, 100.0), 'effectiveBulkShear': flat_round(fields['effectiveBulkShear'], 1, 0.0, 100.0), 'lclHeight': flat_round(fields['lclHeight'], 0, 0.0, 5000.0), 'cin': flat_round(fields['cin'], 0, -600.0, 0.0), 'sbcape': flat_round(fields['sbcape'], 0, 0.0, 8000.0), 'mlcape': flat_round(fields['mlcape'], 0, 0.0, 8000.0), 'mucapeWrf2': flat_round(fields['mucapeWrf2'], 0, 0.0, 8000.0), 'pwat': flat_round(fields['pwat'], 1, 0.0, 100.0), 'thetaE850': flat_round(fields['thetaE850'], 1, 250.0, 400.0), 'thetaEAdvection': flat_round(fields['thetaEAdvection'], 2, -20.0, 20.0), 'wind850': flat_round(fields['wind850'], 1, 0.0, 100.0), 'wind500': flat_round(fields['wind500'], 1, 0.0, 120.0), 'vorticity500': flat_round(fields['vorticity500'], 7, -0.002, 0.002), 'omega700': flat_round(fields['omega700'], 3, -20.0, 20.0), 'mslp': flat_round(fields['mslp'], 1, 850.0, 1080.0), 'thickness': flat_round(fields['thickness'], 1, 450.0, 650.0), 'dewpoint2m': flat_round(fields['dewpoint2m'], 1, -80.0, 40.0), 'kIndex': flat_round(fields['kIndex'], 1, -50.0, 70.0), 'totalTotals': flat_round(fields['totalTotals'], 1, -20.0, 80.0)}}
-        rel = f'severe/{args.model}/f{fh:03d}.json.gz'
-        write_gzip_json(output_dir / rel, payload)
-        frames.append({'index': len(frames), 'forecastHour': fh, 'validTime': payload['validTime'], 'file': rel, 'gridX': payload['gridX'], 'gridY': payload['gridY']})
-    if not frames:
-        raise SystemExit('Nenhum frame WRF2 selecionado')
-    metadata = {'schema': 'sideral-wrf2-severe-metadata-v1', 'model': args.model, 'resolutionKm': 4, 'runDate': run_date, 'runCycle': f'{run_cycle}Z', 'initTime': init_time.isoformat().replace('+00:00', 'Z'), 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z'), 'frameCount': len(frames), 'forecastHourStart': min((int(x['forecastHour']) for x in frames)), 'forecastHourEnd': max((int(x['forecastHour']) for x in frames)), 'temporalResolutionMinutes': args.interval_hours * 60, 'fields': ['stp', 'scp', 'srh01', 'srh03', 'bulkShear06', 'effectiveBulkShear', 'lclHeight', 'cin', 'sbcape', 'mlcape', 'mucapeWrf2', 'pwat', 'thetaE850', 'thetaEAdvection', 'wind850', 'wind500', 'vorticity500', 'omega700', 'mslp', 'thickness', 'dewpoint2m', 'kIndex', 'totalTotals'], 'diagnosticMethods': method_summary or {}, 'frames': frames}
-    (output_dir / 'metadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8')
-    print(json.dumps(metadata, ensure_ascii=False, indent=2))
-if __name__ == '__main__':
-    main()
+        try:
+            vt=validtime(path);fh=max(0,round((vt-init).total_seconds()/3600)) if init else 0
+            if fh%a.interval_hours==0:selected.append((path,int(fh),vt))
+        except Exception as e:diag["frameErrors"].append({"file":path.name,"error":str(e)})
+    expected=[]
+    if a.expected_start is not None and a.expected_end is not None:
+        first=a.expected_start if a.expected_start%a.interval_hours==0 else a.expected_start+(a.interval_hours-a.expected_start%a.interval_hours);expected=list(range(first,a.expected_end+1,a.interval_hours))
+    r=c=None;frames=[];hist={f:[] for f in FIELDS};methods=dict(METHODS)
+    for path,fh,vt in selected:
+        try:
+            with xr.open_dataset(path,engine="netcdf4",decode_times=False) as ds:
+                if r is None:
+                    ny,nx=ds["XLAT"].isel(Time=0).shape;r,c=idx(ny,a.grid_y),idx(nx,a.grid_x)
+                fields,vars,methods,detail=compute(ds,r,c);dx,dy=float(ds.attrs.get("DX",4000)),float(ds.attrs.get("DY",4000))
+            pl=payload(a.model,date,cycle,init_s,fh,vt.isoformat().replace("+00:00","Z"),fields,vars,methods,dx,dy);rel=f"severe/{a.model}/f{fh:03d}.json.gz";write_gz(out/rel,pl);frames.append({"index":len(frames),"forecastHour":fh,"validTime":pl["validTime"],"file":rel,"gridX":pl["gridX"],"gridY":pl["gridY"]})
+            for f in FIELDS:hist[f].append(vars[f])
+            if detail["missingWrfVariables"]:diag.setdefault("frameDiagnostics",[]).append({"forecastHour":fh,**detail})
+        except Exception as e:diag["frameErrors"].append({"forecastHour":fh,"file":path.name,"error":str(e),"traceback":traceback.format_exc(limit=4)})
+    actual=sorted(x["forecastHour"] for x in frames);expected_all=sorted(set(expected or [x[1] for x in selected]));missing=sorted(set(expected_all)-set(actual));diag["missingFrames"]=[f"f{x:03d}.json.gz" for x in missing];diag["expectedForecastHours"]=expected_all;diag["publishedForecastHours"]=actual
+    vm={}
+    for f in FIELDS:
+        h=hist[f]
+        if not h:vm[f]={"classification":"unavailable","status":"unavailable","reason":"Nenhum frame severo produzido."};continue
+        available=sum(x.get("status")=="available" for x in h);classes={x.get("classification","unavailable") for x in h};cl="derived" if "derived" in classes else ("native" if "native" in classes else "unavailable");vm[f]={"classification":cl if available else "unavailable","status":"available" if available else "unavailable","availableFrames":available,"totalFrames":len(h)}
+        reasons=sorted({y for x in h for y in x.get("diagnostics",[])});
+        if reasons:vm[f]["diagnostics"]=reasons
+    status="unavailable" if not frames else ("partial" if missing or diag["frameErrors"] else "complete")
+    meta={"schema":"sideral-wrf2-severe-metadata-v2","model":a.model,"source":f"WRF 2 Sudeste 4 km {a.model.upper()} · diagnósticos severos","runDate":date,"runCycle":f"{cycle}Z" if cycle else None,"initTime":init_s,"generatedAt":now(),"status":status,"frameCount":len(frames),"temporalResolutionMinutes":a.interval_hours*60,"variables":vm,"diagnosticMethods":methods,"diagnostics":{"file":"diagnostics.json","missingFrameCount":len(missing),"frameErrorCount":len(diag["frameErrors"])},"reflectivity":{"status":"independent","source":"REFL_10CM_NATIVE","note":"Os diagnósticos severos não alteram a refletividade nativa."},"expectedFrames":[f"severe/{a.model}/f{x:03d}.json.gz" for x in expected_all],"frames":frames}
+    diag["status"]=status;diag["metadata"]={"runDate":date,"runCycle":f"{cycle}Z" if cycle else None,"initTime":init_s};write_json(out/"metadata.json",meta);write_json(out/"diagnostics.json",diag);print(json.dumps(meta,ensure_ascii=False,indent=2))
+if __name__=="__main__":main()
