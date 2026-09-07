@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import shutil
 from pathlib import Path
 
 LABELS = {
@@ -58,6 +59,20 @@ def main() -> None:
         if new_path.resolve() != old_path.resolve():
             old_path.unlink(missing_ok=True)
 
+        severe_old_rel = str(frame.get('severeFile') or f"severe/gfs/{Path(old_rel).name}")
+        severe_old = root / severe_old_rel
+        severe_new_rel = f"severe/{model}/{Path(old_rel).name}"
+        severe_new = root / severe_new_rel
+        if severe_old.exists():
+            severe_data = read_gz(severe_old)
+            severe_data['model'] = model
+            severe_data['initialConditionModel'] = model.upper()
+            severe_data['source'] = f"WRF 2 Sudeste 4 km {model.upper()} · diagnósticos severos"
+            write_gz(severe_new, severe_data)
+            if severe_new.resolve() != severe_old.resolve():
+                severe_old.unlink(missing_ok=True)
+            frame['severeFile'] = severe_new_rel
+
         frame["file"] = new_rel
         frame["model"] = model
         frame["source"] = label
@@ -71,10 +86,16 @@ def main() -> None:
         except OSError:
             pass
 
+    old_severe_gfs = root / 'severe' / 'gfs'
+    if model != 'gfs' and old_severe_gfs.exists():
+        shutil.rmtree(old_severe_gfs, ignore_errors=True)
+
     meta["model"] = model
     meta["initialConditionModel"] = model.upper()
     meta["source"] = label
     meta["reflectivitySource"] = "REFL_10CM_NATIVE"
+    if meta.get('wrf2SevereDiagnostics'):
+        meta['wrf2SeverePathTemplate'] = 'severe/{model}/f{forecastHour:03d}.json.gz'
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(meta, ensure_ascii=False, indent=2))
 
