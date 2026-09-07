@@ -2661,7 +2661,7 @@ class Handler(SimpleHTTPRequestHandler):
     def handle_satellite_status(self) -> None:
         try:
             frame = self._goes19_catalog("ir", 1).get("frames", [None])[0]; cached = len(list(GOES19_RAW_CACHE_DIR.glob("*.nc"))) if GOES19_RAW_CACHE_DIR.exists() else 0
-            self.send_json(200, {"status": "ok" if frame else "degraded", "satellite": "GOES-19", "latest_scan": frame.get("timestamp") if frame else None, "products_available": 2, "cache": {"frames": cached}})
+            self.send_json(200, {"status": "ok" if frame else "degraded", "satellite": "GOES-19", "latest_scan": (frame.get("timestamp") or frame.get("data")) if frame else None, "products_available": 2, "cache": {"frames": cached}})
         except Exception as exc: self.send_json(502, {"status": "error", "error": "Status GOES-19 indisponível.", "details": str(exc)})
 
     def handle_satellite_value(self, query: dict[str, list[str]]) -> None:
@@ -2676,11 +2676,11 @@ class Handler(SimpleHTTPRequestHandler):
             with Dataset(path, "r") as dataset:
                 projection = dataset.variables["goes_imager_projection"]; height = float(projection.perspective_point_height) + float(projection.semi_major_axis); a = float(projection.semi_major_axis); b = float(projection.semi_minor_axis); lon0 = math.radians(float(projection.longitude_of_projection_origin)); e2 = (a*a-b*b)/(a*a)
                 latr = math.radians(lat); lonr = math.radians(lon); geoc = math.atan((b*b/a/a)*math.tan(latr)); radius = b/math.sqrt(1-e2*math.cos(geoc)**2); dl = lonr-lon0; sx = height-radius*math.cos(geoc)*math.cos(dl); sy = -radius*math.cos(geoc)*math.sin(dl); sz = radius*math.sin(geoc); visible = height*(height-sx) >= sy*sy+(a/b)**2*sz*sz+(height-sx)**2
-                if not visible: self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame["timestamp"]}); return
+                if not visible: self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame.get("timestamp") or frame.get("data")}); return
                 x = math.asin(-sy/math.sqrt(sx*sx+sy*sy+sz*sz)); y = math.atan2(sz, sx); xs = np.asarray(dataset.variables["x"][:]); ys = np.asarray(dataset.variables["y"][:]); ix = int(round((x-xs[0])/(xs[-1]-xs[0])*(len(xs)-1))); iy = int(round((y-ys[0])/(ys[-1]-ys[0])*(len(ys)-1)))
-                if not (0 <= ix < len(xs) and 0 <= iy < len(ys)): self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame["timestamp"]}); return
+                if not (0 <= ix < len(xs) and 0 <= iy < len(ys)): self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame.get("timestamp") or frame.get("data")}); return
                 raw = dataset.variables["CMI"][iy, ix]; value = float(raw) * float(config["scale"]) + float(config["offset"])
-            self.send_json(200, {"status": "ok", "lat": lat, "lon": lon, "product": product.upper(), "value": value, "units": config["units"], "timestamp": frame["timestamp"], "source": "NOAA/NODD — GOES-19 ABI"})
+            self.send_json(200, {"status": "ok", "lat": lat, "lon": lon, "product": product.upper(), "value": value, "units": config["units"], "timestamp": frame.get("timestamp") or frame.get("data"), "source": "NOAA/NODD — GOES-19 ABI"})
         except (ValueError, OSError, requests.RequestException, ImportError, IndexError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível amostrar o pixel GOES-19.", "details": str(exc)})
 
     def _goes19_local_file(self, key: str) -> Path:
