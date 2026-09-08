@@ -11,8 +11,12 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from extract_wrf_severe import compute_frame as compute_severe_frame
-from extract_wrf_severe import flat_round as severe_flat_round
+try:
+    from extract_wrf_severe import compute_frame as compute_severe_frame
+    from extract_wrf_severe import flat_round as severe_flat_round
+except ImportError:
+    compute_severe_frame = None
+    severe_flat_round = None
 
 
 def safe_round_array(values: np.ndarray, decimals: int) -> list[float]:
@@ -282,17 +286,22 @@ def main() -> None:
                 },
             }
 
-            severe_fields, severe_methods = compute_severe_frame(dataset, rows, cols)
-            severe = severe_payload(
-                severe_fields, severe_methods, model='gfs', run_date=run_date, run_cycle=run_cycle,
-                init_time=init_time, valid_time=valid_time, forecast_hour=forecast_hour,
-                dx_m=dx_m, dy_m=dy_m, rows=rows, cols=cols,
-            )
+            severe = None
+            severe_methods = {}
+            if compute_severe_frame is not None:
+                severe_fields, severe_methods = compute_severe_frame(dataset, rows, cols)
+                severe = severe_payload(
+                    severe_fields, severe_methods, model='gfs', run_date=run_date, run_cycle=run_cycle,
+                    init_time=init_time, valid_time=valid_time, forecast_hour=forecast_hour,
+                    dx_m=dx_m, dy_m=dy_m, rows=rows, cols=cols,
+                )
 
         filename = f"gfs/f{forecast_hour:03d}.json.gz"
         write_gzip_json(output_dir / filename, payload)
-        severe_filename = f"severe/gfs/f{forecast_hour:03d}.json.gz"
-        write_gzip_json(output_dir / severe_filename, severe)
+        severe_filename = None
+        if severe is not None:
+            severe_filename = f"severe/gfs/f{forecast_hour:03d}.json.gz"
+            write_gzip_json(output_dir / severe_filename, severe)
         frames.append({
             "index": len(frames),
             "forecastHour": forecast_hour,
@@ -303,7 +312,7 @@ def main() -> None:
             "source": payload["source"],
             "reflectivitySource": payload["reflectivitySource"],
             "reflectivityStats": payload["reflectivityStats"],
-            "severeFile": severe_filename,
+            **({"severeFile": severe_filename} if severe_filename else {}),
         })
 
     metadata = {
@@ -315,7 +324,7 @@ def main() -> None:
         "initTime": init_time.isoformat().replace("+00:00", "Z"),
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
         "reflectivitySource": "REFL_10CM_NATIVE",
-        "wrf2SevereDiagnostics": True,
+        "wrf2SevereDiagnostics": compute_severe_frame is not None,
         "wrf2SeverePathTemplate": "severe/{model}/f{forecastHour:03d}.json.gz",
         "wrf2SevereFields": [
             "stp", "scp", "srh01", "srh03", "bulkShear06", "effectiveBulkShear",
