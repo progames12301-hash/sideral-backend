@@ -76,12 +76,21 @@ jobs:
           }
 
           may_dispatch() {
-            local workflow="$1" active
-            active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 \
-              --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested" or .status == "pending")] | length')"
+            local workflow="$1" active now created id status age
+            now="$(date -u +%s)"
+            # Libera execuções presas há mais de duas horas.
+            while IFS=$'\t' read -r id status created; do
+              [ -n "$id" ] || continue
+              created="$(date -u -d "$created" +%s 2>/dev/null || echo 0)"
+              age=$((now - created))
+              if [ "$age" -ge 7200 ] && { [ "$status" = "queued" ] || [ "$status" = "waiting" ] || [ "$status" = "pending" ] || [ "$status" = "in_progress" ]; }; then
+                echo "Cancelando execução obsoleta $workflow #$id (${age}s)"
+                gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+              fi
+            done < <(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 --json databaseId,status,createdAt --jq '.[] | [.databaseId,.status,.createdAt] | @tsv')
+            active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested" or .status == "pending")] | length')"
             [ "$active" = "0" ]
           }
-
           ensure_forecast() {
             local label="$1" branch="$2" workflow="$3" minimum="$4"
             if has_target "$branch" "$minimum"; then
