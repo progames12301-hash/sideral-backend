@@ -14,6 +14,8 @@ on:
       - "ICON Global - PROXIMO DIA AUTOMATICO"
       - "ECMWF IFS - PROXIMO DIA AUTOMATICO"
       - "WRF 4 km - DOIS DIAS AUTOMATICO"
+      - "WRF Sudeste 4 km ICON - REFL NATIVO"
+      - "WRF Sudeste 4 km ECMWF - REFL NATIVO"
     types: [completed]
   workflow_dispatch:
 
@@ -162,4 +164,10 @@ jobs:
           ensure_forecast "GFS" "gfs-model-data" "gfs-global-models.yml" 8
           ensure_forecast "ICON" "icon-data" "icon-global-auto.yml" 24
           ensure_forecast "ECMWF" "ecmwf-data" "ecmwf-ifs-auto.yml" 8
+
+          # O Sudeste possui branches e workflows próprios. Não depender
+          # apenas do WRF Sul: se a branch estiver ausente, vazia ou sem o
+          # dia seguinte, iniciar a fonte correspondente automaticamente.
+          ensure_forecast "WRF Sudeste ICON" "wrf-sudeste-icon-data" "wrf-sudeste-icon-4km.yml" 1
+          ensure_forecast "WRF Sudeste ECMWF" "wrf-sudeste-ecmwf-data" "wrf-sudeste-ecmwf-4km.yml" 1
           ensure_wrf_latest_cycle
