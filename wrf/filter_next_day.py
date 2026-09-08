@@ -13,11 +13,20 @@ def main() -> None:
     parser.add_argument('--root', default='wrf_publish')
     parser.add_argument('--days', type=int, default=2)
     parser.add_argument('--interval-hours', type=int, choices=(1, 3), default=1)
-    parser.add_argument(
+    file_mode = parser.add_mutually_exclusive_group()
+    file_mode.add_argument(
         '--preserve-files',
+        dest='preserve_files',
         action='store_true',
         help='Mantem todos os arquivos de forecast no diretorio do modelo; filtra apenas metadata.json.',
     )
+    file_mode.add_argument(
+        '--prune-files',
+        dest='preserve_files',
+        action='store_false',
+        help='Remove arquivos que ficam fora da janela local publicada.',
+    )
+    parser.set_defaults(preserve_files=True)
     args = parser.parse_args()
 
     if args.days not in (1, 2):
@@ -30,10 +39,21 @@ def main() -> None:
     if meta.get('reflectivitySource') != 'REFL_10CM_NATIVE':
         raise SystemExit(f"Fonte de refletividade invalida: {meta.get('reflectivitySource')}")
 
+    original_frames = list(meta.get('frames', []))
+    model = str(meta.get('model') or 'gfs').lower()
+    model_dir = root / model
+
+    # Quando o merge realmente contem F060, a publicacao nao pode prosseguir
+    # se o arquivo correspondente estiver ausente. Isso evita publicar uma
+    # branch que inevitavelmente responderia HTTP 404 ao frontend.
+    original_hours = {int(frame.get('forecastHour', -1)) for frame in original_frames}
+    if 60 in original_hours and not (model_dir / 'f060.json.gz').is_file():
+        raise SystemExit(f'F060 ausente antes da publicacao: {model_dir / "f060.json.gz"}')
+
     brt = ZoneInfo('America/Sao_Paulo')
-    # O metadata publicado acompanha os proximos dias em BRT. Quando
-    # --preserve-files for usado, os arquivos F000-F072 continuam disponiveis
-    # mesmo que nao facam parte da janela visual de dois dias.
+    # O metadata publicado acompanha os proximos dias em BRT. Os arquivos
+    # completos permanecem disponiveis por padrao para que URLs fixas como
+    # F060/F063/F066/F069/F072 nao virem 404 fora da janela visual.
     first_date = datetime.now(brt).date() + timedelta(days=1)
     target_dates = [first_date + timedelta(days=n) for n in range(args.days)]
     target_set = set(target_dates)
@@ -43,7 +63,7 @@ def main() -> None:
     hours_by_date = {date: set() for date in target_dates}
 
     expected_hours = set(range(0, 24, args.interval_hours))
-    for frame in sorted(meta.get('frames', []), key=lambda item: item['validTime']):
+    for frame in sorted(original_frames, key=lambda item: item['validTime']):
         if frame.get('reflectivitySource') != 'REFL_10CM_NATIVE':
             raise SystemExit(f'Frame sem REFL_10CM nativo: {frame}')
         valid = datetime.fromisoformat(frame['validTime'].replace('Z', '+00:00')).astimezone(brt)
@@ -70,8 +90,6 @@ def main() -> None:
             f'Esperados {len(expected_hours) * args.days} horarios em BRT a cada {args.interval_hours} h; ' + '; '.join(errors)
         )
 
-    model = str(meta.get('model') or 'gfs').lower()
-    model_dir = root / model
     if not args.preserve_files:
         for path in model_dir.glob('*.json.gz'):
             rel = path.relative_to(root).as_posix()
@@ -88,12 +106,14 @@ def main() -> None:
     meta['localHours'] = [frame['localHour'] for frame in keep]
     meta['daysPublished'] = args.days
     meta['forecastFilesPreserved'] = bool(args.preserve_files)
+    meta['availableForecastHours'] = sorted(original_hours)
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
 
     print('MODELO:', model)
     print('DIAS:', ', '.join(str(x) for x in target_dates))
     print('QUADROS NO METADATA:', len(keep))
     print('ARQUIVOS COMPLETOS PRESERVADOS:', 'sim' if args.preserve_files else 'nao')
+    print('FORECAST HOURS DISPONIVEIS:', sorted(original_hours))
     print(f'RESOLUCAO TEMPORAL: {args.interval_hours} h')
     for frame in keep:
         print(f"F{int(frame['forecastHour']):03d} {frame['validTime']} => {frame['localValidTime']}")
