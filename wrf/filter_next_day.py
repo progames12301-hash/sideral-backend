@@ -13,6 +13,11 @@ def main() -> None:
     parser.add_argument('--root', default='wrf_publish')
     parser.add_argument('--days', type=int, default=2)
     parser.add_argument('--interval-hours', type=int, choices=(1, 3), default=1)
+    parser.add_argument(
+        '--preserve-files',
+        action='store_true',
+        help='Mantem todos os arquivos de forecast no diretorio do modelo; filtra apenas metadata.json.',
+    )
     args = parser.parse_args()
 
     if args.days not in (1, 2):
@@ -26,8 +31,9 @@ def main() -> None:
         raise SystemExit(f"Fonte de refletividade invalida: {meta.get('reflectivitySource')}")
 
     brt = ZoneInfo('America/Sao_Paulo')
-    # O arquivo publicado deve acompanhar o calendario atual em BRT, mesmo
-    # quando a rodada 00Z ainda cai no dia anterior no horario local.
+    # O metadata publicado acompanha os proximos dias em BRT. Quando
+    # --preserve-files for usado, os arquivos F000-F072 continuam disponiveis
+    # mesmo que nao facam parte da janela visual de dois dias.
     first_date = datetime.now(brt).date() + timedelta(days=1)
     target_dates = [first_date + timedelta(days=n) for n in range(args.days)]
     target_set = set(target_dates)
@@ -66,10 +72,11 @@ def main() -> None:
 
     model = str(meta.get('model') or 'gfs').lower()
     model_dir = root / model
-    for path in model_dir.glob('*.json.gz'):
-        rel = path.relative_to(root).as_posix()
-        if rel not in keep_files:
-            path.unlink()
+    if not args.preserve_files:
+        for path in model_dir.glob('*.json.gz'):
+            rel = path.relative_to(root).as_posix()
+            if rel not in keep_files:
+                path.unlink()
 
     meta['frames'] = keep
     meta['frameCount'] = len(keep)
@@ -80,11 +87,13 @@ def main() -> None:
     meta['temporalResolutionMinutes'] = args.interval_hours * 60
     meta['localHours'] = [frame['localHour'] for frame in keep]
     meta['daysPublished'] = args.days
+    meta['forecastFilesPreserved'] = bool(args.preserve_files)
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
 
     print('MODELO:', model)
     print('DIAS:', ', '.join(str(x) for x in target_dates))
-    print('QUADROS:', len(keep))
+    print('QUADROS NO METADATA:', len(keep))
+    print('ARQUIVOS COMPLETOS PRESERVADOS:', 'sim' if args.preserve_files else 'nao')
     print(f'RESOLUCAO TEMPORAL: {args.interval_hours} h')
     for frame in keep:
         print(f"F{int(frame['forecastHour']):03d} {frame['validTime']} => {frame['localValidTime']}")
