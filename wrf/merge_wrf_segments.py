@@ -26,6 +26,7 @@ def main() -> None:
     out.mkdir(parents=True)
 
     by_hour: dict[int, tuple[dict, Path]] = {}
+    integration_age: dict[int, int] = {}
     severe_by_key: dict[tuple[str, int], Path] = {}
     template = None
 
@@ -38,12 +39,20 @@ def main() -> None:
             raise SystemExit(f'Refletividade nao nativa em {root}')
         if template is None:
             template = meta
+        elif any(meta.get(key) != template.get(key) for key in ('model', 'initTime')):
+            raise SystemExit(f'Segmentos de modelos ou rodadas diferentes: {root}')
+        segment_start = min((int(frame['forecastHour']) for frame in meta.get('frames', [])), default=0)
         for frame in meta.get('frames', []):
             hour = int(frame['forecastHour'])
             file_path = root / frame['file']
             if not file_path.exists():
                 raise SystemExit(f'Frame ausente: {file_path}')
-            by_hour[hour] = (frame, file_path)
+            age = hour - segment_start
+            # Prefer the integrated end of the preceding segment over the cold
+            # initialization of the next segment, independently of input order.
+            if hour not in by_hour or age > integration_age[hour]:
+                by_hour[hour] = (frame, file_path)
+                integration_age[hour] = age
 
         severe_root = root / 'severe'
         if severe_root.exists():
