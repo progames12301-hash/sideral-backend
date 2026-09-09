@@ -21,7 +21,7 @@ permissions:
 
 concurrency:
   group: sideral-wrf-ecmwf-daily
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   wrf:

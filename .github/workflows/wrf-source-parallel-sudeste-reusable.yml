@@ -251,7 +251,7 @@ jobs:
   publish-severe:
     continue-on-error: true
     name: Publicar ${{ inputs.model }} WRF2 severo independente
-    if: always()
+    if: ${{ !cancelled() && needs.run-info.result == 'success' }}
     needs: [run-info, segments]
     runs-on: ubuntu-22.04
     timeout-minutes: 40
@@ -319,6 +319,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # A failed/empty attempt must never replace the last usable publication.
+          if ! python3 -c 'import json; from pathlib import Path; p=Path("wrf2_publish/metadata.json"); d=json.loads(p.read_text()) if p.exists() else {}; raise SystemExit(0 if d.get("frameCount", 0) > 0 and d.get("frames") else 1)'; then
+            echo "Sem quadros severos validos; preservando a branch publicada."
+            exit 0
+          fi
           git config user.name "sideral-wrf-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           publish_branch="wrf2-${SOURCE_MODEL}-data"

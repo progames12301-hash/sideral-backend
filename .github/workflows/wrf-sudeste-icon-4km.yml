@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: sideral-wrf-sudeste-icon
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   wrf:
