@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: sideral-wrf-sudeste-ecmwf
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   wrf:

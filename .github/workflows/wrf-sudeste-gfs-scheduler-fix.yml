@@ -27,6 +27,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          active="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/wrf-sudeste-gfs-4km.yml/runs?per_page=30" --jq '[.workflow_runs[] | select(.status != "completed")] | length')"
+          if [ "$active" != "0" ]; then
+            echo "WRF Sudeste GFS ja ativo; preservando processamento."
+            exit 0
+          fi
           gh api \
             --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/wrf-sudeste-gfs-4km.yml/dispatches" \

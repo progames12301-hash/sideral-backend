@@ -30,40 +30,6 @@ jobs:
 
           DATA="$(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=50")"
 
-          if [[ -n "${TRIGGER_RUN_ID:-}" ]]; then
-            KEEP_ID="$TRIGGER_RUN_ID"
-          else
-            KEEP_ID="$(jq -r '[.workflow_runs[] | select(.status == "in_progress" or .status == "queued" or .status == "pending")] | sort_by(.created_at) | last | .id // empty' <<<"$DATA")"
-          fi
-
-          if [[ -z "${KEEP_ID:-}" ]]; then
-            echo "Nenhuma rodada GFS ativa."
-            exit 0
-          fi
-
-          echo "Rodada mais nova preservada: $KEEP_ID"
-
-          while read -r RUN_ID; do
-            [[ -z "$RUN_ID" ]] && continue
-            echo "Cancelando rodada GFS mais antiga: $RUN_ID"
-            gh api --method POST "repos/$REPO/actions/runs/$RUN_ID/cancel" >/dev/null 2>&1 || true
-          done < <(jq -r --argjson keep "$KEEP_ID" '.workflow_runs[] | select((.status == "in_progress" or .status == "queued" or .status == "pending") and .id != $keep) | .id' <<<"$DATA")
-
-          CREATED_AT="$(jq -r --argjson keep "$KEEP_ID" '.workflow_runs[] | select(.id == $keep) | .created_at // empty' <<<"$DATA")"
-          if [[ -z "$CREATED_AT" ]]; then
-            exit 0
-          fi
-
-          if python3 - "$CREATED_AT" <<'PY'
-          import datetime as dt
-          import sys
-
-          created = dt.datetime.fromisoformat(sys.argv[1].replace('Z', '+00:00'))
-          age_hours = (dt.datetime.now(dt.timezone.utc) - created).total_seconds() / 3600
-          print(f'Idade da rodada ativa: {age_hours:.2f} h')
-          raise SystemExit(0 if age_hours >= 8 else 1)
-          PY
-          then
-            echo "Rodada ativa passou de 8 horas; cancelando para nao bloquear a proxima."
-            gh api --method POST "repos/$REPO/actions/runs/$KEEP_ID/cancel" >/dev/null 2>&1 || true
-          fi
+          # Preserve active computation. GitHub concurrency already keeps one pending run.
+          # Each segment has its own 350-minute timeout; elapsed workflow age includes queue time.
+          jq -r '.workflow_runs[] | select(.status != "completed") | "Preservando WRF \(.id): \(.status)"' <<<"$DATA"

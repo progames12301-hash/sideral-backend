@@ -77,6 +77,12 @@ jobs:
 
           may_dispatch() {
             local workflow="$1" active now created id status age
+            # WRF segments have their own timeout; never restart a healthy multi-wave run.
+            if [[ "$workflow" == wrf-* ]]; then
+              active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 --json status --jq '[.[] | select(.status != "completed")] | length')"
+              [ "$active" = "0" ]
+              return
+            fi
             now="$(date -u +%s)"
             # Libera execuções presas há mais de duas horas.
             while IFS=$'\t' read -r id status created; do
