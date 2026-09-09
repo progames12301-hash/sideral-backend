@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -54,7 +54,12 @@ def main() -> None:
     # O metadata publicado acompanha os proximos dias em BRT. Os arquivos
     # completos permanecem disponiveis por padrao para que URLs fixas como
     # F060/F063/F066/F069/F072 nao virem 404 fora da janela visual.
-    first_date = datetime.now(brt).date() + timedelta(days=1)
+    # Keep the forecast window tied to initialization even if queued segments
+    # finish on a later calendar day. F000-F072 covers these two complete days.
+    init = datetime.fromisoformat(meta['initTime'].replace('Z', '+00:00'))
+    if init.tzinfo is None:
+        raise SystemExit('initTime precisa incluir fuso horario')
+    first_date = init.astimezone(timezone.utc).date() + timedelta(days=1)
     target_dates = [first_date + timedelta(days=n) for n in range(args.days)]
     target_set = set(target_dates)
 
