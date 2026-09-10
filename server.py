@@ -5,6 +5,7 @@ import csv
 import io
 import html
 import json
+import gzip
 import math
 import os
 import re
@@ -763,66 +764,40 @@ def approximate_reflectivity_dbz(dataset: Any, t2m: Any, precip_rate: Any) -> An
 
 def find_wrf_files(model_key: str = "icon") -> list[Path]:
     model_key = (model_key or "icon").lower()
-    if model_key not in WRF_MODEL_OUTPUTS:
-        raise ValueError("Modelo WRF invalido.")
-
+    if model_key not in WRF_MODEL_OUTPUTS: raise ValueError("Modelo WRF inválido.")
     root = WRF_OUTPUT_DIR
     configured = os.environ.get(f"WRF_{model_key.upper()}_OUTPUT_DIR", "").strip()
-    search_dirs = [
-        Path(configured) if configured else None,
-        WRF_MODEL_OUTPUTS[model_key],
-        root,
-        root / "output" / model_key,
-        root / "wrf_system" / "output" / model_key,
-        BASE_DIR / "wrf_system" / "output" / model_key,
-    ]
+    search_dirs = [Path(configured) if configured else None, WRF_MODEL_OUTPUTS[model_key], root, root / "output" / model_key, root / "wrf_system" / "output" / model_key, BASE_DIR / "wrf_system" / "output" / model_key]
     unique_dirs: list[Path] = []
     for directory in search_dirs:
-        if directory is not None and directory not in unique_dirs:
-            unique_dirs.append(directory)
-
+        if directory is not None and directory not in unique_dirs: unique_dirs.append(directory)
     candidates: list[Path] = []
     for directory in unique_dirs:
-        if not directory.exists():
-            continue
+        if not directory.exists(): continue
         found = sorted({path.resolve() for path in directory.rglob("wrfout_d01_*") if path.is_file()})
         if directory == root:
-            tagged = [
-                path
-                for path in found
-                if model_key in {part.lower() for part in path.relative_to(root).parts[:-1]}
-            ]
+            tagged = [path for path in found if model_key in {part.lower() for part in path.relative_to(root).parts[:-1]}]
             direct = [path for path in found if path.parent == root]
             found = tagged or direct
         if found:
             candidates = found
             break
-
     if not candidates:
         checked = ", ".join(str(path) for path in unique_dirs)
-        raise FileNotFoundError(
-            f"Nenhum arquivo wrfout do modelo {model_key.upper()} encontrado. "
-            f"Pastas verificadas: {checked}."
-        )
-
+        raise FileNotFoundError(f"Nenhum arquivo wrfout do modelo {model_key.upper()} encontrado. Pastas verificadas: {checked}.")
     runs: dict[str, list[Path]] = {}
     for path in candidates:
         match = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
-        if not match:
-            continue
+        if not match: continue
         runs.setdefault(match.group(1), []).append(path)
-    if not runs:
-        return candidates
-
+    if not runs: return candidates
     latest_run = max(runs)
-
     def forecast_time(path: Path) -> tuple[int, int, int]:
         match = re.search(r"wrfout_d01_\d{4}-\d{2}-\d{2}_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
-        if not match:
-            return (0, 0, 0)
+        if not match: return (0, 0, 0)
         return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-
-    return sorted(runs[latest_run], key=forecast_time)
+    files = sorted(runs[latest_run], key=forecast_time)
+    return files
 
 def gfs_run_key(data_dir: Path) -> tuple[str, str]:
     run_info = data_dir / "run_info.env"
@@ -1835,6 +1810,54 @@ def _ecmwf_build_sounding_payload(
 
 
 
+def _published_wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour: int) -> dict[str, Any]:
+    """Read the compact vertical grid published by GitHub Actions."""
+    base = "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-data"
+    metadata_response = requests.get(f"{base}/metadata.json", timeout=25)
+    metadata_response.raise_for_status()
+    metadata = metadata_response.json()
+    frames = [
+        frame for frame in metadata.get("frames", [])
+        if str(frame.get("model") or metadata.get("model") or "").lower() == model_key
+        and frame.get("soundingFile")
+    ]
+    if not frames:
+        raise FileNotFoundError(f"A rodada publicada de {model_key.upper()} ainda nao possui perfis verticais.")
+    frame = min(frames, key=lambda item: abs(int(item.get("forecastHour", 0)) - int(forecast_hour)))
+    response = requests.get(f"{base}/{frame['soundingFile']}", timeout=45)
+    response.raise_for_status()
+    grid = json.loads(gzip.decompress(response.content).decode("utf-8"))
+    grid_x, grid_y, levels = int(grid["gridX"]), int(grid["gridY"]), int(grid["levels"])
+    lats, lons = grid["lat"], grid["lon"]
+    if not lats or len(lats) != grid_x * grid_y:
+        raise RuntimeError("Grade vertical WRF publicada esta incompleta.")
+    south, north, west, east = min(lats), max(lats), min(lons), max(lons)
+    if lat < south - .1 or lat > north + .1 or lon < west - .1 or lon > east + .1:
+        raise WRFDomainError(f"Este ponto esta fora do dominio WRF publicado ({south:.2f}..{north:.2f} lat / {west:.2f}..{east:.2f} lon). Use ECMWF fora da area WRF.")
+    cosine = math.cos(math.radians(lat))
+    point = min(range(len(lats)), key=lambda i: (lats[i] - lat) ** 2 + ((lons[i] - lon) * cosine) ** 2)
+    size = grid_x * grid_y
+    def column(name: str) -> list[float]:
+        values = grid[name]
+        return [values[level * size + point] for level in range(levels)]
+    pressure, temperature, dewpoint = column("pressure"), column("temperature"), column("dewpoint")
+    u, v, height = column("u"), column("v"), column("height")
+    terrain = float(grid["terrain"][point])
+    points = []
+    for index in range(levels):
+        values = (pressure[index], temperature[index], dewpoint[index], u[index], v[index], height[index])
+        if all(math.isfinite(float(value)) for value in values) and 100 <= pressure[index] <= 1050:
+            points.append({"pressure": pressure[index], "temperature": temperature[index], "dewpoint": min(temperature[index], dewpoint[index]), "u": u[index], "v": v[index], "height": height[index]})
+    points.sort(key=lambda item: item["pressure"], reverse=True)
+    if len(points) < 8 or points[-1]["pressure"] > 300:
+        raise RuntimeError("A grade WRF publicada nao possui niveis suficientes para este perfil.")
+    def series(key: str, digits: int = 1) -> list[float]:
+        return [round(float(item[key]), digits) for item in points]
+    profile = {"pressure": series("pressure"), "height": series("height", 0), "height_agl": [round(max(0., float(item["height"]) - terrain), 0) for item in points], "temperature": series("temperature"), "dewpoint": series("dewpoint"), "u": series("u"), "v": series("v"), "wind_speed": [round(math.hypot(float(item["u"]), float(item["v"])), 1) for item in points], "wind_direction": [round(wind_direction_deg(float(item["u"]), float(item["v"]))) for item in points], "omega": [None] * len(points)}
+    empty = {"direction": None, "speed": None, "u": None, "v": None}
+    return {"model": f"{model_key.upper()} -> WRF", "model_id": f"wrf_{model_key}", "latitude": lat, "longitude": lon, "grid_latitude": round(float(lats[point]), 3), "grid_longitude": round(float(lons[point]), 3), "run": metadata.get("runDate"), "run_cycle": metadata.get("runCycle", "WRF"), "forecast_hour": int(frame.get("forecastHour", 0)), "valid": frame.get("validTime") or grid.get("validTime"), "surface_elevation_m": round(terrain), "surface_pressure_hpa": profile["pressure"][0], "profile": profile, "parcels": {}, "thermodynamics": {}, "kinematics": {"storm_motion_name": "WRF", "bunkers_rm": empty, "bunkers_lm": empty, "corfidi_up": empty, "corfidi_down": empty}, "severe": {}, "winter": {}, "analogs": {"hail": {}, "supercell": {}, "database_scope": "Perfil vertical compacto extraido do wrfout operacional."}, "source": f"WRF {model_key.upper()} - perfil vertical publicado", "attribution": "Sideral WRF", "cache": False}
+
+
 def _wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour: int) -> dict[str, Any]:
     """Extract a native vertical profile and refuse coordinates outside WRF coverage."""
     try:
@@ -1844,7 +1867,10 @@ def _wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour:
         raise RuntimeError("DependÃªncias WRF ausentes no servidor.") from exc
     if model_key not in WRF_MODEL_OUTPUTS:
         raise ValueError("Modelo WRF invÃ¡lido.")
-    files = find_wrf_files(model_key)
+    try:
+        files = find_wrf_files(model_key)
+    except FileNotFoundError:
+        return _published_wrf_sounding_payload(lat, lon, model_key, forecast_hour)
     path = files[min(max(0, int(forecast_hour)), len(files) - 1)]
     dataset = xr.open_dataset(path, engine="netcdf4")
     try:
@@ -3522,3 +3548,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
