@@ -1,5 +1,8 @@
 name: CIM WRF 3 km - diÃ¡rio
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/cim-wrf-3km-operational.yml']
   schedule:
     # Executa apÃ³s a rodada operacional principal do Sul.
     - cron: '37 8 * * *'
@@ -38,7 +41,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libeccodes-tools
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata>=0.4'
+          python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
       - name: Executar CIM WRF 3 km
         env:
           WRF_DX_METERS: '3000'
