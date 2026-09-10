@@ -763,22 +763,66 @@ def approximate_reflectivity_dbz(dataset: Any, t2m: Any, precip_rate: Any) -> An
 
 def find_wrf_files(model_key: str = "icon") -> list[Path]:
     model_key = (model_key or "icon").lower()
-    output_dir = WRF_MODEL_OUTPUTS.get(model_key, WRF_MODEL_OUTPUTS["icon"])
-    candidates = sorted(path for path in output_dir.glob("wrfout_d01_*") if path.is_file())
-    if not candidates: raise FileNotFoundError(f"Nenhum arquivo wrfout encontrado em {output_dir}. Execute a simulacao {model_key.upper()} + WRF Sul 4 km primeiro.")
+    if model_key not in WRF_MODEL_OUTPUTS:
+        raise ValueError("Modelo WRF invalido.")
+
+    root = WRF_OUTPUT_DIR
+    configured = os.environ.get(f"WRF_{model_key.upper()}_OUTPUT_DIR", "").strip()
+    search_dirs = [
+        Path(configured) if configured else None,
+        WRF_MODEL_OUTPUTS[model_key],
+        root,
+        root / "output" / model_key,
+        root / "wrf_system" / "output" / model_key,
+        BASE_DIR / "wrf_system" / "output" / model_key,
+    ]
+    unique_dirs: list[Path] = []
+    for directory in search_dirs:
+        if directory is not None and directory not in unique_dirs:
+            unique_dirs.append(directory)
+
+    candidates: list[Path] = []
+    for directory in unique_dirs:
+        if not directory.exists():
+            continue
+        found = sorted({path.resolve() for path in directory.rglob("wrfout_d01_*") if path.is_file()})
+        if directory == root:
+            tagged = [
+                path
+                for path in found
+                if model_key in {part.lower() for part in path.relative_to(root).parts[:-1]}
+            ]
+            direct = [path for path in found if path.parent == root]
+            found = tagged or direct
+        if found:
+            candidates = found
+            break
+
+    if not candidates:
+        checked = ", ".join(str(path) for path in unique_dirs)
+        raise FileNotFoundError(
+            f"Nenhum arquivo wrfout do modelo {model_key.upper()} encontrado. "
+            f"Pastas verificadas: {checked}."
+        )
+
     runs: dict[str, list[Path]] = {}
     for path in candidates:
         match = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
-        if not match: continue
+        if not match:
+            continue
         runs.setdefault(match.group(1), []).append(path)
-    if not runs: return candidates
+    if not runs:
+        return candidates
+
     latest_run = max(runs)
+
     def forecast_time(path: Path) -> tuple[int, int, int]:
         match = re.search(r"wrfout_d01_\d{4}-\d{2}-\d{2}_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
-        if not match: return (0, 0, 0)
+        if not match:
+            return (0, 0, 0)
         return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-    files = sorted(runs[latest_run], key=forecast_time)
-    return files
+
+    return sorted(runs[latest_run], key=forecast_time)
 
 def gfs_run_key(data_dir: Path) -> tuple[str, str]:
     run_info = data_dir / "run_info.env"
