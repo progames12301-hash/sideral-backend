@@ -2,6 +2,8 @@
 
 Nos últimos dias apareceram dúvidas sobre a origem das previsões WRF exibidas pela Sideral. Este texto existe para explicar o suficiente para que qualquer pessoa entenda o processo, sem transformar a documentação pública em um manual operacional da nossa infraestrutura.
 
+![Fluxograma do WRF Sideral 4 km](docs/wrf-sideral-4km-fluxograma.svg)
+
 ## O que realmente é executado
 
 A Sideral utiliza o **WRF-ARW**, um modelo numérico regional amplamente usado em pesquisa e previsão do tempo. Ele não cria a previsão do zero: precisa receber uma representação inicial da atmosfera e informações de contorno vindas de um modelo global.
