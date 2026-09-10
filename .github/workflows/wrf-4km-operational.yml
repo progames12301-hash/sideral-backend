@@ -79,7 +79,7 @@ jobs:
           set -euxo pipefail
           git fetch origin wrf-data
           git worktree add --detach published-wrf origin/wrf-data
-          find published-wrf -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          find published-wrf -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a wrf_publish/. published-wrf/
           git -C published-wrf config user.name 'github-actions[bot]'
           git -C published-wrf config user.email '41898282+github-actions[bot]@users.noreply.github.com'
