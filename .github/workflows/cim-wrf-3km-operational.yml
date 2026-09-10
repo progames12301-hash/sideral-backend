@@ -1,8 +1,5 @@
 name: CIM WRF 3 km - diÃ¡rio
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/cim-wrf-3km-operational.yml']
   schedule:
     # Executa apÃ³s a rodada operacional principal do Sul.
     - cron: '37 8 * * *'
