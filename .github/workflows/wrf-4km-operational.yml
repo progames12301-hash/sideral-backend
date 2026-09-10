@@ -1,0 +1,106 @@
+name: WRF 4 km - Sul operacional
+
+on:
+  schedule:
+    # Quatro ciclos por dia, apÃ³s a disponibilizaÃ§Ã£o normal do GFS F006.
+    - cron: '37 4,10,16,22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wrf-gfs-operacional
+  cancel-in-progress: false
+
+jobs:
+  run-and-publish:
+    name: Gerar e publicar WRF Sul 4 km
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout do executor
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Preparar Python para o pÃ³s-processamento
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependÃªncias de extraÃ§Ã£o
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2'
+
+      - name: Liberar espaÃ§o do runner
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          df -h
+
+      - name: Executar WRF com a rodada GFS disponÃ­vel
+        run: |
+          set -euxo pipefail
+          chmod +x wrf/run_gfs_test.sh
+          wrf/run_gfs_test.sh
+
+      - name: Extrair apenas campos publicados do wrfout
+        run: |
+          set -euxo pipefail
+          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish
+
+      - name: Validar a rodada antes da publicaÃ§Ã£o
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('wrf_publish')
+          metadata = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+          frames = metadata.get('frames') or []
+          assert metadata.get('model') == 'gfs', 'Modelo publicado inesperado'
+          assert metadata.get('reflectivitySource') == 'REFL_10CM_NATIVE', 'Refletividade nÃ£o Ã© nativa'
+          assert len(frames) >= 3, 'Rodada incompleta: menos de F000, F003 e F006'
+          assert [frame.get('forecastHour') for frame in frames[:3]] == [0, 3, 6], 'Horizonte inicial incompleto'
+          for frame in frames:
+              assert (root / frame['file']).is_file(), f"Arquivo ausente: {frame['file']}"
+          print(f"Rodada validada: {metadata['runDate']} {metadata['runCycle']} ({len(frames)} quadros)")
+          PY
+
+      - name: Publicar a rodada validada na branch consumida pelo Refletividade
+        run: |
+          set -euxo pipefail
+          git fetch origin wrf-data
+          git worktree add --detach published-wrf origin/wrf-data
+          find published-wrf -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          cp -a wrf_publish/. published-wrf/
+          git -C published-wrf config user.name 'github-actions[bot]'
+          git -C published-wrf config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C published-wrf add --all
+          if git -C published-wrf diff --cached --quiet; then
+            echo 'A rodada validada jÃ¡ estÃ¡ publicada.'
+            exit 0
+          fi
+          git -C published-wrf commit -m "WRF Sul 4 km: $(jq -r '.runDate + " " + .runCycle' wrf_publish/metadata.json)"
+          git -C published-wrf push origin HEAD:wrf-data
+
+      - name: Salvar diagnÃ³sticos em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrf-failure-diagnostics
+          path: |
+            wrf_diagnostics/
+            wrf_work/*.stdout
+            wrf_work/*.log
+            wrf_work/run/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
