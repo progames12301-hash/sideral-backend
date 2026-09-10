@@ -73,6 +73,18 @@ def main() -> None:
                 severe_old.unlink(missing_ok=True)
             frame['severeFile'] = severe_new_rel
 
+        sounding_old_rel = str(frame.get('soundingFile') or f"soundings/gfs/{Path(old_rel).name}")
+        sounding_old = root / sounding_old_rel
+        sounding_new_rel = f"soundings/{model}/{Path(old_rel).name}"
+        sounding_new = root / sounding_new_rel
+        if sounding_old.exists():
+            sounding_data = read_gz(sounding_old)
+            sounding_data['model'] = model
+            write_gz(sounding_new, sounding_data)
+            if sounding_new.resolve() != sounding_old.resolve():
+                sounding_old.unlink(missing_ok=True)
+            frame['soundingFile'] = sounding_new_rel
+
         frame["file"] = new_rel
         frame["model"] = model
         frame["source"] = label
@@ -90,6 +102,10 @@ def main() -> None:
     if model != 'gfs' and old_severe_gfs.exists():
         shutil.rmtree(old_severe_gfs, ignore_errors=True)
 
+    old_soundings_gfs = root / 'soundings' / 'gfs'
+    if model != 'gfs' and old_soundings_gfs.exists():
+        shutil.rmtree(old_soundings_gfs, ignore_errors=True)
+
     meta["model"] = model
     meta["initialConditionModel"] = model.upper()
     meta["source"] = label
@@ -102,3 +118,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
