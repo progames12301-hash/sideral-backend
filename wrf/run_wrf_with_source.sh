@@ -26,6 +26,17 @@ done
   echo "Segmento WRF invalido: F${WRF_START_HOUR}-F${WRF_END_HOUR}" >&2; exit 2;
 }
 WRF_SEGMENT_HOURS=$((WRF_END_HOUR - WRF_START_HOUR))
+WRF_DX_METERS="${WRF_DX_METERS:-4000}"
+WRF_DY_METERS="${WRF_DY_METERS:-$WRF_DX_METERS}"
+WRF_E_WE="${WRF_E_WE:-300}"
+WRF_E_SN="${WRF_E_SN:-360}"
+WRF_TIME_STEP="${WRF_TIME_STEP:-24}"
+for VALUE in "$WRF_DX_METERS" "$WRF_DY_METERS" "$WRF_E_WE" "$WRF_E_SN" "$WRF_TIME_STEP"; do
+  [[ "$VALUE" =~ ^[0-9]+$ ]] || { echo "ConfiguraÃ§Ã£o de grade WRF invÃ¡lida" >&2; exit 2; }
+done
+(( WRF_DX_METERS >= 1000 && WRF_DY_METERS >= 1000 && WRF_E_WE >= 100 && WRF_E_SN >= 100 && WRF_TIME_STEP >= 1 )) || {
+  echo "ConfiguraÃ§Ã£o de grade WRF fora dos limites" >&2; exit 2;
+}
 
 IMAGE="dtcenter/wps_wrf:latest"
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
@@ -120,11 +131,11 @@ cat > "$WORK/namelist.wps" <<EOF
  parent_grid_ratio = 1,
  i_parent_start    = 1,
  j_parent_start    = 1,
- e_we              = 300,
- e_sn              = 360,
+ e_we              = ${WRF_E_WE},
+ e_sn              = ${WRF_E_SN},
  geog_data_res     = 'lowres',
- dx = 4000,
- dy = 4000,
+ dx = ${WRF_DX_METERS},
+ dy = ${WRF_DY_METERS},
  map_proj = 'lambert',
  ref_lat   = -28.10,
  ref_lon   = -53.45,
@@ -170,18 +181,18 @@ cat > "$WORK/namelist.input" <<EOF
  io_form_boundary = 2,
 /
 &domains
- time_step = 24,
+ time_step = ${WRF_TIME_STEP},
  time_step_fract_num = 0,
  time_step_fract_den = 1,
  max_dom = 1,
- e_we = 300,
- e_sn = 360,
+ e_we = ${WRF_E_WE},
+ e_sn = ${WRF_E_SN},
  e_vert = 45,
  p_top_requested = 5000,
  num_metgrid_levels = 14,
  num_metgrid_soil_levels = 4,
- dx = 4000,
- dy = 4000,
+ dx = ${WRF_DX_METERS},
+ dy = ${WRF_DY_METERS},
  grid_id = 1,
  parent_id = 0,
  i_parent_start = 1,
@@ -355,3 +366,4 @@ trap - EXIT
 cat "$DIAG/run.env"
 cat "$DIAG/wrf-runtime.env" 2>/dev/null || true
 cat "$DIAG/wrfout-files.txt" 2>/dev/null || true
+
