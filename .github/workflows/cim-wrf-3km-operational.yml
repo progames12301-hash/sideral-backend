@@ -1,7 +1,7 @@
-name: CIM WRF 3 km - diÃ¡rio
+name: CIM WRF 3 km - diário
 on:
   schedule:
-    # Executa apÃ³s a rodada operacional principal do Sul.
+    # Executa após a rodada operacional principal do Sul.
     - cron: '37 8 * * *'
   workflow_dispatch:
 permissions:
@@ -23,7 +23,7 @@ jobs:
             runner: wrf/run_ecmwf_wrf.sh
     name: CIM 3 km (${{ matrix.model }})
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Instalar dependÃªncias do WRF e pÃ³s-processamento
+      - name: Instalar dependências do WRF e pós-processamento
         run: |
           set -euxo pipefail
           sudo apt-get update
@@ -52,11 +52,25 @@ jobs:
           WRF_RUN_HOURS: '6'
         run: |
           set -euxo pipefail
+
+          # O CIM deve ser 3 km de verdade. Se alguém alterar a grade por engano,
+          # a rodada para aqui antes de gastar horas de processamento.
+          test "$WRF_DX_METERS" = '3000'
+          test "$WRF_DY_METERS" = '3000'
+          grep -Fq 'dx = ${WRF_DX_METERS}' wrf/run_wrf_with_source.sh
+          grep -Fq 'dy = ${WRF_DY_METERS}' wrf/run_wrf_with_source.sh
+          echo "CIM grade validada: ${WRF_DX_METERS} m x ${WRF_DY_METERS} m"
+
+          # Os runners são compartilhados com o WRF Sideral 4 km e ainda possuem
+          # rótulos antigos. Corrige apenas a cópia desta execução do CIM.
+          sed -i 's/WRF 4 km/WRF 3 km/g' wrf/run_icon_wrf.sh wrf/run_ecmwf_wrf.sh wrf/run_wrf_with_source.sh
+          sed -i 's/WRF 4 KM/WRF 3 KM/g' wrf/run_icon_wrf.sh wrf/run_ecmwf_wrf.sh wrf/run_wrf_with_source.sh
+
           chmod +x ${{ matrix.runner }}
           ${{ matrix.runner }}
       - name: Extrair os cinco campos CIM
         run: python wrf/extract_cim_wrf.py --model ${{ matrix.model }} --output-dir cim_publish
-      - name: Validar publicaÃ§Ã£o CIM
+      - name: Validar publicação CIM
         run: |
           python - <<'PY'
           import json
@@ -93,4 +107,3 @@ jobs:
             wrf_work/run/rsl.*
           if-no-files-found: ignore
           retention-days: 7
-
