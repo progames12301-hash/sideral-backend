@@ -1,6 +1,7 @@
 name: CIM WRF 3 km - diÃ¡rio
 on:
   schedule:
+    # Executa apÃ³s a rodada operacional principal do Sul.
     - cron: '37 8 * * *'
   workflow_dispatch:
 permissions:
@@ -42,9 +43,12 @@ jobs:
         env:
           WRF_DX_METERS: '3000'
           WRF_DY_METERS: '3000'
-          WRF_E_WE: '400'
-          WRF_E_SN: '480'
+          WRF_E_WE: '370'
+          WRF_E_SN: '440'
           WRF_TIME_STEP: '18'
+          WRF_REF_LAT: '-28.35'
+          WRF_REF_LON: '-54.80'
+          WRF_STAND_LON: '-54.80'
           WRF_RUN_HOURS: '6'
         run: |
           set -euxo pipefail
