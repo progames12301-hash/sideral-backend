@@ -152,10 +152,10 @@ GOES19_CHANNELS = {
 goes19_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "payload": {}}
 goes19_download_lock = threading.Lock()
 goes19_processing_lock = threading.RLock()
-CPTEC_GLM_INDEX_URL = "https://ftp.cptec.inpe.br/goes/goes19/broadcast/glm/"
-CPTEC_GLM_CACHE_DIR = Path(os.environ.get("GLM_CACHE_DIR", "/tmp/sideral_glm" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "glm_cache")))
-CPTEC_GLM_PNG_PATH = CPTEC_GLM_CACHE_DIR / "latest.png"
-CPTEC_GLM_CACHE_SECONDS = 120
+GLM_BUCKET = "noaa-goes19"
+GLM_S3_URL = f"https://{GLM_BUCKET}.s3.amazonaws.com"
+GLM_WINDOW_MINUTES = 15
+GLM_CACHE_SECONDS = 60
 
 INMET_CACHE_SECONDS = 60
 inmet_observation_cache: dict[str, dict[str, Any]] = {}
@@ -170,8 +170,8 @@ cemaden_pluviometer_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
 cptec_satellite_image_cache: dict[str, bytes] = {}
-cptec_glm_cache: dict[str, Any] = {"saved_at": 0.0, "metadata": None}
-cptec_glm_cache_lock = threading.Lock()
+glm_lightning_cache: dict[str, Any] = {"saved_at": 0.0, "payload": None}
+glm_lightning_cache_lock = threading.Lock()
 regional_radar_cache: dict[str, dict[str, Any]] = {}
 regional_rs_image_cache: dict[str, tuple[float, bytes]] = {}
 regional_rs_image_cache_lock = threading.Lock()
@@ -3230,66 +3230,80 @@ class Handler(SimpleHTTPRequestHandler):
 
     def prepare_glm_lightning(self, force: bool = False) -> dict[str, Any]:
         now = time.monotonic()
-        cached = cptec_glm_cache.get("metadata")
-        if cached and CPTEC_GLM_PNG_PATH.exists() and not force and now - float(cptec_glm_cache.get("saved_at", 0.0)) < CPTEC_GLM_CACHE_SECONDS:
+        cached = glm_lightning_cache.get("payload")
+        if cached and not force and now - float(glm_lightning_cache.get("saved_at", 0.0)) < GLM_CACHE_SECONDS:
             return cached
-        with cptec_glm_cache_lock:
+        with glm_lightning_cache_lock:
             now = time.monotonic()
-            cached = cptec_glm_cache.get("metadata")
-            if cached and CPTEC_GLM_PNG_PATH.exists() and not force and now - float(cptec_glm_cache.get("saved_at", 0.0)) < CPTEC_GLM_CACHE_SECONDS:
+            cached = glm_lightning_cache.get("payload")
+            if cached and not force and now - float(glm_lightning_cache.get("saved_at", 0.0)) < GLM_CACHE_SECONDS:
                 return cached
-            index = requests.get(CPTEC_GLM_INDEX_URL, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "text/html"}, timeout=25)
-            index.raise_for_status()
-            filenames = sorted(set(re.findall(r"GLM_\d{12}\.jpg", index.text)))
-            if not filenames: raise ValueError("O CPTEC não publicou um quadro GLM recente.")
-            filename = filenames[-1]
-            world_filename = filename.removesuffix(".jpg") + ".jgw"
-            response = requests.get(f"{CPTEC_GLM_INDEX_URL}{filename}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/jpeg"}, timeout=30)
-            response.raise_for_status()
-            if len(response.content) < 1000: raise ValueError("Quadro GLM inválido.")
-            world_response = requests.get(f"{CPTEC_GLM_INDEX_URL}{world_filename}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "text/plain"}, timeout=20)
-            world_response.raise_for_status()
-            world_values = [float(value) for value in re.split(r"\s+", world_response.text.strip()) if value]
-            if len(world_values) != 6 or not all(math.isfinite(value) for value in world_values): raise ValueError("Arquivo JGW do GLM inválido.")
-            pixel_x, rotation_y, rotation_x, pixel_y, center_x, center_y = world_values
-            from PIL import Image, ImageChops
-            source = Image.open(io.BytesIO(response.content)).convert("RGB")
-            original_width, original_height = source.size
-            def world_corner(column: float, row: float) -> list[float]:
-                return [pixel_x * column + rotation_x * row + center_x, rotation_y * column + pixel_y * row + center_y]
-            coordinates = [world_corner(-.5, -.5), world_corner(original_width - .5, -.5), world_corner(original_width - .5, original_height - .5), world_corner(-.5, original_height - .5)]
-            source.thumbnail((2048, 2048), Image.Resampling.NEAREST)
-            red, green, blue = source.split()
-            intensity = ImageChops.lighter(ImageChops.lighter(red, green), blue)
-            alpha = intensity.point(lambda value: 0 if value < 24 else min(220, (value - 18) * 5))
-            rgba = Image.merge("RGBA", (red, green, blue, alpha))
-            CPTEC_GLM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            rgba.save(CPTEC_GLM_PNG_PATH, "PNG", compress_level=3)
-            observed = dt.datetime.strptime(filename[4:16], "%Y%m%d%H%M").replace(tzinfo=dt.timezone.utc)
-            metadata = {"status": True, "provider": "CPTEC/INPE — GOES-19 GLM", "product": "Densidade de grupos GLM — 5 minutos", "observedAt": observed.isoformat().replace("+00:00", "Z"), "image": f"/api/glm/image?v={filename[4:16]}", "coordinates": coordinates, "worldFile": world_filename}
-            cptec_glm_cache["saved_at"] = time.monotonic()
-            cptec_glm_cache["metadata"] = metadata
-            return metadata
+            utc_now = dt.datetime.now(dt.timezone.utc)
+            keys: set[str] = set()
+            for hour_offset in (0, 1):
+                stamp = utc_now - dt.timedelta(hours=hour_offset)
+                prefix = f"GLM-L2-LCFA/{stamp:%Y}/{stamp:%j}/{stamp:%H}/"
+                response = requests.get(f"{GLM_S3_URL}/", params={"list-type": "2", "prefix": prefix}, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/xml"}, timeout=20)
+                response.raise_for_status()
+                root = ET.fromstring(response.content)
+                keys.update(node.text for node in root.iter() if node.tag.endswith("Key") and node.text)
+            timestamp_pattern = re.compile(r"_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})")
+            scans: list[tuple[dt.datetime, str]] = []
+            for key in keys:
+                match = timestamp_pattern.search(key)
+                if match:
+                    observed = dt.datetime.strptime("".join(match.groups()), "%Y%j%H%M%S").replace(tzinfo=dt.timezone.utc)
+                    scans.append((observed, key))
+            if not scans:
+                raise ValueError("A NOAA não publicou arquivos GLM recentes.")
+            scans.sort()
+            latest = scans[-1][0]
+            cutoff = latest - dt.timedelta(minutes=GLM_WINDOW_MINUTES)
+            selected = [(observed, key) for observed, key in scans if observed >= cutoff]
+            netcdf_lock = threading.Lock()
+
+            def read_flashes(item: tuple[dt.datetime, str]) -> list[dict[str, Any]]:
+                observed, key = item
+                response = requests.get(f"{GLM_S3_URL}/{quote(key, safe='/')}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/x-netcdf,*/*"}, timeout=25)
+                response.raise_for_status()
+                if len(response.content) < 1000:
+                    return []
+                from netCDF4 import Dataset
+                with netcdf_lock:
+                    dataset = Dataset("glm.nc", memory=response.content)
+                    try:
+                        latitudes = dataset.variables["flash_lat"][:]
+                        longitudes = dataset.variables["flash_lon"][:]
+                    finally:
+                        dataset.close()
+                age = round(max(0.0, (latest - observed).total_seconds() / 60.0), 2)
+                points = []
+                for lat, lon in zip(latitudes, longitudes):
+                    latitude, longitude = float(lat), float(lon)
+                    if -35.5 <= latitude <= 7.0 and -75.5 <= longitude <= -30.0:
+                        points.append({"lat": round(latitude, 4), "lon": round(longitude, 4), "ageMinutes": age})
+                return points
+
+            points: list[dict[str, Any]] = []
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(read_flashes, item) for item in selected]
+                for future in as_completed(futures):
+                    points.extend(future.result())
+            points.sort(key=lambda point: point["ageMinutes"], reverse=True)
+            payload = {"status": True, "satellite": "GOES-19", "instrument": "GLM", "provider": "NOAA/NODD", "product": "GLM L2 Lightning Detection", "observedAt": latest.isoformat().replace("+00:00", "Z"), "windowMinutes": GLM_WINDOW_MINUTES, "count": len(points), "points": points}
+            glm_lightning_cache["saved_at"] = time.monotonic()
+            glm_lightning_cache["payload"] = payload
+            return payload
 
     def handle_glm_lightning(self, query: dict[str, list[str]]) -> None:
         try:
             force = query.get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
             self.send_json(200, self.prepare_glm_lightning(force))
         except Exception as exc:
-            self.send_json(502, {"error": "Falha ao consultar os raios GLM do CPTEC/INPE.", "details": f"{type(exc).__name__}: {exc}"})
+            self.send_json(502, {"error": "Falha ao consultar os raios GLM da NOAA.", "details": f"{type(exc).__name__}: {exc}"})
 
     def handle_glm_image(self) -> None:
-        try:
-            self.prepare_glm_lightning()
-            body = CPTEC_GLM_PNG_PATH.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=120, stale-if-error=900")
-            self.end_headers()
-            self.wfile.write(body)
-        except Exception as exc:
-            self.send_json(502, {"error": "Falha ao carregar a imagem GLM.", "details": f"{type(exc).__name__}: {exc}"})
+        self.send_json(410, {"error": "A camada GLM agora é fornecida como pontos georreferenciados."})
 
     def handle_redemet_json(self, path: str, params: dict[str, str], provider: str) -> None:
         if not REDEMET_API_KEY:
