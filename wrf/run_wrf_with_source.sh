@@ -31,12 +31,18 @@ WRF_DY_METERS="${WRF_DY_METERS:-$WRF_DX_METERS}"
 WRF_E_WE="${WRF_E_WE:-300}"
 WRF_E_SN="${WRF_E_SN:-360}"
 WRF_TIME_STEP="${WRF_TIME_STEP:-24}"
+WRF_REF_LAT="${WRF_REF_LAT:--28.10}"
+WRF_REF_LON="${WRF_REF_LON:--53.45}"
+WRF_STAND_LON="${WRF_STAND_LON:-$WRF_REF_LON}"
 for VALUE in "$WRF_DX_METERS" "$WRF_DY_METERS" "$WRF_E_WE" "$WRF_E_SN" "$WRF_TIME_STEP"; do
   [[ "$VALUE" =~ ^[0-9]+$ ]] || { echo "ConfiguraÃ§Ã£o de grade WRF invÃ¡lida" >&2; exit 2; }
 done
 (( WRF_DX_METERS >= 1000 && WRF_DY_METERS >= 1000 && WRF_E_WE >= 100 && WRF_E_SN >= 100 && WRF_TIME_STEP >= 1 )) || {
   echo "ConfiguraÃ§Ã£o de grade WRF fora dos limites" >&2; exit 2;
 }
+for VALUE in "$WRF_REF_LAT" "$WRF_REF_LON" "$WRF_STAND_LON"; do
+  [[ "$VALUE" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || { echo "Centro do domÃ­nio WRF invÃ¡lido" >&2; exit 2; }
+done
 
 IMAGE="dtcenter/wps_wrf:latest"
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
@@ -137,11 +143,11 @@ cat > "$WORK/namelist.wps" <<EOF
  dx = ${WRF_DX_METERS},
  dy = ${WRF_DY_METERS},
  map_proj = 'lambert',
- ref_lat   = -28.10,
- ref_lon   = -53.45,
+ ref_lat   = ${WRF_REF_LAT},
+ ref_lon   = ${WRF_REF_LON},
  truelat1  = -25.0,
  truelat2  = -35.0,
- stand_lon = -53.45,
+ stand_lon = ${WRF_STAND_LON},
  geog_data_path = '/work/WPS_GEOG',
  opt_geogrid_tbl_path = '/comsoftware/wrf/WPS-4.3/geogrid/',
 /
