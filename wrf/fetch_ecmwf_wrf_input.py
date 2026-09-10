@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
+import random
+import time
 from pathlib import Path
 
 from ecmwf.opendata import Client
@@ -10,6 +13,10 @@ from ecmwf.opendata import Client
 PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 50]
 PRESSURE_PARAMS = ["gh", "t", "u", "v", "r"]
 SURFACE_PARAMS = ["2t", "2d", "10u", "10v", "sp", "msl"]
+
+MAX_ATTEMPTS = int(os.getenv("ECMWF_MAX_ATTEMPTS", "6"))
+BASE_DELAY_SECONDS = float(os.getenv("ECMWF_BASE_DELAY_SECONDS", "15"))
+BETWEEN_REQUESTS_SECONDS = float(os.getenv("ECMWF_BETWEEN_REQUESTS_SECONDS", "12"))
 
 
 def as_utc(value) -> dt.datetime:
@@ -20,6 +27,58 @@ def as_utc(value) -> dt.datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt.timezone.utc)
     return parsed.astimezone(dt.timezone.utc)
+
+
+def _status_code(exc: Exception) -> int | None:
+    response = getattr(exc, "response", None)
+    code = getattr(response, "status_code", None)
+    if isinstance(code, int):
+        return code
+    text = str(exc).lower()
+    if "too many requests" in text or "429" in text:
+        return 429
+    for code in (500, 502, 503, 504):
+        if str(code) in text:
+            return code
+    return None
+
+
+def with_retry(label: str, func):
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            print(f"ECMWF {label}: tentativa {attempt}/{MAX_ATTEMPTS}")
+            return func()
+        except Exception as exc:
+            last_error = exc
+            code = _status_code(exc)
+            retryable = code == 429 or (code is not None and 500 <= code <= 599)
+            if not retryable or attempt >= MAX_ATTEMPTS:
+                raise
+
+            response = getattr(exc, "response", None)
+            retry_after = None
+            if response is not None:
+                headers = getattr(response, "headers", {}) or {}
+                raw = headers.get("Retry-After")
+                if raw:
+                    try:
+                        retry_after = float(raw)
+                    except (TypeError, ValueError):
+                        retry_after = None
+
+            if retry_after is None:
+                retry_after = BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+            delay = min(300.0, retry_after + random.uniform(0.0, 5.0))
+            print(
+                f"ECMWF {label}: HTTP {code}; aguardando {delay:.1f}s antes de tentar novamente",
+                flush=True,
+            )
+            time.sleep(delay)
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"ECMWF {label}: falha sem excecao registrada")
 
 
 def main() -> None:
@@ -40,9 +99,13 @@ def main() -> None:
     if args.date and args.cycle:
         run = dt.datetime.strptime(args.date + args.cycle.zfill(2), "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
     else:
-        # Usa um campo superficial simples para descobrir a rodada que ja possui
-        # o ultimo passo necessario. A recuperacao atmosferica abaixo permanece IFS.
-        run = as_utc(client.latest(type="fc", step=args.max_hour, param=["2t"]))
+        # Consulta leve para descobrir uma rodada que ja tenha o ultimo passo necessario.
+        run = as_utc(
+            with_retry(
+                "descoberta da rodada",
+                lambda: client.latest(type="fc", step=args.max_hour, param=["2t"]),
+            )
+        )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -57,16 +120,31 @@ def main() -> None:
     }
 
     print("ECMWF IFS rodada:", run.isoformat(), "passos:", steps)
-    client.retrieve(
-        **common,
-        param=PRESSURE_PARAMS,
-        levelist=PRESSURE_LEVELS,
-        target=str(pressure),
+    with_retry(
+        "campos de pressao",
+        lambda: client.retrieve(
+            **common,
+            param=PRESSURE_PARAMS,
+            levelist=PRESSURE_LEVELS,
+            target=str(pressure),
+        ),
     )
-    client.retrieve(
-        **common,
-        param=SURFACE_PARAMS,
-        target=str(surface),
+
+    # Evita duas recuperacoes pesadas coladas, que favorecem HTTP 429.
+    if BETWEEN_REQUESTS_SECONDS > 0:
+        print(
+            f"ECMWF: aguardando {BETWEEN_REQUESTS_SECONDS:.1f}s entre pressao e superficie",
+            flush=True,
+        )
+        time.sleep(BETWEEN_REQUESTS_SECONDS)
+
+    with_retry(
+        "campos de superficie",
+        lambda: client.retrieve(
+            **common,
+            param=SURFACE_PARAMS,
+            target=str(surface),
+        ),
     )
 
     if pressure.stat().st_size < 1_000_000:
