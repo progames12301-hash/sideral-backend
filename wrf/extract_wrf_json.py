@@ -89,6 +89,11 @@ def sample2d(values: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarr
     return np.asarray(values)[np.ix_(rows, cols)]
 
 
+def sample3d(values: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
+    levels = np.arange(np.asarray(values).shape[0])
+    return np.asarray(values)[np.ix_(levels, rows, cols)]
+
+
 def severe_payload(fields: dict[str, np.ndarray], methods: dict, *, model: str, run_date: str, run_cycle: str,
                    init_time: dt.datetime, valid_time: dt.datetime, forecast_hour: int,
                    dx_m: float, dy_m: float, rows: np.ndarray, cols: np.ndarray) -> dict:
@@ -242,6 +247,41 @@ def main() -> None:
             cols = sample_indices(native_x, args.grid_x)
             actual_y, actual_x = len(rows), len(cols)
 
+            # A grade de perfis preserva as colunas verticais do wrfout sem
+            # publicar os NetCDF enormes. O backend escolhe o ponto mais
+            # proximo e devolve um perfil nativo para o Skew-T.
+            sounding_rows = sample_indices(native_y, min(90, native_y))
+            sounding_cols = sample_indices(native_x, min(110, native_x))
+            sounding_lat = sample2d(lats, sounding_rows, sounding_cols)
+            sounding_lon = sample2d(lons, sounding_rows, sounding_cols)
+            theta = field("T") + 300.0
+            temperature_3d = theta * np.power(np.maximum(pressure, 1.0) / 1000.0, 0.2854) - 273.15
+            vapor = qvapor * pressure / (0.622 + qvapor)
+            log_ratio = np.log(np.maximum(vapor, 1e-6) / 6.112)
+            dewpoint_3d = 243.5 * log_ratio / (17.67 - log_ratio)
+            phi = field("PH") + field("PHB")
+            height_3d = 0.5 * (phi[:-1] + phi[1:]) / 9.80665
+            sounding = {
+                "schema": "sideral-wrf-sounding-grid-v1",
+                "model": "gfs",
+                "runDate": run_date,
+                "runCycle": f"{run_cycle}Z",
+                "forecastHour": forecast_hour,
+                "validTime": valid_time.isoformat().replace("+00:00", "Z"),
+                "gridX": len(sounding_cols),
+                "gridY": len(sounding_rows),
+                "levels": int(pressure.shape[0]),
+                "lat": safe_round_array(sounding_lat, 4),
+                "lon": safe_round_array(sounding_lon, 4),
+                "terrain": safe_round_array(sample2d(field("HGT"), sounding_rows, sounding_cols), 0),
+                "pressure": safe_round_array(sample3d(pressure, sounding_rows, sounding_cols), 1),
+                "temperature": safe_round_array(sample3d(temperature_3d, sounding_rows, sounding_cols), 1),
+                "dewpoint": safe_round_array(sample3d(np.minimum(temperature_3d, dewpoint_3d), sounding_rows, sounding_cols), 1),
+                "u": safe_round_array(sample3d(u_mass * 1.943844, sounding_rows, sounding_cols), 1),
+                "v": safe_round_array(sample3d(v_mass * 1.943844, sounding_rows, sounding_cols), 1),
+                "height": safe_round_array(sample3d(height_3d, sounding_rows, sounding_cols), 0),
+            }
+
             lat_s = sample2d(lats, rows, cols)
             lon_s = sample2d(lons, rows, cols)
             u10_s = sample2d(u10, rows, cols)
@@ -298,6 +338,8 @@ def main() -> None:
 
         filename = f"gfs/f{forecast_hour:03d}.json.gz"
         write_gzip_json(output_dir / filename, payload)
+        sounding_filename = f"soundings/gfs/f{forecast_hour:03d}.json.gz"
+        write_gzip_json(output_dir / sounding_filename, sounding)
         severe_filename = None
         if severe is not None:
             severe_filename = f"severe/gfs/f{forecast_hour:03d}.json.gz"
@@ -312,6 +354,7 @@ def main() -> None:
             "source": payload["source"],
             "reflectivitySource": payload["reflectivitySource"],
             "reflectivityStats": payload["reflectivityStats"],
+            "soundingFile": sounding_filename,
             **({"severeFile": severe_filename} if severe_filename else {}),
         })
 
@@ -348,3 +391,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
