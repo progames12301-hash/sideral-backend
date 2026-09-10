@@ -1791,6 +1791,63 @@ def _ecmwf_build_sounding_payload(
 
 
 
+def _wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour: int) -> dict[str, Any]:
+    """Extract a native vertical profile and refuse coordinates outside WRF coverage."""
+    try:
+        import numpy as np
+        import xarray as xr
+    except ImportError as exc:
+        raise RuntimeError("DependÃªncias WRF ausentes no servidor.") from exc
+    if model_key not in WRF_MODEL_OUTPUTS:
+        raise ValueError("Modelo WRF invÃ¡lido.")
+    files = find_wrf_files(model_key)
+    path = files[min(max(0, int(forecast_hour)), len(files) - 1)]
+    dataset = xr.open_dataset(path, engine="netcdf4")
+    try:
+        def field(name: str) -> Any:
+            if name not in dataset:
+                raise RuntimeError(f"O wrfout publicado nÃ£o contÃ©m {name}.")
+            item = dataset[name]
+            return item.isel(Time=0).to_numpy() if "Time" in item.dims else item.to_numpy()
+        lats, lons = field("XLAT"), field("XLONG")
+        south, north, west, east = float(np.nanmin(lats)), float(np.nanmax(lats)), float(np.nanmin(lons)), float(np.nanmax(lons))
+        if lat < south - .05 or lat > north + .05 or lon < west - .05 or lon > east + .05:
+            raise WRFDomainError(f"Este ponto estÃ¡ fora do domÃ­nio WRF publicado ({south:.2f}..{north:.2f} lat / {west:.2f}..{east:.2f} lon). Use ECMWF fora da Ã¡rea WRF.")
+        distance = (lats - lat) ** 2 + ((lons - lon) * math.cos(math.radians(lat))) ** 2
+        row, col = np.unravel_index(int(np.nanargmin(distance)), distance.shape)
+        pressure = (field("P") + field("PB"))[:, row, col] / 100.0
+        theta = field("T")[:, row, col] + 300.0
+        temp = theta * np.power(np.maximum(pressure, 1.0) / 1000.0, .2854) - 273.15
+        qv = np.maximum(field("QVAPOR")[:, row, col], 1e-9)
+        vapor = qv * pressure / (.622 + qv)
+        log_ratio = np.log(np.maximum(vapor, 1e-6) / 6.112)
+        dew = 243.5 * log_ratio / (17.67 - log_ratio)
+        u, v = field("U"), field("V")
+        u = .5 * (u[:, row, col] + u[:, row, col + 1])
+        v = .5 * (v[:, row, col] + v[:, row + 1, col])
+        phi = field("PH") + field("PHB")
+        height = .5 * (phi[:-1, row, col] + phi[1:, row, col]) / 9.80665
+        terrain = float(field("HGT")[row, col])
+        points = []
+        for level in range(len(pressure)):
+            values = (pressure[level], temp[level], dew[level], u[level], v[level], height[level])
+            if all(np.isfinite(value) for value in values) and 100 <= pressure[level] <= 1050:
+                points.append({"pressure": float(pressure[level]), "temperature": float(temp[level]), "dewpoint": float(min(temp[level], dew[level])), "u": float(u[level] * 1.943844), "v": float(v[level] * 1.943844), "height": float(height[level])})
+        points.sort(key=lambda point: point["pressure"], reverse=True)
+        if len(points) < 8 or points[-1]["pressure"] > 300:
+            raise RuntimeError("O wrfout publicado nÃ£o possui nÃ­veis suficientes para este perfil.")
+        def series(key: str, digits: int = 1) -> list[float]: return [round(point[key], digits) for point in points]
+        profile = {"pressure": series("pressure"), "height": series("height", 0), "height_agl": [round(max(0., point["height"] - terrain), 0) for point in points], "temperature": series("temperature"), "dewpoint": series("dewpoint"), "u": series("u"), "v": series("v"), "wind_speed": [round(math.hypot(point["u"], point["v"]), 1) for point in points], "wind_direction": [round(wind_direction_deg(point["u"], point["v"])) for point in points], "omega": [None] * len(points)}
+        stamp = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
+        valid = f"{stamp.group(1)}T{stamp.group(2)}:{stamp.group(3)}:{stamp.group(4)}Z" if stamp else path.name
+        empty = {"direction": None, "speed": None, "u": None, "v": None}
+        return {"model": f"{model_key.upper()} â†’ WRF", "model_id": f"wrf_{model_key}", "latitude": lat, "longitude": lon, "grid_latitude": round(float(lats[row, col]), 3), "grid_longitude": round(float(lons[row, col]), 3), "run": None, "run_cycle": "WRF", "forecast_hour": forecast_hour, "valid": valid, "surface_elevation_m": round(terrain), "surface_pressure_hpa": profile["pressure"][0], "profile": profile, "parcels": {}, "thermodynamics": {}, "kinematics": {"storm_motion_name": "WRF", "bunkers_rm": empty, "bunkers_lm": empty, "corfidi_up": empty, "corfidi_down": empty}, "severe": {}, "winter": {}, "analogs": {"hail": {}, "supercell": {}, "database_scope": "Perfil vertical extraÃ­do diretamente do wrfout publicado."}, "source": f"WRF {model_key.upper()} Â· perfil vertical nativo do wrfout", "attribution": "Sideral WRF", "cache": False}
+    finally:
+        dataset.close()
+
+
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(BASE_DIR), **kwargs)
@@ -1888,6 +1945,12 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
         if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
         
+        if parsed_path == "/api/wrf/sounding":
+
+        
+            self.handle_wrf_sounding(parse_qs(urlparse(self.path).query)); return
+
+        
         # --- NOVO ENDPOINT SKEW-T ---
         if parsed_path == "/api/sounding":
             self.handle_sounding(parse_qs(urlparse(self.path).query)); return
@@ -1963,6 +2026,18 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(response.body)
         except (BrokenPipeError, ConnectionResetError):
             return
+
+    def handle_wrf_sounding(self, query: dict[str, list[str]]) -> None:
+        try:
+            lat=float(query.get("lat",["-25.43"])[0]); lon=float(query.get("lon",["-49.27"])[0]); model=str(query.get("model",["gfs"])[0]).lower(); fh=int(query.get("fh",["0"])[0])
+            if not (-90<=lat<=90 and -180<=lon<=180 and 0<=fh<=240): self.send_json(400,{"error":"Parâmetros WRF inválidos."}); return
+            key=(round(lat,3),round(lon,3),model,fh,"wrf-native-profile-v1"); cached=sounding_cache.get(key)
+            if cached and time.monotonic()-float(cached.get("saved_at",0))<SOUNDING_CACHE_SECONDS:
+                result=dict(cached["data"]); result["cache"]=True; self.send_json(200,result); return
+            result=_wrf_sounding_payload(lat,lon,model,fh); sounding_cache[key]={"saved_at":time.monotonic(),"data":result}; self.send_json(200,result)
+        except WRFDomainError as exc: self.send_json(422,{"error":str(exc),"code":"WRF_OUTSIDE_DOMAIN"})
+        except (ValueError,FileNotFoundError,RuntimeError) as exc: self.send_json(503,{"error":_sanitize_server_error(exc),"code":"WRF_SOUNDING_UNAVAILABLE"})
+        except Exception as exc: _log_sounding_error("WRF profile",exc); self.send_json(500,{"error":"Não foi possível abrir o perfil WRF agora.","code":"WRF_SOUNDING_FAILED"})
 
     def handle_sounding(self, query: dict[str, list[str]]) -> None:
         """Sondagem IFS 0.25° via Open-Meteo, processada pelo núcleo do SHARPpy."""
