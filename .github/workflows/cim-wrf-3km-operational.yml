@@ -1,0 +1,92 @@
+name: CIM WRF 3 km - diÃ¡rio
+on:
+  schedule:
+    - cron: '37 8 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: cim-wrf-3km-daily
+  cancel-in-progress: false
+jobs:
+  run-and-publish:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: icon
+            branch: cim-wrf-3km-icon-data
+            runner: wrf/run_icon_wrf.sh
+          - model: ecmwf
+            branch: cim-wrf-3km-ecmwf-data
+            runner: wrf/run_ecmwf_wrf.sh
+    name: CIM 3 km (${{ matrix.model }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instalar dependÃªncias do WRF e pÃ³s-processamento
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31'
+      - name: Executar CIM WRF 3 km
+        env:
+          WRF_DX_METERS: '3000'
+          WRF_DY_METERS: '3000'
+          WRF_E_WE: '400'
+          WRF_E_SN: '480'
+          WRF_TIME_STEP: '18'
+          WRF_RUN_HOURS: '6'
+        run: |
+          set -euxo pipefail
+          chmod +x ${{ matrix.runner }}
+          ${{ matrix.runner }}
+      - name: Extrair os cinco campos CIM
+        run: python wrf/extract_cim_wrf.py --model ${{ matrix.model }} --output-dir cim_publish
+      - name: Validar publicaÃ§Ã£o CIM
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('cim_publish'); meta=json.loads((root/'metadata.json').read_text())
+          assert meta['resolutionKm']==3 and meta['reflectivitySource']=='REFL_10CM_NATIVE'
+          assert set(meta['availableVariables']) == {'reflectivity','stp','scp','temperature','humidity'}
+          assert len(meta['frames']) >= 3
+          for frame in meta['frames']: assert (root/frame['file']).is_file()
+          PY
+      - name: Publicar produto validado
+        run: |
+          set -euxo pipefail
+          if git ls-remote --exit-code --heads origin '${{ matrix.branch }}'; then
+            git fetch origin '${{ matrix.branch }}'
+            git worktree add --detach published-cim 'origin/${{ matrix.branch }}'
+          else
+            git worktree add --detach published-cim
+          fi
+          find published-cim -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a cim_publish/. published-cim/
+          git -C published-cim config user.name 'github-actions[bot]'
+          git -C published-cim config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C published-cim add --all
+          git -C published-cim diff --cached --quiet && exit 0
+          git -C published-cim commit -m "CIM WRF 3 km ${{ matrix.model }}: $(jq -r '.runDate + " " + .runCycle' cim_publish/metadata.json)"
+          git -C published-cim push origin 'HEAD:${{ matrix.branch }}'
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim-wrf-${{ matrix.model }}-diagnostics
+          path: |
+            wrf_diagnostics/
+            wrf_work/run/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
