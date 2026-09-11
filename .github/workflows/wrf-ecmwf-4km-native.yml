@@ -3,8 +3,7 @@ name: WRF 4 km ECMWF - REFL NATIVO
 on:
   workflow_dispatch:
   # Fallback diário: roda depois da atualização programada do ECMWF IFS.
-  # Isso evita que o WRF ECMWF fique parado caso o evento workflow_run
-  # não seja entregue ou a execução upstream termine fora da janela esperada.
+  # Todo job faz checkout do wrf-runner e passa pelo contrato 4 km/nativo.
   schedule:
     - cron: '35 22 * * *'
   push:
