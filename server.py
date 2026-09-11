@@ -1816,11 +1816,17 @@ def _published_wrf_sounding_payload(lat: float, lon: float, model_key: str, fore
     metadata_response = requests.get(f"{base}/metadata.json", timeout=25)
     metadata_response.raise_for_status()
     metadata = metadata_response.json()
-    frames = [
+    all_frames = [
         frame for frame in metadata.get("frames", [])
         if str(frame.get("model") or metadata.get("model") or "").lower() == model_key
-        and frame.get("soundingFile")
+        and (frame.get("soundingFile") or frame.get("file"))
     ]
+    frames = [frame for frame in all_frames if frame.get("soundingFile")]
+    if all_frames and not frames:
+        raise RuntimeError(
+            f"Há {len(all_frames)} rodadas WRF {model_key.upper()} publicadas, "
+            "mas elas contêm apenas refletividade. O Skew-T precisa que a publicação inclua o perfil vertical."
+        )
     if not frames:
         raise FileNotFoundError(f"A rodada publicada de {model_key.upper()} ainda nao possui perfis verticais.")
     frame = min(frames, key=lambda item: abs(int(item.get("forecastHour", 0)) - int(forecast_hour)))
