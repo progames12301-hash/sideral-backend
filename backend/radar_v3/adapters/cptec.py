@@ -14,7 +14,8 @@ import requests
 import numpy as np
 from PIL import Image
 
-BASE='https://sigma.cptec.inpe.br'
+BASE='https://sigma2.cptec.inpe.br/radar'
+RADAR_DATA='https://s0.cptec.inpe.br/webdsa/json_dsa/dados_radar.json'
 
 def get(url, limit=8*1024*1024):
     parsed=urlparse(url)
@@ -37,6 +38,16 @@ def products_in_menu(item):
             yield item | {'nome':name}
         for value in item.values():
             if isinstance(value,(dict,list)): yield from products_in_menu(value)
+
+def radars_in_menu(item):
+    if isinstance(item,list):
+        for value in item: yield from radars_in_menu(value)
+    elif isinstance(item,dict):
+        products=item.get('subprodutos')
+        if isinstance(products,list) and item.get('nome') and any(isinstance(p,dict) and p.get('tipo')=='radar' for p in products):
+            yield item
+        for value in item.values():
+            if isinstance(value,(dict,list)): yield from radars_in_menu(value)
 
 def reproject_png(png, pgw):
     """CPTEC geographic worldfile, pixel CENTERS; nearest sampling into Mercator.
@@ -64,20 +75,33 @@ def reproject_png(png, pgw):
 
 class Adapter:
     def __init__(self, cache):
-        self.cache=cache;self.catalog=[];self.expires=0;self.lock=threading.Lock();self.probed={}
+        self.cache=cache;self.catalog=[];self.expires=0;self.lock=threading.Lock();self.probed={};self.data={};self.data_expires=0
+
+    def radar_data(self):
+        if time.time()<self.data_expires and self.data: return self.data
+        payload=json.loads(get(RADAR_DATA,2*1024*1024))
+        if not isinstance(payload,dict): raise ValueError('Indice de imagens CPTEC invalido')
+        self.data=payload;self.data_expires=time.time()+60
+        return payload
 
     def radars(self):
         with self.lock:
             if time.time()<self.expires: return self.catalog
             grouped={}
             try:
-                for item in products_in_menu(json.loads(get(BASE+'/json/menu.json'))):
-                    title=item['nome'].split(' ',1)[1];name,_,state=title.rpartition(' - ')
-                    if not name: continue
+                for item in radars_in_menu(json.loads(get(BASE+'/json/menu.json'))):
+                    title=html.unescape(str(item['nome'])).strip();name,separator,state=title.rpartition(' - ')
+                    if not separator: name,state=title,''
                     slug=re.sub('[^a-z0-9]+','-',unicodedata.normalize('NFKD',name).encode('ascii','ignore').decode().lower()).strip('-')
                     radar=grouped.setdefault('cptec-'+slug,dict(id='cptec-'+slug,name=name,state=state,source='CPTEC/INPE — SIGMA',products=[],advertisedProducts=[],codes={}))
-                    product='velocity' if item['nome'].startswith('VENTO ') else 'reflectivity'
-                    radar['codes'][product]=str(item['codigo']);radar['advertisedProducts'].append(product)
+                    for subproduct in item.get('subprodutos',[]):
+                        label=html.unescape(str(subproduct.get('nome',''))).upper()
+                        info=html.unescape(str(subproduct.get('informacao',''))).upper()
+                        code=subproduct.get('codigo')
+                        if not code or subproduct.get('statusSubprod') not in (None,'A'): continue
+                        product='reflectivity' if label.startswith('CAPPI') else ('velocity' if 'VENTO' in label or ('VENTO' in info and label.startswith('PPI')) else None)
+                        if product and product not in radar['codes']:
+                            radar['codes'][product]=str(code);radar['advertisedProducts'].append(product)
                 self.catalog=sorted(grouped.values(),key=lambda r:(r['id']!='cptec-chapeco',r['name']));self.expires=time.time()+3600
             except (requests.RequestException,ValueError):
                 self.expires=time.time()+60
@@ -91,8 +115,8 @@ class Adapter:
             if entry and time.time()<entry[0]: return entry[1]
             result=[]
             try:
-                rows=json.loads(get(BASE+'/logs/'+record['codes'][product]+'/10'))
-                for row in rows[:3]:
+                rows=self.radar_data().get(record['codes'][product],[])
+                for row in list(reversed(rows))[:3]:
                     stamp=dt.datetime.fromisoformat(row['fileDate']+'T'+row['fileTime']).replace(tzinfo=dt.timezone.utc)
                     if (dt.datetime.now(dt.timezone.utc)-stamp).total_seconds()>48*3600: continue
                     url=row['url']
@@ -128,3 +152,4 @@ class Adapter:
             if not result and product in record['products']: record['products'].remove(product)
             self.probed[cachekey]=(time.time()+120,result)
             return result
+
