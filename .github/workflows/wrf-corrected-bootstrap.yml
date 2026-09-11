@@ -9,7 +9,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 concurrency:
   group: sideral-wrf-corrected-bootstrap
@@ -18,8 +18,66 @@ concurrency:
 jobs:
   dispatch:
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
+      - name: Corrigir workflows antigos que ainda pedem grade reduzida
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=/tmp/sideral-main-fix
+          rm -rf "$work"
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$work"
+          cd "$work"
+          git checkout main
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('.github/workflows')
+          changed = []
+          for path in sorted(root.glob('*.yml')):
+              original = path.read_text(encoding='utf-8')
+              lines = original.splitlines()
+              out = []
+              i = 0
+              touched = False
+              while i < len(lines):
+                  line = lines[i]
+                  if i + 1 < len(lines) and '--grid-x 220' in line and '--grid-y 180' in lines[i + 1]:
+                      next_line = lines[i + 2] if i + 2 < len(lines) else ''
+                      if not next_line.lstrip().startswith('--') and out and out[-1].rstrip().endswith('\\'):
+                          out[-1] = out[-1].rstrip()[:-1].rstrip()
+                      i += 2
+                      touched = True
+                      continue
+                  if i + 1 < len(lines) and '--grid-x 240' in line and '--grid-y 200' in lines[i + 1]:
+                      next_line = lines[i + 2] if i + 2 < len(lines) else ''
+                      if not next_line.lstrip().startswith('--') and out and out[-1].rstrip().endswith('\\'):
+                          out[-1] = out[-1].rstrip()[:-1].rstrip()
+                      i += 2
+                      touched = True
+                      continue
+                  out.append(line)
+                  i += 1
+              updated = '\n'.join(out) + ('\n' if original.endswith('\n') else '')
+              if touched and updated != original:
+                  path.write_text(updated, encoding='utf-8')
+                  changed.append(str(path))
+
+          print('WORKFLOWS CORRIGIDOS:', changed)
+          if not changed:
+              print('Nenhum workflow antigo ainda continha downsampling hardcoded.')
+          PY
+
+          if ! git diff --quiet; then
+            git config user.name "sideral-wrf-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/workflows
+            git commit -m "WRF: remover grades artificiais antigas dos workflows [skip render]"
+            git push origin HEAD:main
+          fi
+
       - name: Cancelar rodadas antigas e iniciar somente as corrigidas
         env:
           GH_TOKEN: ${{ github.token }}
