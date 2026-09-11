@@ -1,0 +1,73 @@
+name: WRF - corrigir API para REFL nativo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-wrf-native-api.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-server:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Remover refletividade artificial do caminho WRF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('server.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        reflectivity_source = "REFL_10CM" if "REFL_10CM" in dataset else "hydrometeors"\n        if "REFL_10CM" in dataset:\n            reflectivity = np.maximum(0.0, np.nanmax(dataset["REFL_10CM"].isel(Time=0).to_numpy(), axis=0))\n            approx_reflectivity = approximate_reflectivity_dbz(dataset, t2m, precip_rate)\n            if np.nanmax(reflectivity) < 20.0 and np.nanmax(approx_reflectivity) > np.nanmax(reflectivity):\n                reflectivity_source = "REFL_10CM+hydrometeors_approx"; reflectivity = np.maximum(reflectivity, approx_reflectivity)\n        else:\n            reflectivity = approximate_reflectivity_dbz(dataset, t2m, precip_rate)\n            if np.nanmax(reflectivity) < 1.0: reflectivity_source = "precip_rate"; reflectivity = np.vectorize(precipitation_to_dbz)(precip_rate)\n'''
+          new = '''        if "REFL_10CM" not in dataset:\n            raise RuntimeError("WRF sem REFL_10CM nativo; publicacao recusada para evitar refletividade artificial.")\n        reflectivity_source = "REFL_10CM_NATIVE"\n        reflectivity = np.maximum(0.0, np.nanmax(dataset["REFL_10CM"].isel(Time=0).to_numpy(), axis=0))\n'''
+          if old in text:
+              text = text.replace(old, new, 1)
+              path.write_text(text, encoding='utf-8')
+              print('server.py corrigido: fallback artificial removido do WRF.')
+          elif 'WRF sem REFL_10CM nativo; publicacao recusada' in text:
+              print('server.py ja estava corrigido.')
+          else:
+              raise SystemExit('Bloco WRF esperado nao encontrado; recusando patch inseguro.')
+
+          # Valida apenas o corpo de build_wrf_cells.
+          text = path.read_text(encoding='utf-8')
+          start = text.index('def build_wrf_cells(')
+          end = text.index('\ndef build_gfs_cells(', start)
+          body = text[start:end]
+          forbidden = [
+              'approximate_reflectivity_dbz(',
+              'precipitation_to_dbz(',
+              'REFL_10CM+hydrometeors_approx',
+              'reflectivity_source = "precip_rate"',
+          ]
+          bad = [token for token in forbidden if token in body]
+          if bad:
+              raise SystemExit(f'Fallback artificial ainda presente em build_wrf_cells: {bad}')
+          if 'reflectivity_source = "REFL_10CM_NATIVE"' not in body:
+              raise SystemExit('Marcador REFL_10CM_NATIVE ausente em build_wrf_cells.')
+          print('VALIDACAO API WRF: somente REFL_10CM_NATIVE.')
+          PY
+
+      - name: Publicar correção no main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- server.py; then
+            echo "Nenhuma alteracao pendente."
+            exit 0
+          fi
+          git config user.name "sideral-wrf-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.py
+          git commit -m "WRF API: remover fallback artificial de refletividade [skip render]"
+          git push origin HEAD:main
