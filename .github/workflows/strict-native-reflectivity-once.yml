@@ -31,6 +31,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add server.py .github/workflows/strict-native-reflectivity-once.yml .github/scripts/patch_native_reflectivity.py
-          git diff --cached --check
           git commit -m "fix: require native REFL_10CM for WRF reflectivity"
           git push origin HEAD:main
