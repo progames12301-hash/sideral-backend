@@ -18,41 +18,64 @@ concurrency:
 jobs:
   dispatch:
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Iniciar rodadas corrigidas sem duplicar as que já estão ativas
+      - name: Cancelar rodadas antigas e iniciar somente as corrigidas
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
 
-          dispatch_if_idle() {
-            local workflow="$1" label="$2" active
-            active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 --json status --jq '[.[] | select(.status != "completed")] | length')"
-            if [ "$active" = "0" ]; then
-              gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
-              echo "INICIADO: $label"
-            else
-              echo "PRESERVADO: $label já possui $active execução(ões) ativa(s)."
+          cancel_active() {
+            local workflow="$1" label="$2"
+            mapfile -t ids < <(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow "$workflow" \
+                --limit 50 \
+                --json databaseId,status \
+                --jq '.[] | select(.status != "completed") | .databaseId'
+            )
+            if [ "${#ids[@]}" -eq 0 ]; then
+              echo "SEM EXECUCAO ANTIGA: $label"
+              return 0
             fi
+            for id in "${ids[@]}"; do
+              echo "CANCELANDO ANTIGA: $label run=$id"
+              gh run cancel "$id" --repo "$GITHUB_REPOSITORY" || true
+            done
           }
 
-          # O GFS Sul tinha execuções iniciadas antes do contrato de grade nativa.
-          # A rotina de relief usa o mesmo grupo de concorrência do WRF 72 h e
-          # encerra uma rodada velha antes de dispararmos a cadeia corrigida.
+          start_fresh() {
+            local workflow="$1" label="$2"
+            cancel_active "$workflow" "$label"
+            sleep 2
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
+            echo "INICIADO CORRIGIDO: $label"
+          }
+
+          # Remove execucoes GFS Sul antigas, inclusive a cadeia F000-F072.
+          cancel_active wrf-4km-next-day-auto.yml "GFS Sul 4 km F000-F072"
+          cancel_active wrf-4km-operational.yml "GFS Sul legado"
+          cancel_active wrf-4km-native-reflectivity.yml "GFS Sul 4 km nativo"
           gh workflow run wrf-sul-gfs-runner-relief.yml --repo "$GITHUB_REPOSITORY" --ref main || true
           sleep 3
           gh workflow run wrf-4km-native-reflectivity.yml --repo "$GITHUB_REPOSITORY" --ref main
-          echo "INICIADO: GFS Sul 4 km nativo; ao concluir dispara o WRF 72 h."
+          echo "INICIADO CORRIGIDO: GFS Sul 4 km nativo; ao concluir dispara F000-F072."
 
-          dispatch_if_idle wrf-icon-4km-native.yml "ICON Sul 4 km"
-          dispatch_if_idle wrf-ecmwf-4km-native.yml "ECMWF Sul 4 km"
-          dispatch_if_idle wrf-sudeste-gfs-4km.yml "GFS Sudeste 4 km"
-          dispatch_if_idle wrf-sudeste-icon-4km.yml "ICON Sudeste 4 km"
-          dispatch_if_idle wrf-sudeste-ecmwf-4km.yml "ECMWF Sudeste 4 km"
-          dispatch_if_idle cim-wrf-3km-operational.yml "CIM ICON+ECMWF 3 km"
+          # Sul: ICON e ECMWF corrigidos.
+          start_fresh wrf-icon-4km-native.yml "ICON Sul 4 km"
+          start_fresh wrf-ecmwf-4km-native.yml "ECMWF Sul 4 km"
 
-          # Auditoria independente do cálculo; valida código, agendas e branches.
+          # Sudeste: os tres modelos corrigidos substituem qualquer fila/run antigo.
+          start_fresh wrf-sudeste-gfs-4km.yml "GFS Sudeste 4 km"
+          start_fresh wrf-sudeste-icon-4km.yml "ICON Sudeste 4 km"
+          start_fresh wrf-sudeste-ecmwf-4km.yml "ECMWF Sudeste 4 km"
+
+          # CIM: sempre substitui a tentativa antiga por uma execucao nova em 3 km.
+          start_fresh cim-wrf-3km-operational.yml "CIM ICON+ECMWF 3 km"
+
+          # Auditoria final do contrato de resolucao/refletividade.
           gh workflow run wrf-resolution-contract.yml --repo "$GITHUB_REPOSITORY" --ref main || true
-          echo "Auditoria do contrato WRF/CIM solicitada."
+          echo "Auditoria WRF 4 km / CIM 3 km solicitada."
