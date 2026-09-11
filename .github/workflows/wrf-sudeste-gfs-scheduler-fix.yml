@@ -1,4 +1,4 @@
-name: WRF Sudeste GFS - AGENDADOR CORRIGIDO
+name: WRF Sudeste GFS - DISPARADOR DE SEGURANCA
 
 on:
   workflow_dispatch:
@@ -6,8 +6,6 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/wrf-sudeste-gfs-scheduler-fix.yml"
-  schedule:
-    - cron: "30 3,15 * * *"
 
 permissions:
   actions: write
