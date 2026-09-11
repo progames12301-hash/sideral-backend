@@ -27,6 +27,7 @@ def main() -> None:
 
     by_hour: dict[int, tuple[dict, Path]] = {}
     integration_age: dict[int, int] = {}
+    integration_start: dict[int, int] = {}
     severe_by_key: dict[tuple[str, int], Path] = {}
     template = None
 
@@ -48,11 +49,14 @@ def main() -> None:
             if not file_path.exists():
                 raise SystemExit(f'Frame ausente: {file_path}')
             age = hour - segment_start
-            # Prefer the integrated end of the preceding segment over the cold
-            # initialization of the next segment, independently of input order.
+            # Em segmentos sobrepostos, sempre publica o quadro que ficou mais
+            # tempo integrado dentro do WRF. Isso evita escolher o cold-start
+            # recém-inicializado de um segmento novo quando existe um quadro
+            # equivalente com spin-up maior vindo do segmento anterior.
             if hour not in by_hour or age > integration_age[hour]:
                 by_hour[hour] = (frame, file_path)
                 integration_age[hour] = age
+                integration_start[hour] = segment_start
 
         severe_root = root / 'severe'
         if severe_root.exists():
@@ -75,6 +79,8 @@ def main() -> None:
         shutil.copy2(src, dst)
         frame = dict(frame)
         frame['index'] = len(frames)
+        frame['integrationHours'] = int(integration_age[hour])
+        frame['sourceSegmentStartHour'] = int(integration_start[hour])
         frames.append(frame)
 
     severe_copied = 0
@@ -90,6 +96,8 @@ def main() -> None:
     merged['forecastHourStart'] = min(by_hour)
     merged['forecastHourEnd'] = max(by_hour)
     merged['segmentedRun'] = True
+    merged['segmentSelection'] = 'max_integration_age'
+    merged['segmentSpinupProtected'] = True
     if severe_copied:
         merged['wrf2SevereDiagnostics'] = True
         merged['wrf2SeverePathTemplate'] = 'severe/{model}/f{forecastHour:03d}.json.gz'
@@ -98,6 +106,7 @@ def main() -> None:
 
     print('WRF SEGMENTOS UNIDOS:', len(frames), 'frames')
     print('HORIZONTE:', min(by_hour), 'a', max(by_hour), 'h')
+    print('SELECAO: maior tempo de integracao por forecast hour')
     print('WRF2 SEVERE:', severe_copied, 'arquivos')
 
 
