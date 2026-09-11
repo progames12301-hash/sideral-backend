@@ -2,6 +2,9 @@ name: WRF 4 km ICON - REFL NATIVO
 
 on:
   workflow_dispatch:
+  schedule:
+    # Fallback diário independente do workflow_run do ICON global.
+    - cron: '10 1 * * *'
   push:
     branches: [main]
     paths:
