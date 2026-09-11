@@ -95,6 +95,15 @@ jobs:
           git -C published-cim diff --cached --quiet && exit 0
           git -C published-cim commit -m "CIM WRF 3 km ${{ matrix.model }}: $(jq -r '.runDate + " " + .runCycle' cim_publish/metadata.json)"
           git -C published-cim push origin 'HEAD:${{ matrix.branch }}'
+      - name: Guardar wrfout para recuperação após falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim-wrf-${{ matrix.model }}-wrfout-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: wrf_work/run/wrfout_d01_*
+          if-no-files-found: ignore
+          retention-days: 1
+          compression-level: 0
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
