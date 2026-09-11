@@ -9,45 +9,6 @@ from extract_wrf_json import native_composite_reflectivity
 from extract_wrf_severe import compute, flat, idx, runenv, validtime, write_gz
 
 FIELDS = ("reflectivity", "stp", "scp", "temperature", "humidity")
-REFLECTIVITY_QC = "NATIVE_SPATIAL_QC_V1"
-
-
-def qc_native_reflectivity(values: np.ndarray) -> np.ndarray:
-    """QC conservador sobre REFL_10CM nativa; nunca cria eco novo.
-
-    - valores < 5 dBZ sao removidos;
-    - ecos fracos precisam de suporte espacial em 3x3 ou vizinho >= 20 dBZ;
-    - ecos moderados isolados (<45 dBZ) sao removidos;
-    - nucleos >=45 dBZ sao preservados para nao apagar conveccao compacta.
-    """
-    z = np.asarray(values, dtype=float)
-    z = np.where(np.isfinite(z), np.clip(z, 0.0, 95.0), 0.0)
-    z = np.where(z >= 5.0, z, 0.0)
-
-    active5 = z >= 5.0
-    active20 = z >= 20.0
-    ny, nx = z.shape
-
-    p5 = np.pad(active5.astype(np.uint8), 1, mode="constant")
-    p20 = np.pad(active20.astype(np.uint8), 1, mode="constant")
-    support5 = np.zeros((ny, nx), dtype=np.uint8)
-    support20 = np.zeros((ny, nx), dtype=np.uint8)
-    for j in range(3):
-        for i in range(3):
-            support5 += p5[j:j + ny, i:i + nx]
-            support20 += p20[j:j + ny, i:i + nx]
-
-    # Nao contar o proprio pixel como vizinho forte.
-    neighbour20 = support20 - active20.astype(np.uint8)
-
-    weak = (z >= 5.0) & (z < 20.0)
-    moderate = (z >= 20.0) & (z < 45.0)
-    strong = z >= 45.0
-
-    keep_weak = weak & ((support5 >= 3) | (neighbour20 >= 1))
-    keep_moderate = moderate & (support5 >= 2)
-    keep = strong | keep_moderate | keep_weak
-    return np.where(keep, z, 0.0)
 
 
 def iso(value): return value.isoformat().replace("+00:00", "Z")
@@ -74,8 +35,9 @@ def main():
         with xr.open_dataset(path, engine="netcdf4", decode_times=False) as ds:
             ny, nx = ds["XLAT"].isel(Time=0).shape; rows, cols = idx(ny, args.grid_y), idx(nx, args.grid_x)
             derived, variables, methods, detail = compute(ds, rows, cols)
-            refl_native = native_composite_reflectivity(ds)
-            refl = qc_native_reflectivity(refl_native)[np.ix_(rows, cols)]
+            # Refletividade publicada exatamente a partir de REFL_10CM do wrfout.
+            # Nao ha filtro espacial, suavizacao, preenchimento ou refletividade substituta.
+            refl = native_composite_reflectivity(ds)[np.ix_(rows, cols)]
             t2 = np.asarray(ds["T2"].isel(Time=0), float)[np.ix_(rows, cols)] - 273.15
             q2 = np.asarray(ds["Q2"].isel(Time=0), float)[np.ix_(rows, cols)]
             psfc = np.asarray(ds["PSFC"].isel(Time=0), float)[np.ix_(rows, cols)]
@@ -88,7 +50,6 @@ def main():
                 "runDate":date, "runCycle":f"{cycle}Z", "initTime":iso(init), "forecastHour":hour, "validTime":iso(valid),
                 "dxMeters":round(float(ds.attrs.get("DX", 3000))), "dyMeters":round(float(ds.attrs.get("DY", 3000))),
                 "gridX":len(cols), "gridY":len(rows), "reflectivitySource":"REFL_10CM_NATIVE",
-                "reflectivityProcessing":REFLECTIVITY_QC,
                 "variables":{"stp":variables["stp"], "scp":variables["scp"]},
                 "diagnosticMethods":{"stp":methods["stp"], "scp":methods["scp"]},
                 "fields":{"lat":flat(lat,4), "lon":flat(lon,4), "reflectivity":flat(refl,1,0,95),
@@ -101,8 +62,7 @@ def main():
         "source":f"CIM WRF 3 km · {args.model.upper()}", "runDate":date, "runCycle":f"{cycle}Z", "initTime":iso(init),
         "generatedAt":iso(dt.datetime.now(dt.timezone.utc)), "status":"complete", "frameCount":len(frames),
         "temporalResolutionMinutes":180, "reflectivitySource":"REFL_10CM_NATIVE",
-        "reflectivityProcessing":REFLECTIVITY_QC,
         "availableVariables":list(FIELDS), "frames":frames}
     (output / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(metadata, ensure_ascii=False))
-if __name__ == "__main__": main()
+if __name__=="__main__": main()
