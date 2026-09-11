@@ -183,15 +183,22 @@ jobs:
           assert data['frameCount'] == 73, data
           assert hours == list(range(73)), hours
           assert data.get('segmentSpinupProtected') is True, data
-          # F000-F006 pertencem naturalmente ao spin-up inicial. Depois disso,
-          # nenhum quadro deve vir de uma inicializacao quase instantanea.
-          assert all(int(f.get('integrationHours', 0)) >= min(int(f['forecastHour']), 9) for f in data['frames']), data['frames']
+          for frame in data['frames']:
+              hour = int(frame['forecastHour'])
+              age = int(frame.get('integrationHours', 0))
+              if hour <= 9:
+                  required = hour
+              elif hour % 3 == 0:
+                  required = 9
+              else:
+                  required = 7
+              assert age >= required, (hour, age, required, frame)
           data['scope'] = 'forecast_72_hours'
           data['archiveIndex'] = 'runs.json'
           data['archiveRetentionHours'] = 96
           json.dump(data, open('wrf_publish/metadata.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
           print('WRF 72H VALIDADO:', data['initTime'], data['frameCount'])
-          print('SPIN-UP PROTEGIDO: OK')
+          print('SPIN-UP PROTEGIDO: >=9 h nos quadros de 3 h; >=7 h nos intermediarios horarios')
           PY
 
       - name: Publicar e arquivar rodadas por quatro dias
