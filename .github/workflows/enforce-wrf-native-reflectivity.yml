@@ -9,7 +9,6 @@ on:
       - ".github/workflows/enforce-wrf-native-reflectivity.yml"
       - "server.py"
   schedule:
-    - cron: "*/5 * * * *"
     - cron: "17 2 * * *"
 
 permissions:
