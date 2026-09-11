@@ -77,24 +77,26 @@ jobs:
           PY
 
   segments:
-    name: ${{ inputs.model }} WRF F${{ matrix.start }}-F${{ matrix.end }}
+    name: ${{ inputs.model }} WRF alvo F${{ matrix.start }}-F${{ matrix.end }}
     needs: run-info
     runs-on: ubuntu-22.04
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      # Evita que um único modelo consuma praticamente todos os runners da conta.
+      # Mantem o processamento paralelo, mas cada segmento apos o primeiro
+      # integra 6 h extras antes da janela nominal. Isso reduz artefatos de
+      # cold-start da microfisica sem transformar a rodada em 8 jobs sequenciais.
       max-parallel: 2
       matrix:
         include:
-          - { id: "000-009", start: 0, end: 9 }
-          - { id: "009-018", start: 9, end: 18 }
-          - { id: "018-027", start: 18, end: 27 }
-          - { id: "027-036", start: 27, end: 36 }
-          - { id: "036-045", start: 36, end: 45 }
-          - { id: "045-054", start: 45, end: 54 }
-          - { id: "054-063", start: 54, end: 63 }
-          - { id: "063-072", start: 63, end: 72 }
+          - { id: "000-009", start: 0,  spinup_start: 0,  end: 9 }
+          - { id: "009-018", start: 9,  spinup_start: 3,  end: 18 }
+          - { id: "018-027", start: 18, spinup_start: 12, end: 27 }
+          - { id: "027-036", start: 27, spinup_start: 21, end: 36 }
+          - { id: "036-045", start: 36, spinup_start: 30, end: 45 }
+          - { id: "045-054", start: 45, spinup_start: 39, end: 54 }
+          - { id: "054-063", start: 54, spinup_start: 48, end: 63 }
+          - { id: "063-072", start: 63, spinup_start: 57, end: 72 }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -114,17 +116,20 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Instalar dependencias
         run: python -m pip install --disable-pip-version-check requests numpy xarray netCDF4 ecmwf-opendata
-      - name: Rodar segmento independente
+      - name: Rodar segmento com spin-up de 6 h
         env:
           FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
-          WRF_START_HOUR: ${{ matrix.start }}
+          WRF_START_HOUR: ${{ matrix.spinup_start }}
           WRF_END_HOUR: ${{ matrix.end }}
           WRF_RUN_HOURS: ${{ matrix.end }}
+          WRF_NOMINAL_START_HOUR: ${{ matrix.start }}
+          WRF_SPINUP_HOURS: '6'
           SOURCE_MODEL: ${{ inputs.model }}
           RUN_SCRIPT: ${{ inputs.run_script }}
         shell: bash
         run: |
+          echo "Janela nominal F${WRF_NOMINAL_START_HOUR}-F${WRF_END_HOUR}; integracao real inicia em F${WRF_START_HOUR}"
           chmod +x "wrf/$RUN_SCRIPT" wrf/run_wrf_with_source.sh
           "wrf/$RUN_SCRIPT"
       - name: Extrair REFL nativo
@@ -192,7 +197,12 @@ jobs:
           assert data['frameCount'] == 16, data
           assert data['temporalResolutionMinutes'] == 180, data
           assert len(data['forecastLocalDates']) == 2, data
+          assert data.get('segmentSpinupProtected') is True, data
+          # Todos os quadros publicados do periodo util precisam vir do segmento
+          # com maior tempo de integracao disponivel, nunca do cold-start novo.
+          assert all(int(f.get('integrationHours', 0)) >= 9 for f in data['frames']), data['frames']
           print('WRF VALIDADO:', data['model'], data['initTime'], data['forecastLocalDates'])
+          print('SPIN-UP MINIMO PUBLICADO:', min(int(f['integrationHours']) for f in data['frames']), 'h')
           PY
       - name: Publicar branch isolada
         env:
@@ -211,7 +221,7 @@ jobs:
           git rm -rf . || true
           git clean -fdx || true
           cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          printf '# Sideral WRF %s Data\nDois dias em intervalos de 3 h. REFL_10CM nativo.\n' "${SOURCE_MODEL^^}" > README.md
+          printf '# Sideral WRF %s Data\nDois dias em intervalos de 3 h. REFL_10CM nativo, grade nativa e protecao contra cold-start por sobreposicao de spin-up.\n' "${SOURCE_MODEL^^}" > README.md
           git add .
-          git commit -m "${SOURCE_MODEL^^}-WRF atualiza dois dias [skip render]"
+          git commit -m "${SOURCE_MODEL^^}-WRF atualiza dois dias com spin-up [skip render]"
           git push --force origin "HEAD:$PUBLISH_BRANCH"
