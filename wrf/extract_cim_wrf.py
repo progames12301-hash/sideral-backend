@@ -5,7 +5,13 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import xarray as xr
+
+# Compatibilidade com NumPy < 2.0 usado nos runners atuais.
+# O núcleo compartilhado usa np.trapezoid; em NumPy 1.26 a função equivalente é np.trapz.
+if not hasattr(np, "trapezoid"):
+    np.trapezoid = np.trapz  # type: ignore[attr-defined]
 
 from extract_cim_wrf_core import *  # noqa: F401,F403
 from extract_cim_wrf_core import main as _core_main
