@@ -87,7 +87,7 @@ jobs:
           PY
 
   segments:
-    name: WRF F${{ matrix.start }}-F${{ matrix.end }}
+    name: WRF alvo F${{ matrix.start }}-F${{ matrix.end }}
     needs: run-info
     runs-on: ubuntu-22.04
     timeout-minutes: 350
@@ -96,14 +96,14 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          - { id: "000-009", start: 0, end: 9 }
-          - { id: "009-018", start: 9, end: 18 }
-          - { id: "018-027", start: 18, end: 27 }
-          - { id: "027-036", start: 27, end: 36 }
-          - { id: "036-045", start: 36, end: 45 }
-          - { id: "045-054", start: 45, end: 54 }
-          - { id: "054-063", start: 54, end: 63 }
-          - { id: "063-072", start: 63, end: 72 }
+          - { id: "000-009", start: 0,  spinup_start: 0,  end: 9 }
+          - { id: "009-018", start: 9,  spinup_start: 3,  end: 18 }
+          - { id: "018-027", start: 18, spinup_start: 12, end: 27 }
+          - { id: "027-036", start: 27, spinup_start: 21, end: 36 }
+          - { id: "036-045", start: 36, spinup_start: 30, end: 45 }
+          - { id: "045-054", start: 45, spinup_start: 39, end: 54 }
+          - { id: "054-063", start: 54, spinup_start: 48, end: 63 }
+          - { id: "063-072", start: 63, spinup_start: 57, end: 72 }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -121,15 +121,18 @@ jobs:
           python-version: "3.11"
       - name: Instalar extrator
         run: python -m pip install numpy xarray netCDF4
-      - name: Rodar segmento independente
+      - name: Rodar segmento com spin-up de 6 h
         env:
           FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
-          WRF_START_HOUR: ${{ matrix.start }}
+          WRF_START_HOUR: ${{ matrix.spinup_start }}
           WRF_END_HOUR: ${{ matrix.end }}
+          WRF_NOMINAL_START_HOUR: ${{ matrix.start }}
+          WRF_SPINUP_HOURS: "6"
           WRF_COLD_START: "1"
         shell: bash
         run: |
+          echo "Janela nominal F${WRF_NOMINAL_START_HOUR}-F${WRF_END_HOUR}; integracao real inicia em F${WRF_START_HOUR}"
           chmod +x wrf/run_gfs_segment.sh
           wrf/run_gfs_segment.sh
       - name: Extrair REFL_10CM nativo
@@ -179,11 +182,16 @@ jobs:
           assert data['reflectivitySource'] == 'REFL_10CM_NATIVE', data
           assert data['frameCount'] == 73, data
           assert hours == list(range(73)), hours
+          assert data.get('segmentSpinupProtected') is True, data
+          # F000-F006 pertencem naturalmente ao spin-up inicial. Depois disso,
+          # nenhum quadro deve vir de uma inicializacao quase instantanea.
+          assert all(int(f.get('integrationHours', 0)) >= min(int(f['forecastHour']), 9) for f in data['frames']), data['frames']
           data['scope'] = 'forecast_72_hours'
           data['archiveIndex'] = 'runs.json'
           data['archiveRetentionHours'] = 96
           json.dump(data, open('wrf_publish/metadata.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
           print('WRF 72H VALIDADO:', data['initTime'], data['frameCount'])
+          print('SPIN-UP PROTEGIDO: OK')
           PY
 
       - name: Publicar e arquivar rodadas por quatro dias
@@ -313,9 +321,9 @@ jobs:
           print('Rodadas disponiveis:', [row['id'] for row in rows])
           PY
 
-          printf '# Sideral WRF Data\n72 horas · WRF Sul 4 km · REFL_10CM nativo.\nRodadas ficam disponíveis em runs/ por até quatro dias.\n' > README.md
+          printf '# Sideral WRF Data\n72 horas · WRF Sul 4 km · REFL_10CM nativo · segmentos com spin-up sobreposto.\nRodadas ficam disponíveis em runs/ por até quatro dias.\n' > README.md
           git add .
-          git commit -m "GFS-WRF publica e arquiva $NEW_RUN_ID [skip render]"
+          git commit -m "GFS-WRF publica e arquiva $NEW_RUN_ID com spin-up [skip render]"
           git push --force origin HEAD:wrf-data
 
       - name: Guardar rodada como artifact por quatro dias
