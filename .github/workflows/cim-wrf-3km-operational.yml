@@ -104,3 +104,5 @@ jobs:
             wrf_work/run/rsl.*
           if-no-files-found: ignore
           retention-days: 7
+
+# trigger: retry after cancelled run 34614968814 on 2026-09-11
