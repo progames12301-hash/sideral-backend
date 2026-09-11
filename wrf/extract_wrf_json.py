@@ -8,6 +8,8 @@ from pathlib import Path
 import xarray as xr
 
 # Mantem a API publica do extrator original para os outros modulos WRF.
+# REFL_10CM_NATIVE continua sendo a unica refletividade publicada.
+# A Sideral nao publica refletividade aproximada como substituta.
 from extract_wrf_json_core import *  # noqa: F401,F403
 from extract_wrf_json_core import main as _core_main
 
