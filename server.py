@@ -725,7 +725,7 @@ def get_latest_inmet_observation(station_code: str) -> dict[str, Any]:
             live = {"estacao": station_code, "observacao": None, "fonte": "Ao vivo indisponível", "url_consultada": url, "api_registros_recebidos": len(data)}
     return {"estacao": station_code, "observacao": live.get("observacao"), "fonte": live.get("fonte"), "idade_segundos": live.get("idade_segundos"), "url_consultada": url, "api_registros_recebidos": len(data), "ao_vivo": live, "historico_inmet": historical, "erro_ao_vivo": live_error}
 
-def precipitation_to_dbz(precipitation_mm_per_hour: float) -> float:
+def meteoblue_precipitation_to_dbz(precipitation_mm_per_hour: float) -> float:
     if precipitation_mm_per_hour <= 0: return 0.0
     return max(0.0, min(75.0, 25.0 + 10.0 * math.log10(precipitation_mm_per_hour)))
 
@@ -733,34 +733,6 @@ def wind_direction_deg(u10: float, v10: float) -> float:
     if u10 == 0 and v10 == 0: return 0.0
     return (270.0 - math.degrees(math.atan2(v10, u10))) % 360.0
 
-def hydrometeor_reflectivity_dbz(dataset: Any, t2m: Any) -> Any:
-    import numpy as np
-    shape = np.asarray(t2m).shape
-    z_linear = np.zeros(shape, dtype=float)
-    species = {"QRAIN": 4.0e11, "QSNOW": 1.2e11, "QGRAUP": 9.0e11, "QHAIL": 1.4e12}
-    for name, scale in species.items():
-        if name not in dataset: continue
-        mixing_ratio = np.maximum(dataset[name].isel(Time=0).to_numpy(), 0.0)
-        column_max = np.nanmax(mixing_ratio, axis=0)
-        z_linear += scale * np.power(column_max, 1.25)
-    if "QCLOUD" in dataset:
-        cloud = np.nanmax(np.maximum(dataset["QCLOUD"].isel(Time=0).to_numpy(), 0.0), axis=0)
-        z_linear += np.where(cloud > 2.5e-4, 1.2e8 * np.power(cloud, 1.5), 0.0)
-    log_z_linear = np.zeros_like(z_linear)
-    positive_mask = z_linear > 0
-    log_z_linear[positive_mask] = np.log10(z_linear[positive_mask])
-    return np.where(z_linear > 1.0, np.clip(10.0 * log_z_linear, 0.0, 75.0), 0.0)
-
-def approximate_reflectivity_dbz(dataset: Any, t2m: Any, precip_rate: Any) -> Any:
-    import numpy as np
-    hydrometeor_refl = hydrometeor_reflectivity_dbz(dataset, t2m)
-    precip_refl = np.vectorize(precipitation_to_dbz)(precip_rate)
-    mask = precip_rate > 0.02
-    for name in ("QRAIN", "QSNOW", "QGRAUP", "QHAIL"):
-        if name in dataset:
-            column_max = np.nanmax(np.maximum(dataset[name].isel(Time=0).to_numpy(), 0.0), axis=0)
-            mask |= column_max > 4.0e-6
-    return np.where(mask, np.maximum(hydrometeor_refl, precip_refl), 0.0)
 
 def find_wrf_files(model_key: str = "icon") -> list[Path]:
     model_key = (model_key or "icon").lower()
@@ -971,7 +943,7 @@ def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, gri
         values = hourly_data.get(field_name, [])
         return float(values[closest_hour_index] or 0.0) if closest_hour_index < len(values) else 0.0
     precipitation = hour_value("precipitation"); wind_speed = hour_value("windspeed_10m"); wind_direction = hour_value("winddirection_10m")
-    reflectivity = precipitation_to_dbz(precipitation)
+    reflectivity = meteoblue_precipitation_to_dbz(precipitation)
     lat_step = (bounds["north"] - bounds["south"]) / (grid_y - 1) if grid_y > 1 else 0.0
     lon_step = (bounds["east"] - bounds["west"]) / (grid_x - 1) if grid_x > 1 else 0.0
     cells: list[dict[str, float]] = []
