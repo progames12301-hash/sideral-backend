@@ -6,6 +6,17 @@ set -euo pipefail
 : "${WRF_START_HOUR:?WRF_START_HOUR ausente}"
 : "${WRF_END_HOUR:?WRF_END_HOUR ausente}"
 
+# O workflow continua descrevendo a janela nominal de 9 h, mas cada segmento
+# apos o primeiro comeca 6 h antes. Assim o primeiro quadro realmente novo de
+# cada janela ja chega com ~9 h de integracao da microfisica, em vez de 3 h.
+WRF_NOMINAL_START_HOUR="${WRF_NOMINAL_START_HOUR:-$WRF_START_HOUR}"
+WRF_SPINUP_HOURS="${WRF_SPINUP_HOURS:-6}"
+if (( WRF_NOMINAL_START_HOUR > 0 )); then
+  WRF_START_HOUR=$(( WRF_NOMINAL_START_HOUR - WRF_SPINUP_HOURS ))
+  (( WRF_START_HOUR < 0 )) && WRF_START_HOUR=0
+fi
+echo "GFS Sudeste janela nominal F${WRF_NOMINAL_START_HOUR}-F${WRF_END_HOUR}; integracao real F${WRF_START_HOUR}-F${WRF_END_HOUR}"
+
 if (( WRF_START_HOUR < 0 || WRF_END_HOUR <= WRF_START_HOUR )); then
   echo "Intervalo WRF invalido" >&2; exit 2
 fi
@@ -17,7 +28,7 @@ if (( WRF_START_HOUR > 0 )) && [[ -z "${WRF_RESTART_FILE:-}" ]] && [[ "$WRF_COLD
   echo "Continuacao exige WRF_RESTART_FILE ou WRF_COLD_START=1" >&2; exit 4
 fi
 
-export FORCE_RUN_DATE FORCE_RUN_CYCLE WRF_START_HOUR WRF_END_HOUR WRF_COLD_START
+export FORCE_RUN_DATE FORCE_RUN_CYCLE WRF_START_HOUR WRF_END_HOUR WRF_COLD_START WRF_NOMINAL_START_HOUR WRF_SPINUP_HOURS
 export WRF_SEGMENT_HOURS=$((WRF_END_HOUR-WRF_START_HOUR))
 
 python3 - <<'PY'
@@ -26,7 +37,7 @@ import os, re
 
 path=Path('wrf/run_gfs_test.sh')
 text=path.read_text(encoding='utf-8')
-# Domínio independente do Sudeste: SP, MG, RJ e ES, mantendo o Sul intacto.
+# Dominio independente do Sudeste: SP, MG, RJ e ES, mantendo o Sul intacto.
 domain_replacements = {
     ' e_we              = 300,': ' e_we              = 390,',
     ' e_sn              = 360,': ' e_sn              = 360,',
