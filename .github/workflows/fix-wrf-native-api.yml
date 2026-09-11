@@ -1,3 +1,4 @@
+# retrigger strict native WRF reflectivity patch - 2026-09-11
 name: WRF - corrigir API para REFL nativo
 
 on:
@@ -39,7 +40,6 @@ jobs:
           else:
               raise SystemExit('Bloco WRF esperado nao encontrado; recusando patch inseguro.')
 
-          # Valida apenas o corpo de build_wrf_cells.
           text = path.read_text(encoding='utf-8')
           start = text.index('def build_wrf_cells(')
           end = text.index('\ndef build_gfs_cells(', start)
