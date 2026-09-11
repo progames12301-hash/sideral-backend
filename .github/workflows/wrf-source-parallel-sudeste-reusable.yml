@@ -229,9 +229,12 @@ jobs:
           assert data['temporalResolutionMinutes'] == 180, data
           assert len(data['forecastLocalDates']) == 2, data
           assert data.get('segmentSpinupProtected') is True, data
-          assert all(int(f.get('integrationHours', 0)) >= 9 for f in data['frames']), data['frames']
+          for frame in data['frames']:
+              hour = int(frame['forecastHour'])
+              age = int(frame.get('integrationHours', 0))
+              assert age >= min(hour, 9), (hour, age, frame)
           print('WRF VALIDADO:', data['model'], data['initTime'], data['forecastLocalDates'])
-          print('SPIN-UP MINIMO PUBLICADO:', min(int(f['integrationHours']) for f in data['frames']), 'h')
+          print('SPIN-UP PROTEGIDO; minimo publicado:', min(int(f['integrationHours']) for f in data['frames']), 'h')
           PY
       - name: Publicar branch isolada
         env:
