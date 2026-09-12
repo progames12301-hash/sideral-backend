@@ -95,12 +95,31 @@ jobs:
           git -C published-cim diff --cached --quiet && exit 0
           git -C published-cim commit -m "CIM WRF 3 km ${{ matrix.model }}: $(jq -r '.runDate + " " + .runCycle' cim_publish/metadata.json)"
           git -C published-cim push origin 'HEAD:refs/heads/${{ matrix.branch }}'
+      - name: Preparar wrfout para recuperação após falha
+        if: failure()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf wrfout-recovery
+          mkdir -p wrfout-recovery
+          shopt -s nullglob
+          files=(wrf_work/run/wrfout_d01_*)
+          if (( ${#files[@]} == 0 )); then
+            echo 'Nenhum wrfout encontrado para recuperação.'
+            exit 0
+          fi
+          for src in "${files[@]}"; do
+            base="$(basename "$src")"
+            safe="${base//:/-}"
+            cp -a "$src" "wrfout-recovery/$safe"
+          done
+          ls -lh wrfout-recovery/
       - name: Guardar wrfout para recuperação após falha
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: cim-wrf-${{ matrix.model }}-wrfout-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: wrf_work/run/wrfout_d01_*
+          path: wrfout-recovery/
           if-no-files-found: ignore
           retention-days: 1
           compression-level: 0
