@@ -1,4 +1,4 @@
-name: WRF Sudeste 4 km ICON - REFL NATIVO
+name: WRF Sudeste 4 km ICON - 48H REFL NATIVO
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/wrf-sudeste-icon-4km.yml"
-      - ".github/workflows/wrf-source-parallel-sudeste-reusable.yml"
+      - ".github/workflows/wrf-regional-48h-reusable.yml"
 
 permissions:
   contents: write
@@ -19,10 +19,11 @@ concurrency:
 
 jobs:
   wrf:
-    uses: ./.github/workflows/wrf-source-parallel-sudeste-reusable.yml
+    uses: ./.github/workflows/wrf-regional-48h-reusable.yml
     with:
       model: icon
       source_data_branch: icon-data
       publish_branch: wrf-sudeste-icon-data
       run_script: run_icon_wrf_sudeste.sh
+      publish_severe: true
     secrets: inherit
