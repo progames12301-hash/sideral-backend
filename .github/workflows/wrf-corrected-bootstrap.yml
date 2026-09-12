@@ -16,11 +16,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  dispatch:
+  repair-and-dispatch:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - name: Corrigir workflows antigos que ainda pedem grade reduzida
+      - name: Corrigir grade nativa e spin-up do Sudeste
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -31,54 +31,85 @@ jobs:
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$work"
           cd "$work"
           git checkout main
+
           python3 - <<'PY'
           from pathlib import Path
 
-          root = Path('.github/workflows')
-          changed = []
-          for path in sorted(root.glob('*.yml')):
+          # Remove alvos artificiais de publicacao. Os extratores do wrf-runner
+          # leem XLAT/DX/DY do proprio wrfout e travam o produto em 4 km nativo.
+          for path in [
+              Path('.github/workflows/wrf-source-parallel-sudeste-reusable.yml'),
+              Path('.github/workflows/wrf-sudeste-gfs-4km.yml'),
+          ]:
               original = path.read_text(encoding='utf-8')
               lines = original.splitlines()
               out = []
               i = 0
-              touched = False
               while i < len(lines):
-                  line = lines[i]
-                  if i + 1 < len(lines) and '--grid-x 220' in line and '--grid-y 180' in lines[i + 1]:
-                      next_line = lines[i + 2] if i + 2 < len(lines) else ''
-                      if not next_line.lstrip().startswith('--') and out and out[-1].rstrip().endswith('\\'):
-                          out[-1] = out[-1].rstrip()[:-1].rstrip()
-                      i += 2
-                      touched = True
-                      continue
-                  if i + 1 < len(lines) and '--grid-x 240' in line and '--grid-y 200' in lines[i + 1]:
-                      next_line = lines[i + 2] if i + 2 < len(lines) else ''
-                      if not next_line.lstrip().startswith('--') and out and out[-1].rstrip().endswith('\\'):
-                          out[-1] = out[-1].rstrip()[:-1].rstrip()
-                      i += 2
-                      touched = True
-                      continue
-                  out.append(line)
+                  if i + 1 < len(lines):
+                      x, y = lines[i], lines[i + 1]
+                      reduced = (
+                          ('--grid-x 220' in x and '--grid-y 180' in y)
+                          or ('--grid-x 240' in x and '--grid-y 200' in y)
+                      )
+                      if reduced:
+                          nxt = lines[i + 2] if i + 2 < len(lines) else ''
+                          if out and out[-1].rstrip().endswith('\\') and not nxt.lstrip().startswith('--'):
+                              out[-1] = out[-1].rstrip()[:-1].rstrip()
+                          i += 2
+                          continue
+                  out.append(lines[i])
                   i += 1
-              updated = '\n'.join(out) + ('\n' if original.endswith('\n') else '')
-              if touched and updated != original:
-                  path.write_text(updated, encoding='utf-8')
-                  changed.append(str(path))
+              path.write_text('\n'.join(out) + '\n', encoding='utf-8')
 
-          print('WORKFLOWS CORRIGIDOS:', changed)
-          if not changed:
-              print('Nenhum workflow antigo ainda continha downsampling hardcoded.')
+          # Deixa o overlap de spin-up do GFS Sudeste explicito no workflow.
+          gfs = Path('.github/workflows/wrf-sudeste-gfs-4km.yml')
+          text = gfs.read_text(encoding='utf-8')
+          replacements = {
+              '- { id: "000-009", start: 0, end: 9 }': '- { id: "000-009", start: 0,  spinup_start: 0,  end: 9 }',
+              '- { id: "009-018", start: 9, end: 18 }': '- { id: "009-018", start: 9,  spinup_start: 3,  end: 18 }',
+              '- { id: "018-027", start: 18, end: 27 }': '- { id: "018-027", start: 18, spinup_start: 12, end: 27 }',
+              '- { id: "027-036", start: 27, end: 36 }': '- { id: "027-036", start: 27, spinup_start: 21, end: 36 }',
+              '- { id: "036-045", start: 36, end: 45 }': '- { id: "036-045", start: 36, spinup_start: 30, end: 45 }',
+              '- { id: "045-054", start: 45, end: 54 }': '- { id: "045-054", start: 45, spinup_start: 39, end: 54 }',
+              '- { id: "054-063", start: 54, end: 63 }': '- { id: "054-063", start: 54, spinup_start: 48, end: 63 }',
+              '- { id: "063-072", start: 63, end: 72 }': '- { id: "063-072", start: 63, spinup_start: 57, end: 72 }',
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+
+          text = text.replace('      - name: Rodar segmento independente\n', '      - name: Rodar segmento com spin-up de 6 h\n')
+          old_env = '          WRF_START_HOUR: ${{ matrix.start }}\n          WRF_END_HOUR: ${{ matrix.end }}\n          WRF_COLD_START: "1"\n'
+          new_env = '          WRF_START_HOUR: ${{ matrix.spinup_start }}\n          WRF_END_HOUR: ${{ matrix.end }}\n          WRF_NOMINAL_START_HOUR: ${{ matrix.start }}\n          WRF_SPINUP_HOURS: "6"\n          WRF_COLD_START: "1"\n'
+          if old_env in text:
+              text = text.replace(old_env, new_env, 1)
+
+          marker = "          assert hours == sorted(hours) and all(hour % 3 == 0 for hour in hours), hours\n"
+          if "assert data.get('segmentSpinupProtected') is True" not in text:
+              text = text.replace(
+                  marker,
+                  marker
+                  + "          assert data.get('segmentSpinupProtected') is True, data\n"
+                  + "          for frame in data['frames']:\n"
+                  + "              hour = int(frame['forecastHour'])\n"
+                  + "              age = int(frame.get('integrationHours', 0))\n"
+                  + "              assert age >= min(hour, 9), (hour, age, frame)\n",
+                  1,
+              )
+          gfs.write_text(text, encoding='utf-8')
           PY
 
           if ! git diff --quiet; then
             git config user.name "sideral-wrf-bot"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add .github/workflows
-            git commit -m "WRF: remover grades artificiais antigas dos workflows [skip render]"
+            git add .github/workflows/wrf-source-parallel-sudeste-reusable.yml .github/workflows/wrf-sudeste-gfs-4km.yml
+            git commit -m "WRF: Sudeste em grade nativa com spin-up protegido [skip render]"
             git push origin HEAD:main
+          else
+            echo "Arquivos principais ja estavam corrigidos."
           fi
 
-      - name: Cancelar rodadas antigas e iniciar somente as corrigidas
+      - name: Substituir rodadas antigas pelas corrigidas
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -88,17 +119,9 @@ jobs:
           cancel_active() {
             local workflow="$1" label="$2"
             mapfile -t ids < <(
-              gh run list \
-                --repo "$GITHUB_REPOSITORY" \
-                --workflow "$workflow" \
-                --limit 50 \
-                --json databaseId,status \
-                --jq '.[] | select(.status != "completed") | .databaseId'
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 50 \
+                --json databaseId,status --jq '.[] | select(.status != "completed") | .databaseId'
             )
-            if [ "${#ids[@]}" -eq 0 ]; then
-              echo "SEM EXECUCAO ANTIGA: $label"
-              return 0
-            fi
             for id in "${ids[@]}"; do
               echo "CANCELANDO ANTIGA: $label run=$id"
               gh run cancel "$id" --repo "$GITHUB_REPOSITORY" || true
@@ -113,27 +136,11 @@ jobs:
             echo "INICIADO CORRIGIDO: $label"
           }
 
-          # Remove execucoes GFS Sul antigas, inclusive a cadeia F000-F072.
-          cancel_active wrf-4km-next-day-auto.yml "GFS Sul 4 km F000-F072"
-          cancel_active wrf-4km-operational.yml "GFS Sul legado"
-          cancel_active wrf-4km-native-reflectivity.yml "GFS Sul 4 km nativo"
-          gh workflow run wrf-sul-gfs-runner-relief.yml --repo "$GITHUB_REPOSITORY" --ref main || true
-          sleep 3
-          gh workflow run wrf-4km-native-reflectivity.yml --repo "$GITHUB_REPOSITORY" --ref main
-          echo "INICIADO CORRIGIDO: GFS Sul 4 km nativo; ao concluir dispara F000-F072."
-
-          # Sul: ICON e ECMWF corrigidos.
-          start_fresh wrf-icon-4km-native.yml "ICON Sul 4 km"
+          # Somente os quatro produtos pedidos.
           start_fresh wrf-ecmwf-4km-native.yml "ECMWF Sul 4 km"
-
-          # Sudeste: os tres modelos corrigidos substituem qualquer fila/run antigo.
           start_fresh wrf-sudeste-gfs-4km.yml "GFS Sudeste 4 km"
           start_fresh wrf-sudeste-icon-4km.yml "ICON Sudeste 4 km"
           start_fresh wrf-sudeste-ecmwf-4km.yml "ECMWF Sudeste 4 km"
 
-          # CIM: sempre substitui a tentativa antiga por uma execucao nova em 3 km.
-          start_fresh cim-wrf-3km-operational.yml "CIM ICON+ECMWF 3 km"
-
-          # Auditoria final do contrato de resolucao/refletividade.
           gh workflow run wrf-resolution-contract.yml --repo "$GITHUB_REPOSITORY" --ref main || true
-          echo "Auditoria WRF 4 km / CIM 3 km solicitada."
+          echo "Auditoria WRF 4 km solicitada."
