@@ -1,50 +1,144 @@
-name: CIM WRF 3 km - diário
+name: CIM WRF 3 km - 48h com spin-up
+
 on:
   schedule:
-    # Executa após a rodada operacional principal do Sul.
     - cron: '37 8 * * *'
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - ".github/workflows/cim-wrf-3km-operational.yml"
+
 permissions:
   contents: write
+
 concurrency:
   group: cim-wrf-3km-daily
   cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.12'
+  WRF_HISTORY_INTERVAL_MINUTES: '180'
+
 jobs:
-  run-and-publish:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - model: icon
-            branch: cim-wrf-3km-icon-data
-            runner: wrf/run_icon_wrf.sh
-          - model: ecmwf
-            branch: cim-wrf-3km-ecmwf-data
-            runner: wrf/run_ecmwf_wrf.sh
-    name: CIM 3 km (${{ matrix.model }})
+  resolve_runs:
+    name: Resolver rodadas ICON e ECMWF com F048 disponível
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    outputs:
+      icon_date: ${{ steps.resolve.outputs.icon_date }}
+      icon_cycle: ${{ steps.resolve.outputs.icon_cycle }}
+      ecmwf_date: ${{ steps.resolve.outputs.ecmwf_date }}
+      ecmwf_cycle: ${{ steps.resolve.outputs.ecmwf_cycle }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Instalar cliente ECMWF
+        run: python -m pip install --disable-pip-version-check 'ecmwf-opendata==0.3.34'
+      - name: Fixar as duas rodadas antes de abrir os segmentos
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          read -r ECMWF_DATE ECMWF_CYCLE < <(python - <<'PY'
+          import datetime as dt
+          from ecmwf.opendata import Client
+          c = Client(source='ecmwf', model='ifs')
+          value = c.latest(type='fc', step=48, param=['2t'])
+          if not isinstance(value, dt.datetime):
+              value = dt.datetime.fromisoformat(str(value))
+          if value.tzinfo is None:
+              value = value.replace(tzinfo=dt.timezone.utc)
+          value = value.astimezone(dt.timezone.utc)
+          print(value.strftime('%Y%m%d %H'))
+          PY
+          )
+
+          ICON_DATE=''
+          ICON_CYCLE=''
+          while read -r DATE CYCLE; do
+            URL="https://opendata.dwd.de/weather/nwp/icon/grib/${CYCLE}/t_2m/icon_global_icosahedral_single-level_${DATE}${CYCLE}_048_T_2M.grib2.bz2"
+            echo "Testando ICON ${DATE} ${CYCLE}Z F048"
+            if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
+              ICON_DATE="$DATE"
+              ICON_CYCLE="$CYCLE"
+              break
+            fi
+          done < <(python - <<'PY'
+          import datetime as dt
+          now = dt.datetime.now(dt.timezone.utc)
+          base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+          for n in range(8):
+              x = base - dt.timedelta(hours=6*n)
+              print(x.strftime('%Y%m%d %H'))
+          PY
+          )
+
+          test -n "$ICON_DATE"
+          test -n "$ECMWF_DATE"
+          echo "ICON fixado: ${ICON_DATE} ${ICON_CYCLE}Z"
+          echo "ECMWF fixado: ${ECMWF_DATE} ${ECMWF_CYCLE}Z"
+          echo "icon_date=$ICON_DATE" >> "$GITHUB_OUTPUT"
+          echo "icon_cycle=$ICON_CYCLE" >> "$GITHUB_OUTPUT"
+          echo "ecmwf_date=$ECMWF_DATE" >> "$GITHUB_OUTPUT"
+          echo "ecmwf_cycle=$ECMWF_CYCLE" >> "$GITHUB_OUTPUT"
+
+  segments:
+    name: CIM ${{ matrix.model }} F${{ matrix.segment.start }}-F${{ matrix.segment.end }}
+    needs: resolve_runs
     runs-on: ubuntu-22.04
     timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        model: [icon, ecmwf]
+        segment:
+          - { id: '000-009', start: 0,  end: 9 }
+          - { id: '006-015', start: 6,  end: 15 }
+          - { id: '012-021', start: 12, end: 21 }
+          - { id: '018-027', start: 18, end: 27 }
+          - { id: '024-033', start: 24, end: 33 }
+          - { id: '030-039', start: 30, end: 39 }
+          - { id: '036-045', start: 36, end: 45 }
+          - { id: '042-048', start: 42, end: 48 }
     steps:
       - uses: actions/checkout@v4
         with:
           ref: wrf-runner
           fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Instalar dependências do WRF e pós-processamento
+
+      - name: Liberar espaço e preparar runner
+        shell: bash
         run: |
           set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
           sudo apt-get update
           sudo apt-get install -y libeccodes-tools
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Instalar dependências do WRF e pós-processamento
+        run: |
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
-      - name: Executar CIM WRF 3 km
+
+      - name: Executar segmento CIM 3 km com sobreposição de spin-up
         env:
+          ICON_DATE: ${{ needs.resolve_runs.outputs.icon_date }}
+          ICON_CYCLE: ${{ needs.resolve_runs.outputs.icon_cycle }}
+          ECMWF_DATE: ${{ needs.resolve_runs.outputs.ecmwf_date }}
+          ECMWF_CYCLE: ${{ needs.resolve_runs.outputs.ecmwf_cycle }}
           WRF_DX_METERS: '3000'
           WRF_DY_METERS: '3000'
           WRF_E_WE: '370'
@@ -53,84 +147,217 @@ jobs:
           WRF_REF_LAT: '-28.35'
           WRF_REF_LON: '-54.80'
           WRF_STAND_LON: '-54.80'
-          WRF_RUN_HOURS: '6'
+          WRF_RUN_HOURS: '48'
+          WRF_START_HOUR: ${{ matrix.segment.start }}
+          WRF_END_HOUR: ${{ matrix.segment.end }}
+          WRF_HISTORY_INTERVAL_MINUTES: '180'
+        shell: bash
         run: |
           set -euxo pipefail
+          if [[ '${{ matrix.model }}' == 'icon' ]]; then
+            export FORCE_RUN_DATE="$ICON_DATE"
+            export FORCE_RUN_CYCLE="$ICON_CYCLE"
+            RUNNER='wrf/run_icon_wrf.sh'
+          else
+            export FORCE_RUN_DATE="$ECMWF_DATE"
+            export FORCE_RUN_CYCLE="$ECMWF_CYCLE"
+            RUNNER='wrf/run_ecmwf_wrf.sh'
+          fi
+
           test "$WRF_DX_METERS" = '3000'
           test "$WRF_DY_METERS" = '3000'
-          grep -Fq 'dx = ${WRF_DX_METERS}' wrf/run_wrf_with_source.sh
-          grep -Fq 'dy = ${WRF_DY_METERS}' wrf/run_wrf_with_source.sh
-          echo "CIM grade validada: ${WRF_DX_METERS} m x ${WRF_DY_METERS} m"
+          echo "CIM ${{ matrix.model }}: integração F${WRF_START_HOUR}-F${WRF_END_HOUR}; grade 3 km"
           sed -i 's/WRF 4 km/WRF 3 km/g' wrf/run_icon_wrf.sh wrf/run_ecmwf_wrf.sh wrf/run_wrf_with_source.sh
           sed -i 's/WRF 4 KM/WRF 3 KM/g' wrf/run_icon_wrf.sh wrf/run_ecmwf_wrf.sh wrf/run_wrf_with_source.sh
-          chmod +x ${{ matrix.runner }}
-          ${{ matrix.runner }}
-      - name: Extrair os cinco campos CIM
+          chmod +x "$RUNNER"
+          "$RUNNER"
+
+      - name: Extrair CIM nativo do segmento
         run: python wrf/extract_cim_wrf.py --model ${{ matrix.model }} --output-dir cim_publish
-      - name: Validar publicação CIM
+
+      - name: Validar segmento
+        shell: bash
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          root=Path('cim_publish'); meta=json.loads((root/'metadata.json').read_text())
-          assert meta['resolutionKm']==3 and meta['reflectivitySource']=='REFL_10CM_NATIVE'
+          root = Path('cim_publish')
+          meta = json.loads((root / 'metadata.json').read_text())
+          assert meta['resolutionKm'] == 3
+          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE'
           assert set(meta['availableVariables']) == {'reflectivity','stp','scp','temperature','humidity'}
-          assert len(meta['frames']) >= 3
-          for frame in meta['frames']: assert (root/frame['file']).is_file()
+          assert meta['frames']
+          for frame in meta['frames']:
+              assert int(frame['gridX']) == 369, frame
+              assert int(frame['gridY']) == 439, frame
+              assert (root / frame['file']).is_file(), frame
+          print('SEGMENTO OK:', [(f['forecastHour'], f['gridX'], f['gridY']) for f in meta['frames']])
           PY
-      - name: Publicar produto validado
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cim-${{ matrix.model }}-${{ matrix.segment.id }}
+          path: cim_publish/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Guardar diagnósticos se falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim-${{ matrix.model }}-${{ matrix.segment.id }}-diagnostics
+          path: |
+            wrf_diagnostics/
+            wrf_work/run/rsl.*
+          if-no-files-found: ignore
+          retention-days: 3
+
+  publish:
+    name: Publicar CIM 48h (${{ matrix.model }})
+    needs: [resolve_runs, segments]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [icon, ecmwf]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cim-${{ matrix.model }}-*
+          path: segments
+
+      - name: Unir segmentos e remover cold-start F000/F003
+        shell: bash
         run: |
           set -euxo pipefail
-          if git ls-remote --exit-code --heads origin '${{ matrix.branch }}'; then
-            git fetch origin '${{ matrix.branch }}'
-            git worktree add --detach published-cim 'origin/${{ matrix.branch }}'
+          mapfile -t roots < <(find segments -type f -name metadata.json -printf '%h\n' | sort)
+          test "${#roots[@]}" -eq 8
+          args=()
+          for root in "${roots[@]}"; do args+=(--input "$root"); done
+          python wrf/merge_wrf_segments.py "${args[@]}" --output cim_publish
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('cim_publish')
+          path = root / 'metadata.json'
+          meta = json.loads(path.read_text(encoding='utf-8'))
+          keep = []
+          for frame in meta.get('frames', []):
+              hour = int(frame['forecastHour'])
+              if 6 <= hour <= 48 and hour % 3 == 0:
+                  keep.append(frame)
+              else:
+                  target = root / frame['file']
+                  if target.exists():
+                      target.unlink()
+
+          keep.sort(key=lambda f: int(f['forecastHour']))
+          for index, frame in enumerate(keep):
+              frame['index'] = index
+
+          meta['frames'] = keep
+          meta['frameCount'] = len(keep)
+          meta['forecastHourStart'] = 6
+          meta['forecastHourEnd'] = 48
+          meta['horizonHours'] = 48
+          meta['spinupHoursMinimum'] = 6
+          meta['temporalResolutionMinutes'] = 180
+          meta['segmentSpinupProtected'] = True
+          meta['status'] = 'complete'
+          path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
+
+      - name: Validar produto CIM 48h pós-spin-up
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('cim_publish')
+          meta = json.loads((root / 'metadata.json').read_text())
+          frames = meta['frames']
+          hours = [int(f['forecastHour']) for f in frames]
+          assert meta['resolutionKm'] == 3, meta
+          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
+          assert meta['horizonHours'] == 48, meta
+          assert meta['spinupHoursMinimum'] == 6, meta
+          assert meta['segmentSpinupProtected'] is True, meta
+          assert hours == list(range(6, 49, 3)), hours
+          assert len(frames) == 15, len(frames)
+          assert min(int(f.get('integrationHours', -1)) for f in frames) >= 6, frames
+          for frame in frames:
+              assert int(frame['gridX']) == 369 and int(frame['gridY']) == 439, frame
+              assert (root / frame['file']).is_file(), frame
+          print('CIM 48H VALIDADO:', meta['model'], hours)
+          print('SPIN-UP MÍNIMO:', min(int(f['integrationHours']) for f in frames), 'h')
+          PY
+
+      - name: Publicar branch isolada
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [[ '${{ matrix.model }}' == 'icon' ]]; then
+            BRANCH='cim-wrf-3km-icon-data'
+          else
+            BRANCH='cim-wrf-3km-ecmwf-data'
+          fi
+
+          if git ls-remote --exit-code --heads origin "$BRANCH"; then
+            git fetch origin "$BRANCH"
+            git worktree add --detach published-cim "origin/$BRANCH"
           else
             git worktree add --detach published-cim
           fi
           find published-cim -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a cim_publish/. published-cim/
+          printf '# CIM WRF 3 km %s\nHorizonte até F048, quadros de 3 em 3 horas a partir de F006, cada quadro com pelo menos 6 h de spin-up WRF e REFL_10CM nativo.\n' '${{ matrix.model }}' > published-cim/README.md
           git -C published-cim config user.name 'github-actions[bot]'
           git -C published-cim config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git -C published-cim add --all
           git -C published-cim diff --cached --quiet && exit 0
-          git -C published-cim commit -m "CIM WRF 3 km ${{ matrix.model }}: $(jq -r '.runDate + " " + .runCycle' cim_publish/metadata.json)"
-          git -C published-cim push origin 'HEAD:refs/heads/${{ matrix.branch }}'
-      - name: Preparar wrfout para recuperação após falha
-        if: failure()
+          git -C published-cim commit -m "CIM WRF 3 km ${{ matrix.model }}: 48h com spin-up"
+          git -C published-cim push origin "HEAD:refs/heads/$BRANCH"
+
+  verify_published:
+    name: Confirmar publicação dupla CIM 48h
+    needs: publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verificar ICON e ECMWF diretamente nas branches publicadas
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf wrfout-recovery
-          mkdir -p wrfout-recovery
-          shopt -s nullglob
-          files=(wrf_work/run/wrfout_d01_*)
-          if (( ${#files[@]} == 0 )); then
-            echo 'Nenhum wrfout encontrado para recuperação.'
-            exit 0
-          fi
-          for src in "${files[@]}"; do
-            base="$(basename "$src")"
-            safe="${base//:/-}"
-            cp -a "$src" "wrfout-recovery/$safe"
-          done
-          ls -lh wrfout-recovery/
-      - name: Guardar wrfout para recuperação após falha
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cim-wrf-${{ matrix.model }}-wrfout-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: wrfout-recovery/
-          if-no-files-found: ignore
-          retention-days: 1
-          compression-level: 0
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cim-wrf-${{ matrix.model }}-diagnostics
-          path: |
-            wrf_diagnostics/
-            wrf_work/run/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-# trigger: retry after cancelled run 34614968814 on 2026-09-11
+          git fetch origin cim-wrf-3km-icon-data:cim-icon-verify
+          git fetch origin cim-wrf-3km-ecmwf-data:cim-ecmwf-verify
+          git show cim-icon-verify:metadata.json > /tmp/icon.json
+          git show cim-ecmwf-verify:metadata.json > /tmp/ecmwf.json
+          python - <<'PY'
+          import json
+          for model in ('icon', 'ecmwf'):
+              meta = json.load(open(f'/tmp/{model}.json', encoding='utf-8'))
+              hours = [int(f['forecastHour']) for f in meta['frames']]
+              assert meta['model'] == model, meta
+              assert meta['resolutionKm'] == 3, meta
+              assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
+              assert meta['horizonHours'] == 48, meta
+              assert meta['spinupHoursMinimum'] == 6, meta
+              assert meta['segmentSpinupProtected'] is True, meta
+              assert hours == list(range(6, 49, 3)), hours
+              assert all(int(f['gridX']) == 369 and int(f['gridY']) == 439 for f in meta['frames'])
+              assert all(int(f.get('integrationHours', -1)) >= 6 for f in meta['frames'])
+              print(model.upper(), 'PUBLICADO:', hours)
+          PY
