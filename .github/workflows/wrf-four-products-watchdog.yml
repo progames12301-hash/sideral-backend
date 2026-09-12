@@ -1,0 +1,97 @@
+name: WRF - watchdog Sul ECMWF e Sudeste
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: sideral-wrf-four-products-watchdog
+  cancel-in-progress: true
+
+jobs:
+  ensure-correct-products:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Conferir publicacoes e iniciar somente o que estiver velho ou reduzido
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$(TZ=America/Sao_Paulo date -d tomorrow +%F)"
+          echo "Dia local alvo: $target"
+
+          healthy() {
+            local branch="$1" file="/tmp/${branch}.json"
+            curl -fsSL --connect-timeout 10 --max-time 30 \
+              "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${branch}/metadata.json?watch=${GITHUB_RUN_ID}" \
+              -o "$file" || return 1
+            python3 - "$file" "$target" <<'PY'
+          import datetime as dt
+          import json
+          import sys
+          from zoneinfo import ZoneInfo
+
+          path, target = sys.argv[1], sys.argv[2]
+          data = json.load(open(path, encoding='utf-8'))
+          if data.get('resolutionKm') != 4:
+              raise SystemExit(1)
+          if data.get('reflectivitySource') != 'REFL_10CM_NATIVE':
+              raise SystemExit(1)
+          frames = data.get('frames') or []
+          if not frames:
+              raise SystemExit(1)
+          # Bloqueia especificamente as publicacoes antigas reduzidas.
+          for f in frames:
+              dims = (int(f.get('gridX', 0)), int(f.get('gridY', 0)))
+              if dims in {(220, 180), (240, 200)}:
+                  raise SystemExit(1)
+          if data.get('segmentedRun') and data.get('segmentSpinupProtected') is not True:
+              raise SystemExit(1)
+
+          dates = set(data.get('forecastLocalDates') or [])
+          if data.get('forecastLocalDate'):
+              dates.add(data['forecastLocalDate'])
+          for f in frames:
+              value = f.get('validTime') or f.get('valid_time')
+              if not value:
+                  continue
+              try:
+                  d = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+                  dates.add(d.astimezone(ZoneInfo('America/Sao_Paulo')).date().isoformat())
+              except Exception:
+                  pass
+          raise SystemExit(0 if target in dates else 1)
+          PY
+          }
+
+          active() {
+            local workflow="$1"
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 \
+              --json status --jq '[.[] | select(.status != "completed")] | length'
+          }
+
+          ensure() {
+            local label="$1" branch="$2" workflow="$3"
+            if healthy "$branch"; then
+              echo "OK: $label ja esta 4 km nativo, sem 220x180, cobrindo $target."
+              return 0
+            fi
+            if [ "$(active "$workflow")" != "0" ]; then
+              echo "AGUARDANDO: $label ja possui rodada ativa."
+              return 0
+            fi
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
+            echo "INICIADO: $label precisa republicar em grade nativa."
+          }
+
+          ensure "ECMWF Sul 4 km" "wrf-ecmwf-data" "wrf-ecmwf-4km-native.yml"
+          ensure "GFS Sudeste 4 km" "wrf-sudeste-gfs-data" "wrf-sudeste-gfs-4km.yml"
+          ensure "ICON Sudeste 4 km" "wrf-sudeste-icon-data" "wrf-sudeste-icon-4km.yml"
+          ensure "ECMWF Sudeste 4 km" "wrf-sudeste-ecmwf-data" "wrf-sudeste-ecmwf-4km.yml"
