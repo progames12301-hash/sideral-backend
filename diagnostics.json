@@ -1,0 +1,225 @@
+{
+  "schema": "sideral-wrf2-severe-publish-diagnostics-v1",
+  "model": "ecmwf",
+  "generatedAt": "2026-09-12T16:04:53.705015Z",
+  "inputs": [
+    {
+      "root": "severe-segments/ecmwf-severe-000-009",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 4
+    },
+    {
+      "root": "severe-segments/ecmwf-severe-009-018",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 6
+    },
+    {
+      "root": "severe-segments/ecmwf-severe-018-027",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 6
+    },
+    {
+      "root": "severe-segments/ecmwf-severe-027-036",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 6
+    },
+    {
+      "root": "severe-segments/ecmwf-severe-036-045",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 6
+    },
+    {
+      "root": "severe-segments/ecmwf-severe-045-054",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 6
+    },
+    {
+      "root": "severe-segments/ecmwf-severe-054-063",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 5
+    },
+    {
+      "root": "severe-segments/ecmwf-severe-063-072",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 5
+    }
+  ],
+  "missingFiles": [
+    {
+      "forecastHour": 72,
+      "file": "severe/ecmwf/f072.json.gz",
+      "reason": "Frame esperado não foi encontrado nos artifacts severos."
+    }
+  ],
+  "duplicateFrames": [
+    {
+      "forecastHour": 3,
+      "kept": "severe-segments/ecmwf-severe-009-018/severe/ecmwf/f003.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-000-009/severe/ecmwf/f003.json.gz"
+    },
+    {
+      "forecastHour": 6,
+      "kept": "severe-segments/ecmwf-severe-009-018/severe/ecmwf/f006.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-000-009/severe/ecmwf/f006.json.gz"
+    },
+    {
+      "forecastHour": 9,
+      "kept": "severe-segments/ecmwf-severe-009-018/severe/ecmwf/f009.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-000-009/severe/ecmwf/f009.json.gz"
+    },
+    {
+      "forecastHour": 12,
+      "kept": "severe-segments/ecmwf-severe-018-027/severe/ecmwf/f012.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-009-018/severe/ecmwf/f012.json.gz"
+    },
+    {
+      "forecastHour": 15,
+      "kept": "severe-segments/ecmwf-severe-018-027/severe/ecmwf/f015.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-009-018/severe/ecmwf/f015.json.gz"
+    },
+    {
+      "forecastHour": 18,
+      "kept": "severe-segments/ecmwf-severe-018-027/severe/ecmwf/f018.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-009-018/severe/ecmwf/f018.json.gz"
+    },
+    {
+      "forecastHour": 21,
+      "kept": "severe-segments/ecmwf-severe-027-036/severe/ecmwf/f021.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-018-027/severe/ecmwf/f021.json.gz"
+    },
+    {
+      "forecastHour": 24,
+      "kept": "severe-segments/ecmwf-severe-027-036/severe/ecmwf/f024.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-018-027/severe/ecmwf/f024.json.gz"
+    },
+    {
+      "forecastHour": 27,
+      "kept": "severe-segments/ecmwf-severe-027-036/severe/ecmwf/f027.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-018-027/severe/ecmwf/f027.json.gz"
+    },
+    {
+      "forecastHour": 30,
+      "kept": "severe-segments/ecmwf-severe-036-045/severe/ecmwf/f030.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-027-036/severe/ecmwf/f030.json.gz"
+    },
+    {
+      "forecastHour": 33,
+      "kept": "severe-segments/ecmwf-severe-036-045/severe/ecmwf/f033.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-027-036/severe/ecmwf/f033.json.gz"
+    },
+    {
+      "forecastHour": 36,
+      "kept": "severe-segments/ecmwf-severe-036-045/severe/ecmwf/f036.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-027-036/severe/ecmwf/f036.json.gz"
+    },
+    {
+      "forecastHour": 39,
+      "kept": "severe-segments/ecmwf-severe-045-054/severe/ecmwf/f039.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-036-045/severe/ecmwf/f039.json.gz"
+    },
+    {
+      "forecastHour": 42,
+      "kept": "severe-segments/ecmwf-severe-045-054/severe/ecmwf/f042.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-036-045/severe/ecmwf/f042.json.gz"
+    },
+    {
+      "forecastHour": 45,
+      "kept": "severe-segments/ecmwf-severe-045-054/severe/ecmwf/f045.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-036-045/severe/ecmwf/f045.json.gz"
+    },
+    {
+      "forecastHour": 48,
+      "kept": "severe-segments/ecmwf-severe-054-063/severe/ecmwf/f048.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-045-054/severe/ecmwf/f048.json.gz"
+    },
+    {
+      "forecastHour": 51,
+      "kept": "severe-segments/ecmwf-severe-054-063/severe/ecmwf/f051.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-045-054/severe/ecmwf/f051.json.gz"
+    },
+    {
+      "forecastHour": 54,
+      "kept": "severe-segments/ecmwf-severe-054-063/severe/ecmwf/f054.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-045-054/severe/ecmwf/f054.json.gz"
+    },
+    {
+      "forecastHour": 57,
+      "kept": "severe-segments/ecmwf-severe-063-072/severe/ecmwf/f057.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-054-063/severe/ecmwf/f057.json.gz"
+    },
+    {
+      "forecastHour": 60,
+      "kept": "severe-segments/ecmwf-severe-063-072/severe/ecmwf/f060.json.gz",
+      "replaced": "severe-segments/ecmwf-severe-054-063/severe/ecmwf/f060.json.gz"
+    }
+  ],
+  "metadataErrors": [],
+  "notes": [
+    "Este publicador copia somente arquivos WRF2 severos.",
+    "Nenhum arquivo de refletividade nativa é lido, alterado ou publicado.",
+    "Ausência permanece ausente; nenhum frame faltante é sintetizado com zeros."
+  ],
+  "status": "partial",
+  "expectedForecastHours": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15,
+    18,
+    21,
+    24,
+    27,
+    30,
+    33,
+    36,
+    39,
+    42,
+    45,
+    48,
+    51,
+    54,
+    57,
+    60,
+    63,
+    66,
+    69,
+    72
+  ],
+  "publishedForecastHours": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15,
+    18,
+    21,
+    24,
+    27,
+    30,
+    33,
+    36,
+    39,
+    42,
+    45,
+    48,
+    51,
+    54,
+    57,
+    60,
+    63,
+    66,
+    69
+  ],
+  "frameCount": 24
+}
