@@ -1,0 +1,96 @@
+{
+  "schema": "sideral-wrf-metadata-v1",
+  "model": "gfs",
+  "resolutionKm": 4,
+  "runDate": "20260912",
+  "runCycle": "00Z",
+  "initTime": "2026-09-12T00:00:00Z",
+  "generatedAt": "2026-09-12T07:09:51.332984Z",
+  "reflectivitySource": "REFL_10CM_NATIVE",
+  "wrf2SevereDiagnostics": false,
+  "wrf2SeverePathTemplate": "severe/{model}/f{forecastHour:03d}.json.gz",
+  "wrf2SevereFields": [
+    "stp",
+    "scp",
+    "srh01",
+    "srh03",
+    "bulkShear06",
+    "effectiveBulkShear",
+    "lclHeight",
+    "cin",
+    "sbcape",
+    "mlcape",
+    "mucapeWrf2",
+    "pwat",
+    "thetaE850",
+    "thetaEAdvection",
+    "wind850",
+    "wind500",
+    "vorticity500",
+    "omega700",
+    "mslp",
+    "thickness",
+    "dewpoint2m",
+    "kIndex",
+    "totalTotals"
+  ],
+  "wrf2DiagnosticMethods": {},
+  "frameCount": 3,
+  "temporalResolutionMinutes": 180,
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 0,
+      "validTime": "2026-09-12T00:00:00Z",
+      "file": "gfs/f000.json.gz",
+      "gridX": 299,
+      "gridY": 359,
+      "source": "WRF 4 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 0.0,
+        "p99Dbz": 0.0,
+        "fractionAbove5Dbz": 0.0,
+        "fractionAbove40Dbz": 0.0,
+        "positivePixels": 0
+      },
+      "soundingFile": "soundings/gfs/f000.json.gz"
+    },
+    {
+      "index": 1,
+      "forecastHour": 3,
+      "validTime": "2026-09-12T03:00:00Z",
+      "file": "gfs/f003.json.gz",
+      "gridX": 299,
+      "gridY": 359,
+      "source": "WRF 4 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 68.0,
+        "p99Dbz": 44.9,
+        "fractionAbove5Dbz": 0.24118,
+        "fractionAbove40Dbz": 0.01749,
+        "positivePixels": 32123
+      },
+      "soundingFile": "soundings/gfs/f003.json.gz"
+    },
+    {
+      "index": 2,
+      "forecastHour": 6,
+      "validTime": "2026-09-12T06:00:00Z",
+      "file": "gfs/f006.json.gz",
+      "gridX": 299,
+      "gridY": 359,
+      "source": "WRF 4 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 65.6,
+        "p99Dbz": 44.1,
+        "fractionAbove5Dbz": 0.22708,
+        "fractionAbove40Dbz": 0.01507,
+        "positivePixels": 30788
+      },
+      "soundingFile": "soundings/gfs/f006.json.gz"
+    }
+  ]
+}
