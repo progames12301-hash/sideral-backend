@@ -1,0 +1,47 @@
+{
+  "schema": "sideral-cim-wrf-3km-metadata-v1",
+  "model": "icon",
+  "resolutionKm": 3,
+  "source": "CIM WRF 3 km · ICON",
+  "runDate": "20260912",
+  "runCycle": "06Z",
+  "initTime": "2026-09-12T06:00:00Z",
+  "generatedAt": "2026-09-12T18:33:03.860871Z",
+  "status": "complete",
+  "frameCount": 3,
+  "temporalResolutionMinutes": 180,
+  "reflectivitySource": "REFL_10CM_NATIVE",
+  "availableVariables": [
+    "reflectivity",
+    "stp",
+    "scp",
+    "temperature",
+    "humidity"
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 0,
+      "validTime": "2026-09-12T06:00:00Z",
+      "file": "frames/f000.json.gz",
+      "gridX": 369,
+      "gridY": 439
+    },
+    {
+      "index": 1,
+      "forecastHour": 3,
+      "validTime": "2026-09-12T09:00:00Z",
+      "file": "frames/f003.json.gz",
+      "gridX": 369,
+      "gridY": 439
+    },
+    {
+      "index": 2,
+      "forecastHour": 6,
+      "validTime": "2026-09-12T12:00:00Z",
+      "file": "frames/f006.json.gz",
+      "gridX": 369,
+      "gridY": 439
+    }
+  ]
+}
