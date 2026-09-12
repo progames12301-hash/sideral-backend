@@ -1,0 +1,431 @@
+{
+  "schema": "sideral-wrf2-severe-metadata-v2",
+  "model": "gfs",
+  "source": "WRF 2 Sudeste 4 km GFS · diagnósticos severos",
+  "runDate": "20260911",
+  "runCycle": "12Z",
+  "initTime": "2026-09-11T12:00:00Z",
+  "generatedAt": "2026-09-12T16:26:41.912179Z",
+  "status": "partial",
+  "frameCount": 23,
+  "temporalResolutionMinutes": 180,
+  "variables": {
+    "stp": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "scp": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "srh01": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "srh03": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "bulkShear06": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "effectiveBulkShear": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "lclHeight": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "cin": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "sbcape": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "mlcape": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "mucapeWrf2": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "pwat": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "thetaE850": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "thetaEAdvection": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "wind850": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "wind500": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "vorticity500": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "omega700": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "mslp": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "thickness": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "dewpoint2m": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "kIndex": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    },
+    "totalTotals": {
+      "classification": "derived",
+      "status": "available",
+      "availableSegments": 8,
+      "segmentCount": 8,
+      "totalFramesReported": 39
+    }
+  },
+  "diagnosticMethods": {
+    "stp": {
+      "classification": "derived",
+      "method": "fixed-layer STP",
+      "components": [
+        "MLCAPE",
+        "surface LCL height",
+        "cyclonic SRH 0-1 km",
+        "bulk shear 0-6 km",
+        "MLCIN"
+      ],
+      "rule": "Only calculated where CAPE, LCL, SRH, shear and CIN components are finite."
+    },
+    "scp": {
+      "classification": "derived",
+      "method": "SCP",
+      "components": [
+        "MUCAPE",
+        "cyclonic SRH 0-3 km",
+        "effective bulk shear proxy"
+      ],
+      "rule": "Only calculated where MUCAPE, SRH 0-3 km and shear are finite."
+    },
+    "srh01": "Bunkers cyclonic motion; 250 m hodograph; 0-1 km AGL",
+    "srh03": "Bunkers cyclonic motion; 250 m hodograph; 0-3 km AGL",
+    "bulkShear06": "10 m to 6 km AGL vector difference",
+    "effectiveBulkShear": "derived 0-6 km bulk-shear proxy; never native",
+    "lclHeight": "Bolton surface parcel",
+    "pwat": "vertical integral QVAPOR dp/g",
+    "thetaE850": "Bolton theta-e at 850 hPa",
+    "thetaEAdvection": "-V.grad(theta-e) at 850 hPa",
+    "wind850": "interpolated wind magnitude at 850 hPa",
+    "wind500": "interpolated wind magnitude at 500 hPa",
+    "vorticity500": "dvdx-dudy at 500 hPa",
+    "omega700": "-rho*g*w at 700 hPa",
+    "mslp": "hypsometric reduction from PSFC/T2/HGT",
+    "thickness": "Z500 minus extrapolated Z1000",
+    "dewpoint2m": "dewpoint from Q2/PSFC",
+    "kIndex": "T850-T500+Td850-(T700-Td700)",
+    "totalTotals": "T850+Td850-2*T500",
+    "cape": {
+      "sbcape": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "mlcape": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "mucapeWrf2": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "cin": {
+        "classification": "derived",
+        "nativeSource": null
+      }
+    }
+  },
+  "diagnostics": {
+    "file": "diagnostics.json",
+    "missingFrameCount": 2,
+    "metadataErrorCount": 0,
+    "inputArtifactCount": 8
+  },
+  "reflectivity": {
+    "status": "independent",
+    "source": "REFL_10CM_NATIVE",
+    "note": "Os diagnósticos severos não alteram a refletividade nativa."
+  },
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 0,
+      "validTime": "2026-09-11T12:00:00Z",
+      "file": "severe/gfs/f000.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 1,
+      "forecastHour": 3,
+      "validTime": "2026-09-11T15:00:00Z",
+      "file": "severe/gfs/f003.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 2,
+      "forecastHour": 6,
+      "validTime": "2026-09-11T18:00:00Z",
+      "file": "severe/gfs/f006.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 3,
+      "forecastHour": 9,
+      "validTime": "2026-09-11T21:00:00Z",
+      "file": "severe/gfs/f009.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 4,
+      "forecastHour": 12,
+      "validTime": "2026-09-12T00:00:00Z",
+      "file": "severe/gfs/f012.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 5,
+      "forecastHour": 15,
+      "validTime": "2026-09-12T03:00:00Z",
+      "file": "severe/gfs/f015.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 6,
+      "forecastHour": 18,
+      "validTime": "2026-09-12T06:00:00Z",
+      "file": "severe/gfs/f018.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 7,
+      "forecastHour": 21,
+      "validTime": "2026-09-12T09:00:00Z",
+      "file": "severe/gfs/f021.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 8,
+      "forecastHour": 24,
+      "validTime": "2026-09-12T12:00:00Z",
+      "file": "severe/gfs/f024.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 9,
+      "forecastHour": 27,
+      "validTime": "2026-09-12T15:00:00Z",
+      "file": "severe/gfs/f027.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 10,
+      "forecastHour": 30,
+      "validTime": "2026-09-12T18:00:00Z",
+      "file": "severe/gfs/f030.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 11,
+      "forecastHour": 33,
+      "validTime": "2026-09-12T21:00:00Z",
+      "file": "severe/gfs/f033.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 12,
+      "forecastHour": 36,
+      "validTime": "2026-09-13T00:00:00Z",
+      "file": "severe/gfs/f036.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 13,
+      "forecastHour": 39,
+      "validTime": "2026-09-13T03:00:00Z",
+      "file": "severe/gfs/f039.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 14,
+      "forecastHour": 42,
+      "validTime": "2026-09-13T06:00:00Z",
+      "file": "severe/gfs/f042.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 15,
+      "forecastHour": 45,
+      "validTime": "2026-09-13T09:00:00Z",
+      "file": "severe/gfs/f045.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 16,
+      "forecastHour": 48,
+      "validTime": "2026-09-13T12:00:00Z",
+      "file": "severe/gfs/f048.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 17,
+      "forecastHour": 51,
+      "validTime": "2026-09-13T15:00:00Z",
+      "file": "severe/gfs/f051.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 18,
+      "forecastHour": 54,
+      "validTime": "2026-09-13T18:00:00Z",
+      "file": "severe/gfs/f054.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 19,
+      "forecastHour": 57,
+      "validTime": "2026-09-13T21:00:00Z",
+      "file": "severe/gfs/f057.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 20,
+      "forecastHour": 60,
+      "validTime": "2026-09-14T00:00:00Z",
+      "file": "severe/gfs/f060.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 21,
+      "forecastHour": 63,
+      "validTime": "2026-09-14T03:00:00Z",
+      "file": "severe/gfs/f063.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    },
+    {
+      "index": 22,
+      "forecastHour": 66,
+      "validTime": "2026-09-14T06:00:00Z",
+      "file": "severe/gfs/f066.json.gz",
+      "gridX": 389,
+      "gridY": 359
+    }
+  ]
+}
