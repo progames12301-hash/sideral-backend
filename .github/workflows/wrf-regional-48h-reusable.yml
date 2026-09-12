@@ -1,0 +1,434 @@
+name: WRF regional 4 km - 48h com spin-up
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        required: true
+        type: string
+      source_data_branch:
+        required: false
+        type: string
+        default: ''
+      publish_branch:
+        required: true
+        type: string
+      run_script:
+        required: true
+        type: string
+      publish_severe:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  WRF_HISTORY_INTERVAL_MINUTES: '180'
+
+jobs:
+  run-info:
+    runs-on: ubuntu-22.04
+    outputs:
+      run_date: ${{ steps.info.outputs.run_date }}
+      run_cycle: ${{ steps.info.outputs.run_cycle }}
+      init_time: ${{ steps.info.outputs.init_time }}
+    steps:
+      - name: Resolver rodada com F048 disponível
+        id: info
+        env:
+          MODEL: ${{ inputs.model }}
+          SOURCE_BRANCH: ${{ inputs.source_data_branch }}
+          REPOSITORY: ${{ github.repository }}
+          CACHE_BUSTER: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.request
+
+          model = os.environ['MODEL'].lower()
+          repo = os.environ['REPOSITORY']
+          cache = os.environ['CACHE_BUSTER']
+          source_branch = os.environ.get('SOURCE_BRANCH', '').strip()
+
+          def write(date: str, cycle: str, init_time: str):
+              with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+                  out.write(f'run_date={date}\n')
+                  out.write(f'run_cycle={cycle}\n')
+                  out.write(f'init_time={init_time}\n')
+
+          if model == 'gfs':
+              now = dt.datetime.now(dt.timezone.utc)
+              base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+              for offset in range(0, 97, 6):
+                  run = base - dt.timedelta(hours=offset)
+                  date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
+                  url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f048'
+                  req = urllib.request.Request(url, method='HEAD')
+                  try:
+                      with urllib.request.urlopen(req, timeout=20) as response:
+                          if response.status in (200, 206):
+                              write(date, cycle, run.strftime('%Y-%m-%dT%H:00:00Z'))
+                              print('GFS selecionado:', date, cycle + 'Z')
+                              raise SystemExit(0)
+                  except Exception:
+                      continue
+              raise SystemExit('Nenhuma rodada GFS com F048 disponível')
+
+          if not source_branch:
+              raise SystemExit(f'source_data_branch obrigatório para {model}')
+
+          url = f'https://raw.githubusercontent.com/{repo}/{source_branch}/metadata.json?run={cache}'
+          req = urllib.request.Request(url, headers={'Cache-Control': 'no-cache'})
+          with urllib.request.urlopen(req, timeout=30) as response:
+              meta = json.load(response)
+
+          if str(meta.get('model')).lower() != model:
+              raise SystemExit(f'Branch fonte retornou modelo incorreto: {meta.get("model")}')
+
+          run_date = str(meta['runDate']).replace('-', '')
+          run_cycle = ''.join(ch for ch in str(meta['runCycle']) if ch.isdigit()).zfill(2)[:2]
+          if len(run_date) != 8 or run_cycle not in {'00', '06', '12', '18'}:
+              raise SystemExit(f'Rodada inválida: {run_date} {run_cycle}')
+
+          write(run_date, run_cycle, meta['initTime'])
+          print(model.upper(), 'selecionado:', meta['initTime'])
+          PY
+
+  segments:
+    name: ${{ inputs.model }} F${{ matrix.spinup_start }}-F${{ matrix.end }}
+    needs: run-info
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - { id: '000-009', nominal_start: 0,  spinup_start: 0,  end: 9 }
+          - { id: '003-018', nominal_start: 9,  spinup_start: 3,  end: 18 }
+          - { id: '012-027', nominal_start: 18, spinup_start: 12, end: 27 }
+          - { id: '021-036', nominal_start: 27, spinup_start: 21, end: 36 }
+          - { id: '030-045', nominal_start: 36, spinup_start: 30, end: 45 }
+          - { id: '039-048', nominal_start: 45, spinup_start: 39, end: 48 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Preparar runner
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+          docker pull dtcenter/wps_wrf:latest
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Instalar dependências
+        run: python -m pip install --disable-pip-version-check requests numpy xarray netCDF4 ecmwf-opendata
+
+      - name: Rodar segmento com spin-up sobreposto
+        env:
+          FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
+          WRF_START_HOUR: ${{ matrix.spinup_start }}
+          WRF_END_HOUR: ${{ matrix.end }}
+          WRF_RUN_HOURS: '48'
+          WRF_NOMINAL_START_HOUR: ${{ matrix.nominal_start }}
+          WRF_SPINUP_HOURS: '6'
+          WRF_COLD_START: '1'
+          SOURCE_MODEL: ${{ inputs.model }}
+          RUN_SCRIPT: ${{ inputs.run_script }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "${SOURCE_MODEL^^}: integração F${WRF_START_HOUR}-F${WRF_END_HOUR}; horizonte F048; spin-up protegido"
+          chmod +x "wrf/$RUN_SCRIPT" wrf/run_wrf_with_source.sh || true
+          "wrf/$RUN_SCRIPT"
+
+      - name: Extrair REFL_10CM nativo
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py \
+            --run-dir wrf_work/run \
+            --run-env wrf_diagnostics/run.env \
+            --output-dir wrf_publish
+          python wrf/retag_wrf_model.py --root wrf_publish --model "$SOURCE_MODEL"
+
+      - name: Validar segmento nativo 4 km
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('wrf_publish')
+          meta = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+          assert meta['resolutionKm'] == 4, meta
+          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
+          assert meta['frames'], meta
+          shapes = {(int(f['gridX']), int(f['gridY'])) for f in meta['frames']}
+          assert len(shapes) == 1, shapes
+          gx, gy = next(iter(shapes))
+          assert gx >= 250 and gy >= 300, (gx, gy)
+          assert (gx, gy) not in {(220, 180), (240, 200)}, (gx, gy)
+          for frame in meta['frames']:
+              assert (root / frame['file']).is_file(), frame
+          print('SEGMENTO NATIVO OK:', meta['model'], gx, gy)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: regional-${{ inputs.model }}-${{ matrix.id }}
+          path: wrf_publish/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Extrair WRF2 severo
+        if: ${{ inputs.publish_severe }}
+        continue-on-error: true
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+          SEGMENT_START: ${{ matrix.spinup_start }}
+          SEGMENT_END: ${{ matrix.end }}
+        shell: bash
+        run: |
+          rm -rf wrf2_publish
+          python wrf/extract_wrf_severe.py \
+            --run-dir wrf_work/run \
+            --run-env wrf_diagnostics/run.env \
+            --output-dir wrf2_publish \
+            --model "$SOURCE_MODEL" \
+            --interval-hours 3 \
+            --expected-start "$SEGMENT_START" \
+            --expected-end "$SEGMENT_END"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.publish_severe }}
+        continue-on-error: true
+        with:
+          name: regional-${{ inputs.model }}-severe-${{ matrix.id }}
+          path: wrf2_publish/
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Guardar diagnósticos de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regional-${{ inputs.model }}-${{ matrix.id }}-diagnostics
+          path: wrf_diagnostics/
+          retention-days: 3
+          if-no-files-found: warn
+
+  publish:
+    name: Publicar ${{ inputs.model }} 4 km F006-F048
+    needs: [run-info, segments]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: regional-${{ inputs.model }}-*
+          path: segments
+
+      - name: Unir segmentos e remover cold-start F000/F003
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+          EXPECTED_INIT: ${{ needs.run-info.outputs.init_time }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mapfile -t roots < <(find segments -type f -name metadata.json ! -path '*/severe/*' -printf '%h\n' | sort -u)
+          test "${#roots[@]}" -eq 6
+          args=()
+          for root in "${roots[@]}"; do args+=(--input "$root"); done
+          python wrf/merge_wrf_segments.py "${args[@]}" --output wrf_publish
+          python wrf/retag_wrf_model.py --root wrf_publish --model "$SOURCE_MODEL"
+
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          root = Path('wrf_publish')
+          path = root / 'metadata.json'
+          meta = json.loads(path.read_text(encoding='utf-8'))
+          keep = []
+          for frame in meta.get('frames', []):
+              hour = int(frame['forecastHour'])
+              if 6 <= hour <= 48 and hour % 3 == 0:
+                  keep.append(frame)
+              else:
+                  target = root / frame['file']
+                  if target.exists():
+                      target.unlink()
+
+          keep.sort(key=lambda f: int(f['forecastHour']))
+          for index, frame in enumerate(keep):
+              frame['index'] = index
+
+          local = ZoneInfo('America/Sao_Paulo')
+          dates = []
+          for frame in keep:
+              value = frame.get('validTime')
+              if not value:
+                  continue
+              t = dt.datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(local)
+              dates.append(t.date().isoformat())
+
+          meta['frames'] = keep
+          meta['frameCount'] = len(keep)
+          meta['forecastHourStart'] = 6
+          meta['forecastHourEnd'] = 48
+          meta['horizonHours'] = 48
+          meta['spinupHoursMinimum'] = 6
+          meta['temporalResolutionMinutes'] = 180
+          meta['segmentSpinupProtected'] = True
+          meta['scope'] = 'forecast_48_hours'
+          meta['status'] = 'complete'
+          meta['forecastLocalDates'] = sorted(set(dates))
+          if meta['forecastLocalDates']:
+              meta['forecastLocalDate'] = meta['forecastLocalDates'][0]
+          path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
+
+      - name: Validar produto final 48h
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+          EXPECTED_INIT: ${{ needs.run-info.outputs.init_time }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('wrf_publish')
+          meta = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+          frames = meta['frames']
+          hours = [int(f['forecastHour']) for f in frames]
+          assert meta['model'] == os.environ['SOURCE_MODEL'], meta
+          assert meta['initTime'] == os.environ['EXPECTED_INIT'], meta
+          assert meta['resolutionKm'] == 4, meta
+          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
+          assert meta['horizonHours'] == 48, meta
+          assert meta['spinupHoursMinimum'] == 6, meta
+          assert meta['segmentSpinupProtected'] is True, meta
+          assert hours == list(range(6, 49, 3)), hours
+          assert len(frames) == 15, len(frames)
+          assert min(int(f.get('integrationHours', -1)) for f in frames) >= 6, frames
+          shapes = {(int(f['gridX']), int(f['gridY'])) for f in frames}
+          assert len(shapes) == 1, shapes
+          gx, gy = next(iter(shapes))
+          assert gx >= 250 and gy >= 300, (gx, gy)
+          assert (gx, gy) not in {(220, 180), (240, 200)}, (gx, gy)
+          for frame in frames:
+              assert (root / frame['file']).is_file(), frame
+          print('WRF 48H VALIDADO:', meta['model'], hours, 'grid=', gx, 'x', gy)
+          print('SPIN-UP MÍNIMO:', min(int(f['integrationHours']) for f in frames), 'h')
+          PY
+
+      - name: Publicar branch isolada
+        env:
+          PUBLISH_BRANCH: ${{ inputs.publish_branch }}
+          SOURCE_MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'sideral-wrf-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          target="/tmp/${PUBLISH_BRANCH}"
+          rm -rf "$target"
+          git worktree add --detach "$target"
+          cd "$target"
+          git checkout --orphan "${PUBLISH_BRANCH}-next"
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
+          printf '# Sideral WRF 4 km %s\nHorizonte F006-F048, passo de 3 h, REFL_10CM nativo, grade nativa e spin-up mínimo de 6 h.\n' "${SOURCE_MODEL^^}" > README.md
+          git add .
+          git commit -m "${SOURCE_MODEL^^}-WRF 4 km: 48h com spin-up [skip render]"
+          git push --force origin "HEAD:refs/heads/$PUBLISH_BRANCH"
+
+  publish-severe:
+    if: ${{ inputs.publish_severe }}
+    continue-on-error: true
+    name: Publicar ${{ inputs.model }} WRF2 severo 48h
+    needs: [run-info, segments]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: regional-${{ inputs.model }}-severe-*
+          path: severe-segments
+      - name: Consolidar WRF2
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          set -u
+          mkdir -p severe-segments
+          mapfile -t roots < <(find severe-segments -type f -name metadata.json -printf '%h\n' 2>/dev/null | sort -u)
+          args=()
+          for root in "${roots[@]}"; do args+=(--input "$root"); done
+          python wrf/publish_wrf2_severe.py \
+            "${args[@]}" \
+            --output wrf2_publish \
+            --model "$SOURCE_MODEL" \
+            --temporal-resolution-minutes 180
+      - name: Publicar branch WRF2 quando houver quadros
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! python3 -c 'import json; from pathlib import Path; p=Path("wrf2_publish/metadata.json"); d=json.loads(p.read_text()) if p.exists() else {}; raise SystemExit(0 if d.get("frameCount",0)>0 and d.get("frames") else 1)'; then
+            echo 'Sem quadros severos válidos; preservando branch atual.'
+            exit 0
+          fi
+          branch="wrf2-${SOURCE_MODEL}-data"
+          target="/tmp/${branch}"
+          git config user.name 'sideral-wrf-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -rf "$target"
+          git worktree add --detach "$target"
+          cd "$target"
+          git checkout --orphan "${branch}-next"
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf2_publish/." .
+          git add .
+          git commit -m "${SOURCE_MODEL^^}-WRF2 48h [skip render]"
+          git push --force origin "HEAD:refs/heads/$branch"
