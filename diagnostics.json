@@ -1,0 +1,161 @@
+{
+  "schema": "sideral-wrf2-severe-publish-diagnostics-v1",
+  "model": "icon",
+  "generatedAt": "2026-09-12T11:46:26.654609Z",
+  "inputs": [
+    {
+      "root": "severe-segments/icon-severe-000-009",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 4
+    },
+    {
+      "root": "severe-segments/icon-severe-009-018",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 6
+    },
+    {
+      "root": "severe-segments/icon-severe-018-027",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 6
+    },
+    {
+      "root": "severe-segments/icon-severe-027-036",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 5
+    },
+    {
+      "root": "severe-segments/icon-severe-036-045",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 4
+    },
+    {
+      "root": "severe-segments/icon-severe-045-054",
+      "metadata": true,
+      "diagnostics": true,
+      "copiedFrames": 5
+    }
+  ],
+  "missingFiles": [
+    {
+      "forecastHour": 54,
+      "file": "severe/icon/f054.json.gz",
+      "reason": "Frame esperado não foi encontrado nos artifacts severos."
+    }
+  ],
+  "duplicateFrames": [
+    {
+      "forecastHour": 3,
+      "kept": "severe-segments/icon-severe-009-018/severe/icon/f003.json.gz",
+      "replaced": "severe-segments/icon-severe-000-009/severe/icon/f003.json.gz"
+    },
+    {
+      "forecastHour": 6,
+      "kept": "severe-segments/icon-severe-009-018/severe/icon/f006.json.gz",
+      "replaced": "severe-segments/icon-severe-000-009/severe/icon/f006.json.gz"
+    },
+    {
+      "forecastHour": 9,
+      "kept": "severe-segments/icon-severe-009-018/severe/icon/f009.json.gz",
+      "replaced": "severe-segments/icon-severe-000-009/severe/icon/f009.json.gz"
+    },
+    {
+      "forecastHour": 12,
+      "kept": "severe-segments/icon-severe-018-027/severe/icon/f012.json.gz",
+      "replaced": "severe-segments/icon-severe-009-018/severe/icon/f012.json.gz"
+    },
+    {
+      "forecastHour": 15,
+      "kept": "severe-segments/icon-severe-018-027/severe/icon/f015.json.gz",
+      "replaced": "severe-segments/icon-severe-009-018/severe/icon/f015.json.gz"
+    },
+    {
+      "forecastHour": 18,
+      "kept": "severe-segments/icon-severe-018-027/severe/icon/f018.json.gz",
+      "replaced": "severe-segments/icon-severe-009-018/severe/icon/f018.json.gz"
+    },
+    {
+      "forecastHour": 21,
+      "kept": "severe-segments/icon-severe-027-036/severe/icon/f021.json.gz",
+      "replaced": "severe-segments/icon-severe-018-027/severe/icon/f021.json.gz"
+    },
+    {
+      "forecastHour": 24,
+      "kept": "severe-segments/icon-severe-027-036/severe/icon/f024.json.gz",
+      "replaced": "severe-segments/icon-severe-018-027/severe/icon/f024.json.gz"
+    },
+    {
+      "forecastHour": 27,
+      "kept": "severe-segments/icon-severe-027-036/severe/icon/f027.json.gz",
+      "replaced": "severe-segments/icon-severe-018-027/severe/icon/f027.json.gz"
+    },
+    {
+      "forecastHour": 30,
+      "kept": "severe-segments/icon-severe-036-045/severe/icon/f030.json.gz",
+      "replaced": "severe-segments/icon-severe-027-036/severe/icon/f030.json.gz"
+    },
+    {
+      "forecastHour": 33,
+      "kept": "severe-segments/icon-severe-036-045/severe/icon/f033.json.gz",
+      "replaced": "severe-segments/icon-severe-027-036/severe/icon/f033.json.gz"
+    },
+    {
+      "forecastHour": 39,
+      "kept": "severe-segments/icon-severe-045-054/severe/icon/f039.json.gz",
+      "replaced": "severe-segments/icon-severe-036-045/severe/icon/f039.json.gz"
+    }
+  ],
+  "metadataErrors": [],
+  "notes": [
+    "Este publicador copia somente arquivos WRF2 severos.",
+    "Nenhum arquivo de refletividade nativa é lido, alterado ou publicado.",
+    "Ausência permanece ausente; nenhum frame faltante é sintetizado com zeros."
+  ],
+  "status": "partial",
+  "expectedForecastHours": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15,
+    18,
+    21,
+    24,
+    27,
+    30,
+    33,
+    36,
+    39,
+    42,
+    45,
+    48,
+    51,
+    54
+  ],
+  "publishedForecastHours": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15,
+    18,
+    21,
+    24,
+    27,
+    30,
+    33,
+    36,
+    39,
+    42,
+    45,
+    48,
+    51
+  ],
+  "frameCount": 18
+}
