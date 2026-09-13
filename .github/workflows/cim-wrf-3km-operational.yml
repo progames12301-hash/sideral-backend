@@ -48,7 +48,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           read -r ECMWF_DATE ECMWF_CYCLE < <(python - <<'PY'
           import datetime as dt
           from ecmwf.opendata import Client
@@ -103,13 +102,13 @@ jobs:
       matrix:
         model: [icon, ecmwf]
         segment:
-          - { id: '000-009', start: 0,  end: 9 }
-          - { id: '006-015', start: 6,  end: 15 }
-          - { id: '012-021', start: 12, end: 21 }
-          - { id: '018-027', start: 18, end: 27 }
-          - { id: '024-033', start: 24, end: 33 }
-          - { id: '030-039', start: 30, end: 39 }
-          - { id: '036-045', start: 36, end: 45 }
+          - { id: '000-006', start: 0,  end: 6 }
+          - { id: '006-012', start: 6,  end: 12 }
+          - { id: '012-018', start: 12, end: 18 }
+          - { id: '018-024', start: 18, end: 24 }
+          - { id: '024-030', start: 24, end: 30 }
+          - { id: '030-036', start: 30, end: 36 }
+          - { id: '036-042', start: 36, end: 42 }
           - { id: '042-048', start: 42, end: 48 }
     steps:
       - uses: actions/checkout@v4
@@ -194,6 +193,22 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
+      - name: Ajustar CIM para 3 processos MPI
+        if: steps.checkpoint.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('wrf/run_wrf_with_source.sh')
+          s = p.read_text(encoding='utf-8')
+          count = s.count('-np 4')
+          if count < 2:
+              raise SystemExit(f'Esperava ao menos 2 ocorrências de -np 4; encontrei {count}')
+          p.write_text(s.replace('-np 4', '-np 3'), encoding='utf-8')
+          print('CIM MPI: real.exe=3, wrf.exe=3')
+          PY
+
       - name: Executar segmento CIM 3 km Cone Sul ampliado
         if: steps.checkpoint.outputs.hit != 'true'
         env:
@@ -235,12 +250,11 @@ jobs:
             export FORCE_RUN_CYCLE="$ECMWF_CYCLE"
             RUNNER='wrf/run_ecmwf_wrf.sh'
           fi
-
           test "$WRF_DX_METERS" = '3000'
           test "$WRF_DY_METERS" = '3000'
           test "$WRF_E_WE" = '620'
           test "$WRF_E_SN" = '660'
-          echo "CIM ${{ matrix.model }}: F${WRF_START_HOUR}-F${WRF_END_HOUR}; 3 km; Cone Sul ampliado"
+          echo "CIM ${{ matrix.model }}: F${WRF_START_HOUR}-F${WRF_END_HOUR}; bloco 6 h; 3 km; Cone Sul ampliado"
           echo "Alvos: Sul do Brasil, Paraguai, Uruguai, norte/centro da Argentina e parte de SP/MS"
           chmod +x "$RUNNER"
           "$RUNNER"
@@ -270,7 +284,8 @@ jobs:
           meta['wrfGridConfig'] = {
               'e_we': 620, 'e_sn': 660, 'gridX': 619, 'gridY': 659,
               'dxMeters': 3000, 'dyMeters': 3000,
-              'refLat': -27.60, 'refLon': -56.00, 'standLon': -56.00
+              'refLat': -27.60, 'refLon': -56.00, 'standLon': -56.00,
+              'mpiProcesses': 3, 'segmentHours': 6
           }
           path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
           PY
@@ -339,6 +354,7 @@ jobs:
   publish:
     name: Publicar CIM 48h (${{ matrix.model }})
     needs: [resolve_runs, segments]
+    if: ${{ always() && needs.resolve_runs.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
@@ -356,7 +372,7 @@ jobs:
           pattern: cim-${{ matrix.model }}-*
           path: segments
 
-      - name: Unir segmentos e remover cold-start F000/F003
+      - name: Unir segmentos e manter F006-F048 de 6 em 6 h
         shell: bash
         run: |
           set -euxo pipefail
@@ -369,31 +385,30 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-
           root = Path('cim_publish')
           path = root / 'metadata.json'
           meta = json.loads(path.read_text(encoding='utf-8'))
           keep = []
           for frame in meta.get('frames', []):
               hour = int(frame['forecastHour'])
-              if 6 <= hour <= 48 and hour % 3 == 0:
+              if 6 <= hour <= 48 and hour % 6 == 0:
                   keep.append(frame)
               else:
                   target = root / frame['file']
                   if target.exists():
                       target.unlink()
-
           keep.sort(key=lambda f: int(f['forecastHour']))
           for index, frame in enumerate(keep):
               frame['index'] = index
-
           meta['frames'] = keep
           meta['frameCount'] = len(keep)
           meta['forecastHourStart'] = 6
           meta['forecastHourEnd'] = 48
           meta['horizonHours'] = 48
           meta['spinupHoursMinimum'] = 6
-          meta['temporalResolutionMinutes'] = 180
+          meta['temporalResolutionMinutes'] = 360
+          meta['segmentHours'] = 6
+          meta['mpiProcesses'] = 3
           meta['segmentSpinupProtected'] = True
           meta['status'] = 'complete'
           path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -405,7 +420,6 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-
           root = Path('cim_publish')
           meta = json.loads((root / 'metadata.json').read_text())
           frames = meta['frames']
@@ -415,16 +429,18 @@ jobs:
           assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
           assert meta['horizonHours'] == 48, meta
           assert meta['spinupHoursMinimum'] == 6, meta
+          assert meta['segmentHours'] == 6, meta
+          assert meta['mpiProcesses'] == 3, meta
           assert meta['segmentSpinupProtected'] is True, meta
-          assert hours == list(range(6, 49, 3)), hours
-          assert len(frames) == 15, len(frames)
+          assert hours == list(range(6, 49, 6)), hours
+          assert len(frames) == 8, len(frames)
           assert min(int(f.get('integrationHours', -1)) for f in frames) >= 6, frames
           for frame in frames:
               assert int(frame['gridX']) == 619 and int(frame['gridY']) == 659, frame
               assert (root / frame['file']).is_file(), frame
           print('CIM 48H VALIDADO:', meta['model'], hours)
           print('GRADE NATIVA:', frames[0]['gridX'], 'x', frames[0]['gridY'])
-          print('SPIN-UP MÍNIMO:', min(int(f['integrationHours']) for f in frames), 'h')
+          print('MPI:', meta['mpiProcesses'], 'segmento:', meta['segmentHours'], 'h')
           PY
 
       - name: Publicar com histórico de rodadas
@@ -442,7 +458,7 @@ jobs:
             --source cim_publish \
             --branch "$BRANCH" \
             --readme-title "$TITLE" \
-            --readme-text 'CIM Cone Sul ampliado: Sul do Brasil, Paraguai, Uruguai, norte/centro da Argentina e parte de SP/MS; F006-F048, 3 km, REFL_10CM nativo.' \
+            --readme-text 'CIM Cone Sul ampliado: Sul do Brasil, Paraguai, Uruguai, norte/centro da Argentina e parte de SP/MS; F006-F048 de 6 em 6 h, 3 km, REFL_10CM nativo.' \
             --retention-hours 96 \
             --max-runs 8
 
@@ -462,7 +478,7 @@ jobs:
             RUN_DATE="$ECMWF_DATE"; RUN_CYCLE="$ECMWF_CYCLE"
           fi
           RUN_CYCLE="$(printf '%02d' "$((10#$RUN_CYCLE))")"
-          for SEGMENT in 000-009 006-015 012-021 018-027 024-033 030-039 036-045 042-048; do
+          for SEGMENT in 000-006 006-012 012-018 018-024 024-030 030-036 036-042 042-048; do
             BRANCH="cim-checkpoint-${CIM_DOMAIN_VERSION}-${MODEL}-${RUN_DATE}${RUN_CYCLE}-${SEGMENT}"
             git push origin --delete "$BRANCH" || true
           done
@@ -495,11 +511,13 @@ jobs:
               assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
               assert meta['horizonHours'] == 48, meta
               assert meta['spinupHoursMinimum'] == 6, meta
+              assert meta['segmentHours'] == 6, meta
+              assert meta['mpiProcesses'] == 3, meta
               assert meta['segmentSpinupProtected'] is True, meta
-              assert hours == list(range(6, 49, 3)), hours
-              assert len(meta['frames']) == 15, len(meta['frames'])
+              assert hours == list(range(6, 49, 6)), hours
+              assert len(meta['frames']) == 8, len(meta['frames'])
               assert min(int(f['integrationHours']) for f in meta['frames']) >= 6, meta['frames']
               assert all(int(f['gridX']) == 619 and int(f['gridY']) == 659 for f in meta['frames']), meta['frames']
               assert meta.get('archiveIndex') == 'runs.json', meta
-              print(model.upper(), 'PUBLICADO:', meta['initTime'], hours, 'grid=619x659', 'domain=south-cone-v2')
+              print(model.upper(), 'PUBLICADO:', meta['initTime'], hours, 'grid=619x659', 'domain=south-cone-v2', 'mpi=3')
           PY
