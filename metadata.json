@@ -1,0 +1,245 @@
+{
+  "schema": "sideral-model-metadata-v1",
+  "model": "icon",
+  "provider": "DWD",
+  "resolutionKm": 13,
+  "runDate": "20260912",
+  "runCycle": "18Z",
+  "initTime": "2026-09-12T18:00:00Z",
+  "generatedAt": "2026-09-13T00:19:10.528144Z",
+  "forecastLocalDate": "2026-09-13",
+  "timezone": "America/Sao_Paulo",
+  "scope": "next_local_day",
+  "temporalResolutionMinutes": 60,
+  "frameCount": 24,
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 9,
+      "validTime": "2026-09-13T03:00:00Z",
+      "localValidTime": "2026-09-13T00:00:00-03:00",
+      "file": "icon/f009.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 1,
+      "forecastHour": 10,
+      "validTime": "2026-09-13T04:00:00Z",
+      "localValidTime": "2026-09-13T01:00:00-03:00",
+      "file": "icon/f010.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 2,
+      "forecastHour": 11,
+      "validTime": "2026-09-13T05:00:00Z",
+      "localValidTime": "2026-09-13T02:00:00-03:00",
+      "file": "icon/f011.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 3,
+      "forecastHour": 12,
+      "validTime": "2026-09-13T06:00:00Z",
+      "localValidTime": "2026-09-13T03:00:00-03:00",
+      "file": "icon/f012.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 4,
+      "forecastHour": 13,
+      "validTime": "2026-09-13T07:00:00Z",
+      "localValidTime": "2026-09-13T04:00:00-03:00",
+      "file": "icon/f013.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 5,
+      "forecastHour": 14,
+      "validTime": "2026-09-13T08:00:00Z",
+      "localValidTime": "2026-09-13T05:00:00-03:00",
+      "file": "icon/f014.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 6,
+      "forecastHour": 15,
+      "validTime": "2026-09-13T09:00:00Z",
+      "localValidTime": "2026-09-13T06:00:00-03:00",
+      "file": "icon/f015.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 7,
+      "forecastHour": 16,
+      "validTime": "2026-09-13T10:00:00Z",
+      "localValidTime": "2026-09-13T07:00:00-03:00",
+      "file": "icon/f016.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 8,
+      "forecastHour": 17,
+      "validTime": "2026-09-13T11:00:00Z",
+      "localValidTime": "2026-09-13T08:00:00-03:00",
+      "file": "icon/f017.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 9,
+      "forecastHour": 18,
+      "validTime": "2026-09-13T12:00:00Z",
+      "localValidTime": "2026-09-13T09:00:00-03:00",
+      "file": "icon/f018.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 10,
+      "forecastHour": 19,
+      "validTime": "2026-09-13T13:00:00Z",
+      "localValidTime": "2026-09-13T10:00:00-03:00",
+      "file": "icon/f019.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 11,
+      "forecastHour": 20,
+      "validTime": "2026-09-13T14:00:00Z",
+      "localValidTime": "2026-09-13T11:00:00-03:00",
+      "file": "icon/f020.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 12,
+      "forecastHour": 21,
+      "validTime": "2026-09-13T15:00:00Z",
+      "localValidTime": "2026-09-13T12:00:00-03:00",
+      "file": "icon/f021.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 13,
+      "forecastHour": 22,
+      "validTime": "2026-09-13T16:00:00Z",
+      "localValidTime": "2026-09-13T13:00:00-03:00",
+      "file": "icon/f022.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 14,
+      "forecastHour": 23,
+      "validTime": "2026-09-13T17:00:00Z",
+      "localValidTime": "2026-09-13T14:00:00-03:00",
+      "file": "icon/f023.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 15,
+      "forecastHour": 24,
+      "validTime": "2026-09-13T18:00:00Z",
+      "localValidTime": "2026-09-13T15:00:00-03:00",
+      "file": "icon/f024.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 16,
+      "forecastHour": 25,
+      "validTime": "2026-09-13T19:00:00Z",
+      "localValidTime": "2026-09-13T16:00:00-03:00",
+      "file": "icon/f025.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 17,
+      "forecastHour": 26,
+      "validTime": "2026-09-13T20:00:00Z",
+      "localValidTime": "2026-09-13T17:00:00-03:00",
+      "file": "icon/f026.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 18,
+      "forecastHour": 27,
+      "validTime": "2026-09-13T21:00:00Z",
+      "localValidTime": "2026-09-13T18:00:00-03:00",
+      "file": "icon/f027.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 19,
+      "forecastHour": 28,
+      "validTime": "2026-09-13T22:00:00Z",
+      "localValidTime": "2026-09-13T19:00:00-03:00",
+      "file": "icon/f028.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 20,
+      "forecastHour": 29,
+      "validTime": "2026-09-13T23:00:00Z",
+      "localValidTime": "2026-09-13T20:00:00-03:00",
+      "file": "icon/f029.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 21,
+      "forecastHour": 30,
+      "validTime": "2026-09-14T00:00:00Z",
+      "localValidTime": "2026-09-13T21:00:00-03:00",
+      "file": "icon/f030.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 22,
+      "forecastHour": 31,
+      "validTime": "2026-09-14T01:00:00Z",
+      "localValidTime": "2026-09-13T22:00:00-03:00",
+      "file": "icon/f031.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 23,
+      "forecastHour": 32,
+      "validTime": "2026-09-14T02:00:00Z",
+      "localValidTime": "2026-09-13T23:00:00-03:00",
+      "file": "icon/f032.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    }
+  ],
+  "capabilities": {
+    "reflectivity": false,
+    "precipitation": true,
+    "wind": true,
+    "temperature": true,
+    "humidity": true,
+    "mucape": true,
+    "bulkShear": false,
+    "vorticity850": false,
+    "waterVapor": false
+  },
+  "note": "ICON Global nao publica refletividade composta nativa para este dominio; o site nao deve sintetizar dBZ."
+}
