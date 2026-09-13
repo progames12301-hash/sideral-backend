@@ -14,21 +14,14 @@ jobs:
   cleanup:
     runs-on: ubuntu-22.04
     steps:
-      - name: Cancelar CIM bugado #16
+      - name: Forçar parada do CIM bugado #16
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh api -X POST "repos/$REPO/actions/runs/34769472050/cancel" || true
-          for i in $(seq 1 30); do
-            STATUS=$(gh api "repos/$REPO/actions/runs/34769472050" --jq .status || true)
-            echo "run #16 status=$STATUS"
-            if [ "$STATUS" = "completed" ] || [ -z "$STATUS" ]; then
-              break
-            fi
-            sleep 5
-          done
+          gh api -X POST "repos/$REPO/actions/runs/34769472050/force-cancel" || true
+          sleep 5
 
       - name: Apagar runs bugadas antigas
         env:
