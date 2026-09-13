@@ -75,6 +75,8 @@ def load_redemet():
     duplicatas pelo ICAO e usa REDEMET principalmente para aeródromos que não
     apareceram no lote METAR atual e para completar metadados.
     """
+    if not str(getattr(legacy,'REDEMET_API_KEY','') or '').strip():
+        return []
     status_payload=_redemet_json('/aerodromos/status/pais/BRASIL')
     detail_payload=_redemet_json('/aerodromos/',{'pais':'BRASIL'})
     status_rows=status_payload.get('data'); detail_rows=detail_payload.get('data')
