@@ -1,0 +1,48 @@
+name: Cleanup buggy CIM runs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cleanup-buggy-cim.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Cancelar CIM bugado #16
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$REPO/actions/runs/34769472050/cancel" || true
+          for i in $(seq 1 30); do
+            STATUS=$(gh api "repos/$REPO/actions/runs/34769472050" --jq .status || true)
+            echo "run #16 status=$STATUS"
+            if [ "$STATUS" = "completed" ] || [ -z "$STATUS" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Apagar runs bugadas antigas
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for RUN in \
+            34759863660 \
+            34769472050 \
+            34771905196 \
+            34771930997 \
+            34771958886
+          do
+            echo "Deleting run $RUN"
+            gh api -X DELETE "repos/$REPO/actions/runs/$RUN" || true
+          done
