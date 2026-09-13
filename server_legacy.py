@@ -1,0 +1,3593 @@
+from __future__ import annotations
+import datetime as dt
+import gc
+import csv
+import io
+import html
+import json
+import gzip
+import math
+import os
+import re
+import time
+import zipfile
+import struct
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import zlib
+import binascii
+import hashlib
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+from urllib.parse import unquote, quote, urlparse, parse_qs
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+import requests
+from backend.models import ModelApi
+
+# ==============================================================================
+# RENDER KEEP-ALIVE
+# ==============================================================================
+def render_keep_alive() -> None:
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not render_url:
+        print("[KEEP-ALIVE] RENDER_EXTERNAL_URL não definido; keep-alive desativado.")
+        return
+    while True:
+        time.sleep(600)
+        try:
+            resp = requests.get(f'{render_url.rstrip("/")}/api/health', timeout=10)
+            print(f"[KEEP-ALIVE] ping enviado — status HTTP {resp.status_code}")
+        except Exception as exc:
+            print(f"[KEEP-ALIVE] falhou: {exc}")
+
+# ==============================================================================
+# CONFIGURAÇÕES E CAMINHOS
+# ==============================================================================
+BASE_DIR = Path(__file__).resolve().parent
+WRF_OUTPUT_DIR = Path(os.environ.get("WRF_OUTPUT_DIR", str(BASE_DIR / "wrf_system" / "output")))
+WRF_MODEL_OUTPUTS = {
+    "icon": WRF_OUTPUT_DIR / "icon",
+    "gfs": WRF_OUTPUT_DIR / "gfs",
+    "ecmwf": WRF_OUTPUT_DIR / "ecmwf",
+}
+GFS_DATA_DIR = BASE_DIR / "wrf_system" / "data" / "gfs"
+GFS_WSL_DATA_DIR = Path(r"\wsl.localhost\Ubuntu-22.04\home\bryan\sideral_wrf\data\gfs")
+GFS_DATA_DIRS = [GFS_DATA_DIR, GFS_WSL_DATA_DIR]
+DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
+DEFAULT_PORT = int(os.environ.get("PORT", "8766"))
+MODELS_API = ModelApi()
+
+INMET_STATIONS_URL = "https://apitempo.inmet.gov.br/estacoes/T"
+INMET_OBSERVATION_URL = "https://apitempo.inmet.gov.br/estacao/{start}/{end}/{station}"
+INMET_HISTORICAL_ZIP_URL = "https://portal.inmet.gov.br/uploads/dadoshistoricos/{year}.zip"
+INMET_CACHE_DIR = BASE_DIR / "inmet_cache"
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+SYNOPTIC_CACHE_DIR = BASE_DIR / "synoptic_cache"
+SYNOPTIC_SVG_PATH = SYNOPTIC_CACHE_DIR / "sideral_synoptic.svg"
+SYNOPTIC_META_PATH = SYNOPTIC_CACHE_DIR / "sideral_synoptic.json"
+SYNOPTIC_PNG_PATH = SYNOPTIC_CACHE_DIR / "official_synoptic.png"
+INMET_SYNOPTIC_ARCHIVE_URL = "https://portal.inmet.gov.br/uploads/cartasinotica/{year}.zip"
+INMET_SYNOPTIC_PAGE = "https://portal.inmet.gov.br/cartasinotica"
+SYNOPTIC_CACHE_SECONDS = 30 * 60
+synoptic_cache_lock = threading.Lock()
+
+INMET_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/151 Safari/537.36",
+    "Accept": "application/json,text/plain,*/*",
+}
+INMET_STATION_CODE_RE = re.compile(r"^[A-Z0-9_-]{2,12}$")
+
+IPMET_RADAR_PAGE = "https://www.ipmetradar.com.br/mobile2/openlayers/ipmet/radar.php"
+IPMET_WMS_URL = "https://www.ipmetradar.com.br/cgi-bin/mapserv.fcgi"
+IPMET_MAP_FILE = "/home/webadm/alerta/dados/ppi/ultimo.map"
+IPMET_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; SideralMeteorologia/1.0)",
+    "Referer": IPMET_RADAR_PAGE,
+    "Accept": "image/avif,image/webp,image/apng,image/png,*/*;q=0.8",
+}
+
+REDEMET_API_URL = "https://api-redemet.decea.mil.br"
+REDEMET_API_KEY = os.environ.get("REDEMET_API_KEY", "").strip()
+METEOBLUE_API_KEY = os.environ.get("METEOBLUE_API_KEY", "").strip()
+OPENWEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY", "").strip()
+OPENWEATHER_API_URL = "https://api.openweathermap.org"
+REDEMET_PRODUCTS = {"03km", "05km", "07km", "10km", "maxcappi"}
+REDEMET_SATELLITE_PRODUCTS = {"ir", "realcada", "vis"}
+REDEMET_SATELLITE_IMAGE_HOST = "estatico-redemet.decea.mil.br"
+RADAR_V2_IMAGE_HOSTS = {
+    "estatico-redemet.decea.mil.br",
+    "raw.githubusercontent.com",
+}
+RADAR_V2_IMAGE_LIMIT = 20 * 1024 * 1024
+REDEMET_ICAO_RE = re.compile(r"^[A-Z]{4}$")
+REDEMET_STATION_CACHE_SECONDS = 5 * 60
+
+RAINVIEWER_META_URL = "https://api.rainviewer.com/public/weather-maps.json"
+INEA_RADAR_TOOL_URL = "https://radartool.inea.rj.gov.br/radar-tool"
+SIMEPAR_RADAR_URL = "https://lb01.simepar.br/riak/pgw-radar"
+REGIONAL_SC_RADAR_URL = "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar"
+REGIONAL_RS_RADAR_URL = "https://statics.climatempo.com.br/radar_poa/pngs/latest"
+REGIONAL_FUNCEME_URL = "https://nowcastsig.funceme.br/media/temporeal/camadas_sig/precipitacao_superficie_rmt0100ds.json"
+REGIONAL_SC_RADARS = {
+    "sc-chapeco": {"code": "CHP", "product": "0", "reflectivityProduct": "0", "velocityProduct": "3", "name": "Defesa Civil SC — Chapecó/SC", "latitude": -27.10, "longitude": -52.62, "rangeKm": 240, "bounds": [-55.0710069, -29.2106056, -50.1335368, -24.8625699]},
+    "sc-lontras": {"code": "LON", "product": "0", "reflectivityProduct": "0", "velocityProduct": "3", "name": "Defesa Civil SC — Lontras/SC", "latitude": -27.17, "longitude": -49.54, "rangeKm": 240, "bounds": [-51.9326542, -29.3957249, -46.9908037, -25.0438317]},
+    "sc-ararangua": {"code": "ARA", "product": "3", "reflectivityProduct": "3", "velocityProduct": "0", "name": "Defesa Civil SC — Araranguá/SC", "latitude": -28.94, "longitude": -49.49, "rangeKm": 120, "bounds": [-50.6064640, -30.0178010, -48.1181247, -27.8463000]},
+}
+REGIONAL_FUNCEME_RADAR = {"id": "funceme-quixeramobim", "name": "FUNCEME — Quixeramobim/CE", "latitude": -5.06917, "longitude": -39.26713, "rangeKm": 240, "bounds": [-41.65, -7.45, -36.85, -2.69]}
+REGIONAL_RS_RADAR = {"id": "dc-rs-porto-alegre", "name": "Defesa Civil RS — Porto Alegre/RS", "latitude": -30.0346, "longitude": -51.2177, "rangeKm": 150, "bounds": [-52.79, -31.39, -49.65, -28.68]}
+CEMADEN_LAYER_URL = "https://mapservices.cemaden.gov.br/MapaInterativoWS/resources/layer/id/{layer_id}"
+CEMADEN_WMS_URL = "https://gsc.cemaden.gov.br/geoserver/cemaden_dev/wms"
+CEMADEN_PLUVIOMETERS_URL = "https://resources.cemaden.gov.br/dados/311_24.json"
+CEMADEN_HYDROLOGICAL_URL = "https://resources.cemaden.gov.br/dados/327mi_24.json"
+CEMADEN_STATION_DETAIL_URL = "https://resources.cemaden.gov.br/graficos/cemaden/hidro/resources/json"
+CEMADEN_HYDRO_IMAGE_URL = "https://resources.cemaden.gov.br/imghidro"
+CEMADEN_PLUVIOMETER_CACHE_SECONDS = 55
+CEMADEN_RADARS = {
+    "natal": {"layer_id": 3926, "name": "CEMADEN — Natal/RN", "latitude": -5.90448, "longitude": -35.25401, "bounds": [-37.5093293085, -8.144625555, -32.9863665585, -3.649208055]},
+    "petrolina": {"layer_id": 3959, "name": "CEMADEN — Petrolina/PE", "latitude": -9.367, "longitude": -40.573, "bounds": [-42.8412048965, -11.6044003425, -38.2813601465, -7.1090390925]},
+    "jaraguari": {"layer_id": 4081, "name": "CEMADEN — Jaraguari/MS", "latitude": -20.27855, "longitude": -54.47396, "bounds": [-56.8408209095, -22.5067280955, -52.0439566595, -18.0117463455]},
+    "maceio": {"layer_id": 4172, "name": "CEMADEN — Maceió/AL", "latitude": -9.55129, "longitude": -35.770681, "bounds": [-38.0398075295, -11.7885418455, -33.4775132795, -7.2931850955]},
+    "sao_francisco": {"layer_id": 4211, "name": "CEMADEN — São Francisco/MG", "latitude": -16.00889, "longitude": -44.69588, "bounds": [-47.0130665505, -18.24080922, -42.3322408005, -13.74563922]},
+    "salvador": {"layer_id": 4045, "name": "CEMADEN — Salvador/BA", "latitude": -12.9025, "longitude": -38.32666, "bounds": [-40.6329708, -15.14865967, -36.0203492, -10.65634]},
+    "tres_marias": {"layer_id": 4331, "name": "CEMADEN — Três Marias/MG", "latitude": -18.207259, "longitude": -45.460535, "bounds": [-47.801064708, -20.4371290295, -43.064502708, -15.9420482795]},
+    "santa_teresa": {"layer_id": 4253, "name": "CEMADEN — Santa Teresa/ES", "latitude": -19.98887, "longitude": -40.5794, "bounds": [-42.9424059735, -22.2173090855, -38.1544457235, -17.7223123355]},
+    "almenara": {"layer_id": 4292, "name": "CEMADEN — Almenara/MG", "latitude": -16.201531, "longitude": -40.674153, "bounds": [-42.993361596, -18.4337844745, -38.307967596, -13.9386212245]},
+}
+CPTEC_SATELLITE_PRODUCTS = {
+    "realcada": {"id": "1223", "latest": "ULT_CH13_COMP_2.jpg", "label": "GOES-19 — infravermelho realçado"},
+    "ir": {"id": "1213", "latest": "ULT_CH13_2.jpg", "label": "GOES-19 — canal 13 infravermelho"},
+    "vis": {"id": "1202", "latest": "ULT_CH2_2.jpg", "label": "GOES-19 — canal 2 visível"},
+}
+CPTEC_SATELLITE_HOST = "satelite.cptec.inpe.br"
+GOES19_BUCKET = "noaa-goes19"
+GOES19_S3_HOST = f"{GOES19_BUCKET}.s3.amazonaws.com"
+GOES19_RAW_CACHE_DIR = Path(os.environ.get("GOES19_RAW_CACHE_DIR", "/tmp/sideral_goes19" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "goes19_cache")))
+GOES19_CHANNELS = {
+    "ir": {"channel": 13, "units": "K", "scale": 0.01, "offset": 150.0, "native_km": 2.0, "label": "Canal 13 infravermelho"},
+    "realcada": {"channel": 13, "units": "K", "scale": 0.01, "offset": 150.0, "native_km": 2.0, "label": "Canal 13 infravermelho realçado"},
+    "vis": {"channel": 2, "units": "1", "scale": 0.0001, "offset": 0.0, "native_km": 0.5, "label": "Canal 2 visível"},
+}
+goes19_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "payload": {}}
+goes19_download_lock = threading.Lock()
+goes19_processing_lock = threading.RLock()
+GLM_BUCKET = "noaa-goes19"
+GLM_S3_URL = f"https://{GLM_BUCKET}.s3.amazonaws.com"
+GLM_WINDOW_MINUTES = 15
+GLM_CACHE_SECONDS = 60
+
+INMET_CACHE_SECONDS = 60
+inmet_observation_cache: dict[str, dict[str, Any]] = {}
+inmet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+inea_radar_image_cache: dict[str, bytes] = {}
+redemet_satellite_catalog_cache: dict[str, dict[str, Any]] = {}
+redemet_satellite_cache_lock = threading.Lock()
+redemet_satellite_refreshing: set[str] = set()
+redemet_station_catalog_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+redemet_station_observation_cache: dict[str, dict[str, Any]] = {}
+cemaden_pluviometer_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+cemaden_hydrological_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+cemaden_station_detail_cache: dict[str, dict[str, Any]] = {}
+cptec_satellite_image_cache: dict[str, bytes] = {}
+glm_lightning_cache: dict[str, Any] = {"saved_at": 0.0, "payload": None}
+glm_lightning_cache_lock = threading.Lock()
+regional_radar_cache: dict[str, dict[str, Any]] = {}
+regional_rs_image_cache: dict[str, tuple[float, bytes]] = {}
+regional_rs_image_cache_lock = threading.Lock()
+
+# Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
+SOUNDING_CACHE_SECONDS = 15 * 60
+sounding_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+ECMWF_PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100]
+ECMWF_GRIB_CACHE_SECONDS = 3 * 60 * 60
+ECMWF_SOUNDING_CACHE_DIR = Path(
+    os.environ.get(
+        "ECMWF_CACHE_DIR",
+        "/tmp/sideral_ecmwf" if os.environ.get("RENDER", "").lower() == "true" else str(BASE_DIR / "ecmwf_sounding_cache"),
+    )
+)
+ecmwf_download_lock = threading.Lock()
+
+
+def png_black_to_transparent(body: bytes, threshold: int = 12) -> bytes:
+    if not body.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("Arquivo não é PNG")
+    position, ihdr, idat = 8, None, []
+    while position + 12 <= len(body):
+        length = struct.unpack(">I", body[position:position + 4])[0]
+        kind = body[position + 4:position + 8]
+        data = body[position + 8:position + 8 + length]
+        position += 12 + length
+        if kind == b"IHDR": ihdr = data
+        elif kind == b"IDAT": idat.append(data)
+        elif kind == b"IEND": break
+    if not ihdr or len(ihdr) != 13:
+        raise ValueError("PNG sem IHDR")
+    width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", ihdr)
+    if bit_depth != 8 or color_type != 6 or interlace != 0:
+        return body
+    stride, bpp = width * 4, 4
+    packed = zlib.decompress(b"".join(idat))
+    if len(packed) != height * (stride + 1):
+        raise ValueError("Tamanho PNG inesperado")
+    rows, offset, previous = [], 0, bytearray(stride)
+    for _ in range(height):
+        filter_type = packed[offset]; offset += 1
+        source = packed[offset:offset + stride]; offset += stride
+        row = bytearray(stride)
+        for index, value in enumerate(source):
+            left = row[index - bpp] if index >= bpp else 0
+            up = previous[index]
+            upper_left = previous[index - bpp] if index >= bpp else 0
+            if filter_type == 0: predictor = 0
+            elif filter_type == 1: predictor = left
+            elif filter_type == 2: predictor = up
+            elif filter_type == 3: predictor = (left + up) // 2
+            elif filter_type == 4:
+                estimate = left + up - upper_left
+                distances = (abs(estimate - left), abs(estimate - up), abs(estimate - upper_left))
+                predictor = left if distances[0] <= distances[1] and distances[0] <= distances[2] else up if distances[1] <= distances[2] else upper_left
+            else: raise ValueError("Filtro PNG inválido")
+            row[index] = (value + predictor) & 255
+        for index in range(0, stride, 4):
+            if row[index] <= threshold and row[index + 1] <= threshold and row[index + 2] <= threshold:
+                row[index + 3] = 0
+        rows.append(b"\x00" + bytes(row)); previous = row
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xffffffff)
+
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(b"".join(rows), 6)) + chunk(b"IEND", b"")
+
+
+def clean_rs_radar_png(body: bytes) -> bytes:
+    """Remove fundo/cartografia e legendas do produto estático do radar de Porto Alegre.
+
+    O arquivo da Defesa Civil RS é uma imagem cartográfica pronta para leitura humana.
+    Para usá-lo como sobreposição no mapa, preservamos somente os pixels coloridos do
+    eco e gravamos o restante com alfa zero. A dimensão original é mantida para não
+    alterar o georreferenciamento informado pelo catálogo.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        # O deploy oficial inclui Pillow; em instalações mínimas, ainda devolvemos a
+        # imagem original em vez de interromper a atualização do radar.
+        return body
+
+    image = Image.open(io.BytesIO(body)).convert("RGBA")
+    width, height = image.size
+    pixels = image.load()
+
+    # Detecta os pequenos marcadores vermelhos de cidades. Eles servem apenas para
+    # retirar o texto da anotação sem apagar áreas maiores de refletividade vermelha.
+    red_mask = bytearray(width * height)
+    for y in range(height):
+        row_offset = y * width
+        for x in range(width):
+            red, green, blue, alpha = pixels[x, y]
+            if alpha and red >= 180 and green <= 90 and blue <= 90:
+                red_mask[row_offset + x] = 1
+
+    marker_boxes: list[tuple[int, int, int, int]] = []
+    seen = bytearray(width * height)
+    for y in range(height):
+        row_offset = y * width
+        for x in range(width):
+            start = row_offset + x
+            if not red_mask[start] or seen[start]:
+                continue
+            stack = [start]
+            seen[start] = 1
+            size = 0
+            min_x = min_y = width + height
+            max_x = max_y = 0
+            while stack:
+                index = stack.pop()
+                size += 1
+                point_y, point_x = divmod(index, width)
+                min_x = min(min_x, point_x)
+                max_x = max(max_x, point_x)
+                min_y = min(min_y, point_y)
+                max_y = max(max_y, point_y)
+                for delta_y in (-1, 0, 1):
+                    for delta_x in (-1, 0, 1):
+                        if not delta_x and not delta_y:
+                            continue
+                        neighbour_y = point_y + delta_y
+                        neighbour_x = point_x + delta_x
+                        if not (0 <= neighbour_y < height and 0 <= neighbour_x < width):
+                            continue
+                        neighbour = neighbour_y * width + neighbour_x
+                        if red_mask[neighbour] and not seen[neighbour]:
+                            seen[neighbour] = 1
+                            stack.append(neighbour)
+            # Marcadores das cidades são pequenos; manchas de eco vermelhas maiores
+            # ficam intactas.
+            if size <= 600:
+                marker_boxes.append((min_x, min_y, max_x, max_y))
+
+    for y in range(height):
+        for x in range(width):
+            red, green, blue, alpha = pixels[x, y]
+            maximum = max(red, green, blue)
+            minimum = min(red, green, blue)
+            # Saturação aproximada em inteiros: remove branco, bege, água, bordas,
+            # textos e anéis, mantendo o conjunto de cores do eco meteorológico.
+            keep = bool(alpha and maximum >= 90 and (maximum - minimum) * 100 >= 42 * maximum)
+            # Dourado puro é usado nos nomes das cidades (e na escala da legenda).
+            if (red, green, blue) == (255, 215, 0):
+                keep = False
+            # A escala dBZ fica no canto inferior direito em todas as imagens RS.
+            if x >= int(width * 0.59) and y >= int(height * 0.77):
+                keep = False
+            pixels[x, y] = (red, green, blue, 255 if keep else 0)
+
+    # Retira apenas o traço colorido das etiquetas próximas aos marcadores, sem criar
+    # retângulos vazios sobre o eco.
+    for min_x, min_y, max_x, max_y in marker_boxes:
+        left, right = max(0, min_x - 15), min(width, max_x + 201)
+        top, bottom = max(0, min_y - 25), min(height, max_y + 26)
+        for y in range(top, bottom):
+            for x in range(left, right):
+                red, green, blue, alpha = pixels[x, y]
+                if not alpha:
+                    continue
+                maximum = max(red, green, blue)
+                minimum = min(red, green, blue)
+                if maximum == 0 or (maximum - minimum) * 100 < 45 * maximum:
+                    continue
+                # Matiz aproximado de amarelo/dourado (R e G altos, B baixo).
+                if red >= 90 and green >= 55 and blue <= int(maximum * 0.45):
+                    pixels[x, y] = (red, green, blue, 0)
+
+    output = io.BytesIO()
+    image.save(output, format="PNG", optimize=False)
+    return output.getvalue()
+
+
+class ExternalAPIError(RuntimeError): pass
+class WRFDomainError(RuntimeError): pass
+
+def inmet_safe_float(value: Any) -> float | None:
+    if value is None: return None
+    text = str(value).strip().replace(",", ".")
+    if text.lower() in {"", "null", "none", "nan", "-9999", "-9999.0", "9999", "9999.0"}: return None
+    try: number = float(text)
+    except (TypeError, ValueError): return None
+    if abs(number) >= 9990: return None
+    return number
+
+def request_headers_with_optional_inmet_token() -> dict[str, str]:
+    headers = dict(INMET_HEADERS)
+    token = os.environ.get("INMET_TOKEN") or os.environ.get("AGROBR_INMET_TOKEN")
+    if token: headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+def get_inmet_station_catalog() -> list[dict[str, Any]]:
+    now_monotonic = time.monotonic()
+    cached_data = inmet_station_catalog_cache.get("data")
+    if cached_data is not None and now_monotonic - float(inmet_station_catalog_cache.get("saved_at", 0.0)) < 3600:
+        return cached_data
+    data = fetch_inmet_json(INMET_STATIONS_URL, timeout=25)
+    if not isinstance(data, list): raise RuntimeError("Catálogo INMET em formato inesperado.")
+    inmet_station_catalog_cache["saved_at"] = now_monotonic
+    inmet_station_catalog_cache["data"] = data
+    return data
+
+def find_inmet_station(station_code: str) -> dict[str, Any] | None:
+    for station in get_inmet_station_catalog():
+        if isinstance(station, dict) and str(station.get("CD_ESTACAO", "")).upper() == station_code:
+            return station
+    return None
+
+def inmet_normalize_hour(value: Any) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return (digits or "0000").zfill(4)[-4:]
+
+def inmet_record_datetime_utc(record: dict[str, Any]) -> dt.datetime | None:
+    date_text = str(record.get("DT_MEDICAO") or "").strip()
+    if not date_text: return None
+    hour_text = inmet_normalize_hour(record.get("HR_MEDICAO"))
+    try: return dt.datetime.strptime(f"{date_text} {hour_text}", "%Y-%m-%d %H%M").replace(tzinfo=dt.timezone.utc)
+    except ValueError: return None
+
+def inmet_has_weather_value(record: dict[str, Any]) -> bool:
+    return any(inmet_safe_float(record.get(key)) is not None for key in ("TEM_INS", "TEM_SEN", "UMD_INS", "CHUVA", "VEN_VEL", "VEN_RAJ", "PRE_INS", "PTO_INS", "VEN_DIR", "RAD_GLO"))
+
+def inmet_normalize_observation(record: dict[str, Any]) -> dict[str, Any]:
+    measured_utc = inmet_record_datetime_utc(record)
+    measured_local = measured_utc.astimezone(dt.timezone(dt.timedelta(hours=-3))) if measured_utc else None
+    return {
+        "codigo": record.get("CD_ESTACAO"),
+        "observado_em_utc": measured_utc.isoformat() if measured_utc else None,
+        "data_hora_utc": measured_utc.strftime("%d/%m/%Y %H:%M UTC") if measured_utc else None,
+        "data_hora_brasilia": measured_local.strftime("%d/%m/%Y %H:%M") if measured_local else None,
+        "temperatura_c": inmet_safe_float(record.get("TEM_INS")),
+        "sensacao_c": inmet_safe_float(record.get("TEM_SEN")),
+        "umidade_pct": inmet_safe_float(record.get("UMD_INS")),
+        "chuva_mm": inmet_safe_float(record.get("CHUVA")),
+        "vento_ms": inmet_safe_float(record.get("VEN_VEL")),
+        "rajada_ms": inmet_safe_float(record.get("VEN_RAJ")),
+        "direcao_vento_graus": inmet_safe_float(record.get("VEN_DIR")),
+        "pressao_hpa": inmet_safe_float(record.get("PRE_INS")),
+        "orvalho_c": inmet_safe_float(record.get("PTO_INS")),
+        "radiacao_kjm2": inmet_safe_float(record.get("RAD_GLO")),
+    }
+
+def fetch_inmet_json(url: str, timeout: int = 35) -> Any:
+    response = requests.get(url, headers=request_headers_with_optional_inmet_token(), timeout=timeout)
+    if response.status_code == 204 or not response.content: return []
+    response.raise_for_status()
+    return response.json()
+
+def inmet_historical_zip_path(year: int) -> Path:
+    INMET_CACHE_DIR.mkdir(exist_ok=True)
+    path = INMET_CACHE_DIR / f"{year}.zip"
+    if path.exists() and path.stat().st_size > 0: return path
+    url = INMET_HISTORICAL_ZIP_URL.format(year=year)
+    with requests.get(url, headers=INMET_HEADERS, timeout=180, stream=True) as response:
+        response.raise_for_status()
+        temp_path = path.with_suffix(".zip.tmp")
+        with temp_path.open("wb") as file:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk: file.write(chunk)
+        temp_path.replace(path)
+    return path
+
+def inmet_parse_historical_datetime(date_text: str, hour_text: str) -> dt.datetime | None:
+    hour_digits = inmet_normalize_hour(hour_text)
+    clean_date = date_text.strip().replace("-", "/")
+    for fmt in ("%Y/%m/%d", "%d/%m/%Y"):
+        try:
+            date_value = dt.datetime.strptime(clean_date, fmt)
+            return date_value.replace(hour=int(hour_digits[:2]), minute=int(hour_digits[2:4]), tzinfo=dt.timezone.utc)
+        except ValueError: continue
+    return None
+
+def normalize_historical_observation(row: dict[str, str], station_code: str) -> dict[str, Any]:
+    measured_utc = inmet_parse_historical_datetime(row.get("Data", ""), row.get("Hora UTC", ""))
+    measured_local = measured_utc.astimezone(dt.timezone(dt.timedelta(hours=-3))) if measured_utc else None
+    return {
+        "codigo": station_code,
+        "observado_em_utc": measured_utc.isoformat() if measured_utc else None,
+        "data_hora_utc": measured_utc.strftime("%d/%m/%Y %H:%M UTC") if measured_utc else None,
+        "data_hora_brasilia": measured_local.strftime("%d/%m/%Y %H:%M") if measured_local else None,
+        "temperatura_c": inmet_safe_float(row.get("TEMPERATURA DO AR - BULBO SECO, HORARIA (°C)")),
+        "sensacao_c": None,
+        "umidade_pct": inmet_safe_float(row.get("UMIDADE RELATIVA DO AR, HORARIA (%)")),
+        "chuva_mm": inmet_safe_float(row.get("PRECIPITAÇÃO TOTAL, HORÁRIO (mm)")),
+        "vento_ms": inmet_safe_float(row.get("VENTO, VELOCIDADE HORARIA (m/s)")),
+        "rajada_ms": inmet_safe_float(row.get("VENTO, RAJADA MAXIMA (m/s)")),
+        "direcao_vento_graus": inmet_safe_float(row.get("VENTO, DIREÇÃO HORARIA (gr) (° (gr))")),
+        "pressao_hpa": inmet_safe_float(row.get("PRESSAO ATMOSFERICA AO NIVEL DA ESTACAO, HORARIA (mB)")),
+        "orvalho_c": inmet_safe_float(row.get("TEMPERATURA DO PONTO DE ORVALHO (°C)")),
+        "radiacao_kjm2": inmet_safe_float(row.get("RADIACAO GLOBAL (Kj/m²)")),
+    }
+
+def historical_row_has_weather_value(row: dict[str, str]) -> bool:
+    keys = ("TEMPERATURA DO AR - BULBO SECO, HORARIA (°C)", "UMIDADE RELATIVA DO AR, HORARIA (%)", "PRECIPITAÇÃO TOTAL, HORÁRIO (mm)", "VENTO, VELOCIDADE HORARIA (m/s)", "VENTO, RAJADA MAXIMA (m/s)", "PRESSAO ATMOSFERICA AO NIVEL DA ESTACAO, HORARIA (mB)", "TEMPERATURA DO PONTO DE ORVALHO (°C)", "VENTO, DIREÇÃO HORARIA (gr) (° (gr))", "RADIACAO GLOBAL (Kj/m²)")
+    return any(inmet_safe_float(row.get(key)) is not None for key in keys)
+
+def get_latest_inmet_historical_observation(station_code: str, year: int) -> dict[str, Any]:
+    zip_path = inmet_historical_zip_path(year)
+    with zipfile.ZipFile(zip_path) as archive:
+        station_files = [name for name in archive.namelist() if f" {station_code} " in name.upper() and name.upper().endswith(".CSV")]
+        if not station_files:
+            return {"estacao": station_code, "observacao": None, "registros_recebidos": 0, "fonte": f"INMET dados históricos {year}"}
+        with archive.open(station_files[0]) as raw_file:
+            text = raw_file.read().decode("latin1")
+        lines = text.splitlines()
+        header_index = next((index for index, line in enumerate(lines) if line.startswith("Data;Hora UTC;")), None)
+        if header_index is None: raise RuntimeError("CSV histórico do INMET sem cabeçalho esperado.")
+        csv_text = "\n".join(lines[header_index:])
+        rows = list(csv.DictReader(io.StringIO(csv_text), delimiter=";"))
+        for row in reversed(rows):
+            measured_utc = inmet_parse_historical_datetime(row.get("Data", ""), row.get("Hora UTC", ""))
+            if measured_utc and historical_row_has_weather_value(row):
+                return {"estacao": station_code, "observacao": normalize_historical_observation(row, station_code), "registros_recebidos": len(rows), "fonte": f"INMET dados históricos {year}", "idade_segundos": max(0, int((dt.datetime.now(dt.timezone.utc) - measured_utc).total_seconds())), "arquivo_consultado": station_files[0]}
+        return {"estacao": station_code, "observacao": None, "registros_recebidos": len(rows), "fonte": f"INMET dados históricos {year}", "arquivo_consultado": station_files[0]}
+
+def get_open_meteo_observation(station_code: str) -> dict[str, Any]:
+    station = find_inmet_station(station_code)
+    if not station: return {"estacao": station_code, "observacao": None, "fonte": "Open-Meteo: estação INMET não encontrada"}
+    latitude = inmet_safe_float(station.get("VL_LATITUDE"))
+    longitude = inmet_safe_float(station.get("VL_LONGITUDE"))
+    if latitude is None or longitude is None: return {"estacao": station_code, "observacao": None, "fonte": "Open-Meteo: coordenadas da estação indisponíveis"}
+    response = requests.get(OPEN_METEO_URL, params={"latitude": latitude, "longitude": longitude, "current": ",".join(["temperature_2m", "relative_humidity_2m", "apparent_temperature", "precipitation", "surface_pressure", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "shortwave_radiation"]), "wind_speed_unit": "ms", "timezone": "UTC"}, timeout=20)
+    response.raise_for_status()
+    data = response.json()
+    current = data.get("current") if isinstance(data, dict) else None
+    if not isinstance(current, dict): raise RuntimeError("Open-Meteo retornou formato inesperado.")
+    measured_text = current.get("time")
+    measured_utc = dt.datetime.fromisoformat(str(measured_text)).replace(tzinfo=dt.timezone.utc) if measured_text else None
+    measured_local = measured_utc.astimezone(dt.timezone(dt.timedelta(hours=-3))) if measured_utc else None
+    return {"estacao": station_code, "observacao": {"codigo": station_code, "observado_em_utc": measured_utc.isoformat() if measured_utc else None, "data_hora_utc": measured_utc.strftime("%d/%m/%Y %H:%M UTC") if measured_utc else None, "data_hora_brasilia": measured_local.strftime("%d/%m/%Y %H:%M") if measured_local else None, "temperatura_c": inmet_safe_float(current.get("temperature_2m")), "sensacao_c": inmet_safe_float(current.get("apparent_temperature")), "umidade_pct": inmet_safe_float(current.get("relative_humidity_2m")), "chuva_mm": inmet_safe_float(current.get("precipitation")), "vento_ms": inmet_safe_float(current.get("wind_speed_10m")), "rajada_ms": inmet_safe_float(current.get("wind_gusts_10m")), "direcao_vento_graus": inmet_safe_float(current.get("wind_direction_10m")), "pressao_hpa": inmet_safe_float(current.get("surface_pressure")), "orvalho_c": None, "radiacao_kjm2": None}, "fonte": "Open-Meteo quase em tempo real no ponto da estação INMET", "idade_segundos": max(0, int((dt.datetime.now(dt.timezone.utc) - measured_utc).total_seconds())) if measured_utc else None, "coordenadas_consultadas": {"latitude": latitude, "longitude": longitude}}
+
+def fetch_open_meteo_synoptic_points() -> tuple[list[dict[str, Any]], str | None]:
+    lats = [lat for lat in range(-55, 16, 5)]
+    lons = [lon for lon in range(-85, -29, 5)]
+    pairs = [(lat, lon) for lat in lats for lon in lons]
+    points: list[dict[str, Any]] = []
+    valid_time = None
+    for start in range(0, len(pairs), 80):
+        chunk = pairs[start:start + 80]
+        response = requests.get(OPEN_METEO_URL, params={"latitude": ",".join(str(lat) for lat, _ in chunk), "longitude": ",".join(str(lon) for _, lon in chunk), "current": "pressure_msl,wind_speed_10m,wind_direction_10m,precipitation", "wind_speed_unit": "ms", "timezone": "UTC"}, timeout=35)
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict): payload = [payload]
+        if not isinstance(payload, list): raise RuntimeError("Open-Meteo retornou formato inesperado para a carta sinótica.")
+        for item in payload:
+            if not isinstance(item, dict): continue
+            current = item.get("current")
+            if not isinstance(current, dict): continue
+            if valid_time is None: valid_time = current.get("time")
+            pressure = inmet_safe_float(current.get("pressure_msl"))
+            wind_speed = inmet_safe_float(current.get("wind_speed_10m"))
+            wind_dir = inmet_safe_float(current.get("wind_direction_10m"))
+            precipitation = inmet_safe_float(current.get("precipitation"))
+            if pressure is None: continue
+            points.append({"lat": float(item.get("latitude")), "lon": float(item.get("longitude")), "pressure": pressure, "wind_speed": wind_speed or 0.0, "wind_dir": wind_dir or 0.0, "precipitation": precipitation or 0.0})
+    return points, valid_time
+
+def project_synoptic(lon: float, lat: float, width: int = 1200, height: int = 860) -> tuple[float, float]:
+    west, east = -85.0, -30.0
+    south, north = -55.0, 15.0
+    left, top = 70.0, 86.0
+    plot_width, plot_height = width - 140.0, height - 160.0
+    x = left + (lon - west) / (east - west) * plot_width
+    y = top + (north - lat) / (north - south) * plot_height
+    return x, y
+
+def precipitation_color(value: float) -> str:
+    if value >= 10: return "#7c2d12"
+    if value >= 5: return "#dc2626"
+    if value >= 2: return "#f97316"
+    if value >= 1: return "#facc15"
+    if value >= 0.2: return "#22c55e"
+    if value > 0: return "#93c5fd"
+    return "#ffffff"
+
+def geojson_paths_svg() -> str:
+    geojson_path = BASE_DIR / "brazil-states.geojson"
+    if not geojson_path.exists(): return ""
+    try: data = json.loads(geojson_path.read_text(encoding="utf-8"))
+    except Exception: return ""
+    paths = []
+    def ring_path(ring: list[list[float]]) -> str:
+        parts = []
+        for index, coord in enumerate(ring):
+            if len(coord) < 2: continue
+            x, y = project_synoptic(float(coord[0]), float(coord[1]))
+            parts.append(("M" if index == 0 else "L") + f"{x:.1f},{y:.1f}")
+        return " ".join(parts)
+    for feature in data.get("features", []):
+        geometry = feature.get("geometry", {})
+        coordinates = geometry.get("coordinates", [])
+        geometry_type = geometry.get("type")
+        polygons = coordinates if geometry_type == "MultiPolygon" else [coordinates]
+        for polygon in polygons:
+            if not polygon: continue
+            path_data = ring_path(polygon[0])
+            if path_data: paths.append(f'<path d="{path_data} Z" fill="rgba(255,255,255,.18)" stroke="#334155" stroke-width="0.9"/>')
+    return "\n".join(paths)
+
+def build_synoptic_svg(points: list[dict[str, Any]], valid_time: str | None) -> str:
+    width, height = 1200, 860
+    by_key = {(round(point["lat"] / 5) * 5, round(point["lon"] / 5) * 5): point for point in points}
+    lats = sorted({key[0] for key in by_key})
+    lons = sorted({key[1] for key in by_key})
+    valid_label = valid_time or "horário indisponível"
+    svg_parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">', '<rect width="1200" height="860" fill="#dbeafe"/>', '<rect x="70" y="86" width="1060" height="700" rx="10" fill="#eff6ff" stroke="#93c5fd"/>']
+    for lon in range(-85, -29, 10):
+        x1, y1 = project_synoptic(lon, -55)
+        x2, y2 = project_synoptic(lon, 15)
+        svg_parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#bfdbfe" stroke-width="1"/>')
+        svg_parts.append(f'<text x="{x1:.1f}" y="810" fill="#64748b" font-size="14" text-anchor="middle">{abs(lon)}W</text>')
+    for lat in range(-50, 16, 10):
+        x1, y1 = project_synoptic(-85, lat)
+        x2, y2 = project_synoptic(-30, lat)
+        svg_parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#bfdbfe" stroke-width="1"/>')
+        label = f'{abs(lat)}S' if lat < 0 else f'{lat}N'
+        svg_parts.append(f'<text x="42" y="{y1 + 4:.1f}" fill="#64748b" font-size="14" text-anchor="middle">{label}</text>')
+    cell_w = 1060 / max(1, len(lons) - 1)
+    cell_h = 700 / max(1, len(lats) - 1)
+    for point in points:
+        if point["precipitation"] <= 0: continue
+        x, y = project_synoptic(point["lon"], point["lat"])
+        svg_parts.append(f'<rect x="{x - cell_w / 2:.1f}" y="{y - cell_h / 2:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="{precipitation_color(point["precipitation"])}" opacity="0.45"/>')
+    svg_parts.append(geojson_paths_svg())
+    for point in points[::3]:
+        x, y = project_synoptic(point["lon"], point["lat"])
+        svg_parts.append(f'<text x="{x:.1f}" y="{y - 8:.1f}" text-anchor="middle" fill="#334155" font-size="10">{point["pressure"]:.0f}</text>')
+    for point in points[::2]:
+        x, y = project_synoptic(point["lon"], point["lat"])
+        angle = math.radians(point["wind_dir"])
+        speed = min(28.0, 5.0 + point["wind_speed"] * 2.0)
+        dx = -math.sin(angle) * speed
+        dy = math.cos(angle) * speed
+        svg_parts.append(f'<line x1="{x - dx / 2:.1f}" y1="{y - dy / 2:.1f}" x2="{x + dx / 2:.1f}" y2="{y + dy / 2:.1f}" stroke="#0369a1" stroke-width="1.8" opacity="0.72"/>')
+        svg_parts.append(f'<circle cx="{x + dx / 2:.1f}" cy="{y + dy / 2:.1f}" r="2.2" fill="#0369a1" opacity="0.72"/>')
+    low = min(points, key=lambda item: item["pressure"])
+    high = max(points, key=lambda item: item["pressure"])
+    for point, label, color in ((low, "B", "#dc2626"), (high, "A", "#2563eb")):
+        x, y = project_synoptic(point["lon"], point["lat"])
+        svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="18" fill="#ffffff" stroke="{color}" stroke-width="3"/>')
+        svg_parts.append(f'<text x="{x:.1f}" y="{y + 7:.1f}" text-anchor="middle" fill="{color}" font-size="22" font-weight="900">{label}</text>')
+        svg_parts.append(f'<text x="{x:.1f}" y="{y + 36:.1f}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="800">{point["pressure"]:.0f} hPa</text>')
+    svg_parts.extend(['<rect x="0" y="0" width="1200" height="66" fill="#0f172a"/>', '<text x="42" y="42" fill="#ffffff" font-size="28" font-weight="900">Carta Sinótica Sideral</text>', f'<text x="1160" y="38" fill="#cbd5e1" font-size="16" text-anchor="end">Válida: {html.escape(valid_label)} UTC</text>', '<rect x="76" y="710" width="310" height="64" rx="8" fill="rgba(255,255,255,.86)" stroke="#cbd5e1"/>', '<text x="94" y="735" fill="#0f172a" font-size="14" font-weight="900">Camadas</text>', '<text x="94" y="758" fill="#334155" font-size="13">Isóbaras: pressão ao nível do mar • Setas: vento 10 m</text>', '<text x="76" y="836" fill="#475569" font-size="13">Carta sinótica Sideral Meteorologia</text>', '</svg>'])
+    return "\n".join(svg_parts)
+
+def ensure_synoptic_chart(force: bool = False) -> dict[str, Any]:
+    SYNOPTIC_CACHE_DIR.mkdir(exist_ok=True)
+    with synoptic_cache_lock:
+        now = time.time()
+        if not force and SYNOPTIC_PNG_PATH.exists() and SYNOPTIC_META_PATH.exists() and now - SYNOPTIC_PNG_PATH.stat().st_mtime < SYNOPTIC_CACHE_SECONDS:
+            return json.loads(SYNOPTIC_META_PATH.read_text(encoding="utf-8"))
+        last_error: Exception | None = None
+        current_year = dt.datetime.now(dt.timezone.utc).year
+        for year in (current_year, current_year - 1):
+            try:
+                image, valid_time, filename, archive_url = fetch_latest_inmet_synoptic(year)
+                SYNOPTIC_PNG_PATH.write_bytes(image)
+                valid_datetime = dt.datetime.fromisoformat(valid_time)
+                delayed = dt.datetime.now(dt.timezone.utc) - valid_datetime > dt.timedelta(hours=36)
+                metadata = {"image": "/api/sinotica/chart.png", "valid_time_utc": valid_time, "updated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "source": "Instituto Nacional de Meteorologia (INMET)", "official_page": INMET_SYNOPTIC_PAGE, "archive": archive_url, "filename": filename, "cache_seconds": SYNOPTIC_CACHE_SECONDS, "stale": False, "delayed": delayed}
+                SYNOPTIC_META_PATH.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+                return metadata
+            except Exception as exc: last_error = exc
+        if SYNOPTIC_PNG_PATH.exists() and SYNOPTIC_META_PATH.exists():
+            metadata = json.loads(SYNOPTIC_META_PATH.read_text(encoding="utf-8"))
+            metadata["stale"] = True
+            metadata["warning"] = "A fonte oficial não respondeu; exibindo a última carta salva."
+            return metadata
+        raise RuntimeError(f"Não foi possível obter a carta oficial do INMET: {last_error}")
+
+def remote_zip_range(url: str, start: int, end: int, total_size: int) -> bytes:
+    response = requests.get(url, headers={**INMET_HEADERS, "Range": f"bytes={start}-{end}"}, timeout=35)
+    response.raise_for_status()
+    body = response.content
+    expected = end - start + 1
+    if response.status_code == 206 and len(body) == expected: return body
+    if response.status_code == 200 and len(body) == total_size: return body[start:end + 1]
+    raise RuntimeError("O servidor do INMET não respeitou a leitura parcial do arquivo.")
+
+def fetch_latest_inmet_synoptic(year: int) -> tuple[bytes, str, str, str]:
+    archive_url = INMET_SYNOPTIC_ARCHIVE_URL.format(year=year)
+    head = requests.head(archive_url, headers=INMET_HEADERS, timeout=25, allow_redirects=True)
+    head.raise_for_status()
+    total_size = int(head.headers.get("Content-Length", "0"))
+    if total_size < 100: raise RuntimeError("Arquivo anual de cartas sinóticas vazio.")
+    tail_start = max(0, total_size - 131072)
+    tail = remote_zip_range(archive_url, tail_start, total_size - 1, total_size)
+    eocd_position = tail.rfind(b"PK\x05\x06")
+    if eocd_position < 0 or eocd_position + 22 > len(tail): raise RuntimeError("Diretório do arquivo de cartas sinóticas não encontrado.")
+    _, _, _, _, _, directory_size, directory_offset, _ = struct.unpack("<4s4H2LH", tail[eocd_position:eocd_position + 22])
+    directory_end = directory_offset + directory_size - 1
+    if directory_offset >= tail_start and directory_end < total_size:
+        relative = directory_offset - tail_start
+        directory = tail[relative:relative + directory_size]
+    else:
+        directory = remote_zip_range(archive_url, directory_offset, directory_end, total_size)
+    candidates = []
+    position = 0
+    while position + 46 <= len(directory) and directory[position:position + 4] == b"PK\x01\x02":
+        fields = struct.unpack("<4s6H3L5H2L", directory[position:position + 46])
+        flags, compression = fields[3], fields[4]
+        crc32_value, compressed_size, uncompressed_size = fields[7], fields[8], fields[9]
+        filename_size, extra_size, comment_size = fields[10], fields[11], fields[12]
+        local_offset = fields[16]
+        name_bytes = directory[position + 46:position + 46 + filename_size]
+        filename = name_bytes.decode("utf-8" if flags & 0x800 else "cp437", errors="replace")
+        match = re.fullmatch(r"web_AS_analise_(\d{12})_\+0\.png", filename)
+        if match: candidates.append((match.group(1), filename, local_offset, compressed_size, uncompressed_size, compression, crc32_value))
+        position += 46 + filename_size + extra_size + comment_size
+    if not candidates: raise RuntimeError(f"Nenhuma carta sinótica encontrada no arquivo de {year}.")
+    stamp, filename, local_offset, compressed_size, uncompressed_size, compression, expected_crc = max(candidates)
+    local_header = remote_zip_range(archive_url, local_offset, local_offset + 29, total_size)
+    local_fields = struct.unpack("<4s5H3L2H", local_header)
+    if local_fields[0] != b"PK\x03\x04": raise RuntimeError("Cabeçalho da imagem sinótica inválido.")
+    data_start = local_offset + 30 + local_fields[9] + local_fields[10]
+    compressed = remote_zip_range(archive_url, data_start, data_start + compressed_size - 1, total_size)
+    if compression == 8: image = zlib.decompress(compressed, -zlib.MAX_WBITS)
+    elif compression == 0: image = compressed
+    else: raise RuntimeError(f"Compressão ZIP não suportada: {compression}.")
+    if len(image) != uncompressed_size or not image.startswith(b"\x89PNG\r\n\x1a\n"): raise RuntimeError("A imagem extraída do INMET está incompleta.")
+    if (binascii.crc32(image) & 0xffffffff) != expected_crc: raise RuntimeError("A verificação da imagem sinótica falhou.")
+    valid_time = dt.datetime.strptime(stamp, "%Y%m%d%H%M").replace(tzinfo=dt.timezone.utc).isoformat()
+    return image, valid_time, filename, archive_url
+
+def get_latest_inmet_observation(station_code: str) -> dict[str, Any]:
+    now = dt.datetime.now(dt.timezone.utc)
+    end_date = now.date()
+    start_date = end_date - dt.timedelta(days=2)
+    url = INMET_OBSERVATION_URL.format(start=start_date.isoformat(), end=end_date.isoformat(), station=station_code)
+    data = fetch_inmet_json(url)
+    if not isinstance(data, list): raise RuntimeError("O INMET retornou formato inesperado para a estação.")
+    candidates: list[tuple[dt.datetime, dict[str, Any]]] = []
+    for record in data:
+        if not isinstance(record, dict): continue
+        measured_utc = inmet_record_datetime_utc(record)
+        if measured_utc and inmet_has_weather_value(record): candidates.append((measured_utc, record))
+    historical = get_latest_inmet_historical_observation(station_code, now.year)
+    live_error = None
+    if candidates:
+        latest_utc, latest_record = max(candidates, key=lambda item: item[0])
+        live = {"estacao": station_code, "observacao": inmet_normalize_observation(latest_record), "registros_recebidos": len(data), "fonte": "INMET tempo real", "idade_segundos": max(0, int((now - latest_utc).total_seconds())), "url_consultada": url}
+    else:
+        try:
+            live = get_open_meteo_observation(station_code)
+            live["url_consultada"] = url
+            live["api_registros_recebidos"] = len(data)
+        except Exception as exc:
+            live_error = f"{type(exc).__name__}: {exc}"
+            live = {"estacao": station_code, "observacao": None, "fonte": "Ao vivo indisponível", "url_consultada": url, "api_registros_recebidos": len(data)}
+    return {"estacao": station_code, "observacao": live.get("observacao"), "fonte": live.get("fonte"), "idade_segundos": live.get("idade_segundos"), "url_consultada": url, "api_registros_recebidos": len(data), "ao_vivo": live, "historico_inmet": historical, "erro_ao_vivo": live_error}
+
+def meteoblue_precipitation_to_dbz(precipitation_mm_per_hour: float) -> float:
+    if precipitation_mm_per_hour <= 0: return 0.0
+    return max(0.0, min(75.0, 25.0 + 10.0 * math.log10(precipitation_mm_per_hour)))
+
+def wind_direction_deg(u10: float, v10: float) -> float:
+    if u10 == 0 and v10 == 0: return 0.0
+    return (270.0 - math.degrees(math.atan2(v10, u10))) % 360.0
+
+
+def find_wrf_files(model_key: str = "icon") -> list[Path]:
+    model_key = (model_key or "icon").lower()
+    if model_key not in WRF_MODEL_OUTPUTS: raise ValueError("Modelo WRF inválido.")
+    root = WRF_OUTPUT_DIR
+    configured = os.environ.get(f"WRF_{model_key.upper()}_OUTPUT_DIR", "").strip()
+    search_dirs = [Path(configured) if configured else None, WRF_MODEL_OUTPUTS[model_key], root, root / "output" / model_key, root / "wrf_system" / "output" / model_key, BASE_DIR / "wrf_system" / "output" / model_key]
+    unique_dirs: list[Path] = []
+    for directory in search_dirs:
+        if directory is not None and directory not in unique_dirs: unique_dirs.append(directory)
+    candidates: list[Path] = []
+    for directory in unique_dirs:
+        if not directory.exists(): continue
+        found = sorted({path.resolve() for path in directory.rglob("wrfout_d01_*") if path.is_file()})
+        if directory == root:
+            tagged = [path for path in found if model_key in {part.lower() for part in path.relative_to(root).parts[:-1]}]
+            direct = [path for path in found if path.parent == root]
+            found = tagged or direct
+        if found:
+            candidates = found
+            break
+    if not candidates:
+        checked = ", ".join(str(path) for path in unique_dirs)
+        raise FileNotFoundError(f"Nenhum arquivo wrfout do modelo {model_key.upper()} encontrado. Pastas verificadas: {checked}.")
+    runs: dict[str, list[Path]] = {}
+    for path in candidates:
+        match = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
+        if not match: continue
+        runs.setdefault(match.group(1), []).append(path)
+    if not runs: return candidates
+    latest_run = max(runs)
+    def forecast_time(path: Path) -> tuple[int, int, int]:
+        match = re.search(r"wrfout_d01_\d{4}-\d{2}-\d{2}_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
+        if not match: return (0, 0, 0)
+        return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    files = sorted(runs[latest_run], key=forecast_time)
+    return files
+
+def gfs_run_key(data_dir: Path) -> tuple[str, str]:
+    run_info = data_dir / "run_info.env"
+    run_date, run_cycle = "", ""
+    if run_info.exists():
+        for line in run_info.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith("RUN_DATE="): run_date = line.split("=", 1)[1].strip()
+            elif line.startswith("RUN_CYCLE="): run_cycle = line.split("=", 1)[1].strip()
+    return (run_date, run_cycle)
+
+def find_gfs_file(hours: int) -> Path:
+    def valid_gfs_file(path: Path) -> bool: return path.is_file() and path.stat().st_size > 0 and re.search(r"gfs.t\d{2}z.pgrb2.0p25.f\d{3}$", path.name) is not None
+    available_dirs = [data_dir for data_dir in GFS_DATA_DIRS if data_dir.exists()]
+    search_dirs = sorted(available_dirs, key=gfs_run_key, reverse=True)
+    files = [path for data_dir in search_dirs for path in data_dir.glob("gfs.t*z.pgrb2.0p25.f*") if valid_gfs_file(path)]
+    if not files: raise FileNotFoundError(f"Nenhum arquivo GFS encontrado em {', '.join(str(path) for path in GFS_DATA_DIRS)}. Execute o download do GFS primeiro.")
+    def forecast_hour(path: Path) -> int:
+        suffix = path.name.rsplit(".f", 1)[-1]
+        try: return int(suffix)
+        except ValueError: return 0
+    return min(files, key=lambda path: abs(forecast_hour(path) - hours))
+
+def get_wrf_variable(ncfile_list: list[Any], var_name: str, timeidx: int) -> Any:
+    from wrf import getvar
+    try: return getvar(ncfile_list, var_name, timeidx=timeidx)
+    except Exception as exc:
+        print(f"AVISO: falha ao extrair variavel '{var_name}' do WRF: {exc}")
+        return None
+
+def build_wrf_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int, model_key: str = "icon") -> list[dict[str, float]]:
+    try: import numpy as np; import xarray as xr
+    except ImportError as exc: raise RuntimeError("Dependencias WRF ausentes. Instale netCDF4, xarray e numpy.") from exc
+    wrf_files = find_wrf_files(model_key)
+    file_idx = min(max(0, int(hours)), len(wrf_files) - 1)
+    prev_idx = max(0, file_idx - 1)
+    def frame_valid_time(path: Path) -> str:
+        match = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
+        if not match: return path.name
+        return f"{match.group(1)}T{match.group(2)}:{match.group(3)}:{match.group(4)}Z"
+    dataset = xr.open_dataset(wrf_files[file_idx], engine="netcdf4")
+    prev_dataset = xr.open_dataset(wrf_files[prev_idx], engine="netcdf4")
+    try:
+        def field(name: str) -> Any:
+            if name not in dataset: raise RuntimeError(f"Variavel WRF ausente: {name}.")
+            return dataset[name].isel(Time=0).to_numpy()
+        lats = field("XLAT"); lons = field("XLONG")
+        wrf_south, wrf_north = float(np.nanmin(lats)), float(np.nanmax(lats))
+        wrf_west, wrf_east = float(np.nanmin(lons)), float(np.nanmax(lons))
+        margin = 0.05
+        if bounds["south"] < wrf_south - margin or bounds["north"] > wrf_north + margin or bounds["west"] < wrf_west - margin or bounds["east"] > wrf_east + margin:
+            raise WRFDomainError(f"Os arquivos WRF atuais ainda cobrem apenas {wrf_south:.2f}..{wrf_north:.2f} lat / {wrf_west:.2f}..{wrf_east:.2f} lon.")
+        u10 = field("U10"); v10 = field("V10"); t2m = field("T2") - 273.15; q2 = field("Q2"); psfc = field("PSFC")
+        rain = field("RAINC") + field("RAINNC")
+        prev_rain = prev_dataset["RAINC"].isel(Time=0).to_numpy() + prev_dataset["RAINNC"].isel(Time=0).to_numpy()
+        precip_rate = np.maximum(0.0, rain - prev_rain)
+        # Refletividade WRF estritamente nativa. Nunca sintetizar dBZ a partir de
+        # precipitacao, hidrometeoros, Z-R ou qualquer outro fallback. Se o wrfout
+        # nao trouxer REFL_10CM, a API falha explicitamente em vez de fabricar
+        # um campo que possa ser confundido com refletividade do modelo.
+        if "REFL_10CM" not in dataset:
+            raise RuntimeError(
+                "WRF sem REFL_10CM nativo; refletividade recusada para evitar geracao artificial."
+            )
+        reflectivity_source = "REFL_10CM_NATIVE"
+        reflectivity_raw = dataset["REFL_10CM"].isel(Time=0).to_numpy()
+        if reflectivity_raw.ndim == 3:
+            # Produto composto nativo: maximo vertical do REFL_10CM calculado pelo WRF.
+            # Nao ha conversao de chuva/hidrometeoros para dBZ neste caminho.
+            reflectivity = np.nanmax(reflectivity_raw, axis=0)
+        elif reflectivity_raw.ndim == 2:
+            reflectivity = reflectivity_raw
+        else:
+            raise RuntimeError(
+                f"Formato inesperado de REFL_10CM: {reflectivity_raw.shape}."
+            )
+        reflectivity = np.where(
+            np.isfinite(reflectivity), np.maximum(0.0, reflectivity), 0.0
+        )
+        temp_for_es = np.maximum(-80.0, t2m)
+        es = 6.112 * np.exp((17.67 * temp_for_es) / (temp_for_es + 243.5))
+        e = (q2 * psfc / 100.0) / (0.622 + q2)
+        rh2 = np.clip((e / es) * 100.0, 0.0, 100.0)
+        pressure = (field("P") + field("PB")) / 100.0
+        qvapor = field("QVAPOR")
+        water_vapor = np.maximum(0.0, -np.trapezoid(qvapor, pressure, axis=0) / 9.81)
+        u_mass = 0.5 * (field("U")[:, :, :-1] + field("U")[:, :, 1:])
+        v_mass = 0.5 * (field("V")[:, :-1, :] + field("V")[:, 1:, :])
+        level_500 = np.nanargmin(np.abs(pressure - 500.0), axis=0)
+        rows, cols = np.indices(t2m.shape)
+        u500 = u_mass[level_500, rows, cols]; v500 = v_mass[level_500, rows, cols]
+        dx_m = float(getattr(dataset, "DX", 3000.0)); dy_m = float(getattr(dataset, "DY", 3000.0))
+        dvdx = np.gradient(v10, dx_m, axis=1); dudy = np.gradient(u10, dy_m, axis=0)
+        vort850 = dvdx - dudy
+        domain_mask = (lats >= bounds["south"]) & (lats <= bounds["north"]) & (lons >= bounds["west"]) & (lons <= bounds["east"])
+        selected_rows = np.where(np.any(domain_mask, axis=1))[0]; selected_cols = np.where(np.any(domain_mask, axis=0))[0]
+        if selected_rows.size == 0 or selected_cols.size == 0: raise WRFDomainError("A area solicitada nao cruza a grade nativa do WRF.")
+        row_slice = slice(int(selected_rows[0]), int(selected_rows[-1]) + 1)
+        col_slice = slice(int(selected_cols[0]), int(selected_cols[-1]) + 1)
+        lats_native = lats[row_slice, col_slice]; lons_native = lons[row_slice, col_slice]
+        refl_interp = np.nan_to_num(reflectivity[row_slice, col_slice], nan=0.0)
+        u10_interp = np.nan_to_num(u10[row_slice, col_slice], nan=0.0); v10_interp = np.nan_to_num(v10[row_slice, col_slice], nan=0.0)
+        precip_interp = np.nan_to_num(precip_rate[row_slice, col_slice], nan=0.0)
+        t2m_interp = np.nan_to_num(t2m[row_slice, col_slice], nan=0.0); rh2_interp = np.nan_to_num(rh2[row_slice, col_slice], nan=0.0)
+        u500_interp = np.nan_to_num(u500[row_slice, col_slice], nan=0.0); v500_interp = np.nan_to_num(v500[row_slice, col_slice], nan=0.0)
+        vort850_interp = np.nan_to_num(vort850[row_slice, col_slice], nan=0.0)
+        water_vapor_interp = np.nan_to_num(water_vapor[row_slice, col_slice], nan=0.0)
+        bulk_shear = np.sqrt((u500_interp - u10_interp) ** 2 + (v500_interp - v10_interp) ** 2)
+        mucape = np.maximum(0.0, (t2m_interp - 20.0) * rh2_interp * 8.0)
+        native_grid_y, native_grid_x = refl_interp.shape
+        cells: list[dict[str, float]] = []
+        for i in range(native_grid_y):
+            for j in range(native_grid_x):
+                cells.append({"lat": float(lats_native[i, j]), "lon": float(lons_native[i, j]), "reflectivity": max(0.0, float(refl_interp[i, j])), "precipitation": max(0.0, float(precip_interp[i, j])), "cloudCover": 0.0, "windSpeed": float(math.hypot(u10_interp[i, j], v10_interp[i, j]) * 3.6), "windDirection": float(wind_direction_deg(u10_interp[i, j], v10_interp[i, j])), "bulkShear": float(bulk_shear[i, j]), "vorticity850": float(vort850_interp[i, j]), "temperature": float(t2m_interp[i, j]), "humidity": float(rh2_interp[i, j]), "mucape": float(mucape[i, j]), "waterVapor": float(water_vapor_interp[i, j])})
+        return {"cells": cells, "gridX": int(native_grid_x), "gridY": int(native_grid_y), "source": reflectivity_source, "model": model_key, "nativeGrid": True, "frameIndex": file_idx, "frameCount": len(wrf_files), "validTime": frame_valid_time(wrf_files[file_idx]), "availableFrames": [{"index": index, "validTime": frame_valid_time(path)} for index, path in enumerate(wrf_files)]}
+    finally: dataset.close(); prev_dataset.close()
+
+def build_gfs_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int) -> list[dict[str, float]]:
+    try: import cfgrib; import numpy as np
+    except ImportError as exc: raise RuntimeError("Dependencias GFS ausentes. Instale cfgrib e numpy para usar /api/gfs/cells.") from exc
+    gfs_file = find_gfs_file(hours)
+    lats_to_sample = np.linspace(bounds["south"], bounds["north"], grid_y)
+    lons_to_sample = np.linspace(bounds["west"], bounds["east"], grid_x)
+    def open_field(filter_by_keys: dict[str, Any]) -> Any: return cfgrib.open_dataset(str(gfs_file), filter_by_keys=filter_by_keys, indexpath="")
+    def sample_regular_grid(data_array: Any, default: float) -> Any:
+        longitude = ((data_array.longitude + 180) % 360) - 180
+        data_array = data_array.assign_coords(longitude=longitude).sortby("longitude").sortby("latitude")
+        source_lats = data_array.latitude.to_numpy(); source_lons = data_array.longitude.to_numpy()
+        values = np.squeeze(data_array.to_numpy())
+        lon_interpolated = np.vstack([np.interp(lons_to_sample, source_lons, row, left=np.nan, right=np.nan) for row in values])
+        sampled = np.vstack([np.interp(lats_to_sample, source_lats, lon_interpolated[:, column], left=np.nan, right=np.nan) for column in range(lon_interpolated.shape[1])]).T
+        return np.nan_to_num(sampled, nan=default)
+    def sample_field(filter_candidates: list[dict[str, Any]], field_name: str | None = None, default: float = 0.0) -> Any:
+        last_error: Exception | None = None
+        for filter_by_keys in filter_candidates:
+            dataset = None
+            try:
+                dataset = open_field(filter_by_keys)
+                if field_name and field_name in dataset: data_array = dataset[field_name]
+                else:
+                    data_vars = list(dataset.data_vars)
+                    if not data_vars: continue
+                    data_array = dataset[data_vars[0]]
+                return sample_regular_grid(data_array, default)
+            except Exception as exc: last_error = exc
+            finally:
+                if dataset is not None: dataset.close()
+        return np.full((grid_y, grid_x), default, dtype=float)
+    reflectivity = sample_field([{"shortName": "refc", "typeOfLevel": "atmosphere"}, {"shortName": "refc"}, {"shortName": "refd"}], default=0.0)
+    u10 = sample_field([{"shortName": "10u", "typeOfLevel": "heightAboveGround", "level": 10}], default=0.0)
+    v10 = sample_field([{"shortName": "10v", "typeOfLevel": "heightAboveGround", "level": 10}], default=0.0)
+    cells: list[dict[str, float]] = []
+    for i in range(grid_y):
+        for j in range(grid_x):
+            wind_speed = float(math.hypot(u10[i, j], v10[i, j]) * 3.6)
+            cells.append({"lat": float(lats_to_sample[i]), "lon": float(lons_to_sample[j]), "reflectivity": max(0.0, float(reflectivity[i, j])), "precipitation": 0.0, "cloudCover": 0.0, "windSpeed": wind_speed, "windDirection": float(wind_direction_deg(float(u10[i, j]), float(v10[i, j]))), "bulkShear": 0.0, "vorticity850": 0.0, "temperature": 0.0, "humidity": 0.0, "mucape": 0.0, "waterVapor": 0.0})
+    return cells
+
+def build_meteoblue_cells(bounds: dict[str, float], hours: int, grid_x: int, grid_y: int) -> list[dict[str, float]]:
+    if not METEOBLUE_API_KEY:
+        raise RuntimeError("ServiÃ§o Meteoblue temporariamente indisponÃ­vel.")
+    response = requests.get("https://my.meteoblue.com/packages/basic-1h", params={"lat": (bounds["north"] + bounds["south"]) / 2, "lon": (bounds["east"] + bounds["west"]) / 2, "apikey": METEOBLUE_API_KEY, "tz": "UTC", "windspeed": "km/h", "forecast_days": 3}, timeout=20)
+    response.raise_for_status()
+    meteoblue_data = response.json()
+    hourly_data = meteoblue_data.get("data_1h")
+    if not hourly_data: raise RuntimeError(f"Resposta inválida da API Meteoblue: {meteoblue_data.get('error_message', 'Erro desconhecido')}")
+    times = hourly_data.get("time", [])
+    if not times: raise RuntimeError("Nenhum horario retornado pela API Meteoblue.")
+    target_time = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=hours)
+    closest_hour_index = min(range(len(times)), key=lambda index: abs((dt.datetime.strptime(times[index], "%Y-%m-%d %H:%M") - target_time).total_seconds()))
+    def hour_value(field_name: str) -> float:
+        values = hourly_data.get(field_name, [])
+        return float(values[closest_hour_index] or 0.0) if closest_hour_index < len(values) else 0.0
+    precipitation = hour_value("precipitation"); wind_speed = hour_value("windspeed_10m"); wind_direction = hour_value("winddirection_10m")
+    reflectivity = meteoblue_precipitation_to_dbz(precipitation)
+    lat_step = (bounds["north"] - bounds["south"]) / (grid_y - 1) if grid_y > 1 else 0.0
+    lon_step = (bounds["east"] - bounds["west"]) / (grid_x - 1) if grid_x > 1 else 0.0
+    cells: list[dict[str, float]] = []
+    for i in range(grid_y):
+        for j in range(grid_x):
+            cells.append({"lat": bounds["south"] + i * lat_step, "lon": bounds["west"] + j * lon_step, "reflectivity": reflectivity, "precipitation": precipitation, "cloudCover": 0.0, "windSpeed": wind_speed, "windDirection": wind_direction, "bulkShear": 0.0, "vorticity850": 0.0, "temperature": 0.0, "humidity": 0.0, "mucape": 0.0, "waterVapor": 0.0})
+    return cells
+
+
+def _ecmwf_runtime_modules() -> dict[str, Any]:
+    """Dependências necessárias ao Skew-T. Dados ECMWF vêm via Open-Meteo."""
+    try:
+        import numpy as np
+        from sharppy.sharptab import profile as shp_profile
+    except ImportError as exc:
+        raise RuntimeError(
+            "Dependências do Skew-T ausentes. Instale numpy e SHARPpy."
+        ) from exc
+    return {
+        "np": np,
+        "shp_profile": shp_profile,
+    }
+
+
+def _ecmwf_api_client(modules: dict[str, Any]) -> Any:
+    api_url = os.environ.get("ECMWF_API_URL", "https://api.ecmwf.int/v1").strip()
+    api_key = os.environ.get("ECMWF_API_KEY", "").strip()
+    api_email = os.environ.get("ECMWF_API_EMAIL", "").strip()
+    if not api_key or not api_email:
+        raise RuntimeError(
+            "Credenciais ECMWF não configuradas no servidor."
+        )
+    return modules["ECMWFService"](
+        "mars",
+        url=api_url,
+        key=api_key,
+        email=api_email,
+    )
+
+
+
+def _sanitize_server_error(value: Any) -> str:
+    """Remove e-mail, chaves e credenciais antes de registrar erros no Render."""
+    text = str(value or "")
+    for env_name in ("ECMWF_API_KEY", "ECMWF_API_EMAIL"):
+        secret = os.environ.get(env_name, "").strip()
+        if secret:
+            text = text.replace(secret, "[REDACTED]")
+    text = re.sub(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+        "[EMAIL-REDACTED]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(key|token|secret|password)\s*[:=]\s*['\"]?[^,'\"\s}]+",
+        r"\1=[REDACTED]",
+        text,
+    )
+    return text[:1200]
+
+
+def _log_sounding_error(prefix: str, exc: BaseException) -> None:
+    safe = _sanitize_server_error(exc)
+    print(f"[SKEWT] {prefix}: {type(exc).__name__}: {safe}")
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or abs(number) > 1.0e20:
+        return None
+    return number
+
+
+def _dewpoint_from_temperature_rh(temp_c: float, rh_pct: float) -> float | None:
+    """Magnus: transforma temperatura e UR do IFS em ponto de orvalho para o SHARPpy."""
+    if not math.isfinite(temp_c) or not math.isfinite(rh_pct) or rh_pct <= 0:
+        return None
+    rh = max(0.1, min(100.0, rh_pct))
+    a, b = 17.625, 243.04
+    gamma = math.log(rh / 100.0) + (a * temp_c) / (b + temp_c)
+    dewpoint = (b * gamma) / (a - gamma)
+    return min(temp_c, dewpoint)
+
+
+def _ecmwf_cleanup_cache() -> None:
+    try:
+        ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cutoff = time.time() - 6 * 60 * 60
+        files = sorted(ECMWF_SOUNDING_CACHE_DIR.glob("*.grib"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for index, path in enumerate(files):
+            if path.stat().st_mtime < cutoff or index >= 24:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def _ecmwf_run_candidates(run_requested: str) -> list[dt.datetime]:
+    now = dt.datetime.now(dt.timezone.utc)
+    if run_requested != "latest":
+        hour = int(run_requested)
+        candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if candidate > now:
+            candidate -= dt.timedelta(days=1)
+        return [candidate]
+
+    # Para "latest", evita a rodada que ainda pode estar em disseminação e mantém fallbacks.
+    reference = now - dt.timedelta(hours=7)
+    base_hour = (reference.hour // 6) * 6
+    first = reference.replace(hour=base_hour, minute=0, second=0, microsecond=0)
+    return [first - dt.timedelta(hours=6 * index) for index in range(4)]
+
+
+def _ecmwf_cached_grib(path: Path) -> bool:
+    try:
+        return path.exists() and path.stat().st_size > 512 and (time.time() - path.stat().st_mtime) < ECMWF_GRIB_CACHE_SECONDS
+    except OSError:
+        return False
+
+
+def _ecmwf_point_tag(lat: float, lon: float) -> str:
+    return f"{lat:+07.2f}_{lon:+08.2f}".replace("+", "p").replace("-", "m").replace(".", "d")
+
+
+def _ecmwf_retrieve_grib(client: Any, run_dt: dt.datetime, fh: int, lat: float, lon: float) -> tuple[Path, Path, Path]:
+    ECMWF_SOUNDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = run_dt.strftime("%Y%m%d_%H")
+    point_tag = _ecmwf_point_tag(lat, lon)
+    pressure_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_pl.grib"
+    surface_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_f{fh:03d}_{point_tag}_sfc.grib"
+    orography_path = ECMWF_SOUNDING_CACHE_DIR / f"ifs_g010_{stamp}_{point_tag}_oro.grib"
+
+    north = min(90.0, lat + 0.30)
+    south = max(-90.0, lat - 0.30)
+    west = max(-180.0, lon - 0.30)
+    east = min(180.0, lon + 0.30)
+    area = f"{north:.2f}/{west:.2f}/{south:.2f}/{east:.2f}"
+
+    def execute_atomic(target: Path, request: dict[str, Any]) -> None:
+        if _ecmwf_cached_grib(target):
+            return
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        client.execute(request, str(tmp))
+        if not tmp.exists() or tmp.stat().st_size < 512:
+            raise RuntimeError(f"ECMWF retornou arquivo vazio para {target.name}.")
+        tmp.replace(target)
+
+    common_fc = {
+        "class": "od",
+        "date": run_dt.strftime("%Y%m%d"),
+        "expver": "1",
+        "stream": "oper",
+        "time": f"{run_dt.hour:02d}",
+        "type": "fc",
+        "step": str(fh),
+        "grid": "0.1/0.1",
+        "area": area,
+    }
+
+    with ecmwf_download_lock:
+        execute_atomic(
+            pressure_path,
+            {
+                **common_fc,
+                "levtype": "pl",
+                "levelist": "/".join(str(level) for level in ECMWF_PRESSURE_LEVELS),
+                # T / U / V / RH / geopotential height / vertical velocity (omega, Pa/s).
+                "param": "130.128/131.128/132.128/157.128/156.128/135.128",
+            },
+        )
+        execute_atomic(
+            surface_path,
+            {
+                **common_fc,
+                "levtype": "sfc",
+                # SP / 10U / 10V / 2T / 2D.
+                "param": "134.128/165.128/166.128/167.128/168.128",
+            },
+        )
+        execute_atomic(
+            orography_path,
+            {
+                "class": "od",
+                "date": run_dt.strftime("%Y%m%d"),
+                "expver": "1",
+                "stream": "oper",
+                "time": f"{run_dt.hour:02d}",
+                "type": "an",
+                "levtype": "sfc",
+                "param": "129.128",
+                "grid": "0.1/0.1",
+                "area": area,
+            },
+        )
+        _ecmwf_cleanup_cache()
+    return pressure_path, surface_path, orography_path
+
+
+def _ecmwf_read_nearest_grib(path: Path, lat: float, lon: float, modules: dict[str, Any]) -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    new_from_file = modules["codes_grib_new_from_file"]
+    codes_get = modules["codes_get"]
+    find_nearest = modules["codes_grib_find_nearest"]
+    release = modules["codes_release"]
+    with path.open("rb") as stream:
+        while True:
+            gid = new_from_file(stream)
+            if gid is None:
+                break
+            try:
+                short_name = str(codes_get(gid, "shortName"))
+                type_of_level = str(codes_get(gid, "typeOfLevel"))
+                try:
+                    level = _safe_float(codes_get(gid, "level"))
+                except Exception:
+                    level = None
+                nearest = find_nearest(gid, lat, lon)[0]
+                value = _safe_float(getattr(nearest, "value", None))
+                nearest_lat = _safe_float(getattr(nearest, "lat", None))
+                nearest_lon = _safe_float(getattr(nearest, "lon", None))
+                if value is None:
+                    continue
+                if type_of_level == "isobaricInPa" and level is not None:
+                    level /= 100.0
+                fields.append({
+                    "short_name": short_name,
+                    "type_of_level": type_of_level,
+                    "level": level,
+                    "value": value,
+                    "grid_lat": nearest_lat,
+                    "grid_lon": nearest_lon,
+                })
+            finally:
+                release(gid)
+    return fields
+
+
+def _sharppy_number(value: Any, np: Any) -> float | None:
+    try:
+        if np.ma.is_masked(value):
+            return None
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= -9000:
+        return None
+    return number
+
+
+def _sharppy_vector_magnitude(value: Any, np: Any) -> float | None:
+    try:
+        if value is None or len(value) < 2:
+            return None
+        u = _sharppy_number(value[0], np)
+        v = _sharppy_number(value[1], np)
+        return math.hypot(u, v) if u is not None and v is not None else None
+    except Exception:
+        return None
+
+
+def _parcel_json(parcel: Any, np: Any) -> dict[str, Any]:
+    def n(name: str) -> float | None:
+        return _sharppy_number(getattr(parcel, name, None), np)
+
+    pressure: list[float] = []
+    temperature: list[float] = []
+    try:
+        ptrace = getattr(parcel, "ptrace", [])
+        ttrace = getattr(parcel, "ttrace", [])
+        for p, t in zip(ptrace, ttrace):
+            pnum = _sharppy_number(p, np)
+            tnum = _sharppy_number(t, np)
+            if pnum is not None and tnum is not None:
+                pressure.append(round(pnum, 2))
+                temperature.append(round(tnum, 2))
+    except Exception:
+        pass
+    return {
+        "cape": n("bplus"),
+        "cin": n("bminus"),
+        "cape_3km": n("b3km"),
+        "cape_6km": n("b6km"),
+        "cape_to_freezing": n("bfzl"),
+        "lcl": n("lclhght"),
+        "lfc": n("lfchght"),
+        "el": n("elhght"),
+        "lcl_pressure": n("lclpres"),
+        "lfc_pressure": n("lfcpres"),
+        "el_pressure": n("elpres"),
+        "freezing_height": n("hght0c"),
+        "minus10_height": n("hghtm10c"),
+        "minus20_height": n("hghtm20c"),
+        "minus30_height": n("hghtm30c"),
+        "li5": n("li5"),
+        "li3": n("li3"),
+        "brn": n("brn"),
+        "brn_shear": n("brnshear"),
+        "brn_u": n("brnu"),
+        "brn_v": n("brnv"),
+        "cap_strength": n("cap"),
+        "source_pressure": n("pres"),
+        "source_temperature": n("tmpc"),
+        "source_dewpoint": n("dwpc"),
+        "trace": {"pressure": pressure, "temperature": temperature},
+    }
+
+
+def _ecmwf_build_sounding_payload(
+    lat: float,
+    lon: float,
+    run_dt: dt.datetime,
+    fh: int,
+    modules: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Obtém um ponto do ECMWF IFS 0.25° via Open-Meteo Single Runs e
+    processa o perfil com SHARPpy. Não usa MARS e não requer chave ECMWF.
+    """
+    np = modules["np"]
+    shp_profile = modules["shp_profile"]
+
+    levels = ECMWF_PRESSURE_LEVELS
+    hourly_vars = [
+        "temperature_2m",
+        "dew_point_2m",
+        "surface_pressure",
+        "wind_speed_10m",
+        "wind_direction_10m",
+    ]
+    for level in levels:
+        hourly_vars.extend([
+            f"temperature_{level}hPa",
+            f"relative_humidity_{level}hPa",
+            f"wind_speed_{level}hPa",
+            f"wind_direction_{level}hPa",
+            f"geopotential_height_{level}hPa",
+        ])
+
+    params = {
+        "latitude": f"{lat:.5f}",
+        "longitude": f"{lon:.5f}",
+        "run": run_dt.strftime("%Y-%m-%dT%H:00"),
+        "models": "ecmwf_ifs025",  # níveis de pressão; superfície é substituída pelo HRES ~9 km abaixo
+        "forecast_hours": str(max(6, fh + 6)),
+        "timezone": "GMT",
+        "temporal_resolution": "native",
+        "cell_selection": "nearest",
+        "elevation": "nan",
+        "wind_speed_unit": "kn",
+        "hourly": ",".join(hourly_vars),
+    }
+
+    response = requests.get(
+        "https://single-runs-api.open-meteo.com/v1/forecast",
+        params=params,
+        headers={"User-Agent": "SideralMeteorologia/1.0"},
+        timeout=45,
+    )
+    if response.status_code != 200:
+        try:
+            reason = response.json().get("reason")
+        except Exception:
+            reason = None
+        raise RuntimeError(
+            f"Open-Meteo ECMWF respondeu HTTP {response.status_code}"
+            + (f": {reason}" if reason else "")
+        )
+
+    data = response.json()
+    hourly = data.get("hourly") or {}
+    times = hourly.get("time") or []
+    # HRES O1280 (~9 km) fornece a superfície; os níveis de pressão vêm do
+    # IFS 0.25°, pois a API não expõe a coluna de pressão do HRES.
+    hres_data: dict[str, Any] = {}
+    try:
+        hres_params = {
+            "latitude": f"{lat:.5f}", "longitude": f"{lon:.5f}",
+            "run": run_dt.strftime("%Y-%m-%dT%H:00"), "models": "ecmwf_ifs",
+            "forecast_hours": str(max(6, fh + 6)), "timezone": "GMT",
+            "temporal_resolution": "native", "cell_selection": "nearest",
+            "elevation": "nan", "wind_speed_unit": "kn",
+            "hourly": "temperature_2m,dew_point_2m,surface_pressure,wind_speed_10m,wind_direction_10m",
+        }
+        hres_response = requests.get(
+            "https://single-runs-api.open-meteo.com/v1/forecast",
+            params=hres_params, headers={"User-Agent": "SideralMeteorologia/1.0"}, timeout=45,
+        )
+        if hres_response.status_code == 200:
+            hres_data = hres_response.json()
+    except requests.RequestException as exc:
+        _log_sounding_error("IFS HRES 9 km superfície", exc)
+    target_dt = run_dt + dt.timedelta(hours=fh)
+    target_iso = target_dt.strftime("%Y-%m-%dT%H:%M")
+
+    try:
+        idx = times.index(target_iso)
+    except ValueError:
+        # Alguns retornos podem omitir minutos (:00).
+        short_target = target_dt.strftime("%Y-%m-%dT%H")
+        idx = next(
+            (i for i, value in enumerate(times) if str(value).startswith(short_target)),
+            -1,
+        )
+    if idx < 0:
+        raise RuntimeError(
+            f"Open-Meteo não retornou o horário válido F{fh:03d} para a rodada solicitada."
+        )
+
+    def hv(name: str) -> float | None:
+        values = hourly.get(name)
+        if not isinstance(values, list) or idx >= len(values):
+            return None
+        return _safe_float(values[idx])
+
+    hres_hourly = hres_data.get("hourly") or {}
+    hres_times = hres_hourly.get("time") or []
+    try:
+        hres_idx = hres_times.index(target_iso)
+    except ValueError:
+        hres_idx = next((i for i, value in enumerate(hres_times) if str(value).startswith(target_dt.strftime("%Y-%m-%dT%H"))), -1)
+
+    def hres_hv(name: str) -> float | None:
+        values = hres_hourly.get(name)
+        if hres_idx < 0 or not isinstance(values, list) or hres_idx >= len(values):
+            return None
+        return _safe_float(values[hres_idx])
+
+    surface_pressure = hres_hv("surface_pressure") or hv("surface_pressure")
+    surface_temp = hres_hv("temperature_2m") if hres_hv("temperature_2m") is not None else hv("temperature_2m")
+    surface_dewpoint = hres_hv("dew_point_2m") if hres_hv("dew_point_2m") is not None else hv("dew_point_2m")
+    surface_wind_speed = hres_hv("wind_speed_10m") if hres_hv("wind_speed_10m") is not None else hv("wind_speed_10m")
+    surface_wind_dir = hres_hv("wind_direction_10m") if hres_hv("wind_direction_10m") is not None else hv("wind_direction_10m")
+    surface_height = _safe_float(data.get("elevation"))
+    grid_lat = _safe_float(hres_data.get("latitude")) or _safe_float(data.get("latitude"))
+    grid_lon = _safe_float(hres_data.get("longitude")) or _safe_float(data.get("longitude"))
+
+    if None in (
+        surface_pressure,
+        surface_temp,
+        surface_dewpoint,
+        surface_wind_speed,
+        surface_wind_dir,
+    ):
+        raise RuntimeError(f"Open-Meteo não retornou todos os campos de superfície necessários em F{fh:03d}.")
+
+    if surface_height is None:
+        surface_height = 0.0
+
+    def uv_from_dir_speed(direction_deg: float, speed_kt: float) -> tuple[float, float]:
+        angle = math.radians(direction_deg)
+        return (
+            -speed_kt * math.sin(angle),
+            -speed_kt * math.cos(angle),
+        )
+
+    surface_u, surface_v = uv_from_dir_speed(surface_wind_dir, surface_wind_speed)
+
+    points: list[dict[str, float]] = [{
+        "pressure": float(surface_pressure),
+        "height": float(surface_height),
+        "temperature": float(surface_temp),
+        "dewpoint": min(float(surface_temp), float(surface_dewpoint)),
+        "u": float(surface_u),
+        "v": float(surface_v),
+        "omega": math.nan,
+    }]
+
+    for level in levels:
+        if level > float(surface_pressure) + 0.5:
+            continue
+
+        temp_c = hv(f"temperature_{level}hPa")
+        rh = hv(f"relative_humidity_{level}hPa")
+        wind_speed = hv(f"wind_speed_{level}hPa")
+        wind_dir = hv(f"wind_direction_{level}hPa")
+        gh = hv(f"geopotential_height_{level}hPa")
+        vertical_ms = None
+
+        if None in (temp_c, rh, wind_speed, wind_dir, gh):
+            continue
+
+        dewpoint_c = _dewpoint_from_temperature_rh(float(temp_c), float(rh))
+        if dewpoint_c is None:
+            continue
+
+        u_kt, v_kt = uv_from_dir_speed(float(wind_dir), float(wind_speed))
+
+        omega_pa_s = math.nan
+        if vertical_ms is not None:
+            # Open-Meteo fornece velocidade vertical geométrica (m/s).
+            # Converte de volta para omega (Pa/s) para o SHARPpy:
+            # omega = -rho * g * w, usando T como aproximação de Tv.
+            t_k = float(temp_c) + 273.15
+            if t_k > 0:
+                rho = (float(level) * 100.0) / (287.05 * t_k)
+                omega_pa_s = -rho * 9.80665 * float(vertical_ms)
+
+        points.append({
+            "pressure": float(level),
+            "height": float(gh),
+            "temperature": float(temp_c),
+            "dewpoint": float(dewpoint_c),
+            "u": float(u_kt),
+            "v": float(v_kt),
+            "omega": float(omega_pa_s),
+        })
+
+    points.sort(key=lambda item: item["pressure"], reverse=True)
+    qc_points: list[dict[str, float]] = []
+    last_height = -1.0e9
+    for point in points:
+        if qc_points and abs(point["pressure"] - qc_points[-1]["pressure"]) < 0.75:
+            if point["height"] < qc_points[-1]["height"]:
+                qc_points[-1] = point
+            continue
+        if point["height"] <= last_height:
+            continue
+        qc_points.append(point)
+        last_height = point["height"]
+    points = qc_points
+
+    if len(points) < 8 or points[-1]["pressure"] > 300:
+        raise RuntimeError("Perfil ECMWF insuficiente para o SHARPpy.")
+
+    pres = np.array([p["pressure"] for p in points], dtype=float)
+    hght = np.array([p["height"] for p in points], dtype=float)
+    tmpc = np.array([p["temperature"] for p in points], dtype=float)
+    dwpc = np.array([p["dewpoint"] for p in points], dtype=float)
+    u = np.array([p["u"] for p in points], dtype=float)
+    v = np.array([p["v"] for p in points], dtype=float)
+    omega = np.array([p.get("omega", math.nan) for p in points], dtype=float)
+
+    # Apenas o núcleo de cálculo do SHARPpy é usado; nenhuma GUI/Qt é iniciada.
+    profile_kwargs = {
+        "profile": "convective",
+        "pres": pres,
+        "hght": hght,
+        "tmpc": tmpc,
+        "dwpc": dwpc,
+        "u": u,
+        "v": v,
+        "latitude": float(lat),
+        "date": run_dt + dt.timedelta(hours=fh),
+        "location": "ECMWF-BRASIL",
+        "strictQC": False,
+    }
+    # O omega oficial do ECMWF permite OPRH/DGZ e diagnósticos de inverno reais.
+    omega_masked = np.ma.masked_invalid(omega)
+    if int(np.ma.count(omega_masked)) >= 2:
+        profile_kwargs["omeg"] = omega_masked
+    prof = shp_profile.create_profile(**profile_kwargs)
+
+    sb = _parcel_json(prof.sfcpcl, np)
+    ml = _parcel_json(prof.mlpcl, np)
+    fcst = _parcel_json(prof.fcstpcl, np)
+    mu = _parcel_json(prof.mupcl, np)
+    eff = _parcel_json(getattr(prof, "effpcl", prof.sfcpcl), np)
+    shear01 = _sharppy_vector_magnitude(getattr(prof, "sfc_1km_shear", None), np)
+    shear03 = _sharppy_vector_magnitude(getattr(prof, "sfc_3km_shear", None), np)
+    shear06 = _sharppy_vector_magnitude(getattr(prof, "sfc_6km_shear", None), np)
+
+    if lat < 0:
+        srh01_raw = _sharppy_number(getattr(prof, "left_srh1km", [None])[0], np)
+        srh03_raw = _sharppy_number(getattr(prof, "left_srh3km", [None])[0], np)
+        srh01 = -srh01_raw if srh01_raw is not None else None
+        srh03 = -srh03_raw if srh03_raw is not None else None
+        motion = getattr(prof, "srwind", [None, None, None, None])[2:4]
+    else:
+        srh01 = _sharppy_number(getattr(prof, "right_srh1km", [None])[0], np)
+        srh03 = _sharppy_number(getattr(prof, "right_srh3km", [None])[0], np)
+        motion = getattr(prof, "srwind", [None, None, None, None])[0:2]
+
+    storm_u = _sharppy_number(motion[0], np) if len(motion) > 0 else None
+    storm_v = _sharppy_number(motion[1], np) if len(motion) > 1 else None
+    storm_speed = math.hypot(storm_u, storm_v) if storm_u is not None and storm_v is not None else None
+    storm_dir = wind_direction_deg(storm_u, storm_v) if storm_u is not None and storm_v is not None else None
+
+    pwat_in = _sharppy_number(getattr(prof, "pwat", None), np)
+    stp = _sharppy_number(getattr(prof, "stp_cin", None), np)
+    stp_fixed = _sharppy_number(getattr(prof, "stp_fixed", None), np)
+    scp = _sharppy_number(getattr(prof, "scp", None), np)
+    ship = _sharppy_number(getattr(prof, "ship", None), np)
+    sherb = _sharppy_number(getattr(prof, "sherbe", None), np)
+    ehi01 = None
+    ehi03 = None
+    if mu.get("cape") is not None:
+        if srh01 is not None:
+            ehi01 = (float(mu["cape"]) * float(srh01)) / 160000.0
+        if srh03 is not None:
+            ehi03 = (float(mu["cape"]) * float(srh03)) / 160000.0
+
+    def seq_number(value: Any, index: int) -> float | None:
+        try:
+            return _sharppy_number(value[index], np)
+        except Exception:
+            return None
+
+    def dir_speed_from_uv(u_value: Any, v_value: Any) -> dict[str, float | None]:
+        u_num = _sharppy_number(u_value, np)
+        v_num = _sharppy_number(v_value, np)
+        if u_num is None or v_num is None:
+            return {"u": None, "v": None, "direction": None, "speed": None}
+        return {
+            "u": u_num,
+            "v": v_num,
+            "direction": wind_direction_deg(u_num, v_num),
+            "speed": math.hypot(u_num, v_num),
+        }
+
+    def dir_speed_pair(value: Any) -> dict[str, float | None]:
+        direction = seq_number(value, 0)
+        speed = seq_number(value, 1)
+        if direction is None or speed is None:
+            return {"direction": None, "speed": None, "u": None, "v": None}
+        rad = math.radians(direction)
+        return {
+            "direction": direction,
+            "speed": speed,
+            "u": -speed * math.sin(rad),
+            "v": -speed * math.cos(rad),
+        }
+
+    bunkers = getattr(prof, "bunkers", [None, None, None, None])
+    bunkers_rm = dir_speed_from_uv(seq_number(bunkers, 0), seq_number(bunkers, 1))
+    bunkers_lm = dir_speed_from_uv(seq_number(bunkers, 2), seq_number(bunkers, 3))
+
+    corfidi = getattr(prof, "upshear_downshear", [None, None, None, None])
+    corfidi_up = dir_speed_from_uv(seq_number(corfidi, 0), seq_number(corfidi, 1))
+    corfidi_down = dir_speed_from_uv(seq_number(corfidi, 2), seq_number(corfidi, 3))
+
+    mean01 = dir_speed_pair(getattr(prof, "mean_1km", [None, None]))
+    mean03 = dir_speed_pair(getattr(prof, "mean_3km", [None, None]))
+    mean06 = dir_speed_pair(getattr(prof, "mean_6km", [None, None]))
+    mean08 = dir_speed_pair(getattr(prof, "mean_8km", [None, None]))
+    mean_lcl_el = dir_speed_pair(getattr(prof, "mean_lcl_el", [None, None]))
+    mean_eff_raw = getattr(prof, "mean_eff", [None, None])
+    mean_ebw_raw = getattr(prof, "mean_ebw", [None, None])
+    mean_eff = dir_speed_from_uv(seq_number(mean_eff_raw, 0), seq_number(mean_eff_raw, 1))
+    mean_ebw = dir_speed_from_uv(seq_number(mean_ebw_raw, 0), seq_number(mean_ebw_raw, 1))
+
+    if lat < 0:
+        effective_srh_raw = seq_number(getattr(prof, "left_esrh", [None]), 0)
+        effective_srh = -effective_srh_raw if effective_srh_raw is not None else None
+        critical_angle = _sharppy_number(getattr(prof, "left_critical_angle", None), np)
+        srw01 = dir_speed_pair(getattr(prof, "left_srw_1km", [None, None]))
+        srw03 = dir_speed_pair(getattr(prof, "left_srw_3km", [None, None]))
+        srw06 = dir_speed_pair(getattr(prof, "left_srw_6km", [None, None]))
+        srw08 = dir_speed_pair(getattr(prof, "left_srw_8km", [None, None]))
+        srw45 = dir_speed_pair(getattr(prof, "left_srw_4_5km", [None, None]))
+        srw_lcl_el = dir_speed_pair(getattr(prof, "left_srw_lcl_el", [None, None]))
+        srw_eff_raw = getattr(prof, "left_srw_eff", [None, None])
+        srw_ebw_raw = getattr(prof, "left_srw_ebw", [None, None])
+        selected_motion_name = "Bunkers LM (ciclônico SH)"
+    else:
+        effective_srh = seq_number(getattr(prof, "right_esrh", [None]), 0)
+        critical_angle = _sharppy_number(getattr(prof, "right_critical_angle", None), np)
+        srw01 = dir_speed_pair(getattr(prof, "right_srw_1km", [None, None]))
+        srw03 = dir_speed_pair(getattr(prof, "right_srw_3km", [None, None]))
+        srw06 = dir_speed_pair(getattr(prof, "right_srw_6km", [None, None]))
+        srw08 = dir_speed_pair(getattr(prof, "right_srw_8km", [None, None]))
+        srw45 = dir_speed_pair(getattr(prof, "right_srw_4_5km", [None, None]))
+        srw_lcl_el = dir_speed_pair(getattr(prof, "right_srw_lcl_el", [None, None]))
+        srw_eff_raw = getattr(prof, "right_srw_eff", [None, None])
+        srw_ebw_raw = getattr(prof, "right_srw_ebw", [None, None])
+        selected_motion_name = "Bunkers RM (ciclônico NH)"
+
+    srw_eff = dir_speed_from_uv(seq_number(srw_eff_raw, 0), seq_number(srw_eff_raw, 1))
+    srw_ebw = dir_speed_from_uv(seq_number(srw_ebw_raw, 0), seq_number(srw_ebw_raw, 1))
+    ebwspd = _sharppy_number(getattr(prof, "ebwspd", None), np)
+    effective_bottom = _sharppy_number(getattr(prof, "ebotm", None), np)
+    effective_top = _sharppy_number(getattr(prof, "etopm", None), np)
+    shear08 = _sharppy_vector_magnitude(getattr(prof, "sfc_8km_shear", None), np)
+    shear09 = _sharppy_vector_magnitude(getattr(prof, "sfc_9km_shear", None), np)
+    lcl_el_shear = _sharppy_vector_magnitude(getattr(prof, "lcl_el_shear", None), np)
+    eff_shear = _sharppy_vector_magnitude(getattr(prof, "eff_shear", None), np)
+    ebwd = _sharppy_vector_magnitude(getattr(prof, "ebwd", None), np)
+    wind1km = dir_speed_pair(getattr(prof, "wind1km", [None, None]))
+    wind6km = dir_speed_pair(getattr(prof, "wind6km", [None, None]))
+
+    k_index = _sharppy_number(getattr(prof, "k_idx", None), np)
+    totals_totals = _sharppy_number(getattr(prof, "totals_totals", None), np)
+    lapse_03 = _sharppy_number(getattr(prof, "lapserate_3km", None), np)
+    lapse_36 = _sharppy_number(getattr(prof, "lapserate_3_6km", None), np)
+    lapse_850_500 = _sharppy_number(getattr(prof, "lapserate_850_500", None), np)
+    lapse_700_500 = _sharppy_number(getattr(prof, "lapserate_700_500", None), np)
+    max_lapse_26 = _sharppy_number(getattr(prof, "max_lapse_rate_2_6", None), np)
+    conv_temp_f = _sharppy_number(getattr(prof, "convT", None), np)
+    max_temp_f = _sharppy_number(getattr(prof, "maxT", None), np)
+    mean_mixr = _sharppy_number(getattr(prof, "mean_mixr", None), np)
+    low_rh = _sharppy_number(getattr(prof, "low_rh", None), np)
+    mid_rh = _sharppy_number(getattr(prof, "mid_rh", None), np)
+    dcape = _sharppy_number(getattr(prof, "dcape", None), np)
+    drush_f = _sharppy_number(getattr(prof, "drush", None), np)
+    tei = _sharppy_number(getattr(prof, "tei", None), np)
+    esp = _sharppy_number(getattr(prof, "esp", None), np)
+    mmp = _sharppy_number(getattr(prof, "mmp", None), np)
+    wndg = _sharppy_number(getattr(prof, "wndg", None), np)
+    sig_severe = _sharppy_number(getattr(prof, "sig_severe", None), np)
+    mburst = _sharppy_number(getattr(prof, "mburst", None), np)
+
+    dgz_pbot = _sharppy_number(getattr(prof, "dgz_pbot", None), np)
+    dgz_ptop = _sharppy_number(getattr(prof, "dgz_ptop", None), np)
+    dgz_meanrh = _sharppy_number(getattr(prof, "dgz_meanrh", None), np)
+    dgz_pw_in = _sharppy_number(getattr(prof, "dgz_pw", None), np)
+    dgz_meanq = _sharppy_number(getattr(prof, "dgz_meanq", None), np)
+    dgz_meanomega = _sharppy_number(getattr(prof, "dgz_meanomeg", None), np)
+    oprh = _sharppy_number(getattr(prof, "oprh", None), np)
+    initial_phase_pressure = _sharppy_number(getattr(prof, "plevel", None), np)
+    initial_phase_temp = _sharppy_number(getattr(prof, "tmp", None), np)
+    initial_phase_raw = getattr(prof, "phase", None)
+    initial_phase = None if initial_phase_raw is None or np.ma.is_masked(initial_phase_raw) else str(initial_phase_raw)
+    initial_state_raw = getattr(prof, "st", None)
+    initial_state = None if initial_state_raw is None or np.ma.is_masked(initial_state_raw) else str(initial_state_raw)
+    tpos = _sharppy_number(getattr(prof, "tpos", None), np)
+    tneg = _sharppy_number(getattr(prof, "tneg", None), np)
+    ttop = _sharppy_number(getattr(prof, "ttop", None), np)
+    tbot = _sharppy_number(getattr(prof, "tbot", None), np)
+    wpos = _sharppy_number(getattr(prof, "wpos", None), np)
+    wneg = _sharppy_number(getattr(prof, "wneg", None), np)
+    wtop = _sharppy_number(getattr(prof, "wtop", None), np)
+    wbot = _sharppy_number(getattr(prof, "wbot", None), np)
+    precip_type_raw = getattr(prof, "precip_type", None)
+    precip_type = None if precip_type_raw is None or np.ma.is_masked(precip_type_raw) else str(precip_type_raw)
+
+    watch_type_raw = getattr(prof, "watch_type", None)
+    watch_type_name = None if watch_type_raw is None or np.ma.is_masked(watch_type_raw) else str(watch_type_raw)
+
+    def sars_payload(matches: Any, kind: str) -> dict[str, Any]:
+        try:
+            quality_ids = []
+            for item in list(matches[0])[:10]:
+                if isinstance(item, bytes):
+                    quality_ids.append(item.decode("utf-8", errors="replace"))
+                else:
+                    quality_ids.append(str(item))
+            quality_values = []
+            for value in list(matches[1])[:10]:
+                if isinstance(value, bytes):
+                    quality_values.append(value.decode("utf-8", errors="replace"))
+                else:
+                    num = _safe_float(value)
+                    quality_values.append(round(num, 2) if num is not None else str(value))
+            loose = int(float(matches[2])) if len(matches) > 2 else 0
+            severe_count = int(float(matches[3])) if len(matches) > 3 else 0
+            probability = _safe_float(matches[4]) if len(matches) > 4 else None
+            return {
+                "kind": kind,
+                "quality_ids": quality_ids,
+                "quality_values": quality_values,
+                "quality_count": len(quality_ids),
+                "loose_count": loose,
+                "severe_count": severe_count,
+                "probability": probability,
+            }
+        except Exception:
+            return {"kind": kind, "quality_ids": [], "quality_values": [], "quality_count": 0, "loose_count": 0, "severe_count": 0, "probability": None}
+
+    hail_sars = sars_payload(getattr(prof, "matches", ([], [], 0, 0, 0)), "hail")
+    supercell_sars = sars_payload(getattr(prof, "supercell_matches", ([], [], 0, 0, 0)), "supercell")
+
+    def f_to_c(value: float | None) -> float | None:
+        return (value - 32.0) * (5.0 / 9.0) if value is not None else None
+
+    def r(value: Any, digits: int = 1) -> float | None:
+        number = _safe_float(value)
+        return round(number, digits) if number is not None else None
+
+    def round_vector(vector: dict[str, float | None]) -> dict[str, float | None]:
+        return {key: r(value, 0 if key == "direction" else 1) for key, value in vector.items()}
+
+    profile_json = {
+        "pressure": [r(p["pressure"], 1) for p in points],
+        "height": [r(p["height"], 0) for p in points],
+        "height_agl": [r(max(0.0, p["height"] - surface_height), 0) for p in points],
+        "temperature": [r(p["temperature"], 1) for p in points],
+        "dewpoint": [r(p["dewpoint"], 1) for p in points],
+        "u": [r(p["u"], 1) for p in points],
+        "v": [r(p["v"], 1) for p in points],
+        "wind_speed": [r(math.hypot(p["u"], p["v"]), 1) for p in points],
+        "wind_direction": [r(wind_direction_deg(p["u"], p["v"]), 0) for p in points],
+        "omega": [r(p.get("omega"), 3) for p in points],
+    }
+
+    # Arredonda os índices depois do cálculo, preservando null quando mascarados.
+    for parcel in (sb, ml, fcst, mu, eff):
+        for key in ("cape", "cin", "cape_3km", "cape_6km", "cape_to_freezing", "lcl", "lfc", "el", "lcl_pressure", "lfc_pressure", "el_pressure", "freezing_height", "minus10_height", "minus20_height", "minus30_height", "li5", "li3", "brn", "brn_shear", "brn_u", "brn_v", "cap_strength", "source_pressure", "source_temperature", "source_dewpoint"):
+            parcel[key] = r(parcel.get(key), 1 if key in {"li5", "li3"} else 0)
+
+
+    valid_dt = run_dt + dt.timedelta(hours=fh)
+    return {
+        "model": "ECMWF IFS HRES ~9 km + níveis IFS",
+        "model_id": "ecmwf_ifs_hres9km_surface_ifs025_pressure",
+        "latitude": lat,
+        "longitude": lon,
+        "grid_latitude": r(grid_lat, 3),
+        "grid_longitude": r(grid_lon, 3),
+        "run": run_dt.isoformat().replace("+00:00", "Z"),
+        "run_cycle": f"{run_dt.hour:02d}Z",
+        "forecast_hour": fh,
+        "valid": valid_dt.isoformat().replace("+00:00", "Z"),
+        "surface_elevation_m": r(surface_height, 0),
+        "surface_pressure_hpa": r(surface_pressure, 1),
+        "profile": profile_json,
+        "parcels": {"sb": sb, "ml": ml, "fcst": fcst, "mu": mu, "eff": eff},
+        "thermodynamics": {
+            "sbcape": sb["cape"], "sbcin": sb["cin"],
+            "mlcape": ml["cape"], "mlcin": ml["cin"],
+            "fcstcape": fcst["cape"], "fcstcin": fcst["cin"],
+            "mucape": mu["cape"], "mucin": mu["cin"],
+            "sb_cape_3km": sb["cape_3km"], "ml_cape_3km": ml["cape_3km"], "mu_cape_3km": mu["cape_3km"],
+            "sb_cape_6km": sb["cape_6km"], "ml_cape_6km": ml["cape_6km"], "mu_cape_6km": mu["cape_6km"],
+            "mu_cape_to_freezing": mu["cape_to_freezing"],
+            "lcl": ml["lcl"], "lfc": ml["lfc"], "el": ml["el"],
+            "lifted_index": sb["li5"], "lifted_index_300": sb["li3"],
+            "pwat": r(pwat_in * 25.4 if pwat_in is not None else None, 1),
+            "pwat_in": r(pwat_in, 2),
+            "k_index": r(k_index, 1), "totals_totals": r(totals_totals, 1),
+            "lapse_0_3km": r(lapse_03, 1), "lapse_3_6km": r(lapse_36, 1),
+            "lapse_850_500": r(lapse_850_500, 1), "lapse_700_500": r(lapse_700_500, 1),
+            "max_lapse_2_6km": r(max_lapse_26, 1),
+            "convective_temperature_c": r(f_to_c(conv_temp_f), 1), "convective_temperature_f": r(conv_temp_f, 0),
+            "max_temperature_c": r(f_to_c(max_temp_f), 1), "max_temperature_f": r(max_temp_f, 0),
+            "mean_mixratio": r(mean_mixr, 1), "low_level_rh": r(low_rh, 0), "mid_level_rh": r(mid_rh, 0),
+            "dcape": r(dcape, 0), "downrush_temperature_c": r(f_to_c(drush_f), 1), "downrush_temperature_f": r(drush_f, 0),
+            "brn": r(mu.get("brn"), 1), "brn_shear": r(mu.get("brn_shear"), 0),
+        },
+        "kinematics": {
+            "shear_01km": r(shear01, 1), "shear_03km": r(shear03, 1), "shear_06km": r(shear06, 1),
+            "shear_08km": r(shear08, 1), "shear_09km": r(shear09, 1),
+            "lcl_el_shear": r(lcl_el_shear, 1), "effective_layer_shear": r(eff_shear, 1), "effective_bulk_wind": r(ebwd if ebwd is not None else ebwspd, 1),
+            "srh_01km": r(srh01, 0), "srh_03km": r(srh03, 0), "effective_srh": r(effective_srh, 0),
+            "effective_inflow_bottom_m": r(effective_bottom, 0), "effective_inflow_top_m": r(effective_top, 0),
+            "critical_angle": r(critical_angle, 0),
+            "mean_wind_01km": round_vector(mean01), "mean_wind_03km": round_vector(mean03), "mean_wind_06km": round_vector(mean06), "mean_wind_08km": round_vector(mean08),
+            "mean_wind_lcl_el": round_vector(mean_lcl_el), "mean_wind_effective": round_vector(mean_eff), "mean_wind_ebw": round_vector(mean_ebw),
+            "srw_01km_vector": round_vector(srw01), "srw_03km_vector": round_vector(srw03), "srw_06km_vector": round_vector(srw06), "srw_08km_vector": round_vector(srw08),
+            "srw_4_5km_vector": round_vector(srw45), "srw_lcl_el_vector": round_vector(srw_lcl_el), "srw_effective": round_vector(srw_eff), "srw_ebw": round_vector(srw_ebw),
+            "srw_01km": r(srw01.get("speed"), 1), "srw_03km": r(srw03.get("speed"), 1), "srw_06km": r(srw06.get("speed"), 1), "srw_08km": r(srw08.get("speed"), 1),
+            "srw_4_5km": r(srw45.get("speed"), 1), "srw_lcl_el": r(srw_lcl_el.get("speed"), 1),
+            "wind_1km": round_vector(wind1km), "wind_6km": round_vector(wind6km),
+            "mean_wind_06km_direction": r(mean06.get("direction"), 0), "mean_wind_06km_speed": r(mean06.get("speed"), 1),
+            "storm_motion_u": r(storm_u, 1), "storm_motion_v": r(storm_v, 1),
+            "storm_motion_speed": r(storm_speed, 1), "storm_motion_direction": r(storm_dir, 0),
+            "storm_motion_name": selected_motion_name,
+            "hemisphere": "SH" if lat < 0 else "NH",
+            "cyclonic_mover": "left" if lat < 0 else "right",
+            "srh_display_convention": "cyclonic-positive",
+            "bunkers_rm": round_vector(bunkers_rm), "bunkers_lm": round_vector(bunkers_lm),
+            "corfidi_up": round_vector(corfidi_up), "corfidi_down": round_vector(corfidi_down),
+        },
+        "severe": {
+            "stp": r(stp, 2), "stp_fixed": r(stp_fixed, 2), "scp": r(scp, 2),
+            "ehi_01km": r(ehi01, 2), "ehi_03km": r(ehi03, 2),
+            "ship": r(ship, 2), "sherb": r(sherb, 2), "tei": r(tei, 2), "esp": r(esp, 2),
+            "mmp": r(mmp, 2), "wndg": r(wndg, 2), "sig_severe": r(sig_severe, 0),
+            "microburst": r(mburst, 2), "watch_type": watch_type_name,
+        },
+        "winter": {
+            "dgz_bottom_hpa": r(dgz_pbot, 1), "dgz_top_hpa": r(dgz_ptop, 1),
+            "dgz_mean_rh": r(dgz_meanrh, 0), "dgz_pw_in": r(dgz_pw_in, 2), "dgz_pw_mm": r(dgz_pw_in * 25.4 if dgz_pw_in is not None else None, 1),
+            "dgz_mean_mixratio": r(dgz_meanq, 2), "dgz_mean_omega": r(dgz_meanomega, 2), "oprh": r(oprh, 3),
+            "initial_phase_pressure_hpa": r(initial_phase_pressure, 1), "initial_phase": initial_phase, "initial_phase_temp_c": r(initial_phase_temp, 1), "initial_phase_state": initial_state,
+            "temperature_positive_energy": r(tpos, 1), "temperature_negative_energy": r(tneg, 1), "temperature_layer_top_hpa": r(ttop, 1), "temperature_layer_bottom_hpa": r(tbot, 1),
+            "wetbulb_positive_energy": r(wpos, 1), "wetbulb_negative_energy": r(wneg, 1), "wetbulb_layer_top_hpa": r(wtop, 1), "wetbulb_layer_bottom_hpa": r(wbot, 1),
+            "precip_type": precip_type,
+        },
+        "analogs": {
+            "hail": hail_sars, "supercell": supercell_sars,
+            "sars_hail_count": hail_sars["quality_count"], "sars_supercell_count": supercell_sars["quality_count"],
+            "database_scope": "SARS/SHARPpy (base calibrada com casos dos EUA; usar apenas como analogia fora do CONUS)",
+        },
+        "source": "ECMWF IFS HRES O1280 ~9 km (superfície) + IFS 0.25° (níveis de pressão) via Open-Meteo + SHARPpy",
+        "attribution": "ECMWF / Open-Meteo",
+        "cache": False,
+    }
+
+
+
+def _published_wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour: int) -> dict[str, Any]:
+    """Read the compact vertical grid published by GitHub Actions."""
+    base = "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-data"
+    metadata_response = requests.get(f"{base}/metadata.json", timeout=25)
+    metadata_response.raise_for_status()
+    metadata = metadata_response.json()
+    all_frames = [
+        frame for frame in metadata.get("frames", [])
+        if str(frame.get("model") or metadata.get("model") or "").lower() == model_key
+        and (frame.get("soundingFile") or frame.get("file"))
+    ]
+    frames = [frame for frame in all_frames if frame.get("soundingFile")]
+    if all_frames and not frames:
+        raise RuntimeError(
+            f"Há {len(all_frames)} rodadas WRF {model_key.upper()} publicadas, "
+            "mas elas contêm apenas refletividade. O Skew-T precisa que a publicação inclua o perfil vertical."
+        )
+    if not frames:
+        raise FileNotFoundError(f"A rodada publicada de {model_key.upper()} ainda nao possui perfis verticais.")
+    frame = min(frames, key=lambda item: abs(int(item.get("forecastHour", 0)) - int(forecast_hour)))
+    response = requests.get(f"{base}/{frame['soundingFile']}", timeout=45)
+    response.raise_for_status()
+    grid = json.loads(gzip.decompress(response.content).decode("utf-8"))
+    grid_x, grid_y, levels = int(grid["gridX"]), int(grid["gridY"]), int(grid["levels"])
+    lats, lons = grid["lat"], grid["lon"]
+    if not lats or len(lats) != grid_x * grid_y:
+        raise RuntimeError("Grade vertical WRF publicada esta incompleta.")
+    south, north, west, east = min(lats), max(lats), min(lons), max(lons)
+    if lat < south - .1 or lat > north + .1 or lon < west - .1 or lon > east + .1:
+        raise WRFDomainError(f"Este ponto esta fora do dominio WRF publicado ({south:.2f}..{north:.2f} lat / {west:.2f}..{east:.2f} lon). Use ECMWF fora da area WRF.")
+    cosine = math.cos(math.radians(lat))
+    point = min(range(len(lats)), key=lambda i: (lats[i] - lat) ** 2 + ((lons[i] - lon) * cosine) ** 2)
+    size = grid_x * grid_y
+    def column(name: str) -> list[float]:
+        values = grid[name]
+        return [values[level * size + point] for level in range(levels)]
+    pressure, temperature, dewpoint = column("pressure"), column("temperature"), column("dewpoint")
+    u, v, height = column("u"), column("v"), column("height")
+    terrain = float(grid["terrain"][point])
+    points = []
+    for index in range(levels):
+        values = (pressure[index], temperature[index], dewpoint[index], u[index], v[index], height[index])
+        if all(math.isfinite(float(value)) for value in values) and 100 <= pressure[index] <= 1050:
+            points.append({"pressure": pressure[index], "temperature": temperature[index], "dewpoint": min(temperature[index], dewpoint[index]), "u": u[index], "v": v[index], "height": height[index]})
+    points.sort(key=lambda item: item["pressure"], reverse=True)
+    if len(points) < 8 or points[-1]["pressure"] > 300:
+        raise RuntimeError("A grade WRF publicada nao possui niveis suficientes para este perfil.")
+    def series(key: str, digits: int = 1) -> list[float]:
+        return [round(float(item[key]), digits) for item in points]
+    profile = {"pressure": series("pressure"), "height": series("height", 0), "height_agl": [round(max(0., float(item["height"]) - terrain), 0) for item in points], "temperature": series("temperature"), "dewpoint": series("dewpoint"), "u": series("u"), "v": series("v"), "wind_speed": [round(math.hypot(float(item["u"]), float(item["v"])), 1) for item in points], "wind_direction": [round(wind_direction_deg(float(item["u"]), float(item["v"]))) for item in points], "omega": [None] * len(points)}
+    empty = {"direction": None, "speed": None, "u": None, "v": None}
+    return {"model": f"{model_key.upper()} -> WRF", "model_id": f"wrf_{model_key}", "latitude": lat, "longitude": lon, "grid_latitude": round(float(lats[point]), 3), "grid_longitude": round(float(lons[point]), 3), "run": metadata.get("runDate"), "run_cycle": metadata.get("runCycle", "WRF"), "forecast_hour": int(frame.get("forecastHour", 0)), "valid": frame.get("validTime") or grid.get("validTime"), "surface_elevation_m": round(terrain), "surface_pressure_hpa": profile["pressure"][0], "profile": profile, "parcels": {}, "thermodynamics": {}, "kinematics": {"storm_motion_name": "WRF", "bunkers_rm": empty, "bunkers_lm": empty, "corfidi_up": empty, "corfidi_down": empty}, "severe": {}, "winter": {}, "analogs": {"hail": {}, "supercell": {}, "database_scope": "Perfil vertical compacto extraido do wrfout operacional."}, "source": f"WRF {model_key.upper()} - perfil vertical publicado", "attribution": "Sideral WRF", "cache": False}
+
+
+def _wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour: int) -> dict[str, Any]:
+    """Extract a native vertical profile and refuse coordinates outside WRF coverage."""
+    try:
+        import numpy as np
+        import xarray as xr
+    except ImportError as exc:
+        raise RuntimeError("DependÃªncias WRF ausentes no servidor.") from exc
+    if model_key not in WRF_MODEL_OUTPUTS:
+        raise ValueError("Modelo WRF invÃ¡lido.")
+    try:
+        files = find_wrf_files(model_key)
+    except FileNotFoundError:
+        return _published_wrf_sounding_payload(lat, lon, model_key, forecast_hour)
+    path = files[min(max(0, int(forecast_hour)), len(files) - 1)]
+    dataset = xr.open_dataset(path, engine="netcdf4")
+    try:
+        def field(name: str) -> Any:
+            if name not in dataset:
+                raise RuntimeError(f"O wrfout publicado nÃ£o contÃ©m {name}.")
+            item = dataset[name]
+            return item.isel(Time=0).to_numpy() if "Time" in item.dims else item.to_numpy()
+        lats, lons = field("XLAT"), field("XLONG")
+        south, north, west, east = float(np.nanmin(lats)), float(np.nanmax(lats)), float(np.nanmin(lons)), float(np.nanmax(lons))
+        if lat < south - .05 or lat > north + .05 or lon < west - .05 or lon > east + .05:
+            raise WRFDomainError(f"Este ponto estÃ¡ fora do domÃ­nio WRF publicado ({south:.2f}..{north:.2f} lat / {west:.2f}..{east:.2f} lon). Use ECMWF fora da Ã¡rea WRF.")
+        distance = (lats - lat) ** 2 + ((lons - lon) * math.cos(math.radians(lat))) ** 2
+        row, col = np.unravel_index(int(np.nanargmin(distance)), distance.shape)
+        pressure = (field("P") + field("PB"))[:, row, col] / 100.0
+        theta = field("T")[:, row, col] + 300.0
+        temp = theta * np.power(np.maximum(pressure, 1.0) / 1000.0, .2854) - 273.15
+        qv = np.maximum(field("QVAPOR")[:, row, col], 1e-9)
+        vapor = qv * pressure / (.622 + qv)
+        log_ratio = np.log(np.maximum(vapor, 1e-6) / 6.112)
+        dew = 243.5 * log_ratio / (17.67 - log_ratio)
+        u, v = field("U"), field("V")
+        u = .5 * (u[:, row, col] + u[:, row, col + 1])
+        v = .5 * (v[:, row, col] + v[:, row + 1, col])
+        phi = field("PH") + field("PHB")
+        height = .5 * (phi[:-1, row, col] + phi[1:, row, col]) / 9.80665
+        terrain = float(field("HGT")[row, col])
+        points = []
+        for level in range(len(pressure)):
+            values = (pressure[level], temp[level], dew[level], u[level], v[level], height[level])
+            if all(np.isfinite(value) for value in values) and 100 <= pressure[level] <= 1050:
+                points.append({"pressure": float(pressure[level]), "temperature": float(temp[level]), "dewpoint": float(min(temp[level], dew[level])), "u": float(u[level] * 1.943844), "v": float(v[level] * 1.943844), "height": float(height[level])})
+        points.sort(key=lambda point: point["pressure"], reverse=True)
+        if len(points) < 8 or points[-1]["pressure"] > 300:
+            raise RuntimeError("O wrfout publicado nÃ£o possui nÃ­veis suficientes para este perfil.")
+        def series(key: str, digits: int = 1) -> list[float]: return [round(point[key], digits) for point in points]
+        profile = {"pressure": series("pressure"), "height": series("height", 0), "height_agl": [round(max(0., point["height"] - terrain), 0) for point in points], "temperature": series("temperature"), "dewpoint": series("dewpoint"), "u": series("u"), "v": series("v"), "wind_speed": [round(math.hypot(point["u"], point["v"]), 1) for point in points], "wind_direction": [round(wind_direction_deg(point["u"], point["v"])) for point in points], "omega": [None] * len(points)}
+        stamp = re.search(r"wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[-:](\d{2})[-:](\d{2})", path.name)
+        valid = f"{stamp.group(1)}T{stamp.group(2)}:{stamp.group(3)}:{stamp.group(4)}Z" if stamp else path.name
+        empty = {"direction": None, "speed": None, "u": None, "v": None}
+        return {"model": f"{model_key.upper()} â†’ WRF", "model_id": f"wrf_{model_key}", "latitude": lat, "longitude": lon, "grid_latitude": round(float(lats[row, col]), 3), "grid_longitude": round(float(lons[row, col]), 3), "run": None, "run_cycle": "WRF", "forecast_hour": forecast_hour, "valid": valid, "surface_elevation_m": round(terrain), "surface_pressure_hpa": profile["pressure"][0], "profile": profile, "parcels": {}, "thermodynamics": {}, "kinematics": {"storm_motion_name": "WRF", "bunkers_rm": empty, "bunkers_lm": empty, "corfidi_up": empty, "corfidi_down": empty}, "severe": {}, "winter": {}, "analogs": {"hail": {}, "supercell": {}, "database_scope": "Perfil vertical extraÃ­do diretamente do wrfout publicado."}, "source": f"WRF {model_key.upper()} Â· perfil vertical nativo do wrfout", "attribution": "Sideral WRF", "cache": False}
+    finally:
+        dataset.close()
+
+
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, directory=str(BASE_DIR), **kwargs)
+
+    def guess_type(self, path: str) -> str:
+        content_type = super().guess_type(path)
+        lower_path = path.lower()
+        if lower_path.endswith(".html") or lower_path.endswith(".css") or lower_path.endswith(".js"):
+            media_type = content_type.split(";", 1)[0]
+            return f"{media_type}; charset=utf-8"
+        return content_type
+
+    def log_message(self, format: str, *args: Any) -> None:
+        print(f"[LOG] {format % args}")
+
+    def end_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
+    def do_OPTIONS(self) -> None:
+        if urlparse(self.path).path.startswith('/api/radar/v3/'):
+            from backend.radar_v3.integration import dispatch
+            dispatch(self); return
+        self.send_response(204)
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        parsed_path = urlparse(self.path).path
+        if parsed_path.startswith('/api/radar/v3/'):
+            from backend.radar_v3.integration import dispatch
+            dispatch(self); return
+        if parsed_path.startswith("/api/models") or parsed_path.startswith("/api/multimodel"):
+            self.handle_models_api(parsed_path, parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/ipmet/meta": self.handle_ipmet_meta(); return
+        if parsed_path == "/api/ipmet/wms": self.handle_ipmet_wms(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/rainviewer/meta": self.handle_public_json(RAINVIEWER_META_URL, "RainViewer"); return
+        if parsed_path == "/api/redemet/radar": self.handle_redemet_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/radar-v2/image": self.handle_radar_v2_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/radar": self.handle_cemaden_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/radar/imagem": self.handle_cemaden_radar_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/pluviometros": self.handle_cemaden_pluviometers(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/hidrologia": self.handle_cemaden_hydrology(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/estacao/detalhe": self.handle_cemaden_station_detail(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cemaden/hidrologia/imagem": self.handle_cemaden_hydrology_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/redemet/satelite": self.handle_redemet_satellite(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/redemet/satelite/imagem": self.handle_redemet_satellite_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/cptec/satelite": self.handle_cptec_satellite(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/goes19/catalog": self.handle_goes19_catalog(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/products": self.handle_satellite_products(); return
+        if parsed_path == "/api/satellite/latest": self.handle_satellite_latest(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/frames": self.handle_satellite_frames(parse_qs(urlparse(self.path).query)); return
+        if parsed_path in {"/api/satellite/image", "/api/satellite/raw-grid"}: 
+            with goes19_processing_lock: self.handle_goes19_grid(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/value": self.handle_satellite_value(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/satellite/status": self.handle_satellite_status(); return
+        if parsed_path in {"/api/goes19/grid", "/api/goes19/file"}:
+            with goes19_processing_lock:
+                query = parse_qs(urlparse(self.path).query)
+                if parsed_path.endswith('/grid'): self.handle_goes19_grid(query)
+                else: self.handle_goes19_file(query)
+            return
+        if parsed_path.startswith("/api/cptec/satelite/tile/"): self.handle_cptec_satellite_tile(parsed_path); return
+        if parsed_path == "/api/cptec/satelite/imagem": self.handle_cptec_satellite_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/glm/lightning": self.handle_glm_lightning(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/glm/image": self.handle_glm_image(); return
+        if parsed_path == "/api/redemet/stsc": self.handle_redemet_stsc(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/previsao/geocode": self.handle_forecast_geocode(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/previsao": self.handle_forecast(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/redemet/estacoes": self.handle_redemet_stations(parse_qs(urlparse(self.path).query)); return
+        if parsed_path.startswith("/api/redemet/estacao/"):
+            icao_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
+            self.handle_redemet_station(icao_code); return
+        if parsed_path.startswith("/api/rainviewer/tile/"): self.handle_rainviewer_tile(parsed_path); return
+        if parsed_path == "/api/inea/frames": self.handle_inea_frames(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/inea/image": self.handle_inea_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/simepar/meta": self.handle_simepar_meta(); return
+        if parsed_path == "/api/simepar/image": self.handle_simepar_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/regional/radar": self.handle_regional_radar(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/regional/radar/image": self.handle_regional_radar_image(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/xweather/lightning": self.handle_xweather_lightning(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/health": self.send_json(200, {"status": "ok", "service": "sideral", "domain": "sul4km"}); return
+        if parsed_path == "/api/inmet/estacoes": self.handle_inmet_stations(); return
+        if parsed_path.startswith("/api/inmet/historico/"):
+            station_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
+            self.handle_inmet_history(station_code); return
+        if parsed_path.startswith("/api/inmet/observacao/"):
+            station_code = unquote(parsed_path.rsplit("/", 1)[-1]).upper().strip()
+            self.handle_inmet_observation(station_code); return
+        if parsed_path == "/api/sinotica/meta": self.handle_synoptic_meta(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
+        if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
+        
+        if parsed_path == "/api/wrf/sounding":
+
+        
+            self.handle_wrf_sounding(parse_qs(urlparse(self.path).query)); return
+
+        
+        # --- NOVO ENDPOINT SKEW-T ---
+        if parsed_path == "/api/sounding":
+            self.handle_sounding(parse_qs(urlparse(self.path).query)); return
+
+        if parsed_path == "/mapa_estacoes_inmet_com_dados.html":
+            self.path = "/mapa_estacoes_inmet_corrigido.html"
+        super().do_GET()
+
+    def handle_radar_v2_image(self, query: dict[str, list[str]]) -> None:
+        """Proxy CORS restrito para imagens usadas na correlação do BrazilScope V2."""
+        image_url = query.get("url", [""])[0].strip()
+        try:
+            parsed = urlparse(image_url)
+            hostname = (parsed.hostname or "").lower()
+            port = parsed.port
+        except ValueError:
+            self.send_json(400, {"error": "Endereço de imagem inválido."}); return
+        if (
+            parsed.scheme != "https"
+            or hostname not in RADAR_V2_IMAGE_HOSTS
+            or parsed.username
+            or parsed.password
+            or port not in (None, 443)
+            or parsed.fragment
+        ):
+            self.send_json(400, {"error": "Endereço de imagem não permitido."}); return
+        try:
+            with requests.get(
+                image_url,
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/png,image/jpeg,image/webp"},
+                timeout=30,
+                stream=True,
+                allow_redirects=True,
+            ) as response:
+                response.raise_for_status()
+                final = urlparse(response.url)
+                if final.scheme != "https" or (final.hostname or "").lower() not in RADAR_V2_IMAGE_HOSTS:
+                    self.send_json(502, {"error": "A origem da imagem redirecionou para um endereço não permitido."}); return
+                content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                if not content_type.startswith("image/"):
+                    self.send_json(502, {"error": "A origem não retornou uma imagem de radar."}); return
+                announced = int(response.headers.get("Content-Length", "0") or 0)
+                if announced > RADAR_V2_IMAGE_LIMIT:
+                    self.send_json(413, {"error": "A imagem excede o limite permitido."}); return
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_content(64 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > RADAR_V2_IMAGE_LIMIT:
+                        self.send_json(413, {"error": "A imagem excede o limite permitido."}); return
+                    chunks.append(chunk)
+                body = b"".join(chunks)
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=300, stale-if-error=86400")
+            self.end_headers()
+            self.wfile.write(body)
+        except (requests.RequestException, ValueError) as exc:
+            self.send_json(502, {"error": "Imagem de radar temporariamente indisponível.", "details": str(exc)})
+
+    def handle_models_api(self, path: str, query: dict[str, list[str]]) -> None:
+        response = MODELS_API.dispatch(path, query)
+        self.send_response(response.status)
+        self.send_header("Content-Type", response.content_type)
+        self.send_header("Content-Length", str(len(response.body)))
+        for name, value in response.headers.items():
+            self.send_header(name, value)
+        try:
+            self.end_headers()
+            self.wfile.write(response.body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    def handle_wrf_sounding(self, query: dict[str, list[str]]) -> None:
+        try:
+            lat=float(query.get("lat",["-25.43"])[0]); lon=float(query.get("lon",["-49.27"])[0]); model=str(query.get("model",["gfs"])[0]).lower(); fh=int(query.get("fh",["0"])[0])
+            if not (-90<=lat<=90 and -180<=lon<=180 and 0<=fh<=240): self.send_json(400,{"error":"Parâmetros WRF inválidos."}); return
+            key=(round(lat,3),round(lon,3),model,fh,"wrf-native-profile-v1"); cached=sounding_cache.get(key)
+            if cached and time.monotonic()-float(cached.get("saved_at",0))<SOUNDING_CACHE_SECONDS:
+                result=dict(cached["data"]); result["cache"]=True; self.send_json(200,result); return
+            result=_wrf_sounding_payload(lat,lon,model,fh); sounding_cache[key]={"saved_at":time.monotonic(),"data":result}; self.send_json(200,result)
+        except WRFDomainError as exc: self.send_json(422,{"error":str(exc),"code":"WRF_OUTSIDE_DOMAIN"})
+        except (ValueError,FileNotFoundError,RuntimeError) as exc: self.send_json(503,{"error":_sanitize_server_error(exc),"code":"WRF_SOUNDING_UNAVAILABLE"})
+        except Exception as exc: _log_sounding_error("WRF profile",exc); self.send_json(500,{"error":"Não foi possível abrir o perfil WRF agora.","code":"WRF_SOUNDING_FAILED"})
+
+    def handle_sounding(self, query: dict[str, list[str]]) -> None:
+        """Sondagem IFS 0.25° via Open-Meteo, processada pelo núcleo do SHARPpy."""
+        try:
+            lat = float(query.get("lat", ["-25.43"])[0])
+            lon = float(query.get("lon", ["-49.27"])[0])
+            run_requested = query.get("run", ["latest"])[0].lower().strip()
+            fh = int(query.get("fh", ["0"])[0])
+
+            if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+                self.send_json(400, {"error": "Latitude/longitude inválidas.", "code": "BAD_COORDINATES"}); return
+            if run_requested not in {"latest", "00", "06", "12", "18"}:
+                self.send_json(400, {"error": "Run inválida. Use latest, 00, 06, 12 ou 18.", "code": "BAD_RUN"}); return
+            if fh < 0 or fh > 144 or fh % 3 != 0:
+                self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas.", "code": "BAD_FORECAST_HOUR"}); return
+
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-hres9km-sfc-ifs025-pl-sharppy-sh-v3")
+            cached = sounding_cache.get(cache_key)
+            if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
+                payload = dict(cached["data"])
+                payload["cache"] = True
+                self.send_json(200, payload); return
+
+            modules = _ecmwf_runtime_modules()
+
+            payload = None
+            last_error: Exception | None = None
+            for run_dt in _ecmwf_run_candidates(run_requested):
+                try:
+                    payload = _ecmwf_build_sounding_payload(
+                        lat, lon, run_dt, fh, modules
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    _log_sounding_error(f"falha na rodada {run_dt:%Y%m%d_%H} F{fh:03d}", exc)
+                    if run_requested != "latest":
+                        break
+
+            if payload is None:
+                if last_error is not None:
+                    _log_sounding_error("nenhuma rodada utilizável", last_error)
+                self.send_json(
+                    502,
+                    {
+                        "error": "Não foi possível obter o perfil ECMWF IFS 0.25° agora. Tente outra rodada ou novamente em alguns minutos.",
+                        "code": "ECMWF_RETRIEVAL_FAILED",
+                    },
+                )
+                return
+
+            sounding_cache[cache_key] = {"saved_at": time.monotonic(), "data": payload}
+            self.send_json(200, payload)
+
+        except RuntimeError as exc:
+            _log_sounding_error("erro de dependência/dados", exc)
+            public_message = "Não foi possível preparar os dados meteorológicos do Skew-T."
+            if "Dependências do Skew-T" in str(exc):
+                public_message = "O Skew-T está temporariamente indisponível."
+            self.send_json(502, {"error": public_message, "code": "SOUNDING_BACKEND_ERROR"})
+        except Exception as exc:
+            _log_sounding_error("erro interno", exc)
+            self.send_json(
+                500,
+                {
+                    "error": "Erro interno ao processar o perfil meteorológico.",
+                    "code": "SOUNDING_INTERNAL",
+                },
+            )
+
+    def handle_ipmet_meta(self) -> None:
+        try:
+            response = requests.get(IPMET_RADAR_PAGE, headers=IPMET_HEADERS, timeout=18)
+            response.raise_for_status()
+            utc_match = re.search(r"data_hora\s*=\s*['\"](\d{8}_\d{6})", response.text)
+            local_match = re.search(r"data_local\s*=\s*['\"]([^'\"]+)", response.text)
+            if not utc_match: raise ValueError("IPMet não publicou o horário da última varredura")
+            scan_utc = dt.datetime.strptime(utc_match.group(1), "%Y%m%d_%H%M%S").replace(tzinfo=dt.timezone.utc)
+            age_minutes = max(0, (dt.datetime.now(dt.timezone.utc) - scan_utc).total_seconds() / 60)
+            self.send_json(200, {"available": True, "provider": "IPMet/UNESP", "product": "PPI combinado (merged)", "scanTime": scan_utc.isoformat().replace("+00:00", "Z"), "localLabel": local_match.group(1) if local_match else None, "stale": age_minutes > 30, "ageMinutes": round(age_minutes, 1), "source": IPMET_RADAR_PAGE})
+        except Exception as exc: self.send_json(502, {"available": False, "error": "Falha ao consultar o radar oficial do IPMet.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_ipmet_wms(self, query: dict[str, list[str]]) -> None:
+        try:
+            bbox_text = query.get("bbox", [""])[0]
+            bbox = [float(value) for value in bbox_text.split(",")]
+            if len(bbox) != 4 or any(not math.isfinite(value) or abs(value) > 20037509 for value in bbox): raise ValueError("bbox Web Mercator inválido")
+            width = int(query.get("width", ["512"])[0])
+            height = int(query.get("height", ["512"])[0])
+            if width not in (256, 512, 1024) or height not in (256, 512, 1024): raise ValueError("dimensão de tile não permitida")
+            params = {"map": IPMET_MAP_FILE, "SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap", "LAYERS": "merged", "STYLES": "", "FORMAT": "image/png", "TRANSPARENT": "true", "SRS": "EPSG:900913", "BBOX": ",".join(f"{value:.4f}" for value in bbox), "WIDTH": str(width), "HEIGHT": str(height)}
+            response = requests.get(IPMET_WMS_URL, params=params, headers=IPMET_HEADERS, timeout=22)
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "")
+            if "image/" not in content_type.lower() or len(response.content) < 100: raise ValueError("IPMet não retornou uma imagem WMS válida")
+            body = response.content
+            self.send_response(200)
+            self.send_header("Content-Type", content_type.split(";", 1)[0])
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=90, stale-if-error=600")
+            self.end_headers()
+            self.wfile.write(body)
+        except (ValueError, TypeError) as exc: self.send_json(400, {"error": str(exc)})
+        except requests.RequestException as exc: self.send_json(502, {"error": "Radar IPMet temporariamente indisponível.", "details": str(exc)})
+
+    def handle_rainviewer_tile(self, parsed_path: str) -> None:
+        tile_path = parsed_path.removeprefix("/api/rainviewer/tile/")
+        parts = tile_path.split("/")
+        valid_id = len(parts) > 2 and bool(parts[2]) and all(char in "0123456789abcdefABCDEF" for char in parts[2])
+        valid_numbers = len(parts) == 9 and all(parts[index].isdigit() for index in (3, 4, 5, 6))
+        if len(parts) != 9 or parts[0] != "v2" or parts[1] != "radar" or not valid_id or not valid_numbers or parts[3] not in ("256", "512") or parts[7] != "2" or parts[8] != "1_1.png":
+            self.send_json(400, {"error": "Tile RainViewer inválido."}); return
+        upstream = f"https://tilecache.rainviewer.com/{tile_path}"
+        try:
+            response = requests.get(upstream, timeout=15)
+            response.raise_for_status()
+            body = response.content
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "public, max-age=120")
+            self.end_headers()
+            self.wfile.write(body)
+        except requests.RequestException as exc: self.send_json(502, {"error": "Falha ao baixar tile do RainViewer.", "details": str(exc)})
+
+    def handle_public_json(self, url: str, provider: str) -> None:
+        try:
+            response = requests.get(url, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=20)
+            response.raise_for_status()
+            self.send_json(200, response.json())
+        except Exception as exc: self.send_json(502, {"error": f"Falha ao consultar {provider}.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_forecast_geocode(self, query: dict[str, list[str]]) -> None:
+        if not OPENWEATHER_API_KEY:
+            self.send_json(503, {"error": "ServiÃ§o de previsÃ£o temporariamente indisponÃ­vel."}); return
+        city = query.get("q", [""])[0].strip()
+        if not city or len(city) > 120:
+            self.send_json(400, {"error": "Informe uma cidade vÃ¡lida."}); return
+        try:
+            response = requests.get(
+                f"{OPENWEATHER_API_URL}/geo/1.0/direct",
+                params={"q": city, "limit": "1", "appid": OPENWEATHER_API_KEY},
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                timeout=15,
+            )
+            response.raise_for_status()
+            self.send_json(200, response.json())
+        except (requests.RequestException, ValueError, json.JSONDecodeError):
+            self.send_json(502, {"error": "NÃ£o foi possÃ­vel localizar a cidade agora."})
+
+    def handle_forecast(self, query: dict[str, list[str]]) -> None:
+        if not OPENWEATHER_API_KEY:
+            self.send_json(503, {"error": "ServiÃ§o de previsÃ£o temporariamente indisponÃ­vel."}); return
+        try:
+            latitude = float(query.get("lat", [""])[0])
+            longitude = float(query.get("lon", [""])[0])
+            if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+                raise ValueError
+        except (TypeError, ValueError):
+            self.send_json(400, {"error": "Coordenadas invÃ¡lidas."}); return
+
+        params = {
+            "lat": str(latitude), "lon": str(longitude), "appid": OPENWEATHER_API_KEY,
+            "units": "metric", "lang": "pt_br",
+        }
+        try:
+            def fetch_weather(path: str) -> dict[str, Any]:
+                response = requests.get(
+                    f"{OPENWEATHER_API_URL}{path}", params=params,
+                    headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                    timeout=15,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict): raise ValueError("Resposta meteorolÃ³gica invÃ¡lida.")
+                return payload
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                current_future = executor.submit(fetch_weather, "/data/2.5/weather")
+                forecast_future = executor.submit(fetch_weather, "/data/2.5/forecast")
+                current = current_future.result()
+                forecast = forecast_future.result()
+            self.send_json(200, {"current": current, "forecast": forecast})
+        except (requests.RequestException, ValueError, json.JSONDecodeError):
+            self.send_json(502, {"error": "NÃ£o foi possÃ­vel atualizar a previsÃ£o agora."})
+
+    def handle_inea_frames(self, query: dict[str, list[str]]) -> None:
+        radar = query.get("radar", [""])[0].lower()
+        product = query.get("product", ["zh"])[0].lower()
+        if radar not in {"gua", "mac"} or product not in {"zh", "rr", "vel"}: self.send_json(400, {"error": "Radar ou produto INEA inválido."}); return
+        try:
+            response = requests.get(f"{INEA_RADAR_TOOL_URL}/frames.php", params={"type": "radar", "radar": radar, "product": product, "hours": 12, "max": 15}, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25, verify=False)
+            response.raise_for_status()
+            payload = response.json()
+            images = payload.get("images") if isinstance(payload, dict) else None
+            if not isinstance(images, list) or not images: raise ValueError("INEA não publicou quadros para este radar")
+            safe_images = [str(image).rsplit("/", 1)[-1] for image in images if re.fullmatch(r"[A-Za-z0-9_.-]+\.png", str(image).rsplit("/", 1)[-1])]
+            if not safe_images: raise ValueError("INEA retornou nomes de imagem inválidos")
+            labels = payload.get("labels", [])
+            self.send_json(200, {"radar": radar, "product": product, "images": safe_images, "labels": labels[-len(safe_images):], "step_min": payload.get("step_min")})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar os quadros oficiais do INEA.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_inea_image(self, query: dict[str, list[str]]) -> None:
+        radar = query.get("radar", [""])[0].lower()
+        product = query.get("product", ["zh"])[0].lower()
+        filename = query.get("file", [""])[0]
+        if radar not in {"gua", "mac"} or product not in {"zh", "rr", "vel"} or not re.fullmatch(r"[A-Za-z0-9_.-]+\.png", filename): self.send_json(400, {"error": "Imagem INEA inválida."}); return
+        try:
+            cache_key = f"{radar}/{product}/{filename}"
+            cached = inea_radar_image_cache.get(cache_key)
+            if cached is not None:
+                self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(cached))); self.end_headers(); self.wfile.write(cached); return
+            upstream = f"{INEA_RADAR_TOOL_URL}/img/img-radar-{radar}-{product}/{filename}"
+            response = requests.get(upstream, headers={"User-Agent": INMET_HEADERS["User-Agent"]}, timeout=22, verify=False)
+            response.raise_for_status()
+            if "image/png" not in response.headers.get("Content-Type", "").lower() or len(response.content) < 300: raise ValueError("INEA não retornou PNG válido")
+            body = png_black_to_transparent(response.content)
+            inea_radar_image_cache[cache_key] = body
+            while len(inea_radar_image_cache) > 64: inea_radar_image_cache.pop(next(iter(inea_radar_image_cache)))
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=300")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc: self.send_json(502, {"error": "Imagem do radar INEA indisponível.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_simepar_meta(self) -> None:
+        frames, errors = [], []
+        for frame_number in range(8, 0, -1):
+            try:
+                response = requests.get(f"{SIMEPAR_RADAR_URL}/product{frame_number}.jpeg", headers={"User-Agent": INMET_HEADERS["User-Agent"]}, stream=True, timeout=12)
+                response.raise_for_status()
+                modified = response.headers.get("Last-Modified")
+                date = parsedate_to_datetime(modified).astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z") if modified else None
+                frames.append({"frame": frame_number, "date": date})
+                response.close()
+            except Exception as exc: errors.append(f"product{frame_number}: {type(exc).__name__}: {exc}"); continue
+        if not frames: self.send_json(502, {"error": "SIMEPAR não publicou imagens acessíveis.", "details": errors[:2]}); return
+        self.send_json(200, {"frames": frames, "provider": "SIMEPAR", "note": "Mosaico oficial; Teixeira Soares está temporariamente desativado e a publicação atual é baseada em Cascavel."})
+
+    def handle_simepar_image(self, query: dict[str, list[str]]) -> None:
+        try:
+            frame_number = int(query.get("frame", ["1"])[0])
+            if frame_number not in range(1, 9): raise ValueError("Quadro SIMEPAR inválido")
+            response = requests.get(f"{SIMEPAR_RADAR_URL}/product{frame_number}.jpeg", timeout=22)
+            response.raise_for_status()
+            if "image/jpeg" not in response.headers.get("Content-Type", "").lower() or len(response.content) < 1000: raise ValueError("SIMEPAR não retornou JPEG válido")
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(response.content)))
+            self.send_header("Cache-Control", "public, max-age=180")
+            self.end_headers()
+            self.wfile.write(response.content)
+        except ValueError as exc: self.send_json(400, {"error": str(exc)})
+        except Exception as exc: self.send_json(502, {"error": "Imagem do SIMEPAR indisponível.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_regional_radar(self, query: dict[str, list[str]] | None = None) -> None:
+        """Catálogo de radares estaduais com publicação pública verificável."""
+        requested = str((query or {}).get("product", ["reflectivity"])[0]).strip().lower()
+        is_velocity = requested in {"ppi_v", "ppi-v", "velocity", "doppler", "velocidade"}
+        cache_key = "velocity" if is_velocity else "reflectivity"
+        cached = regional_radar_cache.get(cache_key)
+        if cached and time.monotonic() - float(cached.get("saved_at", 0)) < 90:
+            self.send_json(200, cached["payload"]); return
+
+        def sc_catalog(radar_id: str, config: dict[str, Any]) -> dict[str, Any] | None:
+            product_code = config.get("velocityProduct") if is_velocity else config.get("reflectivityProduct", config.get("product", "0"))
+            response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getUltimasImagens", params={"prod": product_code, "radar": config["code"], "data": ""}, headers=INMET_HEADERS, timeout=18, verify=False)
+            response.raise_for_status(); names = response.json()
+            safe = [str(name) for name in names if re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", str(name))]
+            if not safe: return None
+            frames = []
+            for filename in safe[-7:]:
+                try: observed = dt.datetime.strptime(filename[:14], "%Y%m%d%H%M%S").replace(tzinfo=dt.timezone.utc)
+                except ValueError: observed = dt.datetime.now(dt.timezone.utc)
+                frames.append({"key": filename, "date": observed.isoformat().replace("+00:00", "Z")})
+            return {"id": radar_id, "code": config["code"], "provider": "Defesa Civil SC", "name": config["name"], "latitude": config["latitude"], "longitude": config["longitude"], "rangeKm": config["rangeKm"], "bounds": config["bounds"], "kind": "sc", "product": product_code, "layer": "ppi_v" if is_velocity else "reflectivity", "frames": frames}
+
+        radars: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(sc_catalog, radar_id, config) for radar_id, config in REGIONAL_SC_RADARS.items()]
+            for future in as_completed(futures):
+                try:
+                    item = future.result()
+                    if item: radars.append(item)
+                except Exception: pass
+
+        try:
+            response = requests.get(REGIONAL_FUNCEME_URL, headers=INMET_HEADERS, timeout=20)
+            response.raise_for_status(); funceme = response.json()
+            if funceme.get("type") == "FeatureCollection" and funceme.get("features"):
+                modified = response.headers.get("Last-Modified")
+                try: observed = parsedate_to_datetime(modified).astimezone(dt.timezone.utc) if modified else dt.datetime.now(dt.timezone.utc)
+                except Exception: observed = dt.datetime.now(dt.timezone.utc)
+                config = REGIONAL_FUNCEME_RADAR
+                radars.append({**config, "code": config["id"], "provider": "FUNCEME", "kind": "funceme", "frames": [{"key": str(int(observed.timestamp())), "date": observed.isoformat().replace("+00:00", "Z")}]})
+        except Exception: pass
+
+        try:
+            response = requests.head(f"{REGIONAL_RS_RADAR_URL}/radar_poa_1.png", headers=INMET_HEADERS, timeout=15)
+            response.raise_for_status(); modified = response.headers.get("Last-Modified")
+            try: newest = parsedate_to_datetime(modified).astimezone(dt.timezone.utc) if modified else dt.datetime.now(dt.timezone.utc)
+            except Exception: newest = dt.datetime.now(dt.timezone.utc)
+            frames = [{"key": str(index), "date": (newest - dt.timedelta(minutes=(index - 1) * 5)).isoformat().replace("+00:00", "Z")} for index in range(24, 0, -1)]
+            config = REGIONAL_RS_RADAR
+            radars.append({**config, "code": config["id"], "provider": "Defesa Civil RS", "kind": "rs", "frames": frames})
+        except Exception: pass
+
+        if not radars:
+            self.send_json(502, {"error": "Os radares regionais não publicaram imagens acessíveis agora."}); return
+        radars.sort(key=lambda item: item["name"])
+        payload = {"status": True, "provider": "Redes estaduais", "radars": radars, "count": len(radars), "layer": "ppi_v" if is_velocity else "reflectivity", "requestedProduct": requested, "unavailableNetworks": ["CENSIPAM/SIPAM", "Alerta Rio", "SAISP", "USP/IAG", "SIMGE/IGAM", "APAC"]}
+        regional_radar_cache[cache_key] = {"saved_at": time.monotonic(), "payload": payload}
+        self.send_json(200, payload)
+
+    def handle_regional_radar_image(self, query: dict[str, list[str]]) -> None:
+        provider = query.get("provider", [""])[0].lower()
+        try:
+            clean_rs = False
+            rs_frame_key = ""
+            if provider == "sc":
+                radar_id = query.get("radar", [""])[0]; filename = query.get("file", [""])[0]; requested = str(query.get("product", ["reflectivity"])[0]).strip().lower(); is_velocity = requested in {"ppi_v", "ppi-v", "velocity", "doppler", "velocidade"}; config = REGIONAL_SC_RADARS.get(radar_id)
+                if not config or not re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", filename): raise ValueError("Imagem SC inválida")
+                product_code = config.get("velocityProduct") if is_velocity else config.get("reflectivityProduct", config.get("product", "0"))
+                response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getImagem", params={"prod": product_code, "radar": config["code"], "file": filename}, headers=INMET_HEADERS, timeout=25, verify=False)
+            elif provider == "rs":
+                frame = int(query.get("frame", ["0"])[0])
+                if frame not in range(1, 25): raise ValueError("Quadro RS inválido")
+                response = requests.get(f"{REGIONAL_RS_RADAR_URL}/radar_poa_{frame}.png", headers=INMET_HEADERS, timeout=25)
+                clean_rs = True
+                rs_frame_key = str(frame)
+            elif provider == "funceme":
+                response = requests.get(REGIONAL_FUNCEME_URL, headers=INMET_HEADERS, timeout=25)
+                response.raise_for_status(); data = response.json()
+                from PIL import Image, ImageDraw
+                config = REGIONAL_FUNCEME_RADAR; west, south, east, north = config["bounds"]
+                image = Image.new("RGBA", (1000, 1000), (0, 0, 0, 0)); draw = ImageDraw.Draw(image)
+                for feature in data.get("features", []):
+                    geometry = feature.get("geometry") or {}; coordinates = geometry.get("coordinates") or []
+                    rings = coordinates if geometry.get("type") == "Polygon" else [ring for polygon in coordinates for ring in polygon] if geometry.get("type") == "MultiPolygon" else []
+                    color = str((feature.get("properties") or {}).get("fill") or "#00a8ff")
+                    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color): continue
+                    for ring in rings:
+                        points = [((float(lon) - west) / (east - west) * 999, (north - float(lat)) / (north - south) * 999) for lon, lat, *_ in ring]
+                        if len(points) >= 3: draw.polygon(points, fill=color + "FF")
+                output = io.BytesIO(); image.save(output, format="PNG", optimize=True); body = output.getvalue()
+                self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=60, stale-if-error=600"); self.end_headers(); self.wfile.write(body); return
+            else: raise ValueError("Fonte regional inválida")
+            response.raise_for_status(); body = response.content
+            if clean_rs:
+                now = time.monotonic()
+                with regional_rs_image_cache_lock:
+                    cached = regional_rs_image_cache.get(rs_frame_key)
+                if cached and now - cached[0] < 180:
+                    body = cached[1]
+                else:
+                    body = clean_rs_radar_png(body)
+                    with regional_rs_image_cache_lock:
+                        regional_rs_image_cache[rs_frame_key] = (now, body)
+            if "image/png" not in response.headers.get("Content-Type", "").lower() or len(body) < 500: raise ValueError("A fonte não retornou PNG válido")
+            self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=90, stale-if-error=600"); self.end_headers(); self.wfile.write(body)
+        except Exception as exc:
+            self.send_json(502, {"error": "Imagem regional indisponível.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_redemet_radar(self, query: dict[str, list[str]]) -> None:
+        product = query.get("product", ["03km"])[0].lower()
+        if product not in REDEMET_PRODUCTS: self.send_json(400, {"error": "Produto REDEMET inválido."}); return
+        try: anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
+        except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
+        self.handle_redemet_json(f"/produtos/radar/{product}", {"anima": str(anima)}, "REDEMET")
+
+    def handle_cemaden_radar(self, query: dict[str, list[str]]) -> None:
+        """Catálogo público de CAPPI 3 km exibido pelo Mapa Interativo do CEMADEN."""
+        if query.get("product", ["cappi3"])[0].lower() != "cappi3":
+            self.send_json(400, {"error": "O portal público do CEMADEN disponibiliza somente CAPPI 3 km nesta rota."}); return
+
+        def fetch_radar(radar_id: str, config: dict[str, Any]) -> dict[str, Any] | None:
+            response = requests.get(CEMADEN_LAYER_URL.format(layer_id=config["layer_id"]), headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=18)
+            response.raise_for_status(); payload = response.json()
+            scan_ms = int(payload.get("imageDateTime") or 0); layer = str(payload.get("name") or "")
+            if not scan_ms or not re.fullmatch(r"cappi_[a-z0-9_-]+_3_0", layer): return None
+            scan = dt.datetime.fromtimestamp(scan_ms / 1000, tz=dt.timezone.utc)
+            age_minutes = (dt.datetime.now(dt.timezone.utc) - scan).total_seconds() / 60
+            if age_minutes > 360: return None
+            return {"id": radar_id, "code": radar_id, "provider": "CEMADEN", "name": config["name"], "latitude": config["latitude"], "longitude": config["longitude"], "rangeKm": 250, "bounds": config["bounds"], "layer": layer, "scanTime": scan.isoformat().replace("+00:00", "Z"), "ageMinutes": round(max(0, age_minutes), 1)}
+
+        radars: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(fetch_radar, radar_id, config) for radar_id, config in CEMADEN_RADARS.items()]
+            for future in as_completed(futures):
+                try:
+                    radar = future.result()
+                    if radar: radars.append(radar)
+                except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError):
+                    continue
+        if not radars:
+            self.send_json(502, {"error": "O CEMADEN não publicou radares recentes acessíveis no momento."}); return
+        radars.sort(key=lambda item: item["name"])
+        newest = max(dt.datetime.fromisoformat(item["scanTime"].replace("Z", "+00:00")) for item in radars)
+        frames = [{"index": index, "date": (newest - dt.timedelta(minutes=(4 - index) * 10)).isoformat().replace("+00:00", "Z")} for index in range(5)]
+        self.send_json(200, {"status": True, "provider": "CEMADEN / MCTI", "product": "CAPPI 3 km", "radars": radars, "frames": frames, "unavailableRadars": len(CEMADEN_RADARS) - len(radars), "officialUrl": "https://mapainterativo.cemaden.gov.br/"})
+
+    def handle_cemaden_pluviometers(self, query: dict[str, list[str]]) -> None:
+        """Pluviômetros automáticos e acumulado bruto de 24 horas do CEMADEN."""
+        refresh = query.get("refresh", ["0"])[0] == "1"
+        cached = cemaden_pluviometer_cache.get("data")
+        age = time.monotonic() - float(cemaden_pluviometer_cache.get("saved_at", 0.0))
+        if cached is not None and not refresh and age < CEMADEN_PLUVIOMETER_CACHE_SECONDS:
+            payload = dict(cached); payload["cache"] = True; self.send_json(200, payload); return
+        try:
+            response = requests.get(CEMADEN_PLUVIOMETERS_URL, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=35)
+            response.raise_for_status()
+            source = response.content.decode("utf-8")
+            match = re.fullmatch(r"\s*estacoes\((.*)\)\s*;?\s*", source, re.DOTALL)
+            if not match: raise ValueError("Resposta pluviométrica inválida.")
+            raw = json.loads(match.group(1))
+            block = raw[0] if isinstance(raw, list) and raw and isinstance(raw[0], dict) else {}
+            stations: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in block.get("estacao", []):
+                if not isinstance(item, dict) or int(item.get("idtipoestacao") or 0) != 1 or int(item.get("status") or 0) != 0: continue
+                try: latitude = float(item.get("latitude")); longitude = float(item.get("longitude"))
+                except (TypeError, ValueError): continue
+                if not (-35.5 <= latitude <= 6.5 and -75 <= longitude <= -32): continue
+                code = str(item.get("codestacao") or item.get("idestacao") or "").strip()
+                if not code or code in seen: continue
+                seen.add(code)
+                accumulated = item.get("acumulado")
+                try: accumulated = round(max(0.0, float(accumulated)), 2) if accumulated is not None else None
+                except (TypeError, ValueError): accumulated = None
+                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "Pluviômetro CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "accumulated24h": accumulated})
+            if not stations: raise ValueError("O catálogo não contém pluviômetros válidos.")
+            stations.sort(key=lambda item: (item["uf"], item["city"], item["name"], item["code"]))
+            counts = {"dry": 0, "light": 0, "moderate": 0, "heavy": 0, "missing": 0}
+            for station in stations:
+                value = station["accumulated24h"]
+                bucket = "missing" if value is None else "dry" if value == 0 else "light" if value < 10 else "moderate" if value < 30 else "heavy"
+                counts[bucket] += 1; station["category"] = bucket
+            updated = str(block.get("atualizado") or "")
+            payload = {"status": True, "provider": "CEMADEN / MCTI", "periodHours": 24, "updated": updated, "count": len(stations), "counts": counts, "stations": stations, "officialUrl": "https://mapainterativo.cemaden.gov.br/"}
+            cemaden_pluviometer_cache["saved_at"] = time.monotonic(); cemaden_pluviometer_cache["data"] = payload
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            if cached is not None:
+                payload = dict(cached); payload["cache"] = True; payload["stale"] = True; self.send_json(200, payload); return
+            self.send_json(502, {"error": "Os pluviômetros do CEMADEN estão temporariamente indisponíveis.", "details": str(exc)})
+
+    def handle_cemaden_hydrology(self, query: dict[str, list[str]]) -> None:
+        """Estações hidrológicas públicas do CEMADEN, sem repassar a origem ao navegador."""
+        refresh = query.get("refresh", ["0"])[0] == "1"
+        cached = cemaden_hydrological_cache.get("data")
+        age = time.monotonic() - float(cemaden_hydrological_cache.get("saved_at", 0.0))
+        if cached is not None and not refresh and age < CEMADEN_PLUVIOMETER_CACHE_SECONDS:
+            payload = dict(cached); payload["cache"] = True; self.send_json(200, payload); return
+        try:
+            response = requests.get(CEMADEN_HYDROLOGICAL_URL, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=35)
+            response.raise_for_status()
+            source = response.content.decode("utf-8")
+            match = re.fullmatch(r"\s*estacoes\((.*)\)\s*;?\s*", source, re.DOTALL)
+            if not match: raise ValueError("Resposta hidrológica inválida.")
+            raw = json.loads(match.group(1))
+            block = raw[0] if isinstance(raw, list) and raw and isinstance(raw[0], dict) else {}
+            stations: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in block.get("estacao", []):
+                if not isinstance(item, dict) or int(item.get("idtipoestacao") or 0) != 3 or int(item.get("status") or 0) != 0: continue
+                try: latitude = float(item.get("latitude")); longitude = float(item.get("longitude"))
+                except (TypeError, ValueError): continue
+                if not (-35.5 <= latitude <= 6.5 and -75 <= longitude <= -32): continue
+                code = str(item.get("codestacao") or item.get("idestacao") or "").strip()
+                if not code or code in seen: continue
+                seen.add(code)
+                def reading(name: str) -> float | None:
+                    value = item.get(name)
+                    try: return round(float(value), 3) if value is not None else None
+                    except (TypeError, ValueError): return None
+                raw_level = reading("nivel")
+                offset = reading("offset")
+                level = round(max(0.0, offset - raw_level), 3) if raw_level is not None and offset is not None and offset > 0 and 0 < raw_level < 35 else None
+                attention = reading("cotaatencao")
+                alert = reading("cotaalerta")
+                overflow = reading("cotatransbordamento")
+                accumulated = reading("acumulado")
+                valid_attention = attention is not None and attention > 0
+                valid_alert = alert is not None and alert > 0
+                valid_overflow = overflow is not None and overflow > 0
+                category = "missing" if level is None else "overflow" if valid_overflow and level >= overflow else "alert" if valid_alert and level >= alert else "attention" if valid_attention and level >= attention else "normal"
+                stations.append({"id": str(item.get("idestacao") or code), "code": code, "name": str(item.get("nomeestacao") or "Estação hidrológica CEMADEN").strip(), "city": str(item.get("cidade") or "").title(), "uf": str(item.get("uf") or "").upper(), "latitude": latitude, "longitude": longitude, "level": level, "accumulated24h": accumulated, "attentionLevel": attention if valid_attention else None, "alertLevel": alert if valid_alert else None, "overflowLevel": overflow if valid_overflow else None, "category": category})
+            if not stations: raise ValueError("O catálogo não contém estações hidrológicas válidas.")
+            stations.sort(key=lambda item: (item["uf"], item["city"], item["name"], item["code"]))
+            counts = {"normal": 0, "attention": 0, "alert": 0, "overflow": 0, "missing": 0}
+            for station in stations: counts[station["category"]] += 1
+            updated = str(block.get("atualizado") or "")
+            payload = {"status": True, "provider": "CEMADEN / MCTI", "updated": updated, "count": len(stations), "counts": counts, "stations": stations, "officialUrl": "https://mapainterativo.cemaden.gov.br/"}
+            cemaden_hydrological_cache["saved_at"] = time.monotonic(); cemaden_hydrological_cache["data"] = payload
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            if cached is not None:
+                payload = dict(cached); payload["cache"] = True; payload["stale"] = True; self.send_json(200, payload); return
+            self.send_json(502, {"error": "As estações hidrológicas do CEMADEN estão temporariamente indisponíveis.", "details": str(exc)})
+
+    def handle_cemaden_station_detail(self, query: dict[str, list[str]]) -> None:
+        """Serie horaria oficial; nivel e fotografias so existem nas estacoes hidrologicas."""
+        station_id = query.get("id", [""])[0].strip()
+        station_type = query.get("type", ["hydro"])[0].lower().strip()
+        try:
+            period = int(query.get("period", ["24"])[0])
+            image_count = int(query.get("images", ["5"])[0])
+        except ValueError:
+            self.send_json(400, {"error": "Periodo invalido."}); return
+        allowed_periods = {1, 3, 6, 12, 18, 24, 36, 48, 60, 72, 84, 96}
+        if not re.fullmatch(r"\d{1,12}", station_id) or period not in allowed_periods or image_count not in {5, 10, 15, 20, 30, 50} or station_type not in {"hydro", "rain"}:
+            self.send_json(400, {"error": "Parametros da estacao invalidos."}); return
+        key = f"{station_type}:{station_id}:{period}:{image_count}"
+        cached = cemaden_station_detail_cache.get(key)
+        if cached and time.monotonic() - float(cached.get("saved_at", 0)) < 50:
+            payload = dict(cached["payload"]); payload["cache"] = True; self.send_json(200, payload); return
+        try:
+            def fetch_resource(name: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+                response = requests.get(f"{CEMADEN_STATION_DETAIL_URL}/{name}", params=params, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25)
+                response.raise_for_status(); value = response.json()
+                return value if isinstance(value, list) else []
+
+            rain_rows = fetch_resource("AcumuladoResource.php", {"est": station_id, "pag": period})
+            if not rain_rows: raise ValueError("O CEMADEN nao retornou a serie pluviometrica.")
+            accumulated = 0.0; rainfall = []
+            for row in rain_rows:
+                try: hourly = max(0.0, float(row.get("valor") or 0))
+                except (TypeError, ValueError): hourly = 0.0
+                accumulated += hourly
+                rainfall.append({"time": str(row.get("datahora") or ""), "hourly": round(hourly, 3), "accumulated": round(accumulated, 3)})
+            first = rain_rows[0]
+            payload: dict[str, Any] = {"status": True, "provider": "CEMADEN / MCTI", "periodHours": period, "station": {"id": station_id, "code": first.get("codigo"), "name": first.get("estacao"), "city": first.get("cidade"), "uf": first.get("uf")}, "rainfall": rainfall, "levels": [], "images": []}
+            if station_type == "hydro":
+                level_rows = fetch_resource("MedidaResource.php", {"est": station_id, "sen": 20, "pag": period})
+                for row in level_rows:
+                    try:
+                        raw = float(row.get("valor")); offset = float(row.get("offset") or 0); level = round(max(0.0, offset - raw), 3)
+                    except (TypeError, ValueError): level = None
+                    payload["levels"].append({"time": str(row.get("datahora") or ""), "level": level})
+                image_rows = fetch_resource("ImagemResource.php", {"est": station_id, "pag": image_count})
+                for row in image_rows:
+                    source_path = str(row.get("path") or "").replace("\\/", "/")
+                    marker = "/sgrp/imghidro/"
+                    if marker not in source_path: continue
+                    relative = source_path.split(marker, 1)[1].lstrip("/")
+                    if not re.fullmatch(r"[A-Za-z0-9_./-]+\.jpe?g", relative, re.IGNORECASE): continue
+                    payload["images"].append({"time": str(row.get("datahora") or ""), "path": relative, "url": f"/api/cemaden/hidrologia/imagem?path={relative}"})
+            cemaden_station_detail_cache[key] = {"saved_at": time.monotonic(), "payload": payload}
+            while len(cemaden_station_detail_cache) > 160: cemaden_station_detail_cache.pop(next(iter(cemaden_station_detail_cache)))
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.send_json(502, {"error": "Nao foi possivel carregar o historico desta estacao.", "details": str(exc)})
+
+    def handle_cemaden_hydrology_image(self, query: dict[str, list[str]]) -> None:
+        relative = unquote(query.get("path", [""])[0]).lstrip("/")
+        if not re.fullmatch(r"[A-Za-z0-9_./-]+\.jpe?g", relative, re.IGNORECASE) or ".." in relative:
+            self.send_json(400, {"error": "Imagem hidrologica invalida."}); return
+        try:
+            response = requests.get(f"{CEMADEN_HYDRO_IMAGE_URL}/{relative}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/jpeg"}, timeout=25)
+            response.raise_for_status(); body = response.content
+            if not body.startswith(b"\xff\xd8") or len(body) < 1000: raise ValueError("O CEMADEN nao retornou JPEG valido.")
+            disposition = "attachment" if query.get("download", ["0"])[0] == "1" else "inline"
+            self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(body))); self.send_header("Content-Disposition", f'{disposition}; filename="{Path(relative).name}"'); self.send_header("Cache-Control", "public, max-age=3600, stale-if-error=86400"); self.end_headers(); self.wfile.write(body)
+        except (requests.RequestException, ValueError) as exc:
+            self.send_json(502, {"error": "Imagem hidrologica indisponivel.", "details": str(exc)})
+
+    def handle_cemaden_radar_image(self, query: dict[str, list[str]]) -> None:
+        radar_id = query.get("radar", [""])[0].lower()
+        try: frame = int(query.get("frame", ["0"])[0]); size = int(query.get("size", ["1024"])[0])
+        except ValueError: self.send_json(400, {"error": "Parâmetros de imagem CEMADEN inválidos."}); return
+        config = CEMADEN_RADARS.get(radar_id)
+        if not config or frame not in range(5) or size not in {512, 768, 1024, 1536}:
+            self.send_json(400, {"error": "Radar, quadro ou resolução CEMADEN inválidos."}); return
+        try:
+            metadata = requests.get(CEMADEN_LAYER_URL.format(layer_id=config["layer_id"]), headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=18)
+            metadata.raise_for_status(); payload = metadata.json(); current_layer = str(payload.get("name") or "")
+            if not re.fullmatch(r"cappi_[a-z0-9_-]+_3_0", current_layer): raise ValueError("Camada CEMADEN inválida")
+            layer = re.sub(r"_0$", f"_{frame}", current_layer); west, south, east, north = config["bounds"]
+            params = {"SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap", "LAYERS": f"cemaden_dev:{layer}", "STYLES": "", "FORMAT": "image/png", "TRANSPARENT": "true", "SRS": "EPSG:4326", "BBOX": f"{west},{south},{east},{north}", "WIDTH": str(size), "HEIGHT": str(size)}
+            response = requests.get(CEMADEN_WMS_URL, params=params, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/png"}, timeout=28)
+            response.raise_for_status(); body = response.content
+            if "image/png" not in response.headers.get("Content-Type", "").lower() or len(body) < 500: raise ValueError("WMS CEMADEN não retornou PNG válido")
+            self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=90, stale-if-error=900"); self.end_headers(); self.wfile.write(body)
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.send_json(502, {"error": "Imagem do radar CEMADEN indisponível.", "details": str(exc)})
+
+    @staticmethod
+    def _goes19_config(product: str) -> dict[str, Any]:
+        config = GOES19_CHANNELS.get(product)
+        if not config:
+            raise ValueError("Produto GOES-19 inválido.")
+        return config
+
+    @staticmethod
+    def _goes19_key_allowed(key: str, channel: int | None = None) -> bool:
+        match = re.fullmatch(
+            r"ABI-L2-CMIPF/(20\d{2})/(\d{3})/(\d{2})/"
+            r"OR_ABI-L2-CMIPF-M\dC(\d{2})_G19_s\d{14}_e\d{14}_c\d{14}\.nc",
+            key,
+        )
+        return bool(match and (channel is None or int(match.group(4)) == channel))
+
+    @staticmethod
+    def _goes19_time_from_key(key: str) -> dt.datetime:
+        match = re.search(r"_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})", key)
+        if not match:
+            raise ValueError("Horário ausente no arquivo GOES-19.")
+        year, day, hour, minute, second = map(int, match.groups())
+        return dt.datetime(year, 1, 1, tzinfo=dt.timezone.utc) + dt.timedelta(days=day - 1, hours=hour, minutes=minute, seconds=second)
+
+    def _goes19_catalog(self, product: str, limit: int) -> dict[str, Any]:
+        config = self._goes19_config(product)
+        cache_key = f"{product}:{limit}"
+        cached = goes19_catalog_cache["payload"].get(cache_key)
+        if cached and time.monotonic() - goes19_catalog_cache["saved_at"] < 90:
+            return cached
+        now = dt.datetime.now(dt.timezone.utc)
+        entries: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        channel = int(config["channel"])
+        for hours_back in range(0, 8):
+            instant = now - dt.timedelta(hours=hours_back)
+            day = instant.timetuple().tm_yday
+            prefix = f"ABI-L2-CMIPF/{instant.year}/{day:03d}/{instant.hour:02d}/OR_ABI-L2-CMIPF-M6C{channel:02d}_G19"
+            response = requests.get(
+                f"https://{GOES19_S3_HOST}/",
+                params={"list-type": "2", "prefix": prefix, "max-keys": "100"},
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/xml"},
+                timeout=25,
+            )
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+            for node in root.findall("{*}Contents"):
+                key = (node.findtext("{*}Key") or "").strip()
+                if key in seen or not self._goes19_key_allowed(key, channel):
+                    continue
+                seen.add(key)
+                observed = self._goes19_time_from_key(key)
+                entries.append({
+                    "key": key,
+                    "data": observed.isoformat().replace("+00:00", "Z"),
+                    "bytes": int(node.findtext("{*}Size") or 0),
+                    "original": f"https://{GOES19_S3_HOST}/{key}",
+                })
+            if len(entries) >= limit:
+                break
+        entries.sort(key=lambda item: item["data"])
+        entries = entries[-limit:]
+        payload = {
+            "status": True,
+            "provider": "NOAA/NODD — GOES-19 ABI",
+            "product": config["label"],
+            "instrument": "ABI",
+            "channel": channel,
+            "units": config["units"],
+            "nativeResolutionKm": config["native_km"],
+            "frames": entries,
+        }
+        goes19_catalog_cache["saved_at"] = time.monotonic()
+        goes19_catalog_cache["payload"][cache_key] = payload
+        return payload
+
+    def handle_goes19_catalog(self, query: dict[str, list[str]]) -> None:
+        try:
+            product = query.get("product", ["ir"])[0].lower()
+            limit = max(1, min(24, int(query.get("limit", ["10"])[0])))
+            self.send_json(200, self._goes19_catalog(product, limit))
+        except (ValueError, requests.RequestException, ET.ParseError) as exc:
+            self.send_json(502, {"error": "Não foi possível consultar os arquivos brutos GOES-19.", "details": str(exc)})
+
+    def handle_satellite_products(self) -> None:
+        self.send_json(200, {"satellite": "GOES-19", "instrument": "ABI", "provider": "NOAA/NODD", "products": [
+            {"id": "C13", "product": "ir", "label": "C13 — Clean Longwave IR", "wavelength_um": 10.3, "units": "K", "nativeResolutionKm": 2, "available": True},
+            {"id": "C02", "product": "vis", "label": "C02 — Red Visible", "wavelength_um": 0.64, "units": "reflectance", "nativeResolutionKm": 0.5, "available": True}
+        ], "note": "Os demais produtos serão habilitados após validação dos arquivos NetCDF reais."})
+
+    def _satellite_product_from_query(self, query: dict[str, list[str]]) -> str:
+        product = query.get("product", ["C13"])[0].lower()
+        return {"c13": "ir", "ir": "ir", "c02": "vis", "vis": "vis", "realcada": "ir"}.get(product, product)
+
+    def handle_satellite_latest(self, query: dict[str, list[str]]) -> None:
+        try:
+            product = self._satellite_product_from_query(query); frame = self._goes19_catalog(product, 1).get("frames", [None])[0]
+            if not frame: self.send_json(404, {"status": "unavailable", "error": "Nenhum scan GOES-19 disponível."}); return
+            stamp_text = frame.get("timestamp") or frame.get("data"); stamp = dt.datetime.fromisoformat(stamp_text.replace("Z", "+00:00")); age = max(0, int((dt.datetime.now(dt.timezone.utc) - stamp).total_seconds() // 60))
+            self.send_json(200, {"satellite": "GOES-19", "product": product.upper(), "scan_start": frame.get("scan_start") or stamp_text, "scan_end": frame.get("scan_end") or stamp_text, "timestamp": stamp_text, "age_minutes": age, "key": frame.get("key"), "image_url": f"/api/satellite/image?product={product}&key={quote(frame.get('key',''))}", "status": "ok"})
+        except (ValueError, requests.RequestException, ET.ParseError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível localizar o último scan GOES-19.", "details": str(exc)})
+
+    def handle_satellite_frames(self, query: dict[str, list[str]]) -> None:
+        try:
+            product = self._satellite_product_from_query(query); limit = max(1, min(72, int(query.get("limit", ["36"])[0]))); self.send_json(200, self._goes19_catalog(product, limit))
+        except (ValueError, requests.RequestException, ET.ParseError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível consultar a timeline GOES-19.", "details": str(exc)})
+
+    def handle_satellite_status(self) -> None:
+        try:
+            frame = self._goes19_catalog("ir", 1).get("frames", [None])[0]; cached = len(list(GOES19_RAW_CACHE_DIR.glob("*.nc"))) if GOES19_RAW_CACHE_DIR.exists() else 0
+            self.send_json(200, {"status": "ok" if frame else "degraded", "satellite": "GOES-19", "latest_scan": (frame.get("timestamp") or frame.get("data")) if frame else None, "products_available": 2, "cache": {"frames": cached}})
+        except Exception as exc: self.send_json(502, {"status": "error", "error": "Status GOES-19 indisponível.", "details": str(exc)})
+
+    def handle_satellite_value(self, query: dict[str, list[str]]) -> None:
+        try:
+            import numpy as np
+            from netCDF4 import Dataset
+            lat = float(query.get("lat", [""])[0]); lon = float(query.get("lon", [""])[0])
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180): raise ValueError("Coordenadas inválidas.")
+            product = self._satellite_product_from_query(query); frame = self._goes19_catalog(product, 1).get("frames", [None])[0]
+            if not frame: self.send_json(404, {"status": "unavailable"}); return
+            config = self._goes19_config(product); path = self._goes19_local_file(frame["key"])
+            with Dataset(path, "r") as dataset:
+                projection = dataset.variables["goes_imager_projection"]; height = float(projection.perspective_point_height) + float(projection.semi_major_axis); a = float(projection.semi_major_axis); b = float(projection.semi_minor_axis); lon0 = math.radians(float(projection.longitude_of_projection_origin)); e2 = (a*a-b*b)/(a*a)
+                latr = math.radians(lat); lonr = math.radians(lon); geoc = math.atan((b*b/a/a)*math.tan(latr)); radius = b/math.sqrt(1-e2*math.cos(geoc)**2); dl = lonr-lon0; sx = height-radius*math.cos(geoc)*math.cos(dl); sy = -radius*math.cos(geoc)*math.sin(dl); sz = radius*math.sin(geoc); visible = height*(height-sx) >= sy*sy+(a/b)**2*sz*sz+(height-sx)**2
+                if not visible: self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame.get("timestamp") or frame.get("data")}); return
+                x = math.asin(-sy/math.sqrt(sx*sx+sy*sy+sz*sz)); y = math.atan2(sz, sx); xs = np.asarray(dataset.variables["x"][:]); ys = np.asarray(dataset.variables["y"][:]); ix = int(round((x-xs[0])/(xs[-1]-xs[0])*(len(xs)-1))); iy = int(round((y-ys[0])/(ys[-1]-ys[0])*(len(ys)-1)))
+                if not (0 <= ix < len(xs) and 0 <= iy < len(ys)): self.send_json(200, {"status": "nodata", "lat": lat, "lon": lon, "timestamp": frame.get("timestamp") or frame.get("data")}); return
+                raw = dataset.variables["CMI"][iy, ix]; value = float(raw) * float(config["scale"]) + float(config["offset"])
+            self.send_json(200, {"status": "ok", "lat": lat, "lon": lon, "product": product.upper(), "value": value, "units": config["units"], "timestamp": frame.get("timestamp") or frame.get("data"), "source": "NOAA/NODD — GOES-19 ABI"})
+        except (ValueError, OSError, requests.RequestException, ImportError, IndexError) as exc: self.send_json(502, {"status": "error", "error": "Não foi possível amostrar o pixel GOES-19.", "details": str(exc)})
+
+    def _goes19_local_file(self, key: str) -> Path:
+        if not self._goes19_key_allowed(key):
+            raise ValueError("Arquivo GOES-19 inválido.")
+        GOES19_RAW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        target = GOES19_RAW_CACHE_DIR / Path(key).name
+        if target.exists() and target.stat().st_size > 1_000_000:
+            return target
+        with goes19_download_lock:
+            if target.exists() and target.stat().st_size > 1_000_000:
+                return target
+            temporary = target.with_suffix(".part")
+            response = requests.get(
+                f"https://{GOES19_S3_HOST}/{key}",
+                headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/x-netcdf"},
+                stream=True,
+                timeout=180,
+            )
+            response.raise_for_status()
+            expected = int(response.headers.get("Content-Length", "0") or 0)
+            if expected > 320 * 1024 * 1024:
+                raise ValueError("Arquivo GOES-19 excede o limite operacional.")
+            with temporary.open("wb") as output:
+                for chunk in response.iter_content(1024 * 1024):
+                    if chunk:
+                        output.write(chunk)
+            if temporary.stat().st_size < 1_000_000:
+                temporary.unlink(missing_ok=True)
+                raise ValueError("Arquivo GOES-19 incompleto.")
+            temporary.replace(target)
+            # O Render possui memória/disco limitados: mantenha apenas os
+            # scans recentes; as grades processadas ficam em cache separado.
+            files = sorted(GOES19_RAW_CACHE_DIR.glob("*.nc"), key=lambda path: path.stat().st_mtime, reverse=True)
+            retained = 0
+            for index, old in enumerate(files):
+                if old == target:
+                    retained += old.stat().st_size
+                    continue
+                if index >= 2 or retained + old.stat().st_size > 180 * 1024 * 1024:
+                    old.unlink(missing_ok=True)
+                else:
+                    retained += old.stat().st_size
+        return target
+
+    def handle_goes19_file(self, query: dict[str, list[str]]) -> None:
+        try:
+            key = unquote(query.get("key", [""])[0])
+            path = self._goes19_local_file(key)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-netcdf")
+            self.send_header("Content-Length", str(path.stat().st_size))
+            self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+            self.send_header("Cache-Control", "public, max-age=86400, immutable")
+            self.end_headers()
+            with path.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    self.wfile.write(chunk)
+        except (ValueError, OSError, requests.RequestException) as exc:
+            self.send_json(502, {"error": "Arquivo bruto GOES-19 indisponível.", "details": str(exc)})
+
+    def handle_goes19_grid(self, query: dict[str, list[str]]) -> None:
+        """Entrega valores físicos, não uma imagem. Formato: uint32 header + JSON + uint16 LE."""
+        try:
+            import numpy as np
+            from netCDF4 import Dataset
+
+            product = query.get("product", ["ir"])[0].lower()
+            config = self._goes19_config(product)
+            key = unquote(query.get("key", [""])[0])
+            if not self._goes19_key_allowed(key, int(config["channel"])):
+                raise ValueError("O canal do arquivo não corresponde ao produto.")
+            bbox_values = [float(value) for value in query.get("bbox", ["-100,-56,-25,15"])[0].split(",")]
+            if len(bbox_values) != 4:
+                raise ValueError("bbox inválido.")
+            west, south, east, north = bbox_values
+            if not (-180 <= west < east <= 180 and -85 <= south < north <= 85):
+                raise ValueError("bbox fora dos limites.")
+            # 2048 px cobre a resolução regional sem criar picos de RAM.
+            width = max(256, min(2048, int(query.get("width", ["1536"])[0])))
+            aspect = (north - south) / max(0.01, (east - west) * math.cos(math.radians((south + north) / 2)))
+            height = max(256, min(4096, int(round(width * aspect))))
+            GOES19_RAW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            cache_digest = hashlib.sha1(f"mercator-v2|{key}|{product}|{west},{south},{east},{north}|{width}x{height}".encode("utf-8")).hexdigest()
+            grid_cache = GOES19_RAW_CACHE_DIR / f"grid-{cache_digest}.bin"
+            if grid_cache.exists() and grid_cache.stat().st_size > 1024:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.sideral.raster+octet-stream")
+                self.send_header("Content-Length", str(grid_cache.stat().st_size))
+                self.send_header("Cache-Control", "public, max-age=86400, immutable")
+                self.end_headers()
+                with grid_cache.open("rb") as cached_grid:
+                    while chunk := cached_grid.read(1024 * 1024):
+                        self.wfile.write(chunk)
+                return
+            path = self._goes19_local_file(key)
+
+            with Dataset(path, "r") as dataset:
+                projection = dataset.variables["goes_imager_projection"]
+                satellite_height = float(projection.perspective_point_height) + float(projection.semi_major_axis)
+                semi_major = float(projection.semi_major_axis)
+                semi_minor = float(projection.semi_minor_axis)
+                longitude_origin = math.radians(float(projection.longitude_of_projection_origin))
+                eccentricity_sq = (semi_major ** 2 - semi_minor ** 2) / semi_major ** 2
+
+                def project(longitude: Any, latitude: Any) -> tuple[Any, Any]:
+                    lon_rad = np.radians(longitude)
+                    lat_rad = np.radians(latitude)
+                    geocentric_lat = np.arctan((semi_minor ** 2 / semi_major ** 2) * np.tan(lat_rad))
+                    radius = semi_minor / np.sqrt(1 - eccentricity_sq * np.cos(geocentric_lat) ** 2)
+                    delta_lon = lon_rad - longitude_origin
+                    sx = satellite_height - radius * np.cos(geocentric_lat) * np.cos(delta_lon)
+                    sy = -radius * np.cos(geocentric_lat) * np.sin(delta_lon)
+                    sz = radius * np.sin(geocentric_lat)
+                    visible = satellite_height * (satellite_height - sx) >= sy * sy + (semi_major / semi_minor) ** 2 * sz * sz + (satellite_height - sx) ** 2
+                    return np.where(visible, np.arcsin(-sy / np.sqrt(sx * sx + sy * sy + sz * sz)), np.nan), np.where(visible, np.arctan2(sz, sx), np.nan)
+
+                x_axis = np.asarray(dataset.variables["x"][:], dtype=np.float64)
+                y_axis = np.asarray(dataset.variables["y"][:], dtype=np.float64)
+                variable = dataset.variables["CMI"]
+                # O recorte inclui somente o setor requerido. O Full Disk nunca é
+                # expandido inteiro na memória do Render.
+                edge_lon = np.concatenate((np.linspace(west, east, 181), np.full(181, west), np.full(181, east), np.linspace(west, east, 181)))
+                edge_lat = np.concatenate((np.full(181, south), np.linspace(south, north, 181), np.linspace(south, north, 181), np.full(181, north)))
+                edge_x, edge_y = project(edge_lon, edge_lat)
+                valid_edge = np.isfinite(edge_x) & np.isfinite(edge_y)
+                if not valid_edge.any():
+                    raise ValueError('Região fora da área visível do GOES-19.')
+                ix_edge = np.rint((edge_x[valid_edge] - x_axis[0]) / (x_axis[-1] - x_axis[0]) * (len(x_axis) - 1)).astype(int)
+                iy_edge = np.rint((edge_y[valid_edge] - y_axis[0]) / (y_axis[-1] - y_axis[0]) * (len(y_axis) - 1)).astype(int)
+                pad = 4
+                x0 = max(0, int(ix_edge.min()) - pad); x1 = min(len(x_axis), int(ix_edge.max()) + pad + 1)
+                y0 = max(0, int(iy_edge.min()) - pad); y1 = min(len(y_axis), int(iy_edge.max()) + pad + 1)
+                source_width, source_height = x1 - x0, y1 - y0
+                source_stride = max(1, int(math.ceil(max(source_width / width, source_height / height))))
+                crop = np.ma.filled(variable[y0:y1:source_stride, x0:x1:source_stride], np.nan).astype(np.float32, copy=False)
+
+                scale = float(config["scale"]); offset = float(config["offset"]); nodata = 65535
+                encoded = np.full((height, width), nodata, dtype="<u2")
+                longitudes = west + (np.arange(width, dtype=np.float64) + 0.5) * (east - west) / width
+                mercator_north = math.asinh(math.tan(math.radians(north)))
+                mercator_south = math.asinh(math.tan(math.radians(south)))
+                for row in range(height):
+                    mercator_y = mercator_north - (row + 0.5) * (mercator_north - mercator_south) / height
+                    latitude = math.degrees(math.atan(math.sinh(mercator_y)))
+                    projected_x, projected_y = project(longitudes, np.full(width, latitude))
+                    ix = np.rint(np.nan_to_num((projected_x - x_axis[0]) / (x_axis[-1] - x_axis[0]) * (len(x_axis) - 1), nan=-1)).astype(np.int32)
+                    iy = np.rint(np.nan_to_num((projected_y - y_axis[0]) / (y_axis[-1] - y_axis[0]) * (len(y_axis) - 1), nan=-1)).astype(np.int32)
+                    crop_x = (ix - x0) // source_stride; crop_y = (iy - y0) // source_stride
+                    valid = np.isfinite(projected_x) & np.isfinite(projected_y) & (crop_x >= 0) & (crop_x < crop.shape[1]) & (crop_y >= 0) & (crop_y < crop.shape[0])
+                    if not valid.any():
+                        continue
+                    values = np.full(width, np.nan, dtype=np.float32)
+                    values[valid] = crop[crop_y[valid], crop_x[valid]]
+                    finite = np.isfinite(values)
+                    quantized = np.clip(np.rint((values[finite] - offset) / scale), 0, nodata - 1).astype("<u2")
+                    encoded[row, finite] = quantized
+
+            metadata = {
+                "format": "sideral-grid-u16-v1", "width": width, "height": height,
+                "bbox": [west, south, east, north], "scale": scale, "offset": offset,
+                "nodata": nodata, "units": config["units"], "channel": config["channel"],
+                "nativeResolutionKm": config["native_km"], "projection": "EPSG:3857", "bboxCRS": "EPSG:4326",
+                "sourceSamplingStep": source_stride, "resampling": "nearest", "quantizationStep": scale,
+                "sourceProjection": "GOES-R ABI fixed grid", "observedAt": self._goes19_time_from_key(key).isoformat().replace("+00:00", "Z"),
+            }
+            header = json.dumps(metadata, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            if len(header) % 2:
+                header += b" "
+            body = struct.pack("<I", len(header)) + header + encoded.tobytes(order="C")
+            temporary_grid = grid_cache.with_suffix(".part")
+            temporary_grid.write_bytes(body)
+            temporary_grid.replace(grid_cache)
+            cached_grids = sorted(GOES19_RAW_CACHE_DIR.glob("grid-*.bin"), key=lambda item: item.stat().st_mtime, reverse=True)
+            for old_grid in cached_grids[6:]:
+                old_grid.unlink(missing_ok=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.sideral.raster+octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=86400, immutable")
+            self.end_headers()
+            self.wfile.write(body)
+            del encoded
+            gc.collect()
+        except (ValueError, OSError, requests.RequestException, ImportError) as exc:
+            self.send_json(502, {"error": "Grade numérica GOES-19 indisponível.", "details": str(exc)})
+
+    def handle_cptec_satellite(self, query: dict[str, list[str]]) -> None:
+        product = query.get("product", ["realcada"])[0].lower(); config = CPTEC_SATELLITE_PRODUCTS.get(product)
+        if not config: self.send_json(400, {"error": "Produto de satélite CPTEC inválido."}); return
+        try: anima = min(15, max(1, int(query.get("anima", ["10"])[0])))
+        except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
+        try:
+            response = requests.get(f"https://{CPTEC_SATELLITE_HOST}/collection/animacao", params={"i": "br", "id": config["id"], "nivel": "goes"}, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "text/html"}, timeout=25)
+            response.raise_for_status()
+            pattern = re.compile(r'logs\.push\(\{"fileDate":\s*"([^"]+)",\s*"fileTime":\s*"([^"]+)",\s*"filePath":\s*"[^"]+",\s*"url":\s*"([^"]+)"', re.IGNORECASE)
+            frames = [{"data": f"{day} {clock}", "path": url, "tamanho": None} for day, clock, url in pattern.findall(response.text)]
+            latest_url = f"https://{CPTEC_SATELLITE_HOST}/repositoriowebdsa/ultimas/{config['latest']}"
+            latest = requests.head(latest_url, headers={"User-Agent": INMET_HEADERS["User-Agent"]}, timeout=15); latest.raise_for_status()
+            modified = parsedate_to_datetime(latest.headers["Last-Modified"]).astimezone(dt.timezone.utc)
+            frames.append({"data": modified.strftime("%Y-%m-%d %H:%M:%S"), "path": latest_url, "tamanho": None})
+            unique = {item["path"]: item for item in frames}
+            frames = sorted(unique.values(), key=lambda item: item["data"])[-anima:]
+            self.send_json(200, {"status": True, "provider": "CPTEC/INPE", "product": config["label"], "data": {"satelite": frames, "lat_lon": {"lon_min": -100, "lat_min": -56, "lon_max": -25.24, "lat_max": 12.52}}, "officialUrl": "https://satelite.cptec.inpe.br/"})
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            self.send_json(502, {"error": "Não foi possível consultar as imagens do CPTEC/INPE agora.", "details": str(exc)})
+
+    def handle_cptec_satellite_image(self, query: dict[str, list[str]]) -> None:
+        image_url = query.get("url", [""])[0].strip(); parsed = urlparse(image_url)
+        try: max_size = int(query.get("size", ["1024"])[0])
+        except ValueError: self.send_json(400, {"error": "Resolução CPTEC inválida."}); return
+        valid_path = bool(re.fullmatch(r"/(?:repositoriogoes/goes19/goes19_web/[A-Za-z0-9_/-]+/S\d+_\d{12}\.jpg|repositoriowebdsa/ultimas/ULT_[A-Z0-9_]+\.jpg)", parsed.path, re.IGNORECASE))
+        if parsed.scheme != "https" or parsed.hostname != CPTEC_SATELLITE_HOST or parsed.query or parsed.fragment or not valid_path or max_size not in {768, 1024, 1536, 2048, 4096}:
+            self.send_json(400, {"error": "URL de imagem CPTEC inválida."}); return
+        try:
+            cache_key = f"{image_url}:{max_size}"; body = cptec_satellite_image_cache.get(cache_key)
+            if body is None:
+                response = requests.get(image_url, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/jpeg"}, timeout=25); response.raise_for_status(); body = response.content
+                try:
+                    from PIL import Image
+                    source = Image.open(io.BytesIO(body)); source.load()
+                    resized = max(source.size) > max_size
+                    if resized:
+                        source.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                    # Keep the original bytes at the highest tier.  Re-encoding
+                    # a satellite frame here needlessly destroys cloud texture.
+                    if resized:
+                        output = io.BytesIO(); source.convert("RGB").save(output, format="JPEG", quality=96, subsampling=0, optimize=True, progressive=True); body = output.getvalue()
+                except (ImportError, OSError, ValueError):
+                    pass
+                cptec_satellite_image_cache[cache_key] = body
+                while len(cptec_satellite_image_cache) > 48: cptec_satellite_image_cache.pop(next(iter(cptec_satellite_image_cache)))
+            if not body.startswith(b"\xff\xd8") or len(body) < 1000: raise ValueError("Imagem CPTEC inválida")
+            self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "public, max-age=60, stale-if-error=600"); self.end_headers(); self.wfile.write(body)
+        except (requests.RequestException, ValueError): self.send_json(502, {"error": "Imagem do CPTEC/INPE indisponível."})
+
+    def handle_cptec_satellite_tile(self, parsed_path: str) -> None:
+        """Proxy dos tiles PNG transparentes do DSAT, preservando CORS no mapa."""
+        prefix="/api/cptec/satelite/tile/"; relative=parsed_path[len(prefix):].strip("/"); parts=relative.split("/")
+        if len(parts)==6 and re.fullmatch(r"\d{8}",parts[0]) and re.fullmatch(r"[A-Za-z0-9_]+",parts[1]) and re.fullmatch(r"\d{4}",parts[2]):
+            day,product,time,z,x,y=parts
+            if not re.fullmatch(r"\d{1,2}",z) or not re.fullmatch(r"\d+",x) or not re.fullmatch(r"\d+\.png",y): self.send_json(400,{"error":"Tile CPTEC inválido."}); return
+            upstream=f"https://s1.cptec.inpe.br/goes/goes16/web_tiles/{day}/{product}/{time}/{z}/{x}/{y}"
+        elif len(parts)==5 and parts[0]=="references" and parts[1] in {"countries","labels"}:
+            z,x,y=parts[2:]
+            if not re.fullmatch(r"\d{1,2}",z) or not re.fullmatch(r"\d+",x) or not re.fullmatch(r"\d+\.png",y): self.send_json(400,{"error":"Tile de referência CPTEC inválido."}); return
+            upstream=f"https://s1.cptec.inpe.br/goes/goes16/web_tiles/references/{parts[1]}/{z}/{x}/{y}"
+        else: self.send_json(400,{"error":"Caminho de tile CPTEC inválido."}); return
+        try:
+            response=requests.get(upstream,headers={"User-Agent":INMET_HEADERS["User-Agent"],"Accept":"image/png"},timeout=20); response.raise_for_status(); body=response.content
+            if not body.startswith(b"\x89PNG") or len(body)<100: raise ValueError("PNG CPTEC inválido")
+            self.send_response(200);self.send_header("Content-Type","image/png");self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","public, max-age=300, stale-if-error=1800");self.end_headers();self.wfile.write(body)
+        except (requests.RequestException,ValueError): self.send_json(502,{"error":"Tile transparente CPTEC indisponível."})
+
+    def handle_redemet_satellite(self, query: dict[str, list[str]]) -> None:
+        """Retorna quadros georreferenciados de satélite sem expor a chave REDEMET."""
+        if not REDEMET_API_KEY:
+            self.send_json(503, {"error": "Servico REDEMET temporariamente indisponivel."}); return
+        product = query.get("product", ["realcada"])[0].lower().strip()
+        if product not in REDEMET_SATELLITE_PRODUCTS:
+            self.send_json(400, {"error": "Produto de satélite REDEMET inválido."}); return
+        try:
+            anima = min(15, max(1, int(query.get("anima", ["15"])[0])))
+        except ValueError:
+            self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
+
+        requested_date = query.get("data", [""])[0].strip()
+        if requested_date and not re.fullmatch(r"\d{10}", requested_date):
+            self.send_json(400, {"error": "Data inválida. Use YYYYMMDDHH."}); return
+
+        cache_key = f"{product}:{requested_date or 'latest'}:{anima}"
+        force_refresh = query.get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
+        with redemet_satellite_cache_lock:
+            cached = redemet_satellite_catalog_cache.get(cache_key)
+        cache_age = time.time() - float(cached.get("saved_at", 0)) if cached else float("inf")
+        if cached and not force_refresh and cache_age < 180:
+            payload = dict(cached["payload"])
+            payload["cache"] = True
+            self.send_json(200, payload); return
+        if cached and not force_refresh:
+            render_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+            start_refresh = False
+            if render_url:
+                with redemet_satellite_cache_lock:
+                    if cache_key not in redemet_satellite_refreshing:
+                        redemet_satellite_refreshing.add(cache_key); start_refresh = True
+            if start_refresh:
+                def refresh_in_background() -> None:
+                    try:
+                        requests.get(
+                            f"{render_url}/api/redemet/satelite",
+                            params={"product": product, "anima": anima, **({"data": requested_date} if requested_date else {}), "refresh": "1"},
+                            headers={"User-Agent": INMET_HEADERS["User-Agent"]},
+                            timeout=45,
+                        )
+                    except requests.RequestException:
+                        pass
+                    finally:
+                        with redemet_satellite_cache_lock:
+                            redemet_satellite_refreshing.discard(cache_key)
+                threading.Thread(target=refresh_in_background, daemon=True, name=f"satellite-refresh-{product}").start()
+            payload = dict(cached["payload"])
+            payload["cache"] = True; payload["stale"] = True; payload["refreshing"] = start_refresh
+            self.send_json(200, payload); return
+
+        # A REDEMET pode devolver uma lista vazia para a hora corrente. Consultamos
+        # as janelas recentes em paralelo e escolhemos a publicação realmente mais
+        # nova; em caso de empate, preservamos a janela com mais quadros.
+        candidates: list[str | None]
+        if requested_date:
+            candidates = [requested_date]
+        else:
+            current_hour = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
+            candidates = [(current_hour - dt.timedelta(hours=hours)).strftime("%Y%m%d%H") for hours in (0, 1, 2, 3, 6, 9, 12, 24)]
+            candidates.append(None)
+
+        last_payload: dict[str, Any] | None = None
+        last_error: Exception | None = None
+        try:
+            def fetch_candidate(candidate: str | None) -> tuple[str | None, dict[str, Any]]:
+                params = {"anima": str(anima), "api_key": REDEMET_API_KEY}
+                if candidate: params["data"] = candidate
+                response = requests.get(
+                    f"{REDEMET_API_URL}/produtos/satelite/{product}",
+                    params=params,
+                    headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                    timeout=25,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict) or payload.get("status") is not True:
+                    raise ValueError("A REDEMET retornou uma resposta inválida para satélite.")
+                return candidate, payload
+
+            results: list[tuple[str | None, dict[str, Any]]] = []
+            unique_candidates = list(dict.fromkeys(candidates))
+            with ThreadPoolExecutor(max_workers=min(5, len(unique_candidates))) as executor:
+                futures = [executor.submit(fetch_candidate, candidate) for candidate in unique_candidates]
+                for future in as_completed(futures):
+                    try:
+                        candidate, payload = future.result()
+                        last_payload = payload
+                        data = payload.get("data")
+                        if isinstance(data, dict) and isinstance(data.get("satelite"), list) and data["satelite"]:
+                            results.append((candidate, payload))
+                    except requests.RequestException as exc:
+                        last_error = exc
+
+            if results:
+                def publication_rank(result: tuple[str | None, dict[str, Any]]) -> tuple[str, int]:
+                    frames = result[1]["data"]["satelite"]
+                    newest = max((str(item.get("data") or "") for item in frames if isinstance(item, dict)), default="")
+                    return newest, len(frames)
+
+                candidate, payload = max(results, key=publication_rank)
+                payload = dict(payload)
+                payload["provider"] = "REDEMET / DECEA"
+                payload["fallback_date"] = candidate if candidate and not requested_date else None
+                with redemet_satellite_cache_lock:
+                    redemet_satellite_catalog_cache[cache_key] = {"saved_at": time.time(), "payload": dict(payload)}
+                    while len(redemet_satellite_catalog_cache) > 18:
+                        redemet_satellite_catalog_cache.pop(next(iter(redemet_satellite_catalog_cache)))
+                self.send_json(200, payload); return
+            if cached:
+                payload = dict(cached["payload"])
+                payload["cache"] = True
+                payload["stale"] = True
+                self.send_json(200, payload); return
+            if last_error:
+                self.send_json(502, {"error": "Não foi possível consultar as imagens da REDEMET agora."}); return
+            self.send_json(404, {"error": "A REDEMET não publicou imagens de satélite para o período consultado.", "provider": "REDEMET / DECEA", "upstream": last_payload}); return
+        except (ValueError, TypeError, json.JSONDecodeError):
+            self.send_json(502, {"error": "Não foi possível interpretar as imagens recebidas da REDEMET."}); return
+
+    def handle_redemet_satellite_image(self, query: dict[str, list[str]]) -> None:
+        """Proxy restrito às imagens oficiais de satélite da REDEMET."""
+        image_url = query.get("url", [""])[0].strip()
+        parsed = urlparse(image_url)
+        valid_path = bool(re.fullmatch(r"/satelite/\d{4}/\d{2}/\d{2}/(?:ir|realcada|vis)/maps/[A-Za-z0-9_.-]+\.(?:png|jpe?g)", parsed.path, re.IGNORECASE))
+        if parsed.scheme != "https" or parsed.hostname != REDEMET_SATELLITE_IMAGE_HOST or parsed.query or parsed.fragment or not valid_path:
+            self.send_json(400, {"error": "URL de imagem de satélite inválida."}); return
+        try:
+            response = requests.get(image_url, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "image/png,image/jpeg"}, timeout=25)
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            if content_type not in {"image/png", "image/jpeg"} or len(response.content) < 1000:
+                raise ValueError("A origem não retornou uma imagem válida.")
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(response.content)))
+            self.send_header("Cache-Control", "public, max-age=600, stale-if-error=3600")
+            self.end_headers()
+            self.wfile.write(response.content)
+        except (requests.RequestException, ValueError):
+            self.send_json(502, {"error": "Não foi possível carregar esta imagem da REDEMET."})
+
+    def handle_redemet_stsc(self, query: dict[str, list[str]]) -> None:
+        try: anima = min(6, max(1, int(query.get("anima", ["3"])[0])))
+        except ValueError: self.send_json(400, {"error": "Quantidade de quadros inválida."}); return
+        self.handle_redemet_json("/produtos/stsc", {"anima": str(anima)}, "raios STSC/REDEMET")
+
+    def prepare_glm_lightning(self, force: bool = False) -> dict[str, Any]:
+        now = time.monotonic()
+        cached = glm_lightning_cache.get("payload")
+        if cached and not force and now - float(glm_lightning_cache.get("saved_at", 0.0)) < GLM_CACHE_SECONDS:
+            return cached
+        with glm_lightning_cache_lock:
+            now = time.monotonic()
+            cached = glm_lightning_cache.get("payload")
+            if cached and not force and now - float(glm_lightning_cache.get("saved_at", 0.0)) < GLM_CACHE_SECONDS:
+                return cached
+            utc_now = dt.datetime.now(dt.timezone.utc)
+            keys: set[str] = set()
+            for hour_offset in (0, 1):
+                stamp = utc_now - dt.timedelta(hours=hour_offset)
+                prefix = f"GLM-L2-LCFA/{stamp:%Y}/{stamp:%j}/{stamp:%H}/"
+                response = requests.get(f"{GLM_S3_URL}/", params={"list-type": "2", "prefix": prefix}, headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/xml"}, timeout=20)
+                response.raise_for_status()
+                root = ET.fromstring(response.content)
+                keys.update(node.text for node in root.iter() if node.tag.endswith("Key") and node.text)
+            timestamp_pattern = re.compile(r"_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})")
+            scans: list[tuple[dt.datetime, str]] = []
+            for key in keys:
+                match = timestamp_pattern.search(key)
+                if match:
+                    observed = dt.datetime.strptime("".join(match.groups()), "%Y%j%H%M%S").replace(tzinfo=dt.timezone.utc)
+                    scans.append((observed, key))
+            if not scans:
+                raise ValueError("A NOAA não publicou arquivos GLM recentes.")
+            scans.sort()
+            latest = scans[-1][0]
+            cutoff = latest - dt.timedelta(minutes=GLM_WINDOW_MINUTES)
+            selected = [(observed, key) for observed, key in scans if observed >= cutoff]
+            netcdf_lock = threading.Lock()
+
+            def read_flashes(item: tuple[dt.datetime, str]) -> list[dict[str, Any]]:
+                observed, key = item
+                response = requests.get(f"{GLM_S3_URL}/{quote(key, safe='/')}", headers={"User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/x-netcdf,*/*"}, timeout=25)
+                response.raise_for_status()
+                if len(response.content) < 1000:
+                    return []
+                from netCDF4 import Dataset
+                with netcdf_lock:
+                    dataset = Dataset("glm.nc", memory=response.content)
+                    try:
+                        latitudes = dataset.variables["flash_lat"][:]
+                        longitudes = dataset.variables["flash_lon"][:]
+                    finally:
+                        dataset.close()
+                age = round(max(0.0, (latest - observed).total_seconds() / 60.0), 2)
+                points = []
+                for lat, lon in zip(latitudes, longitudes):
+                    latitude, longitude = float(lat), float(lon)
+                    if -35.5 <= latitude <= 7.0 and -75.5 <= longitude <= -30.0:
+                        points.append({"lat": round(latitude, 4), "lon": round(longitude, 4), "ageMinutes": age})
+                return points
+
+            points: list[dict[str, Any]] = []
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(read_flashes, item) for item in selected]
+                for future in as_completed(futures):
+                    points.extend(future.result())
+            points.sort(key=lambda point: point["ageMinutes"], reverse=True)
+            payload = {"status": True, "satellite": "GOES-19", "instrument": "GLM", "provider": "NOAA/NODD", "product": "GLM L2 Lightning Detection", "observedAt": latest.isoformat().replace("+00:00", "Z"), "windowMinutes": GLM_WINDOW_MINUTES, "count": len(points), "points": points}
+            glm_lightning_cache["saved_at"] = time.monotonic()
+            glm_lightning_cache["payload"] = payload
+            return payload
+
+    def handle_glm_lightning(self, query: dict[str, list[str]]) -> None:
+        try:
+            force = query.get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
+            self.send_json(200, self.prepare_glm_lightning(force))
+        except Exception as exc:
+            self.send_json(502, {"error": "Falha ao consultar os raios GLM da NOAA.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_glm_image(self) -> None:
+        self.send_json(410, {"error": "A camada GLM agora é fornecida como pontos georreferenciados."})
+
+    def handle_redemet_json(self, path: str, params: dict[str, str], provider: str) -> None:
+        if not REDEMET_API_KEY:
+            self.send_json(503, {"error": "Servico REDEMET temporariamente indisponivel."}); return
+        try:
+            safe_params = dict(params)
+            safe_params["api_key"] = REDEMET_API_KEY
+            response = requests.get(
+                f"{REDEMET_API_URL}{path}", params=safe_params,
+                headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"},
+                timeout=25,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("status") is not True: raise ValueError("Resposta REDEMET invalida.")
+            self.send_json(200, payload)
+        except (requests.RequestException, ValueError, json.JSONDecodeError):
+            self.send_json(502, {"error": f"Falha ao consultar {provider}."})
+
+    def fetch_redemet_json(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
+        if not REDEMET_API_KEY: raise RuntimeError("REDEMET nao configurada.")
+        response = requests.get(f"{REDEMET_API_URL}{path}", params=params, headers={"X-Api-Key": REDEMET_API_KEY, "User-Agent": INMET_HEADERS["User-Agent"], "Accept": "application/json"}, timeout=25)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("status") is not True: raise ValueError("A REDEMET retornou uma resposta sem dados válidos.")
+        return payload
+
+    @staticmethod
+    def normalize_redemet_status(value: Any) -> str:
+        status = str(value or "cinza").strip().lower()
+        if status in {"g", "green", "verde"}: return "verde"
+        if status in {"y", "yellow", "amarelo"}: return "amarelo"
+        if status in {"r", "red", "vermelho"}: return "vermelho"
+        return "cinza"
+
+    def redemet_station_catalog(self) -> list[dict[str, Any]]:
+        now_monotonic = time.monotonic()
+        cached = redemet_station_catalog_cache.get("data")
+        if cached is not None and now_monotonic - float(redemet_station_catalog_cache.get("saved_at", 0.0)) < REDEMET_STATION_CACHE_SECONDS: return cached
+        payload = self.fetch_redemet_json("/aerodromos/status/pais/BRASIL")
+        aerodromes_payload = self.fetch_redemet_json("/aerodromos/", {"pais": "BRASIL"})
+        rows = payload.get("data")
+        if not isinstance(rows, list): raise ValueError("Catálogo de aeródromos em formato inesperado.")
+        details = {str(item.get("cod") or "").upper(): item for item in aerodromes_payload.get("data", []) if isinstance(item, dict) and item.get("cod")}
+        stations: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for row in rows:
+            if not isinstance(row, list) or len(row) < 5: continue
+            icao = str(row[0] or "").upper().strip()
+            latitude = inmet_safe_float(row[2])
+            longitude = inmet_safe_float(row[3])
+            if not REDEMET_ICAO_RE.fullmatch(icao) or latitude is None or longitude is None or icao in seen: continue
+            seen.add(icao)
+            detail = details.get(icao, {})
+            city = str(detail.get("cidade") or "").strip() or None
+            city_match = re.search(r"/([A-Z]{2})$", city or "", re.IGNORECASE)
+            stations.append({"icao": icao, "nome": str(detail.get("nome") or row[1] or icao).strip(), "cidade": city, "latitude": latitude, "longitude": longitude, "altitudeMetros": inmet_safe_float(detail.get("altitude_metros")), "status": self.normalize_redemet_status(row[4]), "uf": city_match.group(1).upper() if city_match else None})
+        stations.sort(key=lambda station: (station["nome"].casefold(), station["icao"]))
+        redemet_station_catalog_cache["saved_at"] = now_monotonic
+        redemet_station_catalog_cache["data"] = stations
+        return stations
+
+    def handle_redemet_stations(self, query: dict[str, list[str]] | None = None) -> None:
+        try:
+            if (query or {}).get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}:
+                redemet_station_catalog_cache["saved_at"] = 0.0; redemet_station_catalog_cache["data"] = None
+            stations = self.redemet_station_catalog()
+            counts = {status: sum(station["status"] == status for station in stations) for status in ("verde", "amarelo", "vermelho", "cinza")}
+            self.send_json(200, {"provider": "REDEMET / DECEA", "source": "aerodromos/status/pais/BRASIL", "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"), "count": len(stations), "counts": counts, "stations": stations})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar as estações da REDEMET.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_redemet_station(self, icao_code: str) -> None:
+        if not REDEMET_ICAO_RE.fullmatch(icao_code): self.send_json(400, {"error": "Código ICAO inválido."}); return
+        now_monotonic = time.monotonic()
+        cached = redemet_station_observation_cache.get(icao_code)
+        if cached and now_monotonic - float(cached["saved_at"]) < 60:
+            data = dict(cached["data"]); data["cache"] = True; self.send_json(200, data); return
+        try:
+            payload = self.fetch_redemet_json("/aerodromos/info", {"localidade": icao_code, "metar": "sim", "taf": "sim"})
+            raw = payload.get("data")
+            if not isinstance(raw, dict): raise ValueError("Observação aeronáutica em formato inesperado.")
+            station = next((item for item in self.redemet_station_catalog() if item["icao"] == icao_code), None)
+            data = {"provider": "REDEMET / DECEA", "officialUrl": f"https://redemet.decea.mil.br/?i=facilidades&p=consulta-mensagem&localidade={icao_code}", "cache": False, "icao": icao_code, "nome": raw.get("nome") or (station or {}).get("nome") or icao_code, "cidade": raw.get("cidade"), "latitude": (station or {}).get("latitude"), "longitude": (station or {}).get("longitude"), "status": (station or {}).get("status", "cinza"), "observedAt": raw.get("data") or raw.get("data_hora"), "temperatura": raw.get("temperatura"), "umidade": raw.get("ur"), "visibilidade": raw.get("visibilidade"), "teto": raw.get("teto"), "ceu": raw.get("ceu"), "tempo": raw.get("condicoes_tempo"), "vento": raw.get("vento"), "metar": raw.get("metar"), "taf": raw.get("taf")}
+            redemet_station_observation_cache[icao_code] = {"saved_at": now_monotonic, "data": data}
+            while len(redemet_station_observation_cache) > 200: redemet_station_observation_cache.pop(next(iter(redemet_station_observation_cache)))
+            self.send_json(200, data)
+        except Exception as exc: self.send_json(502, {"error": f"Falha ao consultar {icao_code} na REDEMET.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_xweather_lightning(self, query: dict[str, list[str]]) -> None:
+        client_id = os.getenv("XWEATHER_CLIENT_ID", "").strip()
+        client_secret = os.getenv("XWEATHER_CLIENT_SECRET", "").strip()
+        if not client_id or not client_secret: self.send_json(503, {"error": "Configure XWEATHER_CLIENT_ID e XWEATHER_CLIENT_SECRET."}); return
+        try:
+            south, west = float(query.get("south", ["-34"])[0]), float(query.get("west", ["-74"])[0])
+            north, east = float(query.get("north", ["6"])[0]), float(query.get("east", ["-34"])[0])
+            lat_step, lon_step = 4.0, 5.0
+            points: dict[str, dict[str, Any]] = {}
+            lat = south
+            while lat <= north:
+                lon = west
+                while lon <= east:
+                    url = "https://data.api.xweather.com/lightning/closest"
+                    params = {"p": f"{lat:.2f},{lon:.2f}", "radius": "100km", "limit": 1000, "filter": "all", "client_id": client_id, "client_secret": client_secret}
+                    response = requests.get(url, params=params, timeout=12)
+                    response.raise_for_status()
+                    for item in response.json().get("response", []):
+                        loc = item.get("loc", {})
+                        if "lat" in loc and "long" in loc:
+                            key = f"{float(loc['lat']):.3f},{float(loc['long']):.3f}"
+                            points[key] = {"lat": loc["lat"], "lon": loc["long"], "type": item.get("ob", {}).get("pulse", {}).get("type"), "age": item.get("ob", {}).get("age")}
+                    lon += lon_step
+                lat += lat_step
+            self.send_json(200, {"strikes": list(points.values()), "queries": len(points)})
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar raios Xweather.", "details": str(exc)})
+
+    def handle_synoptic_meta(self, query: dict[str, list[str]] | None = None) -> None:
+        try:
+            refresh = (query or {}).get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
+            metadata = ensure_synoptic_chart(force=refresh)
+            self.send_json(200, metadata)
+        except Exception as exc: self.send_json(502, {"error": "Falha ao gerar a carta sinótica.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_synoptic_png(self) -> None:
+        try:
+            ensure_synoptic_chart()
+            body = SYNOPTIC_PNG_PATH.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=900")
+            self.send_header("Content-Disposition", 'inline; filename="carta-sinotica-inmet.png"')
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc: self.send_json(502, {"error": "Falha ao carregar a carta sinótica oficial.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_synoptic_svg(self) -> None:
+        self.send_response(302)
+        self.send_header("Location", "/api/sinotica/chart.png")
+        self.end_headers()
+
+    def handle_inmet_stations(self) -> None:
+        try:
+            data = fetch_inmet_json(INMET_STATIONS_URL, timeout=25)
+            if not isinstance(data, list): self.send_json(502, {"error": "Catálogo INMET em formato inesperado."}); return
+            self.send_json(200, data)
+        except Exception as exc: self.send_json(502, {"error": "Falha ao consultar o catálogo do INMET.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def handle_inmet_history(self, station_code: str) -> None:
+        if not INMET_STATION_CODE_RE.fullmatch(station_code): self.send_json(400, {"error": "Codigo de estacao invalido."}); return
+        now = dt.datetime.now(dt.timezone.utc); start = (now - dt.timedelta(hours=30)).date(); end = now.date()
+        try:
+            source = fetch_inmet_json(INMET_OBSERVATION_URL.format(start=start.isoformat(), end=end.isoformat(), station=station_code), timeout=30)
+            if not isinstance(source, list): raise ValueError("Formato inesperado do INMET.")
+            records = []
+            for row in source:
+                if not isinstance(row, dict): continue
+                measured = inmet_record_datetime_utc(row)
+                if not measured or measured < now - dt.timedelta(hours=25): continue
+                def metric(*names: str) -> float | None:
+                    for name in names:
+                        value = inmet_safe_float(row.get(name))
+                        if value is not None and abs(value) < 9990: return value
+                    return None
+                records.append({"time": measured.isoformat().replace("+00:00", "Z"), "rain": metric("CHUVA"), "temperature": metric("TEM_INS", "TEMP_INS"), "humidity": metric("UMD_INS", "UMID_INS"), "pressure": metric("PRE_INS", "PRESSAO"), "wind": metric("VEN_VEL", "VEL_VENTO"), "gust": metric("VEN_RAJ", "RAJ_VENTO")})
+            records.sort(key=lambda item: item["time"])
+            self.send_json(200, {"status": True, "provider": "INMET", "station": station_code, "periodHours": 24, "records": records[-25:]})
+        except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.send_json(502, {"error": "Historico horario do INMET indisponivel.", "details": str(exc)})
+
+    def handle_inmet_observation(self, station_code: str) -> None:
+        if not INMET_STATION_CODE_RE.fullmatch(station_code): self.send_json(400, {"error": "Código de estação inválido."}); return
+        cached = inmet_observation_cache.get(station_code)
+        now_monotonic = time.monotonic()
+        if cached and now_monotonic - cached["saved_at"] < INMET_CACHE_SECONDS:
+            response = dict(cached["data"]); response["cache"] = True; self.send_json(200, response); return
+        try:
+            data = get_latest_inmet_observation(station_code)
+            data["cache"] = False
+            inmet_observation_cache[station_code] = {"saved_at": now_monotonic, "data": data}
+            self.send_json(200, data)
+        except requests.exceptions.Timeout as exc: self.send_json(504, {"error": "O INMET demorou demais para responder.", "details": str(exc)})
+        except requests.exceptions.RequestException as exc: self.send_json(502, {"error": "Falha ao consultar observação do INMET.", "details": str(exc)})
+        except Exception as exc: self.send_json(502, {"error": "Erro ao interpretar observação do INMET.", "details": f"{type(exc).__name__}: {exc}"})
+
+    def do_POST(self) -> None:
+        path = self.path.lower().strip()
+        if path not in {"/api/gfs/cells", "/api/wrf/cells", "/api/ecmwf/cells", "/api/meteoblue/cells"}:
+            self.send_json(404, {"error": f"Rota invalida: {self.path}"}); return
+        try:
+            payload = self.read_json_body()
+            bounds = self.parse_bounds(payload)
+            hours = max(0, int(payload.get("hours", 0)))
+            grid_x = max(1, min(260, int(payload.get("gridX", 64))))
+            grid_y = max(1, min(240, int(payload.get("gridY", 63))))
+            wrf_model = str(payload.get("wrfModel", "icon")).lower()
+            if wrf_model not in WRF_MODEL_OUTPUTS: wrf_model = "icon"
+            response_extra: dict[str, Any] = {}
+            if path == "/api/gfs/cells":
+                try:
+                    cells = build_gfs_cells(bounds, hours, grid_x, grid_y)
+                    response_extra = {"gridX": grid_x, "gridY": grid_y, "source": "GFS_REFLECTIVITY", "model": "gfs_direct"}
+                except Exception as exc:
+                    wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, "gfs")
+                    cells = wrf_payload["cells"]
+                    response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
+            elif path == "/api/wrf/cells":
+                wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, wrf_model)
+                cells = wrf_payload["cells"]
+                response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
+            elif path == "/api/meteoblue/cells": cells = build_meteoblue_cells(bounds, hours, grid_x, grid_y)
+            else:
+                wrf_payload = build_wrf_cells(bounds, hours, grid_x, grid_y, "ecmwf")
+                cells = wrf_payload["cells"]
+                response_extra = {key: value for key, value in wrf_payload.items() if key != "cells"}
+            self.send_json(200, {"cells": cells, "hours": hours, "stepUsed": hours, **response_extra})
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc: self.send_json(400, {"error": f"Payload invalido: {exc}"})
+        except ExternalAPIError as exc: self.send_json(502, {"error": str(exc)})
+        except WRFDomainError as exc: self.send_json(409, {"error": str(exc)})
+        except FileNotFoundError as exc: self.send_json(409, {"error": str(exc)})
+        except Exception as exc: self.send_json(500, {"error": str(exc)})
+
+    def read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0: raise ValueError("corpo vazio")
+        body = self.rfile.read(length).decode("utf-8")
+        payload = json.loads(body)
+        if not isinstance(payload, dict): raise ValueError("JSON precisa ser um objeto")
+        return payload
+
+    def parse_bounds(self, payload: dict[str, Any]) -> dict[str, float]:
+        bounds = {key: float(payload[key]) for key in ("south", "west", "north", "east")}
+        if bounds["south"] >= bounds["north"] or bounds["west"] >= bounds["east"]: raise ValueError("bounds invalidos")
+        return bounds
+
+    def send_json(self, status_code: int, payload: Any) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+def main() -> None:
+    threading.Thread(target=render_keep_alive, daemon=True, name='render-keep-alive').start()
+    server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), Handler)
+    print("\n" + "=" * 80)
+    print("SERVIDOR SIDERAL RODANDO")
+    print(f"  URL base: http://{DEFAULT_HOST}:{DEFAULT_PORT}/")
+    print("=" * 80 + "\n")
+    try: server.serve_forever()
+    except KeyboardInterrupt: print("\nServidor parado.")
+    finally: server.server_close()
+
+if __name__ == "__main__":
+    main()
+

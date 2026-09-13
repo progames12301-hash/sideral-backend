@@ -8,6 +8,7 @@ on:
       - "tools/enforce_wrf_native_reflectivity.py"
       - ".github/workflows/enforce-wrf-native-reflectivity.yml"
       - "server.py"
+      - "server_legacy.py"
   schedule:
     - cron: "17 2 * * *"
 
@@ -52,12 +53,14 @@ jobs:
       - name: Commitar correcao se necessario
         shell: bash
         run: |
-          if git diff --quiet -- server.py; then
+          TARGET="server_legacy.py"
+          if [ ! -f "$TARGET" ]; then TARGET="server.py"; fi
+          if git diff --quiet -- "$TARGET"; then
             echo "Nenhuma alteracao necessaria."
             exit 0
           fi
           git config user.name "sideral-wrf-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server.py
+          git add "$TARGET"
           git commit -m "Remove fallback artificial de refletividade WRF [skip render]"
           git push origin HEAD:main
