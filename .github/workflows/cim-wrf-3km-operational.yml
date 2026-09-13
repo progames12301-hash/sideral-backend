@@ -93,7 +93,7 @@ jobs:
     name: CIM ${{ matrix.model }} F${{ matrix.segment.start }}-F${{ matrix.segment.end }}
     needs: resolve_runs
     runs-on: ubuntu-22.04
-    timeout-minutes: 350
+    timeout-minutes: 480
     strategy:
       fail-fast: false
       max-parallel: 6
