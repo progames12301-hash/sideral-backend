@@ -58,3 +58,41 @@ def load_metar():
             observed_at=as_iso(x.get('obsTime') if x.get('obsTime') is not None else x.get('reportTime')),temperature=t,humidity=_rh(t,d),pressure=safe_float(x.get('slp')) or safe_float(x.get('altim')),dewpoint=d,
             wind_speed=round(ws*1.852,2) if ws is not None else None,wind_gust=round(wg*1.852,2) if wg is not None else None,wind_direction=safe_float(x.get('wdir')),extra={'rawMetar':x.get('rawOb'),'flightCategory':x.get('fltCat')}))
     return out
+
+def _redemet_json(path:str,params:dict[str,str]|None=None)->dict[str,Any]:
+    key=str(getattr(legacy,'REDEMET_API_KEY','') or '').strip()
+    if not key: raise RuntimeError('REDEMET_API_KEY não configurada no Render')
+    query=dict(params or {}); query['api_key']=key
+    r=legacy.requests.get(f"{legacy.REDEMET_API_URL}{path}",params=query,headers={'X-Api-Key':key,'User-Agent':'SideralMeteorologia/1.0 (station-map)','Accept':'application/json'},timeout=30)
+    r.raise_for_status(); payload=r.json()
+    if not isinstance(payload,dict) or payload.get('status') is not True: raise ValueError('REDEMET retornou resposta inválida')
+    return payload
+
+def load_redemet():
+    """Lista aeródromos brasileiros em duas chamadas, sem consultar um a um.
+
+    As observações METAR continuam vindo do NOAA/AWC em lote. O agregador remove
+    duplicatas pelo ICAO e usa REDEMET principalmente para aeródromos que não
+    apareceram no lote METAR atual e para completar metadados.
+    """
+    if not str(getattr(legacy,'REDEMET_API_KEY','') or '').strip():
+        return []
+    status_payload=_redemet_json('/aerodromos/status/pais/BRASIL')
+    detail_payload=_redemet_json('/aerodromos/',{'pais':'BRASIL'})
+    status_rows=status_payload.get('data'); detail_rows=detail_payload.get('data')
+    if not isinstance(status_rows,list): raise ValueError('Catálogo REDEMET em formato inesperado')
+    details={str(x.get('cod') or '').upper().strip():x for x in (detail_rows if isinstance(detail_rows,list) else []) if isinstance(x,dict) and x.get('cod')}
+    out=[]; seen=set()
+    for row in status_rows:
+        if not isinstance(row,list) or len(row)<5: continue
+        code=str(row[0] or '').upper().strip(); lat=safe_float(row[2]); lon=safe_float(row[3])
+        if len(code)!=4 or not code.isalnum() or code in seen or lat is None or lon is None or not (-35.8<=lat<=6.8 and -75.5<=lon<=-30): continue
+        seen.add(code); detail=details.get(code,{})
+        city=str(detail.get('cidade') or '').strip() or None; uf=None
+        if city and '/' in city:
+            tail=city.rsplit('/',1)[-1].strip().upper()
+            if len(tail)==2: uf=tail; city=city.rsplit('/',1)[0].strip() or None
+        raw_status=str(row[4] or '').strip().lower(); status={'g':'verde','green':'verde','verde':'verde','y':'amarelo','yellow':'amarelo','amarelo':'amarelo','r':'vermelho','red':'vermelho','vermelho':'vermelho'}.get(raw_status,'cinza')
+        out.append(station(network='REDEMET',code=code,name=str(detail.get('nome') or row[1] or code).strip(),latitude=lat,longitude=lon,uf=uf,city=city,
+            altitude=safe_float(detail.get('altitude_metros')),kind='aeronautica',status=status,extra={'provider':'DECEA / REDEMET'}))
+    return out
