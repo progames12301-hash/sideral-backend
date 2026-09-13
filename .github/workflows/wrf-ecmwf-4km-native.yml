@@ -1,16 +1,14 @@
-name: WRF 4 km ECMWF - REFL NATIVO
+name: WRF 4 km ECMWF - 48H REFL NATIVO
 
 on:
   workflow_dispatch:
-  # Fallback diário: roda depois da atualização programada do ECMWF IFS.
-  # Todo job faz checkout do wrf-runner e passa pelo contrato 4 km/nativo.
   schedule:
     - cron: '35 22 * * *'
   push:
     branches: [main]
     paths:
       - ".github/workflows/wrf-ecmwf-4km-native.yml"
-      - ".github/workflows/wrf-source-parallel-reusable.yml"
+      - ".github/workflows/wrf-regional-48h-reusable.yml"
   workflow_run:
     workflows: ["ECMWF IFS - PROXIMO DIA AUTOMATICO"]
     types: [completed]
@@ -25,10 +23,11 @@ concurrency:
 jobs:
   wrf:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    uses: ./.github/workflows/wrf-source-parallel-reusable.yml
+    uses: ./.github/workflows/wrf-regional-48h-reusable.yml
     with:
       model: ecmwf
       source_data_branch: ecmwf-data
       publish_branch: wrf-ecmwf-data
       run_script: run_ecmwf_wrf.sh
+      publish_severe: false
     secrets: inherit

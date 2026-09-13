@@ -1,4 +1,4 @@
-name: WRF Sudeste 4 km ECMWF - REFL NATIVO
+name: WRF Sudeste 4 km ECMWF - 48H REFL NATIVO
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/wrf-sudeste-ecmwf-4km.yml"
-      - ".github/workflows/wrf-source-parallel-sudeste-reusable.yml"
+      - ".github/workflows/wrf-regional-48h-reusable.yml"
   workflow_run:
     workflows: ["ECMWF IFS - PROXIMO DIA AUTOMATICO"]
     types: [completed]
@@ -23,10 +23,11 @@ concurrency:
 jobs:
   wrf:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    uses: ./.github/workflows/wrf-source-parallel-sudeste-reusable.yml
+    uses: ./.github/workflows/wrf-regional-48h-reusable.yml
     with:
       model: ecmwf
       source_data_branch: ecmwf-data
       publish_branch: wrf-sudeste-ecmwf-data
       run_script: run_ecmwf_wrf_sudeste.sh
+      publish_severe: true
     secrets: inherit

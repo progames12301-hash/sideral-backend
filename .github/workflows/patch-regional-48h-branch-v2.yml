@@ -1,0 +1,67 @@
+name: Patch artifacts WRF regional 48h
+
+on:
+  push:
+    branches: [wrf-regional-48h]
+    paths:
+      - ".github/workflows/patch-regional-48h-branch-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-regional-48h
+          fetch-depth: 0
+      - name: Ajustar patterns sem colisão e validar
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/wrf-regional-48h-reusable.yml')
+          text = p.read_text(encoding='utf-8')
+          expr_model = '$' + '{{ inputs.model }}'
+          expr_id = '$' + '{{ matrix.id }}'
+          old = f'pattern: regional-{expr_model}-*'
+          new = f'pattern: regional-{expr_model}-[0-9]*'
+          if old not in text:
+              raise SystemExit(f'pattern principal não encontrado: {old}')
+          text = text.replace(old, new, 1)
+          old_severe = f'pattern: regional-{expr_model}-severe-*'
+          new_severe = f'pattern: severe-regional-{expr_model}-*'
+          text = text.replace(old_severe, new_severe)
+          old_name = f'name: regional-{expr_model}-severe-{expr_id}'
+          new_name = f'name: severe-regional-{expr_model}-{expr_id}'
+          text = text.replace(old_name, new_name)
+          p.write_text(text, encoding='utf-8')
+          PY
+          python3 -m pip install --disable-pip-version-check pyyaml
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+          files = [
+              '.github/workflows/wrf-regional-48h-reusable.yml',
+              '.github/workflows/wrf-ecmwf-4km-native.yml',
+              '.github/workflows/wrf-sudeste-gfs-4km.yml',
+              '.github/workflows/wrf-sudeste-icon-4km.yml',
+              '.github/workflows/wrf-sudeste-ecmwf-4km.yml',
+          ]
+          for f in files:
+              yaml.safe_load(Path(f).read_text(encoding='utf-8'))
+              print('YAML OK:', f)
+          PY
+      - name: Commitar e apagar patch temporário
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'sideral-wrf-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/patch-regional-48h-branch-v2.yml
+          git add .github/workflows
+          git commit -m 'WRF regional 48h: separar artifacts de dados e WRF2'
+          git push origin HEAD:wrf-regional-48h
