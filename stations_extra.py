@@ -28,11 +28,12 @@ def load_dcrs():
         if not code or code in seen or lat is None or lon is None: continue
         seen.add(code); names=row.get('name') or {}; data=row.get('data') or {}; rio=data.get('rio') if isinstance(data,dict) else None; rio_name=None
         if isinstance(rio,dict) and isinstance(rio.get('rio_nome'),dict): rio_name=rio['rio_nome'].get('value')
+        solar=deep(data,'radiacaosolar','atual'); solar_kjm2=round(solar*3600,3) if solar is not None else None
         out.append(station(network='DCRS',code=code,name=str(names.get('local') or names.get('general') or names.get('prefix') or code).strip(),latitude=lat,longitude=lon,
             uf='RS',city=str(pos.get('regiao') or '').strip() or None,altitude=safe_float(pos.get('altitude')),kind='hidrometeorologica',status='operante',observed_at=as_iso(row.get('timestamp')),
             temperature=deep(data,'temperatura','atual'),humidity=deep(data,'umidade','atual'),pressure=deep(data,'pressaoatmos','atual'),wind_speed=deep(data,'vento','velocidade_media'),
             wind_gust=deep(data,'vento','velocidade_maxima'),wind_direction=deep(data,'vento','direcao'),rain_1h=deep(data,'chuva','acumulado','h001'),rain_24h=deep(data,'chuva','acumulado','h024'),
-            radiation=deep(data,'radiacaosolar','atual'),river_level=deep(data,'rio','rio_nivel'),extra={'basin':pos.get('bacia'),'river':rio_name}))
+            radiation=solar_kjm2,river_level=deep(data,'rio','rio_nivel'),extra={'basin':pos.get('bacia'),'river':rio_name}))
     if not out: raise ValueError('Defesa Civil RS não retornou estações')
     return out
 
