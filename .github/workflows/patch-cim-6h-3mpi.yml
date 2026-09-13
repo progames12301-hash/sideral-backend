@@ -90,21 +90,6 @@ jobs:
                   raise SystemExit(f'Trecho esperado não encontrado: {a}')
               s = s.replace(a, b)
 
-          publish_header = """  publish:
-    name: Publicar CIM 48h (${{ matrix.model }})
-    needs: [resolve_runs, segments]
-    runs-on: ubuntu-22.04
-"""
-          publish_new = """  publish:
-    name: Publicar CIM 48h (${{ matrix.model }})
-    needs: [resolve_runs, segments]
-    if: ${{ always() && needs.resolve_runs.result == 'success' }}
-    runs-on: ubuntu-22.04
-"""
-          if publish_header not in s:
-              raise SystemExit('Cabeçalho publish não encontrado')
-          s = s.replace(publish_header, publish_new, 1)
-
           p.write_text(s, encoding='utf-8')
           PY
 
@@ -113,5 +98,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/cim-wrf-3km-operational.yml
-          git commit -m 'CIM: segmentos 6h, 3 MPI e publicação independente'
+          git commit -m 'CIM: segmentos 6h e 3 MPI'
           git push origin main
