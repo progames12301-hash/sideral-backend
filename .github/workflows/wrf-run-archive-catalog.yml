@@ -1,0 +1,119 @@
+name: WRF run archive catalog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/wrf-run-archive-catalog.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-wrf-run-archive-catalog
+  cancel-in-progress: true
+
+jobs:
+  archive-published-runs:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout publicador WRF atual
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Catalogar somente rodadas novas
+        env:
+          WRF_DATA_BRANCHES: >-
+            wrf-data
+            wrf-icon-data
+            wrf-ecmwf-data
+            wrf-sudeste-gfs-data
+            wrf-sudeste-icon-data
+            wrf-sudeste-ecmwf-data
+            cim-wrf-3km-icon-data
+            cim-wrf-3km-ecmwf-data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'sideral-wrf-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          for BRANCH in $WRF_DATA_BRANCHES; do
+            echo "::group::Catalogo $BRANCH"
+            REF="refs/remotes/origin/$BRANCH"
+            git update-ref -d "$REF" 2>/dev/null || true
+            if ! git fetch --no-tags origin "$BRANCH:$REF"; then
+              echo "Branch ausente: $BRANCH"
+              echo "::endgroup::"
+              continue
+            fi
+
+            ROOT_META="/tmp/${BRANCH}-root-meta.json"
+            ARCH_META="/tmp/${BRANCH}-arch-meta.json"
+            if ! git show "$REF:metadata.json" > "$ROOT_META" 2>/dev/null; then
+              echo "metadata.json ausente em $BRANCH"
+              echo "::endgroup::"
+              continue
+            fi
+
+            RUN_ID=$(python3 - "$ROOT_META" <<'PY'
+          import datetime as dt
+          import json
+          import sys
+          d=json.load(open(sys.argv[1], encoding='utf-8'))
+          date=str(d.get('runDate') or '').replace('-', '')
+          cycle=''.join(ch for ch in str(d.get('runCycle') or '') if ch.isdigit()).zfill(2)
+          if len(date)==8 and cycle:
+              print(date + cycle[:2])
+          else:
+              stamp=dt.datetime.fromisoformat(str(d['initTime']).replace('Z','+00:00'))
+              print(stamp.strftime('%Y%m%d%H'))
+          PY
+            )
+
+            NEED_ARCHIVE=1
+            if git show "$REF:runs/$RUN_ID/metadata.json" > "$ARCH_META" 2>/dev/null; then
+              if python3 - "$ROOT_META" "$ARCH_META" <<'PY'
+          import json, sys
+          a=json.load(open(sys.argv[1], encoding='utf-8'))
+          b=json.load(open(sys.argv[2], encoding='utf-8'))
+          keys=('initTime','generatedAt','frameCount','reflectivitySource','resolutionKm')
+          raise SystemExit(0 if all(a.get(k)==b.get(k) for k in keys) else 1)
+          PY
+              then
+                NEED_ARCHIVE=0
+              fi
+            fi
+
+            if [ "$NEED_ARCHIVE" -eq 0 ]; then
+              echo "$BRANCH: rodada $RUN_ID ja catalogada; sem alteracoes."
+              echo "::endgroup::"
+              continue
+            fi
+
+            SNAP="/tmp/${BRANCH}-latest"
+            rm -rf "$SNAP"
+            mkdir -p "$SNAP"
+            mapfile -t TOP_LEVEL < <(git ls-tree --name-only "$REF" | grep -vE '^(runs|runs.json|README.md)$' || true)
+            if [ "${#TOP_LEVEL[@]}" -eq 0 ]; then
+              echo "$BRANCH: nenhum payload operacional encontrado."
+              echo "::endgroup::"
+              continue
+            fi
+            git archive "$REF" "${TOP_LEVEL[@]}" | tar -x -C "$SNAP"
+
+            python3 wrf/publish_with_archive.py \
+              --source "$SNAP" \
+              --branch "$BRANCH" \
+              --readme-title "Sideral WRF Data - $BRANCH" \
+              --readme-text "Produto operacional com histórico recente para seleção de rodadas." \
+              --retention-hours 96 \
+              --max-runs 8
+            echo "::endgroup::"
+          done
