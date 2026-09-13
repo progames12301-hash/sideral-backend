@@ -10,10 +10,20 @@ RAW_DIR="$ROOT/ecmwf_source_raw"
 REG_DIR="$ROOT/ecmwf_source_regular"
 ENV_FILE="$ROOT/ecmwf_run.env"
 
+# Recorte fonte para o WPS. Os defaults preservam os regionais existentes;
+# o CIM pode ampliar a area via variaveis de ambiente.
+ECMWF_SOURCE_WEST="${ECMWF_SOURCE_WEST:--65}"
+ECMWF_SOURCE_EAST="${ECMWF_SOURCE_EAST:--42}"
+ECMWF_SOURCE_SOUTH="${ECMWF_SOURCE_SOUTH:--38}"
+ECMWF_SOURCE_NORTH="${ECMWF_SOURCE_NORTH:--18}"
+
 log(){ printf '\n===== %s =====\n' "$*"; }
 (( WRF_START_HOUR >= 0 && WRF_END_HOUR > WRF_START_HOUR && WRF_END_HOUR <= 72 )) || {
   echo "Segmento ECMWF invalido: F${WRF_START_HOUR}-F${WRF_END_HOUR}" >&2; exit 2;
 }
+for VALUE in "$ECMWF_SOURCE_WEST" "$ECMWF_SOURCE_EAST" "$ECMWF_SOURCE_SOUTH" "$ECMWF_SOURCE_NORTH"; do
+  [[ "$VALUE" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || { echo "Recorte ECMWF invalido: $VALUE" >&2; exit 2; }
+done
 
 rm -rf "$RAW_DIR" "$REG_DIR" "$ENV_FILE"
 mkdir -p "$RAW_DIR" "$REG_DIR"
@@ -44,6 +54,7 @@ grib_set -r -s packingType=grid_simple "$RAW_SURFACE" "$SIMPLE_SURFACE"
 docker pull "$CDO_IMAGE"
 
 log "Separando cada forecast hour ECMWF antes do WPS"
+echo "Recorte ECMWF: lon ${ECMWF_SOURCE_WEST}..${ECMWF_SOURCE_EAST}; lat ${ECMWF_SOURCE_SOUTH}..${ECMWF_SOURCE_NORTH}"
 for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
   printf -v FH '%03d' "$H"
   P_STEP="$RAW_DIR/ecmwf_pressure_f${FH}.grib2"
@@ -61,13 +72,13 @@ for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
   docker run --rm \
     -v "$RAW_DIR:/input" \
     "$CDO_IMAGE" \
-    cdo -f grb2 sellonlatbox,-65,-42,-38,-18 \
+    cdo -f grb2 sellonlatbox,${ECMWF_SOURCE_WEST},${ECMWF_SOURCE_EAST},${ECMWF_SOURCE_SOUTH},${ECMWF_SOURCE_NORTH} \
       "/input/$(basename "$P_STEP")" "/input/$(basename "$P_REG")"
 
   docker run --rm \
     -v "$RAW_DIR:/input" \
     "$CDO_IMAGE" \
-    cdo -f grb2 sellonlatbox,-65,-42,-38,-18 \
+    cdo -f grb2 sellonlatbox,${ECMWF_SOURCE_WEST},${ECMWF_SOURCE_EAST},${ECMWF_SOURCE_SOUTH},${ECMWF_SOURCE_NORTH} \
       "/input/$(basename "$S_STEP")" "/input/$(basename "$S_REG")"
 
   test -s "$P_REG"
@@ -86,7 +97,7 @@ rm -f "$RAW" "$RAW_PRESSURE" "$RAW_SURFACE" "$SIMPLE_PRESSURE" "$SIMPLE_SURFACE"
 rm -f "$RAW_DIR"/ecmwf_pressure_f*.grib2 "$RAW_DIR"/ecmwf_surface_f*.grib2
 ls -lh "$REG_DIR"/ecmwf_f*.grib2
 
-log "Rodando WRF 4 km inicializado pelo ECMWF"
+log "Rodando WRF inicializado pelo ECMWF"
 export SOURCE_MODEL=ecmwf
 export WRF_RUN_HOURS WRF_START_HOUR WRF_END_HOUR
 export SOURCE_DIR="$REG_DIR"
