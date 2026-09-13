@@ -12,11 +12,26 @@ REGRID_DIR="$ROOT/icon_regrid"
 HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
 
+# Grade fonte regular usada apenas para alimentar o WPS. Os defaults preservam
+# os WRF regionais existentes; o CIM pode ampliar estes limites via ambiente.
+ICON_SOURCE_XSIZE="${ICON_SOURCE_XSIZE:-93}"
+ICON_SOURCE_YSIZE="${ICON_SOURCE_YSIZE:-81}"
+ICON_SOURCE_XFIRST="${ICON_SOURCE_XFIRST:--65.0}"
+ICON_SOURCE_YFIRST="${ICON_SOURCE_YFIRST:--38.0}"
+ICON_SOURCE_XINC="${ICON_SOURCE_XINC:-0.25}"
+ICON_SOURCE_YINC="${ICON_SOURCE_YINC:-0.25}"
+
 log(){ printf '\n===== %s =====\n' "$*"; }
 
 (( WRF_START_HOUR >= 0 && WRF_END_HOUR > WRF_START_HOUR && WRF_END_HOUR <= 72 )) || {
   echo "Segmento ICON invalido: F${WRF_START_HOUR}-F${WRF_END_HOUR}" >&2; exit 2;
 }
+[[ "$ICON_SOURCE_XSIZE" =~ ^[0-9]+$ && "$ICON_SOURCE_YSIZE" =~ ^[0-9]+$ ]] || {
+  echo "Tamanho da grade fonte ICON invalido" >&2; exit 2;
+}
+for VALUE in "$ICON_SOURCE_XFIRST" "$ICON_SOURCE_YFIRST" "$ICON_SOURCE_XINC" "$ICON_SOURCE_YINC"; do
+  [[ "$VALUE" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || { echo "Grade fonte ICON invalida: $VALUE" >&2; exit 2; }
+done
 
 if [[ -n "${FORCE_RUN_DATE:-}" && -n "${FORCE_RUN_CYCLE:-}" ]]; then
   RUN_DATE="$FORCE_RUN_DATE"
@@ -49,15 +64,16 @@ rm -rf "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 mkdir -p "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 
 log "Preparando grade regular regional para WPS"
-cat > "$REGRID_DIR/target_grid.txt" <<'EOF'
+cat > "$REGRID_DIR/target_grid.txt" <<EOF
 gridtype = lonlat
-xsize = 93
-ysize = 81
-xfirst = -65.0
-xinc = 0.25
-yfirst = -38.0
-yinc = 0.25
+xsize = ${ICON_SOURCE_XSIZE}
+ysize = ${ICON_SOURCE_YSIZE}
+xfirst = ${ICON_SOURCE_XFIRST}
+xinc = ${ICON_SOURCE_XINC}
+yfirst = ${ICON_SOURCE_YFIRST}
+yinc = ${ICON_SOURCE_YINC}
 EOF
+cat "$REGRID_DIR/target_grid.txt"
 
 docker pull "$ICON_REGRID_IMAGE"
 docker run --rm \
@@ -129,7 +145,7 @@ for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
   rm -f "$RAW" "$SIMPLE" "$FI" "$HGT0" "$HGT" "$HGT_CHECK"
 done
 
-log "Rodando WRF 4 km inicializado pelo ICON"
+log "Rodando WRF inicializado pelo ICON"
 export SOURCE_MODEL=icon
 export RUN_DATE RUN_CYCLE WRF_RUN_HOURS WRF_START_HOUR WRF_END_HOUR
 export SOURCE_DIR="$REG_DIR"
