@@ -1,4 +1,4 @@
-name: CIM WRF 3 km - 48h com spin-up
+name: CIM WRF 8 km - 40h horario
 
 on:
   schedule:
@@ -12,20 +12,25 @@ on:
 permissions:
   contents: write
 
+# Mantemos o mesmo grupo da versao antiga para que esta migracao cancele
+# imediatamente qualquer CIM 3 km antigo que ainda esteja queued/in_progress.
 concurrency:
   group: cim-wrf-3km-daily
   cancel-in-progress: true
 
 env:
   PYTHON_VERSION: '3.12'
-  WRF_HISTORY_INTERVAL_MINUTES: '180'
-  CIM_DOMAIN_VERSION: 'south-cone-v2'
-  CIM_GRID_X: '619'
-  CIM_GRID_Y: '659'
+  WRF_HISTORY_INTERVAL_MINUTES: '60'
+  CIM_RESOLUTION_KM: '8'
+  CIM_OUTPUT_INTERVAL_HOURS: '1'
+  CIM_MAX_PUBLISHED_HOUR: '40'
+  CIM_DOMAIN_VERSION: 'cim-sigma-area-v1-8km'
+  CIM_GRID_X: '279'
+  CIM_GRID_Y: '234'
 
 jobs:
   resolve_runs:
-    name: Resolver rodadas ICON e ECMWF com F048 disponível
+    name: Resolver ICON e ECMWF com cobertura ate F042
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     outputs:
@@ -43,7 +48,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Instalar cliente ECMWF
         run: python -m pip install --disable-pip-version-check 'ecmwf-opendata==0.3.34'
-      - name: Fixar as duas rodadas antes de abrir os segmentos
+      - name: Fixar rodadas com F042 disponivel
         id: resolve
         shell: bash
         run: |
@@ -52,7 +57,7 @@ jobs:
           import datetime as dt
           from ecmwf.opendata import Client
           c = Client(source='ecmwf', model='ifs')
-          value = c.latest(type='fc', step=48, param=['2t'])
+          value = c.latest(type='fc', step=42, param=['2t'])
           if not isinstance(value, dt.datetime):
               value = dt.datetime.fromisoformat(str(value))
           if value.tzinfo is None:
@@ -65,8 +70,8 @@ jobs:
           ICON_DATE=''
           ICON_CYCLE=''
           while read -r DATE CYCLE; do
-            URL="https://opendata.dwd.de/weather/nwp/icon/grib/${CYCLE}/t_2m/icon_global_icosahedral_single-level_${DATE}${CYCLE}_048_T_2M.grib2.bz2"
-            echo "Testando ICON ${DATE} ${CYCLE}Z F048"
+            URL="https://opendata.dwd.de/weather/nwp/icon/grib/${CYCLE}/t_2m/icon_global_icosahedral_single-level_${DATE}${CYCLE}_042_T_2M.grib2.bz2"
+            echo "Testando ICON ${DATE} ${CYCLE}Z F042"
             if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
               ICON_DATE="$DATE"
               ICON_CYCLE="$CYCLE"
@@ -76,7 +81,7 @@ jobs:
           import datetime as dt
           now = dt.datetime.now(dt.timezone.utc)
           base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
-          for n in range(8):
+          for n in range(10):
               x = base - dt.timedelta(hours=6*n)
               print(x.strftime('%Y%m%d %H'))
           PY
@@ -91,88 +96,23 @@ jobs:
           echo "ecmwf_date=$ECMWF_DATE" >> "$GITHUB_OUTPUT"
           echo "ecmwf_cycle=$ECMWF_CYCLE" >> "$GITHUB_OUTPUT"
 
-  segments:
-    name: CIM ${{ matrix.model }} F${{ matrix.segment.start }}-F${{ matrix.segment.end }}
+  run_cim:
+    name: CIM 8 km ${{ matrix.model }} - F000 a F040 horario
     needs: resolve_runs
     runs-on: ubuntu-22.04
     timeout-minutes: 480
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 2
       matrix:
         model: [icon, ecmwf]
-        segment:
-          - { id: '000-006', start: 0,  end: 6 }
-          - { id: '006-012', start: 6,  end: 12 }
-          - { id: '012-018', start: 12, end: 18 }
-          - { id: '018-024', start: 18, end: 24 }
-          - { id: '024-030', start: 24, end: 30 }
-          - { id: '030-036', start: 30, end: 36 }
-          - { id: '036-042', start: 36, end: 42 }
-          - { id: '042-048', start: 42, end: 48 }
     steps:
       - uses: actions/checkout@v4
         with:
           ref: wrf-runner
           fetch-depth: 0
 
-      - name: Restaurar segmento já calculado
-        id: checkpoint
-        shell: bash
-        env:
-          ICON_DATE: ${{ needs.resolve_runs.outputs.icon_date }}
-          ICON_CYCLE: ${{ needs.resolve_runs.outputs.icon_cycle }}
-          ECMWF_DATE: ${{ needs.resolve_runs.outputs.ecmwf_date }}
-          ECMWF_CYCLE: ${{ needs.resolve_runs.outputs.ecmwf_cycle }}
-        run: |
-          set -euo pipefail
-          MODEL='${{ matrix.model }}'
-          if [[ "$MODEL" == 'icon' ]]; then
-            RUN_DATE="$ICON_DATE"; RUN_CYCLE="$ICON_CYCLE"
-          else
-            RUN_DATE="$ECMWF_DATE"; RUN_CYCLE="$ECMWF_CYCLE"
-          fi
-          RUN_CYCLE="$(printf '%02d' "$((10#$RUN_CYCLE))")"
-          BRANCH="cim-checkpoint-${CIM_DOMAIN_VERSION}-${MODEL}-${RUN_DATE}${RUN_CYCLE}-${{ matrix.segment.id }}"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-          echo "hit=false" >> "$GITHUB_OUTPUT"
-
-          if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            echo "Checkpoint ausente: $BRANCH"
-            exit 0
-          fi
-
-          git fetch origin "${BRANCH}:refs/remotes/origin/${BRANCH}"
-          rm -rf checkpoint cim_publish
-          git worktree add --detach checkpoint "refs/remotes/origin/${BRANCH}"
-          mkdir -p cim_publish
-          find checkpoint -mindepth 1 -maxdepth 1 ! -name .git -exec cp -a {} cim_publish/ \;
-          git worktree remove --force checkpoint
-
-          if python3 - <<'PY'; then
-          import json
-          from pathlib import Path
-          root = Path('cim_publish')
-          meta = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
-          assert meta.get('domainId') == 'south-cone-v2', meta
-          assert meta.get('resolutionKm') == 3, meta
-          assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', meta
-          assert meta.get('frames'), meta
-          for frame in meta['frames']:
-              assert int(frame['gridX']) == 619, frame
-              assert int(frame['gridY']) == 659, frame
-              assert (root / frame['file']).is_file(), frame
-          print('CHECKPOINT VALIDO:', meta.get('model'), [f['forecastHour'] for f in meta['frames']])
-          PY
-            echo "hit=true" >> "$GITHUB_OUTPUT"
-            echo "Reutilizando $BRANCH; WRF deste segmento não será recalculado."
-          else
-            echo "Checkpoint inválido; recalculando $BRANCH"
-            rm -rf cim_publish
-          fi
-
-      - name: Liberar espaço e preparar runner
-        if: steps.checkpoint.outputs.hit != 'true'
+      - name: Preparar runner
         shell: bash
         run: |
           set -euxo pipefail
@@ -183,61 +123,48 @@ jobs:
           sudo apt-get install -y libeccodes-tools
 
       - uses: actions/setup-python@v5
-        if: steps.checkpoint.outputs.hit != 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Instalar dependências do WRF e pós-processamento
-        if: steps.checkpoint.outputs.hit != 'true'
+      - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
-      - name: Ajustar CIM para 3 processos MPI
-        if: steps.checkpoint.outputs.hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('wrf/run_wrf_with_source.sh')
-          s = p.read_text(encoding='utf-8')
-          count = s.count('-np 4')
-          if count < 2:
-              raise SystemExit(f'Esperava ao menos 2 ocorrências de -np 4; encontrei {count}')
-          p.write_text(s.replace('-np 4', '-np 3'), encoding='utf-8')
-          print('CIM MPI: real.exe=3, wrf.exe=3')
-          PY
-
-      - name: Executar segmento CIM 3 km Cone Sul ampliado
-        if: steps.checkpoint.outputs.hit != 'true'
+      - name: Executar CIM 8 km
         env:
           ICON_DATE: ${{ needs.resolve_runs.outputs.icon_date }}
           ICON_CYCLE: ${{ needs.resolve_runs.outputs.icon_cycle }}
           ECMWF_DATE: ${{ needs.resolve_runs.outputs.ecmwf_date }}
           ECMWF_CYCLE: ${{ needs.resolve_runs.outputs.ecmwf_cycle }}
-          WRF_DX_METERS: '3000'
-          WRF_DY_METERS: '3000'
-          WRF_E_WE: '620'
-          WRF_E_SN: '660'
-          WRF_TIME_STEP: '18'
-          WRF_REF_LAT: '-27.60'
-          WRF_REF_LON: '-56.00'
-          WRF_STAND_LON: '-56.00'
-          WRF_RUN_HOURS: '48'
-          WRF_START_HOUR: ${{ matrix.segment.start }}
-          WRF_END_HOUR: ${{ matrix.segment.end }}
-          WRF_HISTORY_INTERVAL_MINUTES: '180'
-          ICON_SOURCE_XSIZE: '105'
-          ICON_SOURCE_YSIZE: '97'
-          ICON_SOURCE_XFIRST: '-69.0'
-          ICON_SOURCE_YFIRST: '-40.0'
+          WRF_DX_METERS: '8000'
+          WRF_DY_METERS: '8000'
+          WRF_E_WE: '280'
+          WRF_E_SN: '235'
+          WRF_TIME_STEP: '48'
+          WRF_REF_LAT: '-27.50'
+          WRF_REF_LON: '-52.75'
+          WRF_STAND_LON: '-52.75'
+          # A fonte global chega de 3 em 3 h. Integramos ate F042 para manter
+          # a fronteira completa e publicamos exatamente F000..F040.
+          WRF_RUN_HOURS: '42'
+          WRF_START_HOUR: '0'
+          WRF_END_HOUR: '42'
+          WRF_HISTORY_INTERVAL_MINUTES: '60'
+          CIM_RESOLUTION_KM: '8'
+          CIM_OUTPUT_INTERVAL_HOURS: '1'
+          CIM_MAX_PUBLISHED_HOUR: '40'
+          # Buffer da fonte global ao redor da area exibida no mapa Sigma.
+          ICON_SOURCE_XSIZE: '113'
+          ICON_SOURCE_YSIZE: '89'
+          ICON_SOURCE_XFIRST: '-67.0'
+          ICON_SOURCE_YFIRST: '-39.0'
           ICON_SOURCE_XINC: '0.25'
           ICON_SOURCE_YINC: '0.25'
-          ECMWF_SOURCE_WEST: '-69'
-          ECMWF_SOURCE_EAST: '-43'
-          ECMWF_SOURCE_SOUTH: '-40'
-          ECMWF_SOURCE_NORTH: '-16'
+          ECMWF_SOURCE_WEST: '-67'
+          ECMWF_SOURCE_EAST: '-39'
+          ECMWF_SOURCE_SOUTH: '-39'
+          ECMWF_SOURCE_NORTH: '-17'
         shell: bash
         run: |
           set -euxo pipefail
@@ -250,21 +177,22 @@ jobs:
             export FORCE_RUN_CYCLE="$ECMWF_CYCLE"
             RUNNER='wrf/run_ecmwf_wrf.sh'
           fi
-          test "$WRF_DX_METERS" = '3000'
-          test "$WRF_DY_METERS" = '3000'
-          test "$WRF_E_WE" = '620'
-          test "$WRF_E_SN" = '660'
-          echo "CIM ${{ matrix.model }}: F${WRF_START_HOUR}-F${WRF_END_HOUR}; bloco 6 h; 3 km; Cone Sul ampliado"
-          echo "Alvos: Sul do Brasil, Paraguai, Uruguai, norte/centro da Argentina e parte de SP/MS"
+          test "$WRF_DX_METERS" = '8000'
+          test "$WRF_DY_METERS" = '8000'
+          test "$WRF_HISTORY_INTERVAL_MINUTES" = '60'
+          echo "CIM ${{ matrix.model }}: grade 8 km, 280x235 pontos WRF, saida horaria, horizonte publicado F040"
+          echo "Area alvo visual: ~63.6W..41.8W / 35.6S..19.4S"
           chmod +x "$RUNNER"
           "$RUNNER"
 
-      - name: Extrair CIM nativo do segmento
-        if: steps.checkpoint.outputs.hit != 'true'
+      - name: Extrair grade nativa horaria
+        env:
+          CIM_RESOLUTION_KM: '8'
+          CIM_OUTPUT_INTERVAL_HOURS: '1'
+          CIM_MAX_PUBLISHED_HOUR: '40'
         run: python wrf/extract_cim_wrf.py --model ${{ matrix.model }} --output-dir cim_publish
 
-      - name: Identificar domínio no metadata
-        if: steps.checkpoint.outputs.hit != 'true'
+      - name: Identificar dominio e viewport CIM
         shell: bash
         run: |
           python - <<'PY'
@@ -272,252 +200,125 @@ jobs:
           from pathlib import Path
           path = Path('cim_publish/metadata.json')
           meta = json.loads(path.read_text(encoding='utf-8'))
-          meta['domainId'] = 'south-cone-v2'
-          meta['domainName'] = 'CIM Cone Sul ampliado'
+          meta['domainId'] = 'cim-sigma-area-v1-8km'
+          meta['domainName'] = 'CIM Sul/Sudeste 8 km'
           meta['domainTargets'] = [
-              'Sul do Brasil', 'Paraguai', 'Uruguai',
-              'norte/centro da Argentina', 'parte de SP/MS'
+              'Sul do Brasil', 'Sudeste do Brasil', 'Uruguai',
+              'leste do Paraguai', 'nordeste/centro-leste da Argentina'
           ]
+          meta['displayBoundingBox'] = {
+              'west': -63.6, 'east': -41.8, 'south': -35.6, 'north': -19.4
+          }
           meta['sourceBoundingBox'] = {
-              'west': -69.0, 'east': -43.0, 'south': -40.0, 'north': -16.0
+              'west': -67.0, 'east': -39.0, 'south': -39.0, 'north': -17.0
           }
           meta['wrfGridConfig'] = {
-              'e_we': 620, 'e_sn': 660, 'gridX': 619, 'gridY': 659,
-              'dxMeters': 3000, 'dyMeters': 3000,
-              'refLat': -27.60, 'refLon': -56.00, 'standLon': -56.00,
-              'mpiProcesses': 3, 'segmentHours': 6
+              'e_we': 280, 'e_sn': 235, 'gridX': 279, 'gridY': 234,
+              'dxMeters': 8000, 'dyMeters': 8000,
+              'refLat': -27.50, 'refLon': -52.75, 'standLon': -52.75,
+              'timeStepSeconds': 48, 'historyIntervalMinutes': 60,
+              'integrationHours': 42, 'publishedHorizonHours': 40
           }
           path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
           PY
 
-      - name: Validar segmento
-        if: steps.checkpoint.outputs.hit != 'true'
+      - name: Validar CIM 8 km F000-F040
         shell: bash
         run: |
           python - <<'PY'
-          import json
+          import gzip, json
           from pathlib import Path
           root = Path('cim_publish')
-          meta = json.loads((root / 'metadata.json').read_text())
-          assert meta['domainId'] == 'south-cone-v2'
-          assert meta['resolutionKm'] == 3
+          meta = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+          assert float(meta['resolutionKm']) == 8.0, meta.get('resolutionKm')
           assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE'
-          assert set(meta['availableVariables']) == {'reflectivity','stp','scp','temperature','humidity'}
-          assert meta['frames']
-          for frame in meta['frames']:
-              assert int(frame['gridX']) == 619, frame
-              assert int(frame['gridY']) == 659, frame
+          assert meta['nativeGrid'] is True
+          assert meta['temporalResolutionMinutes'] == 60
+          frames = meta['frames']
+          hours = [int(f['forecastHour']) for f in frames]
+          assert hours == list(range(0, 41)), hours
+          assert len(frames) == 41
+          for frame in frames:
+              assert int(frame['gridX']) == 279, frame
+              assert int(frame['gridY']) == 234, frame
+              assert frame.get('nativeGrid') is True, frame
+              assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', frame
               assert (root / frame['file']).is_file(), frame
-          print('SEGMENTO OK:', [(f['forecastHour'], f['gridX'], f['gridY']) for f in meta['frames']])
+          with gzip.open(root / frames[0]['file'], 'rt', encoding='utf-8') as fh:
+              payload = json.load(fh)
+          assert int(payload['dxMeters']) == 8000 and int(payload['dyMeters']) == 8000, payload
+          assert int(payload['gridX']) == 279 and int(payload['gridY']) == 234, payload
+          assert payload.get('nativeGrid') is True, payload
+          assert payload.get('reflectivitySource') == 'REFL_10CM_NATIVE', payload
+          print('CIM 8 KM VALIDADO:', meta['model'], 'F000-F040 horario', 'grid=279x234')
           PY
 
-      - name: Salvar checkpoint permanente do segmento
-        if: steps.checkpoint.outputs.hit != 'true'
+      - name: Publicar no branch compativel com o site atual
         shell: bash
         run: |
           set -euxo pipefail
-          BRANCH='${{ steps.checkpoint.outputs.branch }}'
-          rm -rf checkpoint-write
-          git worktree add --detach checkpoint-write
-          git -C checkpoint-write checkout --orphan checkpoint
-          git -C checkpoint-write rm -rf . || true
-          git -C checkpoint-write clean -fdx || true
-          cp -a cim_publish/. checkpoint-write/
-          printf '# CIM checkpoint\n%s\n' "$BRANCH" > checkpoint-write/README.md
-          git -C checkpoint-write config user.name 'github-actions[bot]'
-          git -C checkpoint-write config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -C checkpoint-write add --all
-          git -C checkpoint-write commit -m "CIM checkpoint: $BRANCH"
-          git -C checkpoint-write push --force origin "HEAD:refs/heads/$BRANCH"
-          git worktree remove --force checkpoint-write
-          echo "CHECKPOINT PUBLICADO: $BRANCH"
+          if [[ '${{ matrix.model }}' == 'icon' ]]; then
+            BRANCH='cim-wrf-3km-icon-data'
+          else
+            BRANCH='cim-wrf-3km-ecmwf-data'
+          fi
+          rm -rf publish-tree
+          git worktree add --detach publish-tree
+          git -C publish-tree checkout --orphan cim-data
+          git -C publish-tree rm -rf . || true
+          git -C publish-tree clean -fdx || true
+          cp -a cim_publish/. publish-tree/
+          printf '# CIM WRF 8 km\n41 quadros horarios F000-F040\n' > publish-tree/README.md
+          git -C publish-tree config user.name 'github-actions[bot]'
+          git -C publish-tree config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C publish-tree add --all
+          git -C publish-tree commit -m "CIM WRF 8 km ${{ matrix.model }}: F000-F040 horario"
+          git -C publish-tree push --force origin "HEAD:refs/heads/$BRANCH"
+          git worktree remove --force publish-tree
+          echo "PUBLICADO: $BRANCH"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cim-${{ matrix.model }}-${{ matrix.segment.id }}
-          path: cim_publish/
-          retention-days: 2
-          if-no-files-found: error
-          compression-level: 0
-
-      - name: Guardar diagnósticos se falhar
+      - name: Guardar diagnosticos se falhar
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cim-${{ matrix.model }}-${{ matrix.segment.id }}-diagnostics
+          name: cim-8km-${{ matrix.model }}-diagnostics
           path: |
             wrf_diagnostics/
             wrf_work/run/rsl.*
           if-no-files-found: ignore
           retention-days: 3
 
-  publish:
-    name: Publicar CIM 48h (${{ matrix.model }})
-    needs: [resolve_runs, segments]
-    if: ${{ always() && needs.resolve_runs.result == 'success' }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        model: [icon, ecmwf]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: wrf-runner
-          fetch-depth: 0
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: cim-${{ matrix.model }}-*
-          path: segments
-
-      - name: Unir segmentos e manter F006-F048 de 6 em 6 h
-        shell: bash
-        run: |
-          set -euxo pipefail
-          mapfile -t roots < <(find segments -type f -name metadata.json -printf '%h\n' | sort)
-          test "${#roots[@]}" -eq 8
-          args=()
-          for root in "${roots[@]}"; do args+=(--input "$root"); done
-          python wrf/merge_wrf_segments.py "${args[@]}" --output cim_publish
-
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          root = Path('cim_publish')
-          path = root / 'metadata.json'
-          meta = json.loads(path.read_text(encoding='utf-8'))
-          keep = []
-          for frame in meta.get('frames', []):
-              hour = int(frame['forecastHour'])
-              if 6 <= hour <= 48 and hour % 6 == 0:
-                  keep.append(frame)
-              else:
-                  target = root / frame['file']
-                  if target.exists():
-                      target.unlink()
-          keep.sort(key=lambda f: int(f['forecastHour']))
-          for index, frame in enumerate(keep):
-              frame['index'] = index
-          meta['frames'] = keep
-          meta['frameCount'] = len(keep)
-          meta['forecastHourStart'] = 6
-          meta['forecastHourEnd'] = 48
-          meta['horizonHours'] = 48
-          meta['spinupHoursMinimum'] = 6
-          meta['temporalResolutionMinutes'] = 360
-          meta['segmentHours'] = 6
-          meta['mpiProcesses'] = 3
-          meta['segmentSpinupProtected'] = True
-          meta['status'] = 'complete'
-          path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-          PY
-
-      - name: Validar produto CIM 48h pós-spin-up
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          root = Path('cim_publish')
-          meta = json.loads((root / 'metadata.json').read_text())
-          frames = meta['frames']
-          hours = [int(f['forecastHour']) for f in frames]
-          assert meta['domainId'] == 'south-cone-v2', meta
-          assert meta['resolutionKm'] == 3, meta
-          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
-          assert meta['horizonHours'] == 48, meta
-          assert meta['spinupHoursMinimum'] == 6, meta
-          assert meta['segmentHours'] == 6, meta
-          assert meta['mpiProcesses'] == 3, meta
-          assert meta['segmentSpinupProtected'] is True, meta
-          assert hours == list(range(6, 49, 6)), hours
-          assert len(frames) == 8, len(frames)
-          assert min(int(f.get('integrationHours', -1)) for f in frames) >= 6, frames
-          for frame in frames:
-              assert int(frame['gridX']) == 619 and int(frame['gridY']) == 659, frame
-              assert (root / frame['file']).is_file(), frame
-          print('CIM 48H VALIDADO:', meta['model'], hours)
-          print('GRADE NATIVA:', frames[0]['gridX'], 'x', frames[0]['gridY'])
-          print('MPI:', meta['mpiProcesses'], 'segmento:', meta['segmentHours'], 'h')
-          PY
-
-      - name: Publicar com histórico de rodadas
-        shell: bash
-        run: |
-          set -euxo pipefail
-          if [[ '${{ matrix.model }}' == 'icon' ]]; then
-            BRANCH='cim-wrf-3km-icon-data'
-            TITLE='CIM WRF 3 km ICON'
-          else
-            BRANCH='cim-wrf-3km-ecmwf-data'
-            TITLE='CIM WRF 3 km ECMWF'
-          fi
-          python wrf/publish_with_archive.py \
-            --source cim_publish \
-            --branch "$BRANCH" \
-            --readme-title "$TITLE" \
-            --readme-text 'CIM Cone Sul ampliado: Sul do Brasil, Paraguai, Uruguai, norte/centro da Argentina e parte de SP/MS; F006-F048 de 6 em 6 h, 3 km, REFL_10CM nativo.' \
-            --retention-hours 96 \
-            --max-runs 8
-
-      - name: Remover checkpoints desta rodada após publicação
-        shell: bash
-        env:
-          ICON_DATE: ${{ needs.resolve_runs.outputs.icon_date }}
-          ICON_CYCLE: ${{ needs.resolve_runs.outputs.icon_cycle }}
-          ECMWF_DATE: ${{ needs.resolve_runs.outputs.ecmwf_date }}
-          ECMWF_CYCLE: ${{ needs.resolve_runs.outputs.ecmwf_cycle }}
-        run: |
-          set -euo pipefail
-          MODEL='${{ matrix.model }}'
-          if [[ "$MODEL" == 'icon' ]]; then
-            RUN_DATE="$ICON_DATE"; RUN_CYCLE="$ICON_CYCLE"
-          else
-            RUN_DATE="$ECMWF_DATE"; RUN_CYCLE="$ECMWF_CYCLE"
-          fi
-          RUN_CYCLE="$(printf '%02d' "$((10#$RUN_CYCLE))")"
-          for SEGMENT in 000-006 006-012 012-018 018-024 024-030 030-036 036-042 042-048; do
-            BRANCH="cim-checkpoint-${CIM_DOMAIN_VERSION}-${MODEL}-${RUN_DATE}${RUN_CYCLE}-${SEGMENT}"
-            git push origin --delete "$BRANCH" || true
-          done
-
   verify_published:
-    name: Confirmar publicação dupla CIM 48h
-    needs: publish
+    name: Confirmar publicacao dupla CIM 8 km
+    needs: run_cim
+    if: ${{ always() && needs.run_cim.result == 'success' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verificar ICON e ECMWF diretamente nas branches publicadas
+      - name: Conferir ICON e ECMWF publicados
         shell: bash
         run: |
           set -euxo pipefail
-          git fetch origin cim-wrf-3km-icon-data:cim-icon-verify
-          git fetch origin cim-wrf-3km-ecmwf-data:cim-ecmwf-verify
-          git show cim-icon-verify:metadata.json > /tmp/icon.json
-          git show cim-ecmwf-verify:metadata.json > /tmp/ecmwf.json
-          python - <<'PY'
-          import json
-          for model in ('icon', 'ecmwf'):
-              meta = json.load(open(f'/tmp/{model}.json', encoding='utf-8'))
-              hours = [int(f['forecastHour']) for f in meta['frames']]
-              assert meta['model'] == model, meta
-              assert meta['domainId'] == 'south-cone-v2', meta
-              assert meta['resolutionKm'] == 3, meta
-              assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
-              assert meta['horizonHours'] == 48, meta
-              assert meta['spinupHoursMinimum'] == 6, meta
-              assert meta['segmentHours'] == 6, meta
-              assert meta['mpiProcesses'] == 3, meta
-              assert meta['segmentSpinupProtected'] is True, meta
-              assert hours == list(range(6, 49, 6)), hours
-              assert len(meta['frames']) == 8, len(meta['frames'])
-              assert min(int(f['integrationHours']) for f in meta['frames']) >= 6, meta['frames']
-              assert all(int(f['gridX']) == 619 and int(f['gridY']) == 659 for f in meta['frames']), meta['frames']
-              assert meta.get('archiveIndex') == 'runs.json', meta
-              print(model.upper(), 'PUBLICADO:', meta['initTime'], hours, 'grid=619x659', 'domain=south-cone-v2', 'mpi=3')
+          for item in icon:refs/remotes/origin/cim-wrf-3km-icon-data ecmwf:refs/remotes/origin/cim-wrf-3km-ecmwf-data; do
+            MODEL="${item%%:*}"
+            REF="${item#*:}"
+            BRANCH="cim-wrf-3km-${MODEL}-data"
+            git fetch --force origin "$BRANCH:$REF"
+            git show "$REF:metadata.json" > "/tmp/${MODEL}-metadata.json"
+            MODEL="$MODEL" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          model = os.environ['MODEL']
+          meta = json.loads(Path(f'/tmp/{model}-metadata.json').read_text())
+          assert float(meta['resolutionKm']) == 8.0, meta
+          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE', meta
+          assert meta.get('nativeGrid') is True, meta
+          hours = [int(x['forecastHour']) for x in meta['frames']]
+          assert hours == list(range(41)), hours
+          assert all(int(x['gridX']) == 279 and int(x['gridY']) == 234 for x in meta['frames'])
+          print(model.upper(), 'PUBLICADO: 8 km, F000-F040 horario, 279x234')
           PY
+          done
