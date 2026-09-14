@@ -4,11 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "30 7,19 * * *"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wrf-sudeste-icon-4km.yml"
-      - ".github/workflows/wrf-source-parallel-sudeste-reusable.yml"
 
 permissions:
   contents: write
@@ -19,9 +14,10 @@ concurrency:
 
 jobs:
   wrf:
-    uses: ./.github/workflows/wrf-source-parallel-sudeste-reusable.yml
+    uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: icon
+      domain: sudeste
       source_data_branch: icon-data
       publish_branch: wrf-sudeste-icon-data
       run_script: run_icon_wrf_sudeste.sh
