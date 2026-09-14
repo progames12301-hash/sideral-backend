@@ -1,224 +1,47 @@
 name: WRF 4 km - REFL NATIVO - USE ESTE
 
+# Nome legado preservado porque o workflow regional completo usa workflow_run.
+# Este workflow agora e apenas um gatilho leve: confirma uma rodada GFS com F042
+# e deixa o WRF regional 7 km F000-F040 executar em seguida em um unico runner.
 on:
   workflow_dispatch:
   schedule:
-    # 00:20 UTC = 21:20 BRT do dia anterior. Neste horario a rodada GFS 18Z
-    # normalmente ja possui F006 e o seletor interno recua automaticamente
-    # para a rodada sinoptica anterior se a 18Z ainda nao estiver pronta.
     - cron: '20 0 * * *'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sideral-wrf-native-daily
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  wrf-native-reflectivity:
+  gfs-ready:
+    name: Confirmar GFS com F042 disponivel
     runs-on: ubuntu-22.04
-    timeout-minutes: 330
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout WRF atual
-        uses: actions/checkout@v4
-        with:
-          ref: wrf-runner
-          fetch-depth: 0
-
-      - name: Confirmar configuracao nativa
+      - name: Procurar ciclo GFS recente com F042
+        shell: bash
         run: |
-          set -euxo pipefail
-          echo "SIDERAL WRF 4 KM - REFL_10CM NATIVO"
-          echo "Execucao: ${GITHUB_EVENT_NAME}"
-          git rev-parse HEAD
-          grep -q "do_radar_ref = 1" wrf/run_gfs_test.sh
-          grep -q "mp_physics = 8" wrf/run_gfs_test.sh
-          grep -q "REFL_10CM_NATIVE" wrf/extract_wrf_json.py
-          grep -q "nao publica refletividade aproximada" wrf/extract_wrf_json.py
-          echo "CONFIGURACAO DE RADAR NATIVO CONFIRMADA"
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt
+          import urllib.request
 
-      - name: Aplicar correcoes operacionais WPS e MPI
-        run: |
-          set -euxo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path('wrf/run_gfs_test.sh')
-          text = path.read_text(encoding='utf-8')
-
-          replacement = r'''log "Baixando e validando geografia WPS low-res"
-          rm -rf "$WORK/geog_extract" "$WORK/WPS_GEOG"
-          mkdir -p "$WORK/geog_extract"
-          curl -fL --retry 3 --connect-timeout 20 --max-time 900 \
-            -o "$WORK/geog.tar.gz" \
-            https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
-          tar -xzf "$WORK/geog.tar.gz" -C "$WORK/geog_extract"
-          TOPO_INDEX="$(find "$WORK/geog_extract" -type f -path '*/topo_gmted2010_5m/index' -print -quit)"
-          test -n "$TOPO_INDEX" || { echo "topo_gmted2010_5m ausente" >&2; exit 31; }
-          GEOG_ROOT="$(dirname "$(dirname "$TOPO_INDEX")")"
-          echo "Raiz geografica detectada: $GEOG_ROOT"
-          mkdir -p "$WORK/WPS_GEOG"
-          cp -a "$GEOG_ROOT/." "$WORK/WPS_GEOG/"
-          REQUIRED_GEOG=(
-            topo_gmted2010_5m
-            modis_landuse_20class_5m_with_lakes
-            soiltype_top_5m
-            soiltype_bot_5m
-            greenfrac_fpar_modis_5m
-            soiltemp_1deg
-            albedo_modis
-            maxsnowalb_modis
-            lai_modis_10m
-          )
-          for DATASET in "${REQUIRED_GEOG[@]}"; do
-            test -f "$WORK/WPS_GEOG/$DATASET/index" || { echo "GEOG AUSENTE: $DATASET" >&2; exit 32; }
-            echo "GEOG OK: $DATASET"
-          done
-          echo "WPS_GEOG VALIDADO COMPLETAMENTE"
-          '''
-
-          pattern = re.compile(
-              r'log "Baixando e extraindo geografia WPS low-res".*?'
-              r'(?=cat > "\$WORK/namelist\.wps" <<EOF)',
-              re.S,
-          )
-          text, count = pattern.subn(replacement + '\n\n', text, count=1)
-          if count != 1:
-              raise SystemExit(f'Patch de geografia nao aplicado: {count}')
-
-          text = text.replace(
-              'mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe',
-              'mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe',
-          )
-          text = text.replace(
-              'mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe',
-              'mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe',
-          )
-          path.write_text(text, encoding='utf-8')
+          now = dt.datetime.now(dt.timezone.utc)
+          base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+          for offset in range(0, 97, 6):
+              run = base - dt.timedelta(hours=offset)
+              date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
+              url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f042'
+              try:
+                  req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Sideral-WRF-7km-trigger'})
+                  with urllib.request.urlopen(req, timeout=25) as response:
+                      if response.status in (200, 206):
+                          print(f'GFS PRONTO: {date} {cycle}Z possui F042; liberando WRF regional 7 km.')
+                          raise SystemExit(0)
+              except Exception:
+                  continue
+          raise SystemExit('Nenhuma rodada GFS recente com F042 disponivel.')
           PY
-          grep -q "WPS_GEOG VALIDADO COMPLETAMENTE" wrf/run_gfs_test.sh
-          grep -q -- "--oversubscribe --bind-to none -np 4" wrf/run_gfs_test.sh
-          grep -q "do_radar_ref = 1" wrf/run_gfs_test.sh
-
-      - name: Liberar espaco do runner
-        run: |
-          set -euxo pipefail
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
-          sudo apt-get clean || true
-          docker system prune -af || true
-          df -h
-
-      - name: Baixar container WRF WPS
-        run: |
-          set -euxo pipefail
-          docker pull dtcenter/wps_wrf:latest
-          docker image ls dtcenter/wps_wrf:latest
-
-      - name: Rodar GFS WPS WRF 4 km
-        run: |
-          set -euxo pipefail
-          chmod +x wrf/run_gfs_test.sh
-          ./wrf/run_gfs_test.sh
-
-      - name: Preparar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instalar extrator
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install numpy xarray netCDF4
-
-      - name: Extrair somente REFL_10CM nativo
-        run: |
-          set -euxo pipefail
-          rm -rf wrf_publish
-          python wrf/extract_wrf_json.py \
-            --run-dir wrf_work/run \
-            --run-env wrf_diagnostics/run.env \
-            --output-dir wrf_publish \
-            --grid-x 220 \
-            --grid-y 180
-          python - <<'PY'
-          import gzip
-          import json
-          from pathlib import Path
-
-          meta = json.loads(Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
-          assert meta['frameCount'] >= 3, meta
-          assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', meta
-          for frame in meta['frames']:
-              assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', frame
-              path = Path('wrf_publish') / frame['file']
-              with gzip.open(path, 'rt', encoding='utf-8') as fh:
-                  data = json.load(fh)
-              assert data.get('reflectivitySource') == 'REFL_10CM_NATIVE', data
-              assert len(data['fields']['reflectivity']) == data['gridX'] * data['gridY']
-              stats = data['reflectivityStats']
-              print(f"F{int(frame['forecastHour']):03d}", frame['validTime'], stats)
-          print('VALIDACAO REFL_10CM NATIVO: OK')
-          PY
-
-      - name: Publicar dados nativos em wrf-data
-        run: |
-          set -euxo pipefail
-          git config user.name "sideral-wrf-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf /tmp/sideral-wrf-data
-          git worktree add --detach /tmp/sideral-wrf-data
-          cd /tmp/sideral-wrf-data
-          git checkout --orphan wrf-data-next
-          git rm -rf . || true
-          git clean -fdx || true
-          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          cat > README.md <<'EOF'
-          # Sideral WRF Data
-          Dados WRF Sul 4 km processados automaticamente.
-          A refletividade publicada usa exclusivamente REFL_10CM nativo do WRF.
-          Esta rodada curta e substituida automaticamente pela previsao horaria do dia seguinte.
-          EOF
-          git add .
-          git commit -m "Atualiza WRF 4 km com REFL_10CM nativo [skip render]"
-          git push --force origin HEAD:wrf-data
-
-      - name: Confirmar wrf-data nativo
-        run: |
-          set -euxo pipefail
-          URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/wrf-data/metadata.json?native=${GITHUB_RUN_ID}"
-          for N in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -fsSL --connect-timeout 10 --max-time 30 "$URL-$N" -o /tmp/metadata.json; then
-              if python - <<'PY'
-          import json
-          d = json.load(open('/tmp/metadata.json', encoding='utf-8'))
-          ok = (
-              d.get('frameCount', 0) >= 3
-              and d.get('reflectivitySource') == 'REFL_10CM_NATIVE'
-              and all(f.get('reflectivitySource') == 'REFL_10CM_NATIVE' for f in d.get('frames', []))
-          )
-          print('metadata remoto:', d)
-          raise SystemExit(0 if ok else 1)
-          PY
-              then
-                echo "PUBLICACAO REFL_10CM NATIVO CONFIRMADA"
-                exit 0
-              fi
-            fi
-            sleep 5
-          done
-          echo "Falha ao confirmar wrf-data nativo" >&2
-          exit 41
-
-      - name: Salvar diagnosticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrf-native-reflectivity-diagnostics
-          path: |
-            wrf_diagnostics/
-            wrf_publish/
-          retention-days: 3
-          if-no-files-found: warn
