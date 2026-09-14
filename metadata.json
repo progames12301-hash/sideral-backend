@@ -1,0 +1,75 @@
+{
+  "schema": "sideral-cim-wrf-3km-metadata-v1",
+  "model": "ecmwf",
+  "resolutionKm": 3,
+  "source": "CIM WRF 3 km · ECMWF",
+  "runDate": "20260913",
+  "runCycle": "06Z",
+  "initTime": "2026-09-13T06:00:00Z",
+  "generatedAt": "2026-09-14T05:29:53.906046Z",
+  "status": "complete",
+  "frameCount": 3,
+  "temporalResolutionMinutes": 180,
+  "reflectivitySource": "REFL_10CM_NATIVE",
+  "availableVariables": [
+    "reflectivity",
+    "stp",
+    "scp",
+    "temperature",
+    "humidity"
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 18,
+      "validTime": "2026-09-14T00:00:00Z",
+      "file": "frames/f018.json.gz",
+      "gridX": 619,
+      "gridY": 659
+    },
+    {
+      "index": 1,
+      "forecastHour": 21,
+      "validTime": "2026-09-14T03:00:00Z",
+      "file": "frames/f021.json.gz",
+      "gridX": 619,
+      "gridY": 659
+    },
+    {
+      "index": 2,
+      "forecastHour": 24,
+      "validTime": "2026-09-14T06:00:00Z",
+      "file": "frames/f024.json.gz",
+      "gridX": 619,
+      "gridY": 659
+    }
+  ],
+  "domainId": "south-cone-v2",
+  "domainName": "CIM Cone Sul ampliado",
+  "domainTargets": [
+    "Sul do Brasil",
+    "Paraguai",
+    "Uruguai",
+    "norte/centro da Argentina",
+    "parte de SP/MS"
+  ],
+  "sourceBoundingBox": {
+    "west": -69.0,
+    "east": -43.0,
+    "south": -40.0,
+    "north": -16.0
+  },
+  "wrfGridConfig": {
+    "e_we": 620,
+    "e_sn": 660,
+    "gridX": 619,
+    "gridY": 659,
+    "dxMeters": 3000,
+    "dyMeters": 3000,
+    "refLat": -27.6,
+    "refLon": -56.0,
+    "standLon": -56.0,
+    "mpiProcesses": 3,
+    "segmentHours": 6
+  }
+}
