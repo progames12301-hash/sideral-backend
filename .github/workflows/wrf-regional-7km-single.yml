@@ -1,0 +1,424 @@
+name: WRF regional 7 km - runner unico reutilizavel
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        required: true
+        type: string
+      domain:
+        required: true
+        type: string
+      publish_branch:
+        required: true
+        type: string
+      source_data_branch:
+        required: false
+        type: string
+        default: ''
+      run_script:
+        required: false
+        type: string
+        default: ''
+      run_date:
+        required: false
+        type: string
+        default: ''
+      run_cycle:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  WRF_HISTORY_INTERVAL_MINUTES: '60'
+  WRF_TARGET_RESOLUTION_KM: '7'
+  WRF_DX_METERS: '7000'
+  WRF_DY_METERS: '7000'
+  WRF_RUN_HOURS: '42'
+  WRF_START_HOUR: '0'
+  WRF_END_HOUR: '42'
+  WRF_PUBLISH_MAX_HOUR: '40'
+  WRF_TIME_STEP: '42'
+
+jobs:
+  wrf:
+    name: ${{ inputs.model }} WRF ${{ inputs.domain }} 7 km F000-F040 horario
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+
+      - name: Preparar runner
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+          docker pull dtcenter/wps_wrf:latest
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --disable-pip-version-check requests 'numpy>=2.0,<3' xarray netCDF4 ecmwf-opendata
+
+      - name: Resolver rodada de entrada
+        id: run
+        env:
+          MODEL: ${{ inputs.model }}
+          SOURCE_BRANCH: ${{ inputs.source_data_branch }}
+          INPUT_RUN_DATE: ${{ inputs.run_date }}
+          INPUT_RUN_CYCLE: ${{ inputs.run_cycle }}
+          REPOSITORY: ${{ github.repository }}
+          CACHE_BUSTER: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.request
+
+          model = os.environ['MODEL'].strip().lower()
+          requested_date = os.environ.get('INPUT_RUN_DATE', '').strip().replace('-', '')
+          requested_cycle = ''.join(ch for ch in os.environ.get('INPUT_RUN_CYCLE', '') if ch.isdigit()).zfill(2)[:2]
+
+          def head_ok(url):
+              try:
+                  request = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Sideral-WRF-7km'})
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return response.status in (200, 206)
+              except Exception:
+                  return False
+
+          if model == 'gfs':
+              def ready(date, cycle):
+                  return head_ok(f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f042')
+
+              selected = None
+              if requested_date or requested_cycle:
+                  if len(requested_date) != 8 or not requested_date.isdigit():
+                      raise SystemExit('run_date deve estar em YYYYMMDD')
+                  if requested_cycle not in {'00', '06', '12', '18'}:
+                      raise SystemExit('run_cycle deve ser 00, 06, 12 ou 18')
+                  if not ready(requested_date, requested_cycle):
+                      raise SystemExit(f'GFS {requested_date} {requested_cycle}Z ainda nao possui F042')
+                  selected = (requested_date, requested_cycle)
+              else:
+                  now = dt.datetime.now(dt.timezone.utc)
+                  base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+                  for offset in range(0, 97, 6):
+                      run = base - dt.timedelta(hours=offset)
+                      date, cycle = run.strftime('%Y%m%d'), run.strftime('%H')
+                      if ready(date, cycle):
+                          selected = (date, cycle)
+                          break
+              if selected is None:
+                  raise SystemExit('Nenhuma rodada GFS recente com F042 disponivel')
+              run_date, run_cycle = selected
+              init_time = dt.datetime.strptime(run_date + run_cycle, '%Y%m%d%H').replace(tzinfo=dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+          else:
+              branch = os.environ.get('SOURCE_BRANCH', '').strip()
+              if not branch:
+                  raise SystemExit(f'source_data_branch ausente para {model}')
+              url = f"https://raw.githubusercontent.com/{os.environ['REPOSITORY']}/{branch}/metadata.json?run={os.environ['CACHE_BUSTER']}"
+              request = urllib.request.Request(url, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Sideral-WRF-7km'})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  metadata = json.load(response)
+              if str(metadata.get('model')).lower() != model:
+                  raise SystemExit(f"Branch fonte retornou modelo incorreto: {metadata.get('model')}")
+              run_date = str(metadata['runDate']).replace('-', '')
+              run_cycle = ''.join(ch for ch in str(metadata['runCycle']) if ch.isdigit()).zfill(2)[:2]
+              init_time = str(metadata['initTime'])
+              if len(run_date) != 8 or run_cycle not in {'00', '06', '12', '18'}:
+                  raise SystemExit(f'Rodada fonte invalida: {run_date} {run_cycle}')
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'run_date={run_date}\n')
+              output.write(f'run_cycle={run_cycle}\n')
+              output.write(f'init_time={init_time}\n')
+          print(f'{model.upper()} selecionado: {run_date} {run_cycle}Z; publicar F000-F040 horario')
+          PY
+
+      - name: Adaptar executor para 7 km sem remapear a saida
+        env:
+          MODEL: ${{ inputs.model }}
+          DOMAIN: ${{ inputs.domain }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          model = os.environ['MODEL'].strip().lower()
+          domain = os.environ['DOMAIN'].strip().lower()
+          if model not in {'gfs', 'icon', 'ecmwf'}:
+              raise SystemExit(f'Modelo regional invalido: {model}')
+          if domain not in {'sul', 'sudeste'}:
+              raise SystemExit(f'Dominio regional invalido: {domain}')
+
+          def replace(path, pairs):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  if old not in text:
+                      raise SystemExit(f'Padrao nao encontrado em {path}: {old}')
+                  text = text.replace(old, new)
+              p.write_text(text, encoding='utf-8')
+
+          replace('wrf/extract_wrf_json.py', [
+              ('data.get("resolutionKm") != 4', 'data.get("resolutionKm") != 7'),
+              ('resolutionKm=4', 'resolutionKm=7'),
+              ('(4000, 4000)', '(7000, 7000)'),
+              ('WRF 4 km', 'WRF 7 km'),
+          ])
+          replace('wrf/extract_wrf_severe.py', [
+              ('(4000, 4000)', '(7000, 7000)'),
+              ('WRF2 4 km', 'WRF2 7 km'),
+              ('WRF 4 km', 'WRF 7 km'),
+          ])
+          replace('wrf/extract_wrf_json_core.py', [
+              ('"source": "WRF 4 km GFS (REFL_10CM nativo)"', '"source": "WRF 7 km GFS (REFL_10CM nativo)"'),
+              ('"resolutionKm": 4,', '"resolutionKm": 7,'),
+              ('WRF 2 Sudeste 4 km', 'WRF 2 Sudeste 7 km'),
+          ])
+          replace('wrf/retag_wrf_model.py', [
+              ('WRF Sul 4 km inicializado', 'WRF Sul 7 km inicializado'),
+              ('WRF 2 Sudeste 4 km', 'WRF 2 Sudeste 7 km'),
+          ])
+
+          if model == 'gfs':
+              p = Path('wrf/run_gfs_test.sh')
+              text = p.read_text(encoding='utf-8')
+              if domain == 'sul':
+                  pairs = [
+                      (' e_we              = 300,', ' e_we              = 172,'),
+                      (' e_sn              = 360,', ' e_sn              = 206,'),
+                      (' e_we = 300,', ' e_we = 172,'),
+                      (' e_sn = 360,', ' e_sn = 206,'),
+                  ]
+              else:
+                  pairs = [
+                      (' e_we              = 300,', ' e_we              = 223,'),
+                      (' e_sn              = 360,', ' e_sn              = 206,'),
+                      (' e_we = 300,', ' e_we = 223,'),
+                      (' e_sn = 360,', ' e_sn = 206,'),
+                      (' ref_lat   = -28.10,', ' ref_lat   = -19.50,'),
+                      (' ref_lon   = -53.45,', ' ref_lon   = -46.50,'),
+                      (' truelat1  = -25.0,', ' truelat1  = -15.0,'),
+                      (' truelat2  = -35.0,', ' truelat2  = -25.0,'),
+                      (' stand_lon = -53.45,', ' stand_lon = -46.50,'),
+                  ]
+              pairs += [
+                  (' dx = 4000,', ' dx = 7000,'),
+                  (' dy = 4000,', ' dy = 7000,'),
+                  (' time_step = 18,', ' time_step = 42,'),
+              ]
+              for old, new in pairs:
+                  if old not in text:
+                      raise SystemExit(f'Padrao GFS ausente: {old}')
+                  text = text.replace(old, new)
+              p.write_text(text, encoding='utf-8')
+
+          if model in {'icon', 'ecmwf'} and domain == 'sudeste':
+              replace('wrf/run_wrf_with_source_sudeste.sh', [
+                  (' e_we              = 390,', ' e_we              = 223,'),
+                  (' e_sn              = 360,', ' e_sn              = 206,'),
+                  (' e_we = 390,', ' e_we = 223,'),
+                  (' e_sn = 360,', ' e_sn = 206,'),
+                  (' dx = 4000,', ' dx = 7000,'),
+                  (' dy = 4000,', ' dy = 7000,'),
+                  (' time_step = 24,', ' time_step = 42,'),
+              ])
+
+          print('Executor regional preparado:', model, domain, '7 km, F000-F042 integrado, saida horaria')
+          PY
+
+      - name: Executar WRF regional em um unico runner
+        env:
+          MODEL: ${{ inputs.model }}
+          DOMAIN: ${{ inputs.domain }}
+          RUN_SCRIPT: ${{ inputs.run_script }}
+          FORCE_RUN_DATE: ${{ steps.run.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ steps.run.outputs.run_cycle }}
+          WRF_HISTORY_INTERVAL_MINUTES: '60'
+          WRF_START_HOUR: '0'
+          WRF_END_HOUR: '42'
+          WRF_RUN_HOURS: '42'
+          WRF_DX_METERS: '7000'
+          WRF_DY_METERS: '7000'
+          WRF_TIME_STEP: '42'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [[ "$DOMAIN" == 'sul' ]]; then
+            export WRF_E_WE='172'
+            export WRF_E_SN='206'
+            export WRF_REF_LAT='-28.10'
+            export WRF_REF_LON='-53.45'
+            export WRF_STAND_LON='-53.45'
+          else
+            export WRF_E_WE='223'
+            export WRF_E_SN='206'
+            export WRF_REF_LAT='-19.50'
+            export WRF_REF_LON='-46.50'
+            export WRF_STAND_LON='-46.50'
+          fi
+
+          if [[ "$MODEL" == 'gfs' ]]; then
+            export WRF_COLD_START='1'
+            chmod +x wrf/run_gfs_segment.sh
+            wrf/run_gfs_segment.sh
+          else
+            test -n "$RUN_SCRIPT"
+            chmod +x "wrf/$RUN_SCRIPT"
+            "wrf/$RUN_SCRIPT"
+          fi
+
+          grep -q 'SUCCESS COMPLETE WRF' wrf_work/run/rsl.error.0000
+          echo 'SUCCESS COMPLETE WRF confirmado; iniciando extracao.'
+
+      - name: Extrair grade nativa e manter somente F000-F040
+        env:
+          MODEL: ${{ inputs.model }}
+          DOMAIN: ${{ inputs.domain }}
+          EXPECTED_INIT: ${{ steps.run.outputs.init_time }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$DOMAIN" == 'sul' ]]; then
+            GRID_X=171
+            GRID_Y=205
+          else
+            GRID_X=222
+            GRID_Y=205
+          fi
+
+          rm -rf wrf_publish
+          python wrf/extract_wrf_json.py \
+            --run-dir wrf_work/run \
+            --run-env wrf_diagnostics/run.env \
+            --output-dir wrf_publish \
+            --grid-x "$GRID_X" \
+            --grid-y "$GRID_Y"
+
+          if [[ "$MODEL" != 'gfs' ]]; then
+            python wrf/retag_wrf_model.py --root wrf_publish --model "$MODEL"
+          fi
+
+          python3 - "$GRID_X" "$GRID_Y" "$MODEL" "$DOMAIN" <<'PY'
+          import gzip
+          import json
+          import sys
+          from pathlib import Path
+
+          grid_x, grid_y = int(sys.argv[1]), int(sys.argv[2])
+          model, domain = sys.argv[3], sys.argv[4]
+          root = Path('wrf_publish')
+          path = root / 'metadata.json'
+          meta = json.loads(path.read_text(encoding='utf-8'))
+
+          keep = []
+          for frame in meta.get('frames', []):
+              hour = int(frame['forecastHour'])
+              if 0 <= hour <= 40:
+                  keep.append(frame)
+                  continue
+              for key in ('file', 'soundingFile', 'severeFile'):
+                  rel = frame.get(key)
+                  if rel:
+                      (root / rel).unlink(missing_ok=True)
+
+          keep.sort(key=lambda frame: int(frame['forecastHour']))
+          for index, frame in enumerate(keep):
+              frame['index'] = index
+
+          hours = [int(frame['forecastHour']) for frame in keep]
+          assert hours == list(range(41)), hours
+          assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', meta
+          assert int(meta.get('resolutionKm')) == 7, meta
+          for frame in keep:
+              assert int(frame['gridX']) == grid_x and int(frame['gridY']) == grid_y, frame
+              assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', frame
+              assert (root / frame['file']).is_file(), frame
+
+          first = keep[0]
+          with gzip.open(root / first['file'], 'rt', encoding='utf-8') as handle:
+              payload = json.load(handle)
+          assert int(payload['dxMeters']) == 7000 and int(payload['dyMeters']) == 7000, payload
+          assert int(payload['gridX']) == grid_x and int(payload['gridY']) == grid_y, payload
+          assert payload.get('reflectivitySource') == 'REFL_10CM_NATIVE', payload
+
+          meta['frames'] = keep
+          meta['frameCount'] = 41
+          meta['temporalResolutionMinutes'] = 60
+          meta['resolutionKm'] = 7
+          meta['forecastHourStart'] = 0
+          meta['forecastHourEnd'] = 40
+          meta['horizonHours'] = 40
+          meta['nativeGrid'] = True
+          meta['singleRunner'] = True
+          meta['integratedThroughHour'] = 42
+          meta['domain'] = domain
+          meta['status'] = 'complete'
+          meta['scope'] = 'forecast_40_hours_hourly'
+          path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+          print('REGIONAL 7 KM VALIDADO:', model, domain, hours[0], hours[-1], len(hours), f'{grid_x}x{grid_y}')
+          PY
+
+      - name: Publicar branch regional
+        env:
+          PUBLISH_BRANCH: ${{ inputs.publish_branch }}
+          MODEL: ${{ inputs.model }}
+          DOMAIN: ${{ inputs.domain }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'sideral-wrf-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          target="/tmp/${PUBLISH_BRANCH}"
+          rm -rf "$target"
+          git worktree add --detach "$target"
+          cd "$target"
+          git checkout --orphan "${PUBLISH_BRANCH}-next"
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
+          printf '# Sideral WRF regional 7 km\n%s / %s · F000-F040 de 1 em 1 hora · um unico runner WRF · REFL_10CM nativo · grade nativa.\n' "${MODEL^^}" "$DOMAIN" > README.md
+          git add .
+          git commit -m "${MODEL^^}-WRF ${DOMAIN} 7 km F000-F040 horario [skip render]"
+          git push --force origin "HEAD:${PUBLISH_BRANCH}"
+
+      - name: Guardar produto como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrf-${{ inputs.domain }}-${{ inputs.model }}-7km-${{ github.run_id }}
+          path: wrf_publish/
+          retention-days: 2
+          compression-level: 6
+
+      - name: Guardar diagnosticos se falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrf-${{ inputs.domain }}-${{ inputs.model }}-7km-diagnostics-${{ github.run_id }}
+          path: |
+            wrf_diagnostics/
+            wrf_work/run/rsl.*
+          retention-days: 3
+          if-no-files-found: warn
