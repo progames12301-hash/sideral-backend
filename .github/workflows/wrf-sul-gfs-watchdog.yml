@@ -60,7 +60,7 @@ jobs:
 
           gh api "repos/$GH_REPO/actions/runs?status=queued&per_page=100" > /tmp/queued.json
           gh api "repos/$GH_REPO/actions/runs?status=in_progress&per_page=100" > /tmp/in-progress.json
-          python3 - <<'PY'
+          if ! python3 - <<'PY'
           import json
           others=[]
           for path in ('/tmp/queued.json','/tmp/in-progress.json'):
@@ -73,10 +73,9 @@ jobs:
                   others.append((name,run.get('status'),run.get('id')))
           if others:
               print('Outros WRF regionais usando/aguardando runners:', others[:8])
-              raise SystemExit(2)
+              raise SystemExit(1)
           PY
-          status=$?
-          if [ "$status" = "2" ]; then
+          then
             echo "GFS Sul espera a proxima checagem para nao disputar runners."
             exit 0
           fi
