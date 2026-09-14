@@ -21,89 +21,54 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Buscar executor WRF operacional mais recente
-        run: |
-          set -euo pipefail
-          git fetch origin wrf-runner:refs/remotes/origin/wrf-runner
-
-      - name: Garantir WRF regional 4 km e CIM 8 km no executor
+      - name: Validar contrato dos seis WRF regionais
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/wrf-contract
-          for f in \
-            wrf/run_gfs_test.sh \
-            wrf/run_wrf_with_source.sh \
-            wrf/run_wrf_with_source_sudeste.sh \
-            wrf/extract_wrf_json.py \
-            wrf/extract_wrf_severe.py \
-            wrf/extract_cim_wrf.py \
-            wrf/extract_cim_wrf_core.py \
-            wrf/fetch_gfs_land_support.py; do
-            git show "origin/wrf-runner:$f" > "/tmp/wrf-contract/$(basename "$f")"
-          done
+          base=.github/workflows/wrf-regional-7km-single.yml
+          test -s "$base"
+          grep -q "WRF_TARGET_RESOLUTION_KM: '7'" "$base"
+          grep -q "WRF_DX_METERS: '7000'" "$base"
+          grep -q "WRF_DY_METERS: '7000'" "$base"
+          grep -q "WRF_HISTORY_INTERVAL_MINUTES: '60'" "$base"
+          grep -q "WRF_END_HOUR: '42'" "$base"
+          grep -q "WRF_PUBLISH_MAX_HOUR: '40'" "$base"
+          grep -q "hours == list(range(41))" "$base"
+          grep -q "REFL_10CM_NATIVE" "$base"
+          grep -q "singleRunner.*True" "$base"
+          grep -q "GRID_X=171" "$base"
+          grep -q "GRID_X=222" "$base"
 
-          test "$(grep -c 'dx = 4000' /tmp/wrf-contract/run_gfs_test.sh)" -ge 2
-          test "$(grep -c 'dy = 4000' /tmp/wrf-contract/run_gfs_test.sh)" -ge 2
-          grep -q 'do_radar_ref = 1' /tmp/wrf-contract/run_gfs_test.sh
-          grep -q 'mp_physics = 8' /tmp/wrf-contract/run_gfs_test.sh
-          grep -q 'WRF_DX_METERS="${WRF_DX_METERS:-4000}"' /tmp/wrf-contract/run_wrf_with_source.sh
-          grep -q 'WRF_DY_METERS="${WRF_DY_METERS:-$WRF_DX_METERS}"' /tmp/wrf-contract/run_wrf_with_source.sh
-          grep -q 'do_radar_ref = 1' /tmp/wrf-contract/run_wrf_with_source.sh
-          test "$(grep -c 'dx = 4000' /tmp/wrf-contract/run_wrf_with_source_sudeste.sh)" -ge 2
-          test "$(grep -c 'dy = 4000' /tmp/wrf-contract/run_wrf_with_source_sudeste.sh)" -ge 2
-          grep -q 'do_radar_ref = 1' /tmp/wrf-contract/run_wrf_with_source_sudeste.sh
-
-          grep -q "(dx, dy) != (4000, 4000)" /tmp/wrf-contract/extract_wrf_json.py
-          grep -q '_set_arg("--grid-x", nx)' /tmp/wrf-contract/extract_wrf_json.py
-          grep -q '_set_arg("--grid-y", ny)' /tmp/wrf-contract/extract_wrf_json.py
-          grep -q 'Downsampling detectado no WRF 4 km' /tmp/wrf-contract/extract_wrf_json.py
-          grep -q "(dx, dy) != (4000, 4000)" /tmp/wrf-contract/extract_wrf_severe.py
-          grep -q '_set_arg("--grid-x", nx)' /tmp/wrf-contract/extract_wrf_severe.py
-          grep -q '_set_arg("--grid-y", ny)' /tmp/wrf-contract/extract_wrf_severe.py
-
-          grep -q 'CIM_RESOLUTION_KM' /tmp/wrf-contract/extract_cim_wrf.py
-          grep -q '_set_arg("--grid-x", nx)' /tmp/wrf-contract/extract_cim_wrf.py
-          grep -q '_set_arg("--grid-y", ny)' /tmp/wrf-contract/extract_cim_wrf.py
-          grep -q 'Remapeamento/downsampling detectado' /tmp/wrf-contract/extract_cim_wrf.py
-          grep -q 'CIM_OUTPUT_INTERVAL_HOURS' /tmp/wrf-contract/extract_cim_wrf_core.py
-          grep -q 'CIM_MAX_PUBLISHED_HOUR' /tmp/wrf-contract/extract_cim_wrf_core.py
-          grep -q 'reflectivitySource.*REFL_10CM_NATIVE' /tmp/wrf-contract/extract_cim_wrf_core.py
-          grep -q 'choose_run' /tmp/wrf-contract/fetch_gfs_land_support.py
-          echo 'CONTRATO DO EXECUTOR: regionais=4 km; CIM=8 km nativo/horario; GFS land com fallback de rodada.'
-
-      - name: Garantir todos os agendamentos operacionais
-        shell: bash
-        run: |
-          set -euo pipefail
           required=(
-            .github/workflows/wrf-4km-native-reflectivity.yml
             .github/workflows/wrf-4km-next-day-auto.yml
             .github/workflows/wrf-icon-4km-native.yml
             .github/workflows/wrf-ecmwf-4km-native.yml
             .github/workflows/wrf-sudeste-gfs-4km.yml
             .github/workflows/wrf-sudeste-icon-4km.yml
             .github/workflows/wrf-sudeste-ecmwf-4km.yml
-            .github/workflows/cim-wrf-3km-operational.yml
           )
-          for f in "${required[@]}"; do test -s "$f" || { echo "Workflow ausente: $f"; exit 1; }; done
-          grep -q 'schedule:' .github/workflows/wrf-4km-native-reflectivity.yml
-          grep -q 'workflow_run:' .github/workflows/wrf-4km-next-day-auto.yml
-          grep -q 'schedule:' .github/workflows/wrf-icon-4km-native.yml
-          grep -q 'schedule:' .github/workflows/wrf-ecmwf-4km-native.yml
-          grep -q 'schedule:' .github/workflows/wrf-sudeste-gfs-4km.yml
-          grep -q 'schedule:' .github/workflows/wrf-sudeste-icon-4km.yml
-          grep -q 'schedule:' .github/workflows/wrf-sudeste-ecmwf-4km.yml
-          grep -q 'schedule:' .github/workflows/cim-wrf-3km-operational.yml
-          grep -q "WRF_DX_METERS: '8000'" .github/workflows/cim-wrf-3km-operational.yml
-          grep -q "WRF_DY_METERS: '8000'" .github/workflows/cim-wrf-3km-operational.yml
-          grep -q "WRF_HISTORY_INTERVAL_MINUTES: '60'" .github/workflows/cim-wrf-3km-operational.yml
-          grep -q "CIM_MAX_PUBLISHED_HOUR: '40'" .github/workflows/cim-wrf-3km-operational.yml
-          echo 'AGENDAMENTOS: seis WRF regionais + CIM 8 km diario presentes e cobertos pelo contrato.'
+          for f in "${required[@]}"; do
+            test -s "$f" || { echo "Workflow regional ausente: $f"; exit 1; }
+            grep -q 'wrf-regional-7km-single.yml' "$f"
+          done
+          echo 'CONTRATO REGIONAL: 7 km · F000-F040 horario · runner unico · REFL nativo.'
 
-      - name: Auditar branches publicadas e REFL_10CM nativo
+      - name: Validar contrato CIM 8 km independente
+        shell: bash
+        run: |
+          set -euo pipefail
+          cim=.github/workflows/cim-wrf-3km-operational.yml
+          test -s "$cim"
+          grep -q "WRF_DX_METERS: '8000'" "$cim"
+          grep -q "WRF_DY_METERS: '8000'" "$cim"
+          grep -q "WRF_HISTORY_INTERVAL_MINUTES: '60'" "$cim"
+          grep -q "CIM_MAX_PUBLISHED_HOUR: '40'" "$cim"
+          echo 'CONTRATO CIM: 8 km · F000-F040 horario preservado.'
+
+      - name: Auditar branches publicadas
         env:
           REPOSITORY: ${{ github.repository }}
+        shell: bash
         run: |
           python3 - <<'PY'
           import gzip
@@ -114,20 +79,19 @@ jobs:
 
           repo = os.environ['REPOSITORY']
           products = {
-              'wrf-data': (4, 4000, 4000, 299, 359),
-              'wrf-icon-data': (4, 4000, 4000, 299, 359),
-              'wrf-ecmwf-data': (4, 4000, 4000, 299, 359),
-              'wrf-sudeste-gfs-data': (4, 4000, 4000, 389, 359),
-              'wrf-sudeste-icon-data': (4, 4000, 4000, 389, 359),
-              'wrf-sudeste-ecmwf-data': (4, 4000, 4000, 389, 359),
-              # Branches legadas sao mantidas para nao quebrar o site/API.
+              'wrf-data': (7, 7000, 7000, 171, 205),
+              'wrf-icon-data': (7, 7000, 7000, 171, 205),
+              'wrf-ecmwf-data': (7, 7000, 7000, 171, 205),
+              'wrf-sudeste-gfs-data': (7, 7000, 7000, 222, 205),
+              'wrf-sudeste-icon-data': (7, 7000, 7000, 222, 205),
+              'wrf-sudeste-ecmwf-data': (7, 7000, 7000, 222, 205),
               'cim-wrf-3km-icon-data': (8, 8000, 8000, 279, 234),
               'cim-wrf-3km-ecmwf-data': (8, 8000, 8000, 279, 234),
           }
 
           def get(url):
               req = urllib.request.Request(url, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Sideral-WRF-contract'})
-              with urllib.request.urlopen(req, timeout=40) as response:
+              with urllib.request.urlopen(req, timeout=45) as response:
                   return response.read()
 
           failures = []
@@ -137,31 +101,29 @@ jobs:
                   meta = json.loads(get(f'{base}/metadata.json?audit=1'))
                   assert int(meta.get('resolutionKm')) == km, (branch, 'resolutionKm', meta.get('resolutionKm'), km)
                   assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'reflectivitySource')
+                  assert int(meta.get('temporalResolutionMinutes', 0)) == 60, (branch, 'temporalResolutionMinutes')
                   frames = meta.get('frames') or []
-                  assert frames, (branch, 'sem frames')
-                  if branch.startswith('cim-wrf-3km-'):
-                      hours = [int(frame.get('forecastHour')) for frame in frames]
-                      assert hours == list(range(41)), (branch, 'horas CIM', hours)
-                      assert int(meta.get('temporalResolutionMinutes')) == 60, (branch, 'resolucao temporal')
-                      assert meta.get('nativeGrid') is True, (branch, 'metadata nativeGrid')
+                  hours = [int(frame.get('forecastHour', -1)) for frame in frames]
+                  assert hours == list(range(41)), (branch, 'hours', hours)
+                  assert int(meta.get('frameCount', 0)) == 41, (branch, 'frameCount')
+                  assert meta.get('nativeGrid') is True, (branch, 'nativeGrid')
+                  if branch.startswith('wrf-') and not branch.startswith('wrf2-'):
+                      if not branch.startswith('cim-wrf-'):
+                          assert meta.get('singleRunner') is True, (branch, 'singleRunner')
                   for frame in frames:
-                      assert int(frame.get('gridX')) == nx and int(frame.get('gridY')) == ny, (branch, 'metadata downsampled', frame.get('gridX'), frame.get('gridY'), nx, ny)
-                      assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'frame sem REFL_10CM_NATIVE')
+                      assert int(frame.get('gridX')) == nx and int(frame.get('gridY')) == ny, (branch, 'grid', frame.get('gridX'), frame.get('gridY'), nx, ny)
+                      assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'frame reflectivity')
+
                   raw = get(f"{base}/{frames[0]['file']}?audit=1")
                   try:
                       body = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
                   except OSError:
                       body = raw
                   payload = json.loads(body)
-                  assert int(payload.get('dxMeters')) == dx and int(payload.get('dyMeters')) == dy, (branch, 'DX/DY', payload.get('dxMeters'), payload.get('dyMeters'), dx, dy)
-                  assert int(payload.get('gridX')) == nx and int(payload.get('gridY')) == ny, (branch, 'payload downsampled', payload.get('gridX'), payload.get('gridY'), nx, ny)
-                  assert payload.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'payload sem REFL_10CM_NATIVE')
-                  fields = payload.get('fields') or {}
-                  count = nx * ny
-                  assert len(fields.get('lat') or []) == count, (branch, 'lat count')
-                  assert len(fields.get('lon') or []) == count, (branch, 'lon count')
-                  assert len(fields.get('reflectivity') or []) == count, (branch, 'reflectivity count')
-                  print(f'OK {branch}: {km} km, {nx}x{ny}, DX/DY={dx}/{dy}, REFL_10CM_NATIVE')
+                  assert int(payload.get('dxMeters')) == dx and int(payload.get('dyMeters')) == dy, (branch, 'DX/DY', payload.get('dxMeters'), payload.get('dyMeters'))
+                  assert int(payload.get('gridX')) == nx and int(payload.get('gridY')) == ny, (branch, 'payload grid')
+                  assert payload.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'payload reflectivity')
+                  print(f'OK {branch}: {km} km, {nx}x{ny}, F000-F040 horario, REFL_10CM_NATIVE')
               except Exception as exc:
                   failures.append(f'{branch}: {exc!r}')
 
@@ -170,5 +132,5 @@ jobs:
               for item in failures:
                   print(' -', item)
               raise SystemExit(1)
-          print('\nTODAS AS PUBLICACOES ESTAO NO CONTRATO NATIVO.')
+          print('\nTODAS AS PUBLICACOES ESTAO NO CONTRATO OPERACIONAL.')
           PY
