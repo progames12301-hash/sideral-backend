@@ -2,20 +2,23 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import math
 import re
 import time
 from pathlib import Path
 
 import requests
 
-UA = "SideralMeteorologia-WRF/1.0"
+UA = "SideralMeteorologia-WRF/2.0"
 BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 
 # O WRF recebe a atmosfera do ICON/ECMWF. Estes campos do GFS sao usados
-# somente para completar solo/terreno/snow que o WPS/real.exe exige.
+# somente para completar solo/terreno/snow exigidos pelo WPS/real.exe.
 #
-# Usa pgrb2.0p25 (e nao sfluxgrb) porque esta e a familia de GRIB2 coberta
-# pela Vtable.GFS oficial do WPS, inclusive para ST/SM em 4 camadas.
+# A rodada atmosferica pode aparecer antes da rodada GFS equivalente. Para
+# evitar 404 nesse intervalo, este script escolhe automaticamente a rodada
+# GFS mais recente que cubra os MESMOS horarios validos do ICON/ECMWF.
 WANTED = (
     r":HGT:surface:",
     r":TMP:surface:",
@@ -35,6 +38,12 @@ WANTED = (
 WANTED_RE = [re.compile(p) for p in WANTED]
 
 
+def gfs_urls(date: str, cycle: str, step: int) -> tuple[str, str]:
+    name = f"gfs.t{cycle}z.pgrb2.0p25.f{step:03d}"
+    url = f"{BASE}/gfs.{date}/{cycle}/atmos/{name}"
+    return url, url + ".idx"
+
+
 def get_text(session: requests.Session, url: str) -> str:
     last = None
     for attempt in range(1, 6):
@@ -48,6 +57,14 @@ def get_text(session: requests.Session, url: str) -> str:
                 break
             time.sleep(attempt * 2)
     raise RuntimeError(f"Falha ao baixar {url}: {last}")
+
+
+def exists(session: requests.Session, url: str) -> bool:
+    try:
+        r = session.get(url, headers={"Range": "bytes=0-0"}, timeout=25)
+        return r.status_code in (200, 206)
+    except requests.RequestException:
+        return False
 
 
 def get_range(session: requests.Session, url: str, start: int, end: int | None) -> bytes:
@@ -84,10 +101,7 @@ def parse_idx(text: str) -> list[tuple[int, str]]:
 
 
 def fetch_step(session: requests.Session, date: str, cycle: str, step: int, output: Path) -> None:
-    fh = f"{step:03d}"
-    name = f"gfs.t{cycle}z.pgrb2.0p25.f{fh}"
-    url = f"{BASE}/gfs.{date}/{cycle}/atmos/{name}"
-    idx_url = url + ".idx"
+    url, idx_url = gfs_urls(date, cycle, step)
     entries = parse_idx(get_text(session, idx_url))
 
     selected: list[tuple[int, int | None, str]] = []
@@ -98,11 +112,10 @@ def fetch_step(session: requests.Session, date: str, cycle: str, step: int, outp
         end = None if next_start is None else next_start - 1
         selected.append((start, end, line))
 
-    # 4x ST + 4x SM e os principais campos de superficie devem estar presentes.
     if len(selected) < 12:
         lines = "\n".join(line for _, line in entries)
         raise RuntimeError(
-            f"Poucos campos de solo selecionados em {name}: {len(selected)}.\n"
+            f"Poucos campos de solo selecionados em {url}: {len(selected)}.\n"
             f"Inventario:\n{lines[:12000]}"
         )
 
@@ -114,6 +127,24 @@ def fetch_step(session: requests.Session, date: str, cycle: str, step: int, outp
     print(f"{output}: {output.stat().st_size / 1024 / 1024:.1f} MiB, {len(selected)} mensagens")
 
 
+def choose_run(session: requests.Session, target: dt.datetime, max_target_hour: int) -> tuple[dt.datetime, int]:
+    # GFS roda de 6 em 6 h. Tenta a rodada equivalente e depois recua.
+    for lag in (0, 6, 12, 18, 24, 30, 36):
+        candidate = target - dt.timedelta(hours=lag)
+        last_step = lag + max_target_hour
+        _, first_idx = gfs_urls(candidate.strftime("%Y%m%d"), candidate.strftime("%H"), lag)
+        _, last_idx = gfs_urls(candidate.strftime("%Y%m%d"), candidate.strftime("%H"), last_step)
+        print(
+            f"Testando GFS land {candidate:%Y%m%d %H}Z: "
+            f"F{lag:03d}..F{last_step:03d} para validar {target:%Y%m%d %H}Z"
+        )
+        if exists(session, first_idx) and exists(session, last_idx):
+            return candidate, lag
+    raise RuntimeError(
+        f"Nenhuma rodada GFS de suporte cobre {target:%Y%m%d %H}Z ate +{max_target_hour} h"
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--date", required=True)
@@ -122,16 +153,32 @@ def main() -> None:
     p.add_argument("--output-dir", required=True)
     args = p.parse_args()
 
+    if args.max_hour < 0:
+        raise SystemExit("--max-hour deve ser >= 0")
+
+    # As fontes atmosfericas usadas pelo WPS estao em passos de 3 h. Para um
+    # horizonte como F040, a cobertura lateral precisa chegar a F042.
+    source_max_hour = int(math.ceil(args.max_hour / 3.0) * 3)
+    target = dt.datetime.strptime(args.date + args.cycle.zfill(2), "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+
     session = requests.Session()
     session.headers.update({"User-Agent": UA})
     out = Path(args.output_dir)
-    for step in range(0, args.max_hour + 1, 3):
+    gfs_run, lag = choose_run(session, target, source_max_hour)
+    gfs_date, gfs_cycle = gfs_run.strftime("%Y%m%d"), gfs_run.strftime("%H")
+    print(
+        f"GFS land escolhido: {gfs_date} {gfs_cycle}Z (lag {lag} h); "
+        f"horarios validos alinhados ao alvo {target:%Y%m%d %H}Z"
+    )
+
+    for target_step in range(0, source_max_hour + 1, 3):
+        gfs_step = lag + target_step
         fetch_step(
             session,
-            args.date,
-            args.cycle.zfill(2),
-            step,
-            out / f"gfs_land_f{step:03d}.grib2",
+            gfs_date,
+            gfs_cycle,
+            gfs_step,
+            out / f"gfs_land_f{target_step:03d}.grib2",
         )
 
 
