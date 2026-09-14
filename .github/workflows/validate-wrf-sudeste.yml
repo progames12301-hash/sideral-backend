@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/validate-wrf-sudeste.yml"
+      - ".github/workflows/wrf-regional-7km-single.yml"
+      - ".github/workflows/wrf-sudeste-gfs-4km.yml"
+      - ".github/workflows/wrf-sudeste-icon-4km.yml"
+      - ".github/workflows/wrf-sudeste-ecmwf-4km.yml"
 
 permissions:
   contents: read
@@ -16,30 +20,28 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: wrf-runner
-      - name: Validar sintaxe dos scripts
+      - name: Validar contrato operacional 7 km
         shell: bash
         run: |
           set -euo pipefail
-          bash -n wrf/run_gfs_segment_sudeste.sh
-          bash -n wrf/run_wrf_with_source_sudeste.sh
-          bash -n wrf/run_icon_wrf_sudeste.sh
-          bash -n wrf/run_ecmwf_wrf_sudeste.sh
-      - name: Validar patch GFS Sudeste sem executar modelo
-        env:
-          FORCE_RUN_DATE: "20260904"
-          FORCE_RUN_CYCLE: "00"
-          WRF_START_HOUR: "0"
-          WRF_END_HOUR: "9"
-          WRF_COLD_START: "1"
-          WRF_PATCH_ONLY: "1"
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x wrf/run_gfs_segment_sudeste.sh
-          wrf/run_gfs_segment_sudeste.sh
-          grep -q "e_we              = 390" wrf/run_gfs_test.sh
-          grep -q "ref_lat   = -19.50" wrf/run_gfs_test.sh
-          grep -q "ref_lon   = -46.50" wrf/run_gfs_test.sh
-          grep -q "stand_lon = -46.50" wrf/run_gfs_test.sh
+          base=.github/workflows/wrf-regional-7km-single.yml
+          test -s "$base"
+          grep -q "WRF_TARGET_RESOLUTION_KM: '7'" "$base"
+          grep -q "WRF_DX_METERS: '7000'" "$base"
+          grep -q "WRF_DY_METERS: '7000'" "$base"
+          grep -q "WRF_HISTORY_INTERVAL_MINUTES: '60'" "$base"
+          grep -q "WRF_END_HOUR: '42'" "$base"
+          grep -q "WRF_PUBLISH_MAX_HOUR: '40'" "$base"
+          grep -q "GRID_X=222" "$base"
+          grep -q "GRID_Y=205" "$base"
+          grep -q "hours == list(range(41))" "$base"
+          grep -q "REFL_10CM_NATIVE" "$base"
+          grep -q "singleRunner.*True" "$base"
+          for f in \
+            .github/workflows/wrf-sudeste-gfs-4km.yml \
+            .github/workflows/wrf-sudeste-icon-4km.yml \
+            .github/workflows/wrf-sudeste-ecmwf-4km.yml; do
+            grep -q 'wrf-regional-7km-single.yml' "$f"
+            grep -q 'domain: sudeste' "$f"
+          done
+          echo 'SUDESTE OK: 7 km · F000-F040 horario · 41 frames · runner unico · REFL nativo.'
