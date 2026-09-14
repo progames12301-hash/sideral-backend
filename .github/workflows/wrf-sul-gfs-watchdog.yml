@@ -3,13 +3,7 @@ name: WRF Sul GFS - WATCHDOG AUTOMATICO
 on:
   workflow_dispatch:
   schedule:
-    # Confere quatro vezes por dia. So dispara se nao houver rodada ativa,
-    # sucesso recente ou outros WRF regionais esperando runners.
     - cron: "5 0,6,12,18 * * *"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wrf-sul-gfs-watchdog.yml"
 
 permissions:
   actions: write
@@ -24,7 +18,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-      - name: Conferir execucao e disparar somente se necessario
+      - name: Conferir produto 7 km e disparar somente se necessario
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -33,72 +27,59 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Verificando $TARGET_WORKFLOW"
-          gh run list --workflow "$TARGET_WORKFLOW" --limit 20 \
-            --json databaseId,status,conclusion,createdAt,event > /tmp/wrf-runs.json
-
-          # O GFS Sul e o mais pesado. Se outros WRF regionais estiverem
-          # executando ou aguardando runner, ele espera a proxima checagem.
-          gh api "repos/$GH_REPO/actions/runs?status=queued&per_page=100" > /tmp/queued.json
-          gh api "repos/$GH_REPO/actions/runs?status=in_progress&per_page=100" > /tmp/in-progress.json
-
-          python3 - <<'PY'
-          import datetime as dt
+          healthy=0
+          if curl -fsSL --connect-timeout 10 --max-time 30 \
+            "https://raw.githubusercontent.com/${GH_REPO}/wrf-data/metadata.json?watch=${GITHUB_RUN_ID}" -o /tmp/wrf-data.json; then
+            if python3 - <<'PY'
           import json
-          from pathlib import Path
-
-          target_runs = json.load(open('/tmp/wrf-runs.json', encoding='utf-8'))
-          queued = json.load(open('/tmp/queued.json', encoding='utf-8')).get('workflow_runs', [])
-          running = json.load(open('/tmp/in-progress.json', encoding='utf-8')).get('workflow_runs', [])
-
-          decision = 'dispatch'
-          reason = 'nenhuma execucao ativa ou sucesso recente'
-
-          active_target = [r for r in target_runs if r.get('status') in {'queued', 'in_progress', 'waiting', 'pending'}]
-          if active_target:
-              decision = 'skip'
-              reason = f"GFS Sul ja ativo: {active_target[0]}"
-
-          if decision == 'dispatch':
-              # Nao deixa o GFS Sul de 8 segmentos tomar runners enquanto
-              # ICON/ECMWF/Sudeste ainda precisam sair da fila.
-              others = []
-              for run in queued + running:
-                  name = str(run.get('name') or '')
-                  if not name.startswith('WRF'):
-                      continue
-                  if name in {'WRF 4 km - DOIS DIAS AUTOMATICO', 'WRF Sul GFS - WATCHDOG AUTOMATICO'}:
-                      continue
-                  if 'RUNNER RELIEF' in name:
-                      continue
-                  others.append({'name': name, 'status': run.get('status'), 'id': run.get('id')})
-              if others:
-                  decision = 'skip'
-                  reason = f'outros WRF regionais precisam dos runners: {others[:6]}'
-
-          if decision == 'dispatch':
-              now = dt.datetime.now(dt.timezone.utc)
-              successes = [r for r in target_runs if r.get('status') == 'completed' and r.get('conclusion') == 'success']
-              for run in successes:
-                  created = dt.datetime.fromisoformat(run['createdAt'].replace('Z', '+00:00'))
-                  age_h = (now - created).total_seconds() / 3600
-                  if age_h <= 10:
-                      decision = 'skip'
-                      reason = f'ultimo sucesso GFS Sul iniciado ha {age_h:.1f} h'
-                      break
-
-          Path('/tmp/wrf-decision.txt').write_text(decision, encoding='utf-8')
-          print('Decisao:', decision, '-', reason)
+          d=json.load(open('/tmp/wrf-data.json', encoding='utf-8'))
+          frames=d.get('frames') or []
+          hours=[int(f.get('forecastHour',-1)) for f in frames]
+          assert int(d.get('resolutionKm',0)) == 7
+          assert d.get('reflectivitySource') == 'REFL_10CM_NATIVE'
+          assert d.get('nativeGrid') is True
+          assert d.get('singleRunner') is True
+          assert int(d.get('temporalResolutionMinutes',0)) == 60
+          assert int(d.get('frameCount',0)) == 41
+          assert hours == list(range(41))
+          assert all((int(f.get('gridX',0)), int(f.get('gridY',0))) == (171,205) for f in frames)
           PY
+            then healthy=1; fi
+          fi
 
-          decision="$(cat /tmp/wrf-decision.txt)"
-          if [ "$decision" = "skip" ]; then
-            echo "GFS Sul nao precisa ocupar novos runners agora."
+          if [ "$healthy" = "1" ]; then
+            echo "GFS Sul ja publicado em 7 km, F000-F040 horario e runner unico."
             exit 0
           fi
 
-          echo "Disparando WRF Sul GFS completo..."
-          gh workflow run "$TARGET_WORKFLOW" --ref main
-          sleep 5
-          gh run list --workflow "$TARGET_WORKFLOW" --limit 3 \
-            --json databaseId,status,conclusion,createdAt,event
+          active="$(gh run list --repo "$GH_REPO" --workflow "$TARGET_WORKFLOW" --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')"
+          if [ "$active" != "0" ]; then
+            echo "GFS Sul ja possui rodada ativa."
+            exit 0
+          fi
+
+          gh api "repos/$GH_REPO/actions/runs?status=queued&per_page=100" > /tmp/queued.json
+          gh api "repos/$GH_REPO/actions/runs?status=in_progress&per_page=100" > /tmp/in-progress.json
+          python3 - <<'PY'
+          import json
+          others=[]
+          for path in ('/tmp/queued.json','/tmp/in-progress.json'):
+              for run in json.load(open(path,encoding='utf-8')).get('workflow_runs',[]):
+                  name=str(run.get('name') or '')
+                  if not name.startswith('WRF') or name in {'WRF 4 km - DOIS DIAS AUTOMATICO','WRF Sul GFS - WATCHDOG AUTOMATICO'}:
+                      continue
+                  if 'RUNNER RELIEF' in name:
+                      continue
+                  others.append((name,run.get('status'),run.get('id')))
+          if others:
+              print('Outros WRF regionais usando/aguardando runners:', others[:8])
+              raise SystemExit(2)
+          PY
+          status=$?
+          if [ "$status" = "2" ]; then
+            echo "GFS Sul espera a proxima checagem para nao disputar runners."
+            exit 0
+          fi
+
+          echo "Disparando WRF Sul GFS 7 km F000-F040 horario em runner unico..."
+          gh workflow run "$TARGET_WORKFLOW" --repo "$GH_REPO" --ref main
