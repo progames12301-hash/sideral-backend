@@ -4,11 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "30 11,23 * * *"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wrf-sudeste-ecmwf-4km.yml"
-      - ".github/workflows/wrf-source-parallel-sudeste-reusable.yml"
   workflow_run:
     workflows: ["ECMWF IFS - PROXIMO DIA AUTOMATICO"]
     types: [completed]
@@ -23,9 +18,10 @@ concurrency:
 jobs:
   wrf:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    uses: ./.github/workflows/wrf-source-parallel-sudeste-reusable.yml
+    uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: ecmwf
+      domain: sudeste
       source_data_branch: ecmwf-data
       publish_branch: wrf-sudeste-ecmwf-data
       run_script: run_ecmwf_wrf_sudeste.sh
