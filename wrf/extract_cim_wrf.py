@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -9,7 +10,6 @@ import numpy as np
 import xarray as xr
 
 # Compatibilidade com NumPy < 2.0 usado nos runners atuais.
-# O núcleo compartilhado usa np.trapezoid; em NumPy 1.26 a função equivalente é np.trapz.
 if not hasattr(np, "trapezoid"):
     np.trapezoid = np.trapz  # type: ignore[attr-defined]
 
@@ -48,25 +48,39 @@ def _native_grid() -> tuple[int, int, int, int]:
     return nx, ny, dx, dy
 
 
+def _expected_resolution_km() -> float:
+    return float(os.environ.get("CIM_RESOLUTION_KM", "8"))
+
+
 def _validate_output(nx: int, ny: int) -> None:
     output = Path(_arg("--output-dir", "cim_publish"))
     data = json.loads((output / "metadata.json").read_text(encoding="utf-8"))
-    if data.get("resolutionKm") != 3:
-        raise SystemExit(f"CIM deve publicar resolutionKm=3: {data.get('resolutionKm')}")
+    expected = _expected_resolution_km()
+    actual = float(data.get("resolutionKm", -1))
+    if abs(actual - expected) > 0.05:
+        raise SystemExit(f"CIM deve publicar resolutionKm={expected:g}: {actual}")
     frames = data.get("frames") or []
     bad = [f for f in frames if int(f.get("gridX", -1)) != nx or int(f.get("gridY", -1)) != ny]
     if bad:
-        raise SystemExit(f"Downsampling detectado no CIM 3 km: esperado {nx}x{ny}; exemplo={bad[0]}")
+        raise SystemExit(f"Remapeamento/downsampling detectado: esperado {nx}x{ny}; exemplo={bad[0]}")
 
 
 def main() -> None:
     nx, ny, dx, dy = _native_grid()
-    if (dx, dy) != (3000, 3000):
-        raise SystemExit(f"CIM deveria ser 3 km, mas wrfout informa DX/DY={dx}/{dy} m")
-    # Ignora os antigos defaults 240x200 e publica a grade calculada de verdade.
+    expected_m = int(round(_expected_resolution_km() * 1000))
+    tolerance = max(50, int(expected_m * 0.02))
+    if abs(dx - expected_m) > tolerance or abs(dy - expected_m) > tolerance:
+        raise SystemExit(
+            f"CIM deveria ser {_expected_resolution_km():g} km, "
+            f"mas wrfout informa DX/DY={dx}/{dy} m"
+        )
+    # Publica a grade calculada pelo WRF, sem reduzir ou reamostrar.
     _set_arg("--grid-x", nx)
     _set_arg("--grid-y", ny)
-    print(f"CIM: publicacao nativa travada em {nx}x{ny}, DX/DY={dx}/{dy} m")
+    print(
+        f"CIM: publicacao nativa travada em {nx}x{ny}, "
+        f"DX/DY={dx}/{dy} m, resolucao={_expected_resolution_km():g} km"
+    )
     _core_main()
     _validate_output(nx, ny)
 
