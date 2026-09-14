@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-      - name: Conferir publicacoes e iniciar somente o que estiver velho ou reduzido
+      - name: Conferir publicacoes regionais 7 km e iniciar somente o necessario
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -28,43 +28,46 @@ jobs:
           echo "Dia local alvo: $target"
 
           healthy() {
-            local branch="$1" file="/tmp/${branch}.json"
+            local branch="$1" domain="$2" file="/tmp/${branch}.json"
             curl -fsSL --connect-timeout 10 --max-time 30 \
               "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${branch}/metadata.json?watch=${GITHUB_RUN_ID}" \
               -o "$file" || return 1
-            python3 - "$file" "$target" <<'PY'
+            python3 - "$file" "$target" "$domain" <<'PY'
           import datetime as dt
           import json
           import sys
           from zoneinfo import ZoneInfo
 
-          path, target = sys.argv[1], sys.argv[2]
+          path, target, domain = sys.argv[1], sys.argv[2], sys.argv[3]
           data = json.load(open(path, encoding='utf-8'))
-          if data.get('resolutionKm') != 4:
+          if int(data.get('resolutionKm', 0)) != 7:
               raise SystemExit(1)
           if data.get('reflectivitySource') != 'REFL_10CM_NATIVE':
               raise SystemExit(1)
+          if data.get('nativeGrid') is not True or data.get('singleRunner') is not True:
+              raise SystemExit(1)
+          if int(data.get('temporalResolutionMinutes', 0)) != 60:
+              raise SystemExit(1)
           frames = data.get('frames') or []
-          if not frames:
+          hours = [int(f.get('forecastHour', -1)) for f in frames]
+          if hours != list(range(41)) or int(data.get('frameCount', 0)) != 41:
               raise SystemExit(1)
-          # Bloqueia especificamente as publicacoes antigas reduzidas.
-          for f in frames:
-              dims = (int(f.get('gridX', 0)), int(f.get('gridY', 0)))
-              if dims in {(220, 180), (240, 200)}:
+          expected = (171, 205) if domain == 'sul' else (222, 205)
+          for frame in frames:
+              dims = (int(frame.get('gridX', 0)), int(frame.get('gridY', 0)))
+              if dims != expected or frame.get('reflectivitySource') != 'REFL_10CM_NATIVE':
                   raise SystemExit(1)
-          if data.get('segmentedRun') and data.get('segmentSpinupProtected') is not True:
-              raise SystemExit(1)
 
           dates = set(data.get('forecastLocalDates') or [])
           if data.get('forecastLocalDate'):
               dates.add(data['forecastLocalDate'])
-          for f in frames:
-              value = f.get('validTime') or f.get('valid_time')
+          for frame in frames:
+              value = frame.get('validTime') or frame.get('valid_time')
               if not value:
                   continue
               try:
-                  d = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
-                  dates.add(d.astimezone(ZoneInfo('America/Sao_Paulo')).date().isoformat())
+                  parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+                  dates.add(parsed.astimezone(ZoneInfo('America/Sao_Paulo')).date().isoformat())
               except Exception:
                   pass
           raise SystemExit(0 if target in dates else 1)
@@ -78,9 +81,9 @@ jobs:
           }
 
           ensure() {
-            local label="$1" branch="$2" workflow="$3"
-            if healthy "$branch"; then
-              echo "OK: $label ja esta 4 km nativo, sem 220x180, cobrindo $target."
+            local label="$1" branch="$2" workflow="$3" domain="$4"
+            if healthy "$branch" "$domain"; then
+              echo "OK: $label ja esta 7 km, F000-F040 horario, grade nativa e runner unico."
               return 0
             fi
             if [ "$(active "$workflow")" != "0" ]; then
@@ -88,10 +91,10 @@ jobs:
               return 0
             fi
             gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
-            echo "INICIADO: $label precisa republicar em grade nativa."
+            echo "INICIADO: $label precisa publicar o novo contrato 7 km horario."
           }
 
-          ensure "ECMWF Sul 4 km" "wrf-ecmwf-data" "wrf-ecmwf-4km-native.yml"
-          ensure "GFS Sudeste 4 km" "wrf-sudeste-gfs-data" "wrf-sudeste-gfs-4km.yml"
-          ensure "ICON Sudeste 4 km" "wrf-sudeste-icon-data" "wrf-sudeste-icon-4km.yml"
-          ensure "ECMWF Sudeste 4 km" "wrf-sudeste-ecmwf-data" "wrf-sudeste-ecmwf-4km.yml"
+          ensure "ECMWF Sul 7 km" "wrf-ecmwf-data" "wrf-ecmwf-4km-native.yml" sul
+          ensure "GFS Sudeste 7 km" "wrf-sudeste-gfs-data" "wrf-sudeste-gfs-4km.yml" sudeste
+          ensure "ICON Sudeste 7 km" "wrf-sudeste-icon-data" "wrf-sudeste-icon-4km.yml" sudeste
+          ensure "ECMWF Sudeste 7 km" "wrf-sudeste-ecmwf-data" "wrf-sudeste-ecmwf-4km.yml" sudeste
