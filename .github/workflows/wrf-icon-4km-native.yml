@@ -3,13 +3,7 @@ name: WRF 4 km ICON - REFL NATIVO
 on:
   workflow_dispatch:
   schedule:
-    # Fallback diário independente do workflow_run do ICON global.
     - cron: '10 1 * * *'
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wrf-icon-4km-native.yml"
-      - ".github/workflows/wrf-source-parallel-reusable.yml"
   workflow_run:
     workflows: ["ICON Global - PROXIMO DIA AUTOMATICO"]
     types: [completed]
@@ -24,9 +18,10 @@ concurrency:
 jobs:
   wrf:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    uses: ./.github/workflows/wrf-source-parallel-reusable.yml
+    uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: icon
+      domain: sul
       source_data_branch: icon-data
       publish_branch: wrf-icon-data
       run_script: run_icon_wrf.sh
