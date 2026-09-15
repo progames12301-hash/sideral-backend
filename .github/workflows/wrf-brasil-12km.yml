@@ -82,7 +82,10 @@ jobs:
           import urllib.request
 
           requested_date = os.environ.get('INPUT_RUN_DATE', '').strip().replace('-', '')
-          requested_cycle = ''.join(ch for ch in os.environ.get('INPUT_RUN_CYCLE', '') if ch.isdigit()).zfill(2)[:2]
+          requested_cycle_raw = os.environ.get('INPUT_RUN_CYCLE', '').strip()
+          requested_cycle_digits = ''.join(ch for ch in requested_cycle_raw if ch.isdigit())
+          requested_cycle = requested_cycle_digits.zfill(2)[:2] if requested_cycle_digits else ''
+          manual_requested = bool(requested_date or requested_cycle_raw)
 
           def ready(date, cycle):
               url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f048'
@@ -94,11 +97,11 @@ jobs:
                   return False
 
           selected = None
-          if requested_date or requested_cycle:
+          if manual_requested:
               if len(requested_date) != 8 or not requested_date.isdigit():
-                  raise SystemExit('run_date deve estar em YYYYMMDD')
+                  raise SystemExit('run_date deve estar em YYYYMMDD quando a rodada manual for usada')
               if requested_cycle not in {'00', '06', '12', '18'}:
-                  raise SystemExit('run_cycle deve ser 00, 06, 12 ou 18')
+                  raise SystemExit('run_cycle deve ser 00, 06, 12 ou 18 quando a rodada manual for usada')
               if not ready(requested_date, requested_cycle):
                   raise SystemExit(f'GFS {requested_date} {requested_cycle}Z ainda nao possui F048')
               selected = (requested_date, requested_cycle)
