@@ -1,0 +1,39 @@
+name: Cleanup stale WRF run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cleanup-stale-wrf-run.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel-stale:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Cancelar run WRF antiga 4 km
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: '34905051262'
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.status')"
+          echo "status atual: $status"
+          if [[ "$status" == 'queued' || "$status" == 'in_progress' || "$status" == 'waiting' || "$status" == 'pending' ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/cancel"
+          fi
+          for i in $(seq 1 18); do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.status')"
+            conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.conclusion // ""')"
+            echo "tentativa $i: status=$status conclusion=$conclusion"
+            if [[ "$status" == 'completed' ]]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'A run antiga nao encerrou dentro da janela de verificacao.' >&2
+          exit 1
