@@ -21,6 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo 'Limpando apenas a run legada anterior à migração regional 7 km.'
           status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.status')"
           echo "status atual: $status"
           if [[ "$status" == 'queued' || "$status" == 'in_progress' || "$status" == 'waiting' || "$status" == 'pending' ]]; then
