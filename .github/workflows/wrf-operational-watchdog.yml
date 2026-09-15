@@ -3,13 +3,20 @@ name: Sideral WRF operational watchdog
 on:
   workflow_dispatch:
   schedule:
-    - cron: '45 0,6,12,18 * * *'
+    - cron: '45 */3 * * *'
   push:
     branches: [main]
     paths:
       - '.github/workflows/wrf-operational-watchdog.yml'
       - '.github/workflows/wrf-regional-7km-single.yml'
       - '.github/workflows/wrf-brasil-12km.yml'
+      - '.github/workflows/cim-wrf-3km-operational.yml'
+      - '.github/workflows/wrf-4km-next-day-auto.yml'
+      - '.github/workflows/wrf-icon-4km-native.yml'
+      - '.github/workflows/wrf-ecmwf-4km-native.yml'
+      - '.github/workflows/wrf-sudeste-gfs-4km.yml'
+      - '.github/workflows/wrf-sudeste-icon-4km.yml'
+      - '.github/workflows/wrf-sudeste-ecmwf-4km.yml'
 
 permissions:
   contents: read
@@ -77,7 +84,7 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as response:
                   return json.load(response)
 
-          def check(branch, km, frames_expected, max_age_h=32):
+          def check(branch, km, frames_expected, max_age_h=28):
               try:
                   meta = fetch_meta(branch)
                   assert int(meta.get('resolutionKm')) == km
@@ -89,10 +96,10 @@ jobs:
                   hours = [int(f.get('forecastHour', -1)) for f in frames]
                   assert hours == list(range(frames_expected))
                   generated = str(meta.get('generatedAt') or '')
-                  if generated:
-                      stamp = dt.datetime.fromisoformat(generated.replace('Z', '+00:00'))
-                      age = (now - stamp.astimezone(dt.timezone.utc)).total_seconds() / 3600
-                      assert age <= max_age_h, f'stale {age:.1f}h'
+                  assert generated, 'generatedAt ausente'
+                  stamp = dt.datetime.fromisoformat(generated.replace('Z', '+00:00'))
+                  age = (now - stamp.astimezone(dt.timezone.utc)).total_seconds() / 3600
+                  assert age <= max_age_h, f'stale {age:.1f}h'
                   return True, 'ok'
               except Exception as exc:
                   return False, repr(exc)
