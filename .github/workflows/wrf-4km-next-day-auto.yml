@@ -11,6 +11,8 @@ on:
         description: "Ciclo GFS: 00, 06, 12 ou 18 (vazio = mais recente com F042)"
         required: false
         type: string
+  schedule:
+    - cron: '20 0 * * *'
   workflow_run:
     workflows: ["WRF 4 km - REFL NATIVO - USE ESTE"]
     types: [completed]
@@ -24,7 +26,7 @@ concurrency:
 
 jobs:
   wrf:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: gfs
