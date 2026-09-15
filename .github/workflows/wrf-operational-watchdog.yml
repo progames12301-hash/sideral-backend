@@ -24,6 +24,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Encerrar run regional legada anterior aos 7 km
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LEGACY_RUN_ID: '34905051262'
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${LEGACY_RUN_ID}" --jq '.status' 2>/dev/null || echo completed)"
+          if [[ "$status" == 'queued' || "$status" == 'in_progress' || "$status" == 'waiting' || "$status" == 'pending' ]]; then
+            echo "Cancelando run legada ${LEGACY_RUN_ID} (status=${status})"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${LEGACY_RUN_ID}/cancel"
+          else
+            echo "Run legada ${LEGACY_RUN_ID} ja encerrada: ${status}"
+          fi
+
       - name: Verificar produtos e listar workflows que precisam rodar
         id: health
         env:
