@@ -1,0 +1,136 @@
+name: Sideral WRF operational watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 0,6,12,18 * * *'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: sideral-wrf-operational-watchdog
+  cancel-in-progress: true
+
+jobs:
+  verify-and-recover:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar produtos e listar workflows que precisam rodar
+        id: health
+        env:
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.request
+
+          repo = os.environ['REPOSITORY']
+          now = dt.datetime.now(dt.timezone.utc)
+
+          products = [
+              ('wrf-data', 7, 41, '.github/workflows/wrf-4km-next-day-auto.yml'),
+              ('wrf-icon-data', 7, 41, '.github/workflows/wrf-icon-4km-native.yml'),
+              ('wrf-ecmwf-data', 7, 41, '.github/workflows/wrf-ecmwf-4km-native.yml'),
+              ('wrf-sudeste-gfs-data', 7, 41, '.github/workflows/wrf-sudeste-gfs-4km.yml'),
+              ('wrf-sudeste-icon-data', 7, 41, '.github/workflows/wrf-sudeste-icon-4km.yml'),
+              ('wrf-sudeste-ecmwf-data', 7, 41, '.github/workflows/wrf-sudeste-ecmwf-4km.yml'),
+              ('wrf-brasil-12km-data', 12, 49, '.github/workflows/wrf-brasil-12km.yml'),
+          ]
+          cim = [
+              ('cim-wrf-3km-icon-data', 8, 41),
+              ('cim-wrf-3km-ecmwf-data', 8, 41),
+          ]
+
+          def fetch_meta(branch):
+              url = f'https://raw.githubusercontent.com/{repo}/{branch}/metadata.json?watch={int(now.timestamp())}'
+              req = urllib.request.Request(url, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Sideral-WRF-watchdog'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)
+
+          def check(branch, km, frames_expected, max_age_h=32):
+              try:
+                  meta = fetch_meta(branch)
+                  assert int(meta.get('resolutionKm')) == km
+                  assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE'
+                  assert int(meta.get('temporalResolutionMinutes', 0)) == 60
+                  assert meta.get('nativeGrid') is True
+                  frames = meta.get('frames') or []
+                  assert len(frames) == frames_expected
+                  hours = [int(f.get('forecastHour', -1)) for f in frames]
+                  assert hours == list(range(frames_expected))
+                  generated = str(meta.get('generatedAt') or '')
+                  if generated:
+                      stamp = dt.datetime.fromisoformat(generated.replace('Z', '+00:00'))
+                      age = (now - stamp.astimezone(dt.timezone.utc)).total_seconds() / 3600
+                      assert age <= max_age_h, f'stale {age:.1f}h'
+                  return True, 'ok'
+              except Exception as exc:
+                  return False, repr(exc)
+
+          needed = []
+          for branch, km, count, workflow in products:
+              ok, why = check(branch, km, count)
+              print(('OK' if ok else 'RECOVER'), branch, why)
+              if not ok:
+                  needed.append((workflow, f'{branch}: {why}'))
+
+          cim_bad = []
+          for branch, km, count in cim:
+              ok, why = check(branch, km, count)
+              print(('OK' if ok else 'RECOVER'), branch, why)
+              if not ok:
+                  cim_bad.append(f'{branch}: {why}')
+          if cim_bad:
+              needed.append(('.github/workflows/cim-wrf-3km-operational.yml', '; '.join(cim_bad)))
+
+          seen = set()
+          unique = []
+          for workflow, reason in needed:
+              if workflow in seen:
+                  continue
+              seen.add(workflow)
+              unique.append((workflow, reason))
+
+          out = os.environ['GITHUB_OUTPUT']
+          with open(out, 'a', encoding='utf-8') as handle:
+              handle.write('workflows<<EOF\n')
+              for workflow, reason in unique:
+                  handle.write(f'{workflow}\t{reason}\n')
+              handle.write('EOF\n')
+          print('Workflows candidatos a recuperacao:', len(unique))
+          PY
+
+      - name: Reexecutar apenas produtos ausentes, antigos ou fora do contrato
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOWS: ${{ steps.health.outputs.workflows }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${WORKFLOWS//$'\n'/}" ]]; then
+            echo 'Todos os WRF estao saudaveis; nada a disparar.'
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r workflow reason; do
+            [[ -n "$workflow" ]] || continue
+            echo "Verificando atividade: $workflow"
+            active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 20 --json status \
+              --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending")] | length')"
+            if [[ "$active" != "0" ]]; then
+              echo "SKIP: $workflow ja possui run ativa ($active). Motivo de saude: $reason"
+              continue
+            fi
+            echo "RECOVERY DISPATCH: $workflow | $reason"
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
+            sleep 12
+          done <<< "$WORKFLOWS"
