@@ -1,0 +1,92 @@
+name: Patch WRF Brasil 13 km once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-wrf-brasil-13km-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Migrar Brasil 12 km para 13 km e ajustar watchdog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('.github/workflows/wrf-brasil-12km.yml')
+          t = p.read_text(encoding='utf-8')
+          reps = [
+              ('SIDERAL WRF Brasil 12 km', 'SIDERAL WRF Brasil 13 km'),
+              ('WRF Brasil 12 km', 'WRF Brasil 13 km'),
+              ('Sideral-WRF-Brasil-12km', 'Sideral-WRF-Brasil-13km'),
+              ("WRF_TARGET_RESOLUTION_KM: '12'", "WRF_TARGET_RESOLUTION_KM: '13'"),
+              ("WRF_DX_METERS: '12000'", "WRF_DX_METERS: '13000'"),
+              ("WRF_DY_METERS: '12000'", "WRF_DY_METERS: '13000'"),
+              ("WRF_TIME_STEP: '60'", "WRF_TIME_STEP: '72'"),
+              ("WRF_E_WE: '421'", "WRF_E_WE: '401'"),
+              ("WRF_E_SN: '421'", "WRF_E_SN: '401'"),
+              ("WRF_GRID_X: '420'", "WRF_GRID_X: '400'"),
+              ("WRF_GRID_Y: '420'", "WRF_GRID_Y: '400'"),
+              ('data.get("resolutionKm") != 12', 'data.get("resolutionKm") != 13'),
+              ('resolutionKm=12', 'resolutionKm=13'),
+              ('(12000, 12000)', '(13000, 13000)'),
+              ('"resolutionKm": 12,', '"resolutionKm": 13,'),
+              ("(' e_we              = 300,', ' e_we              = 421,')", "(' e_we              = 300,', ' e_we              = 401,')"),
+              ("(' e_sn              = 360,', ' e_sn              = 421,')", "(' e_sn              = 360,', ' e_sn              = 401,')"),
+              ("(' e_we = 300,', ' e_we = 421,')", "(' e_we = 300,', ' e_we = 401,')"),
+              ("(' e_sn = 360,', ' e_sn = 421,')", "(' e_sn = 360,', ' e_sn = 401,')"),
+              ("(' dx = 4000,', ' dx = 12000,')", "(' dx = 4000,', ' dx = 13000,')"),
+              ("(' dy = 4000,', ' dy = 12000,')", "(' dy = 4000,', ' dy = 13000,')"),
+              ("(' time_step = 18,', ' time_step = 60,')", "(' time_step = 18,', ' time_step = 72,')"),
+              ('12 km, 421x421 WRF', '13 km, 401x401 WRF'),
+              ("WRF_DX_METERS: '12000'", "WRF_DX_METERS: '13000'"),
+              ("WRF_DY_METERS: '12000'", "WRF_DY_METERS: '13000'"),
+              ("WRF_TIME_STEP: '60'", "WRF_TIME_STEP: '72'"),
+              ("WRF_E_WE: '421'", "WRF_E_WE: '401'"),
+              ("WRF_E_SN: '421'", "WRF_E_SN: '401'"),
+              ('--grid-x 420', '--grid-x 400'),
+              ('--grid-y 420', '--grid-y 400'),
+              ('int(meta.get(\'resolutionKm\')) == 12', 'int(meta.get(\'resolutionKm\')) == 13'),
+              ("int(frame['gridX']) == 420 and int(frame['gridY']) == 420", "int(frame['gridX']) == 400 and int(frame['gridY']) == 400"),
+              ("int(payload['dxMeters']) == 12000 and int(payload['dyMeters']) == 12000", "int(payload['dxMeters']) == 13000 and int(payload['dyMeters']) == 13000"),
+              ("int(payload['gridX']) == 420 and int(payload['gridY']) == 420", "int(payload['gridX']) == 400 and int(payload['gridY']) == 400"),
+              ("'resolutionKm': 12,", "'resolutionKm': 13,"),
+              ("'e_we': 421, 'e_sn': 421, 'gridX': 420, 'gridY': 420,", "'e_we': 401, 'e_sn': 401, 'gridX': 400, 'gridY': 400,"),
+              ("'dxMeters': 12000, 'dyMeters': 12000,", "'dxMeters': 13000, 'dyMeters': 13000,"),
+              ("'timeStepSeconds': 60,", "'timeStepSeconds': 72,"),
+              ('BRASIL 12 KM VALIDADO', 'BRASIL 13 KM VALIDADO'),
+              ('420x420', '400x400'),
+              ('wrf-brasil-12km-diagnostics-', 'wrf-brasil-13km-diagnostics-'),
+          ]
+          for old, new in reps:
+              if old in t:
+                  t = t.replace(old, new)
+          p.write_text(t, encoding='utf-8')
+
+          w = Path('.github/workflows/wrf-operational-watchdog.yml')
+          s = w.read_text(encoding='utf-8')
+          s = s.replace("('wrf-brasil-12km-data', 12, 49, '.github/workflows/wrf-brasil-12km.yml')",
+                        "('wrf-brasil-12km-data', 13, 49, '.github/workflows/wrf-brasil-12km.yml')")
+          w.write_text(s, encoding='utf-8')
+
+          # remove este workflow temporario no mesmo commit
+          Path('.github/workflows/patch-wrf-brasil-13km-once.yml').unlink()
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/wrf-brasil-12km.yml .github/workflows/wrf-operational-watchdog.yml .github/workflows/patch-wrf-brasil-13km-once.yml
+          git commit -m 'Fix WRF Brasil as 13 km to finish within runner limit'
+          git push origin main
