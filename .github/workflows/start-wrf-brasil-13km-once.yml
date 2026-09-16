@@ -1,0 +1,23 @@
+name: Start corrected WRF Brasil 13 km once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/start-wrf-brasil-13km-once.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Disparar WRF Brasil corrigido
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run '.github/workflows/wrf-brasil-12km.yml' --repo "$GITHUB_REPOSITORY" --ref main
+          echo 'Nova rodada WRF Brasil 13 km solicitada no main.'
