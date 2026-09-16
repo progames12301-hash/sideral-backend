@@ -1,4 +1,4 @@
-name: Cancel old WRF Brasil 12 km once
+name: Force cancel old WRF Brasil 12 km once
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
   cancel-old:
     runs-on: ubuntu-22.04
     steps:
-      - name: Cancelar rodada antiga 12 km
+      - name: Forcar cancelamento da rodada antiga 12 km
         env:
           GH_TOKEN: ${{ github.token }}
           OLD_RUN_ID: '35083011005'
@@ -22,8 +22,8 @@ jobs:
           set -euo pipefail
           status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${OLD_RUN_ID}" --jq '.status')"
           if [ "$status" = 'queued' ] || [ "$status" = 'pending' ] || [ "$status" = 'in_progress' ]; then
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${OLD_RUN_ID}/cancel"
-            echo "Run antiga ${OLD_RUN_ID} cancelada."
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${OLD_RUN_ID}/force-cancel"
+            echo "Force-cancel solicitado para ${OLD_RUN_ID}."
           else
             echo "Run antiga ${OLD_RUN_ID} ja encerrada com status=${status}."
           fi
