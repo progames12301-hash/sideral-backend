@@ -1,4 +1,4 @@
-name: Patch WRF Brasil 13 km once
+name: Prepare WRF Brasil 13 km patch output
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  patch:
+  prepare:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -18,15 +18,15 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Migrar Brasil 12 km para 13 km e ajustar watchdog
+      - name: Gerar copias corrigidas fora de .github/workflows
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p patch-output
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path('.github/workflows/wrf-brasil-12km.yml')
-          t = p.read_text(encoding='utf-8')
+          src = Path('.github/workflows/wrf-brasil-12km.yml').read_text(encoding='utf-8')
           reps = [
               ('SIDERAL WRF Brasil 12 km', 'SIDERAL WRF Brasil 13 km'),
               ('WRF Brasil 12 km', 'WRF Brasil 13 km'),
@@ -51,14 +51,9 @@ jobs:
               ("(' dy = 4000,', ' dy = 12000,')", "(' dy = 4000,', ' dy = 13000,')"),
               ("(' time_step = 18,', ' time_step = 60,')", "(' time_step = 18,', ' time_step = 72,')"),
               ('12 km, 421x421 WRF', '13 km, 401x401 WRF'),
-              ("WRF_DX_METERS: '12000'", "WRF_DX_METERS: '13000'"),
-              ("WRF_DY_METERS: '12000'", "WRF_DY_METERS: '13000'"),
-              ("WRF_TIME_STEP: '60'", "WRF_TIME_STEP: '72'"),
-              ("WRF_E_WE: '421'", "WRF_E_WE: '401'"),
-              ("WRF_E_SN: '421'", "WRF_E_SN: '401'"),
               ('--grid-x 420', '--grid-x 400'),
               ('--grid-y 420', '--grid-y 400'),
-              ('int(meta.get(\'resolutionKm\')) == 12', 'int(meta.get(\'resolutionKm\')) == 13'),
+              ("int(meta.get('resolutionKm')) == 12", "int(meta.get('resolutionKm')) == 13"),
               ("int(frame['gridX']) == 420 and int(frame['gridY']) == 420", "int(frame['gridX']) == 400 and int(frame['gridY']) == 400"),
               ("int(payload['dxMeters']) == 12000 and int(payload['dyMeters']) == 12000", "int(payload['dxMeters']) == 13000 and int(payload['dyMeters']) == 13000"),
               ("int(payload['gridX']) == 420 and int(payload['gridY']) == 420", "int(payload['gridX']) == 400 and int(payload['gridY']) == 400"),
@@ -70,23 +65,18 @@ jobs:
               ('420x420', '400x400'),
               ('wrf-brasil-12km-diagnostics-', 'wrf-brasil-13km-diagnostics-'),
           ]
-          for old, new in reps:
-              if old in t:
-                  t = t.replace(old, new)
-          p.write_text(t, encoding='utf-8')
+          for old,new in reps:
+              src = src.replace(old,new)
+          Path('patch-output/wrf-brasil-13km.yml.txt').write_text(src,encoding='utf-8')
 
-          w = Path('.github/workflows/wrf-operational-watchdog.yml')
-          s = w.read_text(encoding='utf-8')
-          s = s.replace("('wrf-brasil-12km-data', 12, 49, '.github/workflows/wrf-brasil-12km.yml')",
+          w = Path('.github/workflows/wrf-operational-watchdog.yml').read_text(encoding='utf-8')
+          w = w.replace("('wrf-brasil-12km-data', 12, 49, '.github/workflows/wrf-brasil-12km.yml')",
                         "('wrf-brasil-12km-data', 13, 49, '.github/workflows/wrf-brasil-12km.yml')")
-          w.write_text(s, encoding='utf-8')
-
-          # remove este workflow temporario no mesmo commit
-          Path('.github/workflows/patch-wrf-brasil-13km-once.yml').unlink()
+          Path('patch-output/wrf-operational-watchdog.yml.txt').write_text(w,encoding='utf-8')
           PY
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/wrf-brasil-12km.yml .github/workflows/wrf-operational-watchdog.yml .github/workflows/patch-wrf-brasil-13km-once.yml
-          git commit -m 'Fix WRF Brasil as 13 km to finish within runner limit'
+          git add patch-output/
+          git commit -m 'Generate WRF Brasil 13 km patch output'
           git push origin main
