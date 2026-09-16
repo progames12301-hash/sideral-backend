@@ -1,0 +1,29 @@
+name: Cancel old WRF Brasil 12 km once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cancel-old-wrf-brasil-once.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel-old:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Cancelar rodada antiga 12 km
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_RUN_ID: '35083011005'
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${OLD_RUN_ID}" --jq '.status')"
+          if [ "$status" = 'queued' ] || [ "$status" = 'pending' ] || [ "$status" = 'in_progress' ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${OLD_RUN_ID}/cancel"
+            echo "Run antiga ${OLD_RUN_ID} cancelada."
+          else
+            echo "Run antiga ${OLD_RUN_ID} ja encerrada com status=${status}."
+          fi
