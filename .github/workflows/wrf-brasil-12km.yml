@@ -40,7 +40,7 @@ jobs:
   brasil:
     name: GFS -> WRF Brasil 13 km F000-F048 horario
     runs-on: ubuntu-22.04
-    timeout-minutes: 350
+    timeout-minutes: 480
     steps:
       - uses: actions/checkout@v4
         with:
@@ -328,20 +328,21 @@ jobs:
           git rm -rf . || true
           git clean -fdx || true
           cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          printf '# SIDERAL WRF Brasil 13 km\nGFS -> WRF · Brasil inteiro · F000-F048 de 1 em 1 hora · REFL_10CM nativo · grade nativa · diagnosticos severos.\n' > README.md
-          git add .
-          git commit -m 'SIDERAL WRF Brasil 13 km: F000-F048 horario [skip render]'
-          git push --force origin "HEAD:${BRANCH}"
-          echo "PUBLICADO: ${BRANCH}"
+          printf '# SIDERAL WRF Brasil 13 km\nGFS -> WRF · Brasil inteiro · 48h · 1h\n' > README.md
+          git add -A
+          git commit -m "publish WRF Brasil 13 km ${FORCE_RUN_DATE}${FORCE_RUN_CYCLE}"
+          git branch -M "$BRANCH"
+          git push origin "$BRANCH" --force
+          echo "PUBLICADO: $BRANCH"
 
       - name: Guardar diagnosticos se falhar
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: wrf-brasil-13km-diagnostics-${{ github.run_id }}
+          name: wrf-brasil-12km-diagnostics-${{ github.run_id }}
           path: |
-            wrf_diagnostics/
-            wrf_work/run/rsl.error.0000
-            wrf_work/run/rsl.out.0000
-          retention-days: 3
-          if-no-files-found: warn
+            wrf_work/run/rsl.error.*
+            wrf_work/run/rsl.out.*
+            wrf_diagnostics/**
+            wrf_publish/**
+          if-no-files-found: ignore
