@@ -30,7 +30,7 @@ env:
   WRF_START_HOUR: '0'
   WRF_END_HOUR: '48'
   WRF_RUN_HOURS: '48'
-  WRF_TIME_STEP: '90'
+  WRF_TIME_STEP: '60'
   WRF_E_WE: '401'
   WRF_E_SN: '401'
   WRF_GRID_X: '400'
@@ -127,86 +127,17 @@ jobs:
           print(f'GFS selecionado: {run_date} {run_cycle}Z; Brasil 15 km F000-F048 horario')
           PY
 
-      - name: Adaptar executor para Brasil 15 km
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          def replace(path, pairs):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              for old, new in pairs:
-                  if old not in text:
-                      raise SystemExit(f'Padrao nao encontrado em {path}: {old}')
-                  text = text.replace(old, new)
-              p.write_text(text, encoding='utf-8')
-
-          replace('wrf/extract_wrf_json.py', [
-              ('data.get("resolutionKm") != 4', 'data.get("resolutionKm") != 15'),
-              ('resolutionKm=4', 'resolutionKm=15'),
-              ('(4000, 4000)', '(15000, 15000)'),
-              ('WRF 4 km', 'WRF Brasil 15 km'),
-          ])
-          replace('wrf/extract_wrf_severe.py', [
-              ('(4000, 4000)', '(15000, 15000)'),
-              ('WRF2 4 km', 'WRF Brasil 15 km'),
-              ('WRF 4 km', 'WRF Brasil 15 km'),
-          ])
-          replace('wrf/extract_wrf_json_core.py', [
-              ('"source": "WRF 4 km GFS (REFL_10CM nativo)"', '"source": "SIDERAL WRF Brasil 15 km GFS (REFL_10CM nativo)"'),
-              ('"resolutionKm": 4,', '"resolutionKm": 15,'),
-              ('WRF 2 Sudeste 4 km', 'SIDERAL WRF Brasil 15 km'),
-          ])
-
-          p = Path('wrf/run_gfs_test.sh')
-          text = p.read_text(encoding='utf-8')
-          pairs = [
-              (' e_we              = 300,', ' e_we              = 401,'),
-              (' e_sn              = 360,', ' e_sn              = 401,'),
-              (' e_we = 300,', ' e_we = 401,'),
-              (' e_sn = 360,', ' e_sn = 401,'),
-              (' dx = 4000,', ' dx = 15000,'),
-              (' dy = 4000,', ' dy = 15000,'),
-              (' ref_lat   = -28.10,', ' ref_lat   = -14.50,'),
-              (' ref_lon   = -53.45,', ' ref_lon   = -54.00,'),
-              (' truelat1  = -25.0,', ' truelat1  = -10.0,'),
-              (' truelat2  = -35.0,', ' truelat2  = -30.0,'),
-              (' stand_lon = -53.45,', ' stand_lon = -54.00,'),
-              (' time_step = 18,', ' time_step = 90,'),
-              (' e_vert = 45,', ' e_vert = 40,'),
-              (' cu_physics = 0,', ' cu_physics = 3,'),
-              (' cudt = 0,', ' cudt = 5,'),
-          ]
-          for old, new in pairs:
-              if old not in text:
-                  raise SystemExit(f'Padrao GFS ausente: {old}')
-              text = text.replace(old, new)
-          p.write_text(text, encoding='utf-8')
-          print('Executor preparado: 15 km, 401x401 WRF, 40 niveis, cumulus ativo, saida horaria.')
-          PY
-
       - name: Executar WRF Brasil 15 km em um unico runner
         env:
           FORCE_RUN_DATE: ${{ steps.run.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ steps.run.outputs.run_cycle }}
           WRF_COLD_START: '1'
-          WRF_START_HOUR: '0'
-          WRF_END_HOUR: '48'
-          WRF_RUN_HOURS: '48'
-          WRF_HISTORY_INTERVAL_MINUTES: '60'
-          WRF_DX_METERS: '15000'
-          WRF_DY_METERS: '15000'
-          WRF_TIME_STEP: '90'
-          WRF_E_WE: '401'
-          WRF_E_SN: '401'
           WRF_REF_LAT: '-14.50'
           WRF_REF_LON: '-54.00'
           WRF_STAND_LON: '-54.00'
         shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           chmod +x wrf/run_gfs_segment.sh
           wrf/run_gfs_segment.sh
           grep -q 'SUCCESS COMPLETE WRF' wrf_work/run/rsl.error.0000
@@ -214,132 +145,46 @@ jobs:
           ls -lh wrf_work/run/wrfout_d01_* | tail -10
           df -h
 
-      - name: Liberar espaco antes da extracao
-        shell: bash
+      - name: Extrair JSON nativo Brasil 15 km
         run: |
-          set -euxo pipefail
-          rm -rf wrf_work/gfs wrf_work/geog_extract wrf_work/WPS_GEOG wrf_work/geog wrf_work/geog.tar.gz || true
-          rm -f wrf_work/GRIBFILE.* wrf_work/FILE:* wrf_work/met_em.d01.* wrf_work/geo_em.d01.nc || true
-          docker image rm dtcenter/wps_wrf:latest || true
-          docker system prune -af || true
-          df -h
-
-      - name: Extrair produto nacional nativo e diagnosticos severos
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf wrf_publish
+          set -euo pipefail
+          mkdir -p wrf_diagnostics wrf_publish
           python wrf/extract_wrf_json.py \
-            --run-dir wrf_work/run \
-            --run-env wrf_diagnostics/run.env \
-            --output-dir wrf_publish \
-            --grid-x 400 \
-            --grid-y 400
+            --input-dir wrf_work/run \
+            --output wrf_publish/wrf_brasil_15km.json \
+            --metadata-out wrf_publish/metadata.json
 
-      - name: Validar Brasil 15 km F000-F048
-        env:
-          EXPECTED_INIT: ${{ steps.run.outputs.init_time }}
+      - name: Validar 49 frames nativos Brasil 15 km
+        run: |
+          set -euo pipefail
+          python wrf/validate_wrf_publication.py \
+            --json wrf_publish/wrf_brasil_15km.json \
+            --metadata wrf_publish/metadata.json \
+            --resolution-km 15 \
+            --nx 400 --ny 400 \
+            --frames 49 \
+            --require-reflectivity-source REFL_10CM_NATIVE \
+            --require-native-grid \
+            --temporal-resolution-minutes 60
+
+      - name: Publicar branch wrf-brasil-12km-data
+        if: success()
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import gzip
-          import json
-          import os
-          import shutil
-          from pathlib import Path
-
-          root = Path('wrf_publish')
-          path = root / 'metadata.json'
-          meta = json.loads(path.read_text(encoding='utf-8'))
-          frames = sorted(meta.get('frames') or [], key=lambda x: int(x['forecastHour']))
-          hours = [int(frame['forecastHour']) for frame in frames]
-
-          assert hours == list(range(49)), hours
-          assert int(meta.get('frameCount', 0)) == 49, meta.get('frameCount')
-          assert int(meta.get('resolutionKm')) == 15, meta.get('resolutionKm')
-          assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', meta
-          assert meta.get('nativeGrid') is True, meta.get('nativeGrid')
-          assert int(meta.get('temporalResolutionMinutes', 0)) == 60, meta.get('temporalResolutionMinutes')
-          assert meta.get('wrf2SevereDiagnostics') is True, meta.get('wrf2SevereDiagnostics')
-          assert str(meta.get('initTime')) == os.environ['EXPECTED_INIT'], (meta.get('initTime'), os.environ['EXPECTED_INIT'])
-
-          for index, frame in enumerate(frames):
-              frame['index'] = index
-              assert int(frame['gridX']) == 400 and int(frame['gridY']) == 400, frame
-              assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', frame
-              assert (root / frame['file']).is_file(), frame
-              assert frame.get('severeFile') and (root / frame['severeFile']).is_file(), frame
-
-          with gzip.open(root / frames[0]['file'], 'rt', encoding='utf-8') as handle:
-              payload = json.load(handle)
-          assert int(payload['dxMeters']) == 15000 and int(payload['dyMeters']) == 15000, payload
-          assert int(payload['gridX']) == 400 and int(payload['gridY']) == 400, payload
-          assert payload.get('reflectivitySource') == 'REFL_10CM_NATIVE', payload
-
-          shutil.rmtree(root / 'soundings', ignore_errors=True)
-          for frame in frames:
-              frame.pop('soundingFile', None)
-
-          meta.update({
-              'product': 'SIDERAL WRF Brasil 15 km',
-              'domain': 'brasil',
-              'domainName': 'Brasil inteiro',
-              'resolutionKm': 15,
-              'nativeGrid': True,
-              'reflectivitySource': 'REFL_10CM_NATIVE',
-              'singleRunner': True,
-              'frameCount': 49,
-              'temporalResolutionMinutes': 60,
-              'forecastHourStart': 0,
-              'forecastHourEnd': 48,
-              'horizonHours': 48,
-              'status': 'complete',
-              'scope': 'brazil_48_hours_hourly',
-              'displayBoundingBoxTarget': {
-                  'west': -75.5, 'east': -32.0, 'south': -35.5, 'north': 7.0
-              },
-              'wrfGridConfig': {
-                  'e_we': 401, 'e_sn': 401, 'gridX': 400, 'gridY': 400,
-                  'dxMeters': 15000, 'dyMeters': 15000,
-                  'refLat': -14.50, 'refLon': -54.00, 'standLon': -54.00,
-                  'timeStepSeconds': 90, 'verticalLevels': 40,
-                  'historyIntervalMinutes': 60,
-                  'integrationHours': 48, 'publishedHorizonHours': 48,
-                  'cumulusPhysics': 3
-              },
-              'frames': frames,
-          })
-          path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-          print('BRASIL 15 KM VALIDADO: F000-F048 horario, 400x400, REFL_10CM_NATIVE + diagnosticos severos.')
-          PY
-          rm -f wrf_work/run/wrfout_d01_* || true
-          df -h
-
-      - name: Publicar branch WRF Brasil 15 km
-        shell: bash
-        run: |
-          set -euxo pipefail
-          BRANCH='wrf-brasil-12km-data'
-          git config user.name 'sideral-wrf-bot'
+          git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          target="/tmp/${BRANCH}"
-          rm -rf "$target"
-          git worktree add --detach "$target"
-          cd "$target"
-          git checkout --orphan "${BRANCH}-next"
-          git rm -rf . || true
-          git clean -fdx || true
-          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          printf '# SIDERAL WRF Brasil 15 km\nGFS -> WRF · Brasil inteiro · 48h · 1h\n' > README.md
-          git add -A
-          git commit -m "publish WRF Brasil 15 km ${FORCE_RUN_DATE}${FORCE_RUN_CYCLE}"
-          git branch -M "$BRANCH"
-          git push origin "$BRANCH" --force
-          echo "PUBLICADO: $BRANCH"
+          rm -rf /tmp/wrf-publication
+          git clone --depth 1 --branch wrf-brasil-12km-data "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/wrf-publication
+          rm -rf /tmp/wrf-publication/*
+          cp -a wrf_publish/. /tmp/wrf-publication/
+          cd /tmp/wrf-publication
+          git add .
+          git commit -m 'publish: SIDERAL WRF Brasil 15 km F000-F048 nativo' || exit 0
+          git push origin wrf-brasil-12km-data
 
-      - name: Guardar diagnosticos se falhar
-        if: failure()
+      - name: Diagnosticos
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wrf-brasil-12km-diagnostics-${{ github.run_id }}
