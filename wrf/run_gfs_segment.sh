@@ -9,23 +9,33 @@ curl -fsSL --retry 3 --connect-timeout 20 --max-time 120 "$BASE_URL" -o "$TMP_SC
 
 python3 - "$TMP_SCRIPT" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 p = Path(sys.argv[1])
 s = p.read_text(encoding='utf-8')
 
-# Brasil 15 km: 60 s timestep to reduce the vertical-CFL risk seen in run #15.
-s = s.replace("(' time_step = 18,', ' time_step = 90,')", "(' time_step = 18,', ' time_step = 60,')")
+# The base executor has changed over time, so do not depend on an exact
+# tuple/replacement anchor. Patch the generated namelist structurally.
+match = re.search(r'(?m)^(\s*time_step\s*=\s*)\d+(\s*,\s*)$', s)
+if not match:
+    raise SystemExit('time_step setting not found in base executor')
+s = s[:match.start()] + match.group(1) + '60' + match.group(2) + s[match.end():]
 
-# Explicit vertical damping and modest sound-wave off-centering.
-needle = "(' time_step = 18,', ' time_step = 60,'),"
-replacement = "(' time_step = 18,', ' time_step = 60,'),\n              (' time_step = 60,', ' time_step = 60,' + chr(10) + ' w_damping = 1,' + chr(10) + ' epssm = 0.2,'),"
-if needle not in s:
-    raise SystemExit('stability patch anchor not found in base executor')
-s = s.replace(needle, replacement, 1)
+# Add the stability controls immediately after time_step when absent.
+if not re.search(r'(?m)^\s*w_damping\s*=', s):
+    anchor = re.search(r'(?m)^\s*time_step\s*=\s*60\s*,\s*$', s)
+    if not anchor:
+        raise SystemExit('patched time_step anchor not found')
+    insertion = anchor.group(0) + '\n w_damping = 1,\n epssm = 0.2,'
+    s = s[:anchor.start()] + insertion + s[anchor.end():]
+elif not re.search(r'(?m)^\s*epssm\s*=', s):
+    anchor = re.search(r'(?m)^\s*w_damping\s*=.*$', s)
+    s = s[:anchor.end()] + '\n epssm = 0.2,' + s[anchor.end():]
 
-# Eliminate the misleading legacy 4 km execution label.
-s = s.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===', '=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
+# Remove the misleading legacy 4 km label wherever it occurs.
+s = s.replace('WRF 4 KM', 'WRF Brasil 15 KM')
+s = s.replace('WRF 4 km', 'WRF Brasil 15 km')
 
 p.write_text(s, encoding='utf-8')
 PY
