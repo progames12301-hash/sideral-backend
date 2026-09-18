@@ -6,33 +6,22 @@ set -euo pipefail
 : "${WRF_START_HOUR:?WRF_START_HOUR ausente}"
 : "${WRF_END_HOUR:?WRF_END_HOUR ausente}"
 
-if (( WRF_START_HOUR < 0 || WRF_END_HOUR <= WRF_START_HOUR )); then
-  echo "Intervalo WRF invalido" >&2; exit 2
-fi
-if (( WRF_START_HOUR % 3 != 0 || WRF_END_HOUR % 3 != 0 )); then
-  echo "Start/end precisam ser multiplos de 3" >&2; exit 3
-fi
+if (( WRF_START_HOUR < 0 || WRF_END_HOUR <= WRF_START_HOUR )); then echo "Intervalo WRF invalido" >&2; exit 2; fi
+if (( WRF_START_HOUR % 3 != 0 || WRF_END_HOUR % 3 != 0 )); then echo "Start/end precisam ser multiplos de 3" >&2; exit 3; fi
 WRF_COLD_START="${WRF_COLD_START:-0}"
-if (( WRF_START_HOUR > 0 )) && [[ -z "${WRF_RESTART_FILE:-}" ]] && [[ "$WRF_COLD_START" != "1" ]]; then
-  echo "Continuacao exige WRF_RESTART_FILE ou WRF_COLD_START=1" >&2; exit 4
-fi
+if (( WRF_START_HOUR > 0 )) && [[ -z "${WRF_RESTART_FILE:-}" ]] && [[ "$WRF_COLD_START" != "1" ]]; then echo "Continuacao exige WRF_RESTART_FILE ou WRF_COLD_START=1" >&2; exit 4; fi
 
 export FORCE_RUN_DATE FORCE_RUN_CYCLE WRF_START_HOUR WRF_END_HOUR WRF_COLD_START
 export WRF_SEGMENT_HOURS=$((WRF_END_HOUR-WRF_START_HOUR))
 
 python3 - <<'PY'
 from pathlib import Path
-import os, re
-
+import os,re
 path=Path('wrf/run_gfs_test.sh')
 text=path.read_text(encoding='utf-8')
-start=int(os.environ['WRF_START_HOUR'])
-end=int(os.environ['WRF_END_HOUR'])
-duration=end-start
-cold=os.environ.get('WRF_COLD_START') == '1'
-
-if 'do_radar_ref = 1' not in text:
-    raise SystemExit('do_radar_ref=1 ausente')
+start=int(os.environ['WRF_START_HOUR']); end=int(os.environ['WRF_END_HOUR']); duration=end-start
+cold=os.environ.get('WRF_COLD_START')=='1'
+if 'do_radar_ref = 1' not in text: raise SystemExit('do_radar_ref=1 ausente')
 
 selection=f'''log "Usando rodada GFS fixa para segmento F{start:03d}-F{end:03d}"
 RUN_DATE="${{FORCE_RUN_DATE:?FORCE_RUN_DATE ausente}}"
@@ -42,54 +31,62 @@ printf -v END_FH "%03d" {end}
 END_URL="$BASE_URL/gfs.t${{RUN_CYCLE}}z.pgrb2.0p25.f${{END_FH}}"
 READY=0
 for TRY in $(seq 1 18); do
-  if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$END_URL"; then
-    READY=1; break
-  fi
+  if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$END_URL"; then READY=1; break; fi
   echo "GFS F{end:03d} ainda indisponivel ($TRY/18)"; sleep 300
 done
 [[ "$READY" -eq 1 ]] || {{ echo "GFS F{end:03d} indisponivel" >&2; exit 22; }}
 '''
-text,count=re.subn(r'log "Escolhendo rodada GFS mais recente com F006 disponível".*?(?=echo "RUN_DATE=\$RUN_DATE")',selection+'\n',text,count=1,flags=re.S)
-if count!=1: raise SystemExit('Falha ao fixar rodada GFS')
-
+text,n=re.subn(r'log "Escolhendo rodada GFS mais recente com F006 disponível".*?(?=echo "RUN_DATE=\$RUN_DATE")',selection+'\n',text,count=1,flags=re.S)
+if n!=1: raise SystemExit('Falha ao fixar rodada GFS')
+base='${RUN_DATE} ${RUN_CYCLE}:00 UTC'; seg=f'${{RUN_DATE}} ${{FORCE_RUN_CYCLE}}:00 UTC +{start} hours'
 text=text.replace('+6 hours',f'+{end} hours')
-base='${RUN_DATE} ${RUN_CYCLE}:00 UTC'
-seg=f'${{RUN_DATE}} ${{FORCE_RUN_CYCLE}}:00 UTC +{start} hours'
-for suffix in ('+%Y-%m-%d_%H:%M:%S','+%Y','+%m','+%d','+%H'):
-    text=text.replace(f'date -u -d "{base}" {suffix}',f'date -u -d "{seg}" {suffix}')
-text=text.replace('run_hours = 6,',f'run_hours = {duration},')
-text=text.replace('history_interval = 180,','history_interval = 60,')
+for suffix in ('+%Y-%m-%d_%H:%M:%S','+%Y','+%m','+%d','+%H'): text=text.replace(f'date -u -d "{base}" {suffix}',f'date -u -d "{seg}" {suffix}')
+text=text.replace('run_hours = 6,',f'run_hours = {duration},').replace('history_interval = 180,','history_interval = 60,')
 restart='.true.' if start>0 and not cold else '.false.'
 text=text.replace('restart = .false.,',f'restart = {restart},\n restart_interval = {duration*60},\n write_hist_at_0h_rst = .true.,')
 
-def replace_first(pattern,replacement,label):
-    global text
-    text,n=re.subn(pattern,replacement,text,count=1,flags=re.M)
-    if n!=1: raise SystemExit(f'{label} nao encontrado no executor base')
+def must(pattern,repl,label):
+ global text
+ text,n=re.subn(pattern,repl,text,count=1,flags=re.M)
+ if n!=1: raise SystemExit(f'{label} nao encontrado no executor base')
 
-replace_first(r'^\s*time_step\s*=\s*[^,]+,\s*$',' time_step = 60,','time_step')
-if not re.search(r'^\s*w_damping\s*=',text,flags=re.M):
-    replace_first(r'^(\s*time_step\s*=\s*60,\s*)$',r'\1\n w_damping = 1,\n epssm = 0.2,','time_step para damping')
+must(r'^\s*time_step\s*=\s*[^,]+,\s*$',' time_step = 60,','time_step')
+# Robust stability patch: WRF accepts w_damping and epssm in &dynamics.
+wd=re.search(r'^\s*w_damping\s*=.*$',text,re.M)
+if wd: text=text[:wd.start()]+' w_damping = 1,'+text[wd.end():]
 else:
-    replace_first(r'^\s*w_damping\s*=.*$',' w_damping = 1,','w_damping')
-    if re.search(r'^\s*epssm\s*=.*$',text,flags=re.M):
-        replace_first(r'^\s*epssm\s*=.*$',' epssm = 0.2,','epssm')
-    else:
-        replace_first(r'^(\s*w_damping\s*=\s*1,\s*)$',r'\1\n epssm = 0.2,','w_damping para epssm')
+ text,n=re.subn(r'^(\s*diff_opt\s*=.*)$',r'\1\n w_damping = 1,',text,count=1,flags=re.M)
+ if n!=1: raise SystemExit('nao foi possivel inserir w_damping')
+es=re.search(r'^\s*epssm\s*=.*$',text,re.M)
+if es: text=text[:es.start()]+' epssm = 0.2,'+text[es.end():]
+else:
+ wd2=re.search(r'^\s*w_damping\s*=\s*1,\s*$',text,re.M)
+ if wd2: text=text[:wd2.end()]+'\n epssm = 0.2,'+text[wd2.end():]
+ else:
+  text,n=re.subn(r'^(\s*diff_opt\s*=.*)$',r'\1\n w_damping = 1,\n epssm = 0.2,',text,count=1,flags=re.M)
+  if n!=1: raise SystemExit('nao foi possivel inserir epssm')
+if not re.search(r'^\s*epssm\s*=\s*0\.2,\s*$',text,re.M): raise SystemExit('epssm=0.2 nao confirmado')
 
+# Geometry for Brasil 15 km.
+text=re.sub(r'(^\s*dx\s*=\s*)4000(\s*,\s*$)',r'\g<1>15000\2',text,count=1,flags=re.M)
+text=re.sub(r'(^\s*dy\s*=\s*)4000(\s*,\s*$)',r'\g<1>15000\2',text,count=1,flags=re.M)
+text=re.sub(r'(^\s*e_we\s*=\s*)300(\s*,\s*$)',r'\g<1>401\2',text,count=1,flags=re.M)
+text=re.sub(r'(^\s*e_sn\s*=\s*)360(\s*,\s*$)',r'\g<1>401\2',text,count=1,flags=re.M)
+
+letters=['AAA','AAB','AAC','AAD','AAE','AAF','AAG','AAH','AAI','AAJ','AAK','AAL','AAM','AAN','AAO','AAP','AAQ']
 download_start=start if cold else 0
+file_count=(end-download_start)//3+1
+if file_count>len(letters): raise SystemExit('Horizonte excede GRIBFILE letters')
+arr=' '.join(letters[:file_count])
 download=f'''log "Baixando GFS F{download_start:03d}-F{end:03d} de 3 em 3 horas"
 mkdir -p "$WORK/gfs"
 for H in $(seq {download_start} 3 {end}); do
-  printf -v FH "%03d" "$H"
-  FILE="gfs.t${{RUN_CYCLE}}z.pgrb2.0p25.f${{FH}}"
-  curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 900 \\
-    -o "$WORK/gfs/$FILE" "$BASE_URL/$FILE"
+ printf -v FH "%03d" "$H"; FILE="gfs.t${{RUN_CYCLE}}z.pgrb2.0p25.f${{FH}}"
+ curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 900 -o "$WORK/gfs/$FILE" "$BASE_URL/$FILE"
 done
 '''
-text,count=re.subn(r'log "Baixando GFS F000 F003 F006".*?done\n',download+'\n',text,count=1,flags=re.S)
-if count!=1: raise SystemExit('Falha patch download GFS')
-
+text,n=re.subn(r'log "Baixando GFS F000 F003 F006".*?done\n',download+'\n',text,count=1,flags=re.S)
+if n!=1: raise SystemExit('Falha patch download GFS')
 geog=r'''log "Baixando e validando geografia WPS low-res"
 rm -rf "$WORK/geog_extract" "$WORK/WPS_GEOG"
 mkdir -p "$WORK/geog_extract"
@@ -101,41 +98,24 @@ GEOG_ROOT="$(dirname "$(dirname "$TOPO_INDEX")")"
 mkdir -p "$WORK/WPS_GEOG"
 cp -a "$GEOG_ROOT/." "$WORK/WPS_GEOG/"
 '''
-text,count=re.subn(r'log "Baixando e extraindo geografia WPS low-res".*?(?=cat > "\$WORK/namelist\.wps" <<EOF)',geog+'\n',text,count=1,flags=re.S)
-if count!=1: raise SystemExit('Falha patch geografia')
-
-letters=['AAA','AAB','AAC','AAD','AAE','AAF','AAG','AAH','AAI','AAJ','AAK','AAL','AAM','AAN','AAO','AAP','AAQ','AAR','AAS','AAT','AAU','AAV','AAW','AAX','AAY','AAZ']
-file_count=(end-download_start)//3+1
-if file_count>len(letters): raise SystemExit('Horizonte excede GRIBFILE letters')
-arr=' '.join(letters[:file_count])
+text,n=re.subn(r'log "Baixando e extraindo geografia WPS low-res".*?(?=cat > "\$WORK/namelist\.wps" <<EOF)',geog+'\n',text,count=1,flags=re.S)
+if n!=1: raise SystemExit('Falha patch geografia')
 links=f'''log "Preparando nomes GRIBFILE F{download_start:03d}-F{end:03d}"
 LETTERS=({arr})
 IDX=0
 for H in $(seq {download_start} 3 {end}); do
-  printf -v FH "%03d" "$H"
-  FILE="gfs.t${{RUN_CYCLE}}z.pgrb2.0p25.f${{FH}}"
-  ln -sf "gfs/$FILE" "$WORK/GRIBFILE.${{LETTERS[$IDX]}}"
-  IDX=$((IDX+1))
+ printf -v FH "%03d" "$H"; FILE="gfs.t${{RUN_CYCLE}}z.pgrb2.0p25.f${{FH}}"; ln -sf "gfs/$FILE" "$WORK/GRIBFILE.${{LETTERS[$IDX]}}"; IDX=$((IDX+1))
 done
 '''
-text,count=re.subn(r'log "Preparando nomes GRIBFILE".*?(?=log "Ajustando permissoes do volume para o container DTC")',links+'\n',text,count=1,flags=re.S)
-if count!=1: raise SystemExit('Falha patch GRIBFILE')
-
+text,n=re.subn(r'log "Preparando nomes GRIBFILE".*?(?=log "Ajustando permissoes do volume para o container DTC")',links+'\n',text,count=1,flags=re.S)
+if n!=1: raise SystemExit('Falha patch GRIBFILE')
 marker='log "Ajustando permissoes do volume para o container DTC"'
-restore_host=r'''if [[ -n "${WRF_RESTART_FILE:-}" ]]; then
-  mkdir -p "$WORK/restart_input"
-  cp -f "$WRF_RESTART_FILE" "$WORK/restart_input/"
-fi
-
-'''
-text=text.replace(marker,restore_host+marker,1)
+text=text.replace(marker,'if [[ -n "${WRF_RESTART_FILE:-}" ]]; then mkdir -p "$WORK/restart_input"; cp -f "$WRF_RESTART_FILE" "$WORK/restart_input/"; fi\n\n'+marker,1)
 text=text.replace('mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe','mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe')
 text=text.replace('mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe','mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe')
-text=text.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===','=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
-text=text.replace('=== WRF 4 KM F000-F006 ===',f'=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
+text=text.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===','=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===').replace('=== WRF 4 KM F000-F006 ===',f'=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
 path.write_text(text,encoding='utf-8')
 PY
-
 chmod +x wrf/run_gfs_test.sh
 bash -n wrf/run_gfs_test.sh
 exec wrf/run_gfs_test.sh
