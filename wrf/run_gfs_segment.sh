@@ -49,37 +49,34 @@ for TRY in $(seq 1 18); do
 done
 [[ "$READY" -eq 1 ]] || {{ echo "GFS F{end:03d} indisponivel" >&2; exit 22; }}
 '''
-text,count=re.subn(
-    r'log "Escolhendo rodada GFS mais recente com F006 disponível".*?(?=echo "RUN_DATE=\$RUN_DATE")',
-    selection+'\n', text, count=1, flags=re.S)
-if count!=1:
-    raise SystemExit('Falha ao fixar rodada GFS')
+text,count=re.subn(r'log "Escolhendo rodada GFS mais recente com F006 disponível".*?(?=echo "RUN_DATE=\$RUN_DATE")',selection+'\n',text,count=1,flags=re.S)
+if count!=1: raise SystemExit('Falha ao fixar rodada GFS')
 
-text=text.replace('+6 hours', f'+{end} hours')
+text=text.replace('+6 hours',f'+{end} hours')
 base='${RUN_DATE} ${RUN_CYCLE}:00 UTC'
-seg=f'${{RUN_DATE}} ${{RUN_CYCLE}}:00 UTC +{start} hours'
+seg=f'${{RUN_DATE}} ${{FORCE_RUN_CYCLE}}:00 UTC +{start} hours'
 for suffix in ('+%Y-%m-%d_%H:%M:%S','+%Y','+%m','+%d','+%H'):
-    text=text.replace(f'date -u -d "{base}" {suffix}', f'date -u -d "{seg}" {suffix}')
-text=text.replace('run_hours = 6,', f'run_hours = {duration},')
-text=text.replace('history_interval = 180,', 'history_interval = 60,')
+    text=text.replace(f'date -u -d "{base}" {suffix}',f'date -u -d "{seg}" {suffix}')
+text=text.replace('run_hours = 6,',f'run_hours = {duration},')
+text=text.replace('history_interval = 180,','history_interval = 60,')
 restart='.true.' if start>0 and not cold else '.false.'
-text=text.replace('restart = .false.,', f'restart = {restart},\n restart_interval = {duration*60},\n write_hist_at_0h_rst = .true.,')
+text=text.replace('restart = .false.,',f'restart = {restart},\n restart_interval = {duration*60},\n write_hist_at_0h_rst = .true.,')
 
-# Brasil 15 km: enforce stable timestep and vertical damping regardless of the base executor wording.
-def replace_first(pattern, replacement, label):
+def replace_first(pattern,replacement,label):
     global text
-    text, n = re.subn(pattern, replacement, text, count=1, flags=re.M)
-    if n != 1:
-        raise SystemExit(f'{label} nao encontrado no executor base')
+    text,n=re.subn(pattern,replacement,text,count=1,flags=re.M)
+    if n!=1: raise SystemExit(f'{label} nao encontrado no executor base')
 
-replace_first(r'^\s*time_step\s*=\s*[^,]+,\s*$', ' time_step = 60,', 'time_step')
-if not re.search(r'^\s*w_damping\s*=', text, flags=re.M):
-    replace_first(r'^(\s*time_step\s*=\s*60,\s*)$', r'\1\n w_damping = 1,\n epssm = 0.2,', 'time_step para damping')
+replace_first(r'^\s*time_step\s*=\s*[^,]+,\s*$',' time_step = 60,','time_step')
+if not re.search(r'^\s*w_damping\s*=',text,flags=re.M):
+    replace_first(r'^(\s*time_step\s*=\s*60,\s*)$',r'\1\n w_damping = 1,\n epssm = 0.2,','time_step para damping')
 else:
-    replace_first(r'^\s*w_damping\s*=.*$', ' w_damping = 1,', 'w_damping')
-    replace_first(r'^\s*epssm\s*=.*$', ' epssm = 0.2,', 'epssm')
+    replace_first(r'^\s*w_damping\s*=.*$',' w_damping = 1,','w_damping')
+    if re.search(r'^\s*epssm\s*=.*$',text,flags=re.M):
+        replace_first(r'^\s*epssm\s*=.*$',' epssm = 0.2,','epssm')
+    else:
+        replace_first(r'^(\s*w_damping\s*=\s*1,\s*)$',r'\1\n epssm = 0.2,','w_damping para epssm')
 
-# Em segmentos independentes baixa somente as fronteiras do proprio trecho.
 download_start=start if cold else 0
 download=f'''log "Baixando GFS F{download_start:03d}-F{end:03d} de 3 em 3 horas"
 mkdir -p "$WORK/gfs"
@@ -91,8 +88,7 @@ for H in $(seq {download_start} 3 {end}); do
 done
 '''
 text,count=re.subn(r'log "Baixando GFS F000 F003 F006".*?done\n',download+'\n',text,count=1,flags=re.S)
-if count!=1:
-    raise SystemExit('Falha patch download GFS')
+if count!=1: raise SystemExit('Falha patch download GFS')
 
 geog=r'''log "Baixando e validando geografia WPS low-res"
 rm -rf "$WORK/geog_extract" "$WORK/WPS_GEOG"
@@ -106,13 +102,11 @@ mkdir -p "$WORK/WPS_GEOG"
 cp -a "$GEOG_ROOT/." "$WORK/WPS_GEOG/"
 '''
 text,count=re.subn(r'log "Baixando e extraindo geografia WPS low-res".*?(?=cat > "\$WORK/namelist\.wps" <<EOF)',geog+'\n',text,count=1,flags=re.S)
-if count!=1:
-    raise SystemExit('Falha patch geografia')
+if count!=1: raise SystemExit('Falha patch geografia')
 
 letters=['AAA','AAB','AAC','AAD','AAE','AAF','AAG','AAH','AAI','AAJ','AAK','AAL','AAM','AAN','AAO','AAP','AAQ','AAR','AAS','AAT','AAU','AAV','AAW','AAX','AAY','AAZ']
 file_count=(end-download_start)//3+1
-if file_count>len(letters):
-    raise SystemExit('Horizonte excede GRIBFILE letters')
+if file_count>len(letters): raise SystemExit('Horizonte excede GRIBFILE letters')
 arr=' '.join(letters[:file_count])
 links=f'''log "Preparando nomes GRIBFILE F{download_start:03d}-F{end:03d}"
 LETTERS=({arr})
@@ -125,8 +119,7 @@ for H in $(seq {download_start} 3 {end}); do
 done
 '''
 text,count=re.subn(r'log "Preparando nomes GRIBFILE".*?(?=log "Ajustando permissoes do volume para o container DTC")',links+'\n',text,count=1,flags=re.S)
-if count!=1:
-    raise SystemExit('Falha patch GRIBFILE')
+if count!=1: raise SystemExit('Falha patch GRIBFILE')
 
 marker='log "Ajustando permissoes do volume para o container DTC"'
 restore_host=r'''if [[ -n "${WRF_RESTART_FILE:-}" ]]; then
@@ -136,14 +129,10 @@ fi
 
 '''
 text=text.replace(marker,restore_host+marker,1)
-
 text=text.replace('mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe','mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe')
 text=text.replace('mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe','mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe')
-
-# Replace legacy 4 km labels without assuming a specific segment.
-text=text.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===', '=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
-text=text.replace('=== WRF 4 KM F000-F006 ===', f'=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
-
+text=text.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===','=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
+text=text.replace('=== WRF 4 KM F000-F006 ===',f'=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
 path.write_text(text,encoding='utf-8')
 PY
 
