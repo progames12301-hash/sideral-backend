@@ -51,7 +51,6 @@ def must(pattern,repl,label):
  if n!=1: raise SystemExit(f'{label} nao encontrado no executor base')
 
 must(r'^\s*time_step\s*=\s*[^,]+,\s*$',' time_step = 60,','time_step')
-# Robust stability patch: WRF accepts w_damping and epssm in &dynamics.
 wd=re.search(r'^\s*w_damping\s*=.*$',text,re.M)
 if wd: text=text[:wd.start()]+' w_damping = 1,'+text[wd.end():]
 else:
@@ -67,11 +66,20 @@ else:
   if n!=1: raise SystemExit('nao foi possivel inserir epssm')
 if not re.search(r'^\s*epssm\s*=\s*0\.2,\s*$',text,re.M): raise SystemExit('epssm=0.2 nao confirmado')
 
-# Geometry for Brasil 15 km.
-text=re.sub(r'(^\s*dx\s*=\s*)4000(\s*,\s*$)',r'\g<1>15000\2',text,count=1,flags=re.M)
-text=re.sub(r'(^\s*dy\s*=\s*)4000(\s*,\s*$)',r'\g<1>15000\2',text,count=1,flags=re.M)
-text=re.sub(r'(^\s*e_we\s*=\s*)300(\s*,\s*$)',r'\g<1>401\2',text,count=1,flags=re.M)
-text=re.sub(r'(^\s*e_sn\s*=\s*)360(\s*,\s*$)',r'\g<1>401\2',text,count=1,flags=re.M)
+# Force every hard-coded 4 km geometry value in the base executor to the Brasil 15 km grid.
+# The previous patch changed only the first matching occurrence, leaving namelist.input at 4 km.
+text=text.replace('dx = 4000,','dx = 15000,')
+text=text.replace('dy = 4000,','dy = 15000,')
+text=text.replace('e_we              = 300,','e_we              = 401,')
+text=text.replace('e_sn              = 360,','e_sn              = 401,')
+text=text.replace('e_we = 300,','e_we = 401,')
+text=text.replace('e_sn = 360,','e_sn = 401,')
+text=text.replace('dx = 4000.0,','dx = 15000.0,')
+text=text.replace('dy = 4000.0,','dy = 15000.0,')
+if 'e_we              = 300,' in text or 'e_sn              = 360,' in text or 'dx = 4000,' in text or 'dy = 4000,' in text:
+ raise SystemExit('geometria antiga 4 km ainda presente no executor')
+if 'e_we              = 401,' not in text or 'e_sn              = 401,' not in text or 'dx = 15000,' not in text or 'dy = 15000,' not in text:
+ raise SystemExit('geometria Brasil 15 km nao confirmada no executor')
 
 letters=['AAA','AAB','AAC','AAD','AAE','AAF','AAG','AAH','AAI','AAJ','AAK','AAL','AAM','AAN','AAO','AAP','AAQ']
 download_start=start if cold else 0
