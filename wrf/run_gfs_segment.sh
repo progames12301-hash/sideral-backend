@@ -16,9 +16,15 @@ s = p.read_text(encoding='utf-8')
 # The base script's Brasil adaptation changes the WRF time step from 18 to 90 s.
 # Make that operational setting 60 s for this 15 km run.
 s = s.replace("(' time_step = 18,', ' time_step = 90,')", "(' time_step = 18,', ' time_step = 60,')")
-# Make the generated namelist explicitly enable vertical-velocity damping and
-# modest sound-wave off-centering when the 60 s timestep is inserted.
-s = s.replace("(' time_step = 18,', ' time_step = 60,'),", "(' time_step = 18,', ' time_step = 60,'),\n              (' time_step = 60,', ' time_step = 60,\\n w_damping = 1,\\n epssm = 0.2,'),")
+# Explicitly enable vertical-velocity damping and modest sound-wave
+# off-centering in the generated namelist. WRF recommends w_damping for
+# operational robustness when vertical CFL violations appear.
+needle = "(' time_step = 18,', ' time_step = 60,'),"
+replacement = "(' time_step = 18,', ' time_step = 60,'),\n              (' time_step = 60,', ' time_step = 60,' + chr(10) + ' w_damping = 1,' + chr(10) + ' epssm = 0.2,'),"
+if needle in s:
+    s = s.replace(needle, replacement, 1)
+else:
+    raise SystemExit('stability patch anchor not found')
 # Remove the misleading legacy 4 km label from the execution log.
 s = s.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===', '=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
 p.write_text(s, encoding='utf-8')
