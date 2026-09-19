@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Modo de geração'
+        description: 'Geração'
         required: true
         default: 'national'
         type: choice
@@ -17,26 +17,30 @@ on:
           - national
           - point
       lat:
-        description: 'Latitude (usado somente no modo point)'
+        description: 'Latitude — somente Point'
         required: false
-        default: '-15.78'
+        default: ''
         type: string
       lon:
-        description: 'Longitude (usado somente no modo point)'
+        description: 'Longitude — somente Point'
         required: false
-        default: '-47.93'
+        default: ''
         type: string
       label:
-        description: 'Local (usado somente no modo point)'
+        description: 'Local — somente Point'
         required: false
-        default: 'Brasil'
+        default: ''
         type: string
       cycle:
         description: 'Ciclo ECMWF'
         required: true
         default: '00'
         type: choice
-        options: ['00','06','12','18']
+        options:
+          - '00'
+          - '06'
+          - '12'
+          - '18'
   repository_dispatch:
     types: [skewt_request]
 
@@ -62,15 +66,16 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install geometry dependency
+      - name: Install grid dependencies
         run: python -m pip install --upgrade pip shapely
 
-      - name: Build Brazil ECMWF 0.25 degree grid
+      - name: Build Brazil 0.25 degree ECMWF grid
         run: |
           rm -rf data/skewt/grid
+          mkdir -p data/skewt/grid
           python tools/skewt/build_brazil_grid.py --out data/skewt/grid/brazil-0p25.json
 
-      - name: Add cycle metadata
+      - name: Set cycle metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -86,70 +91,76 @@ jobs:
             CYCLE='${{ inputs.cycle }}'
           fi
           python - "$CYCLE" <<'PY'
-          import json,sys
+          import json, sys
           from pathlib import Path
-          p=Path('data/skewt/grid/brazil-0p25.json')
-          d=json.loads(p.read_text())
-          d['cycle_utc']=sys.argv[1]
-          d['updated_by']='Sideral Skew-T automatic national grid'
-          p.write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
-          Path('data/skewt/grid/latest.json').write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
+          p = Path('data/skewt/grid/brazil-0p25.json')
+          d = json.loads(p.read_text())
+          d['cycle_utc'] = sys.argv[1]
+          d['updated_by'] = 'Sideral Skew-T'
+          p.write_text(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
+          Path('data/skewt/grid/latest.json').write_text(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
           PY
 
-      - name: Publish national grid manifest
+      - name: Publish national grid
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add data/skewt/grid
-          git commit -m "chore: refresh Brazil ECMWF 0.25 Skew-T grid" || exit 0
+          git commit -m "chore: refresh national ECMWF 0.25 grid" || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
 
   generate-point:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'point' || github.event_name == 'repository_dispatch'
+    if: (github.event_name == 'workflow_dispatch' && inputs.mode == 'point') || github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Select ECMWF cycle
-        id: cycle
-        shell: bash
-        run: |
-          if [ -n "${{ github.event.client_payload.cycle || '' }}" ]; then CYCLE="${{ github.event.client_payload.cycle }}"; else CYCLE="${{ inputs.cycle || '00' }}"; fi
-          echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
-      - name: Select requested point
+
+      - name: Select point and cycle
         id: point
         shell: bash
         run: |
-          echo "lat=${{ github.event.client_payload.lat || inputs.lat || '-15.78' }}" >> "$GITHUB_OUTPUT"
-          echo "lon=${{ github.event.client_payload.lon || inputs.lon || '-47.93' }}" >> "$GITHUB_OUTPUT"
-          echo "label=${{ github.event.client_payload.label || inputs.label || 'Brasil' }}" >> "$GITHUB_OUTPUT"
+          LAT='${{ github.event.client_payload.lat || inputs.lat }}'
+          LON='${{ github.event.client_payload.lon || inputs.lon }}'
+          LABEL='${{ github.event.client_payload.label || inputs.label }}'
+          CYCLE='${{ github.event.client_payload.cycle || inputs.cycle || '00' }}'
+          test -n "$LAT" && test -n "$LON"
+          echo "lat=$LAT" >> "$GITHUB_OUTPUT"
+          echo "lon=$LON" >> "$GITHUB_OUTPUT"
+          echo "label=${LABEL:-Sideral}" >> "$GITHUB_OUTPUT"
+          echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
+
       - name: Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: pip
-      - name: System libraries for SHARPpy
+
+      - name: System libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
+
       - name: Install SHARPpy and data libraries
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
           python -m pip install 'numpy<2' PySide2 ecmwf-opendata eccodes pillow
-      - name: Generate complete pre-rendered point
+
+      - name: Generate pre-rendered SHARPpy product
         env:
           LAT: ${{ steps.point.outputs.lat }}
           LON: ${{ steps.point.outputs.lon }}
           LABEL: ${{ steps.point.outputs.label }}
-          CYCLE: ${{ steps.cycle.outputs.cycle }}
+          CYCLE: ${{ steps.point.outputs.cycle }}
         run: |
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
           xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py --lat "$LAT" --lon "$LON" --label "$LABEL" --cycle "$CYCLE" --out /tmp/skewt-out
-      - name: Verify complete product
+
+      - name: Verify product
         run: |
           test -s /tmp/skewt-out/latest.json
           test -s /tmp/skewt-out/animation.gif
@@ -157,7 +168,8 @@ jobs:
           test -s /tmp/skewt-out/f000/skewt.png
           test -s /tmp/skewt-out/f000/hodograph.png
           test -s /tmp/skewt-out/f000/variables.json
-      - name: Publish snapped ECMWF 0.25 degree point
+
+      - name: Publish point
         shell: bash
         run: |
           set -euo pipefail
@@ -168,11 +180,12 @@ jobs:
           lat=float(d['latitude']); lon=float(d['longitude'])
           key=f'{lat:.2f}_{lon:.2f}'.replace('-','m').replace('.','p')
           src=Path('/tmp/skewt-out'); dst=Path('data/skewt/points')/key; dst.mkdir(parents=True, exist_ok=True)
-          for name in ('latest.json','variables.json','full.png','skewt.png','hodograph.png','animation.gif'): shutil.copy2(src/name,dst/name)
+          for name in ('latest.json','variables.json','full.png','skewt.png','hodograph.png','animation.gif'):
+              shutil.copy2(src/name,dst/name)
           for child in sorted(src.glob('f[0-9][0-9][0-9]')):
               if child.is_dir():
-                  fh=child.name
-                  for srcname,dstname in [('full.png',f'{fh}.png'),('skewt.png',f'{fh}_skewt.png'),('hodograph.png',f'{fh}_hodograph.png'),('variables.json',f'{fh}.json')]: shutil.copy2(child/srcname,dst/dstname)
+                  for srcname,dstname in [('full.png',f'{child.name}.png'),('skewt.png',f'{child.name}_skewt.png'),('hodograph.png',f'{child.name}_hodograph.png'),('variables.json',f'{child.name}.json')]:
+                      shutil.copy2(child/srcname,dst/dstname)
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
