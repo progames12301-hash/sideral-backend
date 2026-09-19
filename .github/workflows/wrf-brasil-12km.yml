@@ -31,10 +31,10 @@ env:
   WRF_END_HOUR: '48'
   WRF_RUN_HOURS: '48'
   WRF_TIME_STEP: '90'
-  WRF_E_WE: '191'
-  WRF_E_SN: '191'
-  WRF_GRID_X: '190'
-  WRF_GRID_Y: '190'
+  WRF_E_WE: '216'
+  WRF_E_SN: '216'
+  WRF_GRID_X: '215'
+  WRF_GRID_Y: '215'
 
 jobs:
   brasil:
@@ -161,7 +161,7 @@ jobs:
             --json wrf_publish/wrf_brasil_21km.json \
             --metadata wrf_publish/metadata.json \
             --resolution-km 21 \
-            --nx 190 --ny 190 \
+            --nx 215 --ny 215 \
             --frames 49 \
             --require-reflectivity-source REFL_10CM_NATIVE \
             --require-native-grid \
