@@ -1,4 +1,4 @@
-name: WRF 4 km - DOIS DIAS AUTOMATICO
+name: WRF 7 km SUL GFS - DOIS DIAS AUTOMATICO
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
   schedule:
     - cron: '20 0 * * *'
   workflow_run:
-    workflows: ["WRF 4 km - REFL NATIVO - USE ESTE"]
+    workflows: ["WRF 7 km SUL GFS - REFL NATIVO"]
     types: [completed]
 
 permissions:
