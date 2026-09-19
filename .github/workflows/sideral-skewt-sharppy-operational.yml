@@ -2,32 +2,33 @@ name: Sideral Skew-T SHARPpy Brasil
 
 on:
   schedule:
-    - cron: '30 8,20 * * *'
+    - cron: '30 0 * * *'
+    - cron: '30 6 * * *'
+    - cron: '30 12 * * *'
+    - cron: '30 18 * * *'
   workflow_dispatch:
     inputs:
       lat:
-        description: 'Latitude do ponto (opcional; vazio = grade Brasil)'
-        required: false
-        default: ''
+        description: 'Latitude (qualquer ponto do Brasil; associada à grade ECMWF 0.25°)'
+        required: true
+        default: '-15.78'
         type: string
       lon:
-        description: 'Longitude do ponto (opcional; vazio = grade Brasil)'
-        required: false
-        default: ''
+        description: 'Longitude (qualquer ponto do Brasil; associada à grade ECMWF 0.25°)'
+        required: true
+        default: '-47.93'
         type: string
       label:
         description: 'Local'
         required: false
         default: 'Brasil'
         type: string
-      mode:
-        description: 'Modo de geração'
+      cycle:
+        description: 'Ciclo ECMWF'
         required: true
-        default: 'brazil-grid'
+        default: '00'
         type: choice
-        options:
-          - brazil-grid
-          - single-point
+        options: ['00','06','12','18']
   repository_dispatch:
     types: [skewt_request]
 
@@ -35,7 +36,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || 'brazil-grid' }}-${{ github.event.client_payload.lon || inputs.lon || 'brazil-grid' }}
+  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || 'scheduled' }}-${{ github.event.client_payload.lon || inputs.lon || github.event.schedule || 'manual' }}
   cancel-in-progress: false
 
 env:
@@ -47,170 +48,37 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        include:
-          - lat: '-33.75'
-            lon: '-53.25'
-            label: 'Brasil Sul extremo'
-          - lat: '-31.77'
-            lon: '-52.34'
-            label: 'Pelotas'
-          - lat: '-30.03'
-            lon: '-51.23'
-            label: 'Porto Alegre'
-          - lat: '-28.68'
-            lon: '-49.37'
-            label: 'Santa Catarina Sul'
-          - lat: '-27.60'
-            lon: '-48.55'
-            label: 'Florianopolis'
-          - lat: '-26.30'
-            lon: '-48.85'
-            label: 'Joinville'
-          - lat: '-25.43'
-            lon: '-49.27'
-            label: 'Curitiba'
-          - lat: '-24.95'
-            lon: '-53.46'
-            label: 'Cascavel'
-          - lat: '-23.55'
-            lon: '-46.63'
-            label: 'Sao Paulo'
-          - lat: '-22.90'
-            lon: '-43.20'
-            label: 'Rio de Janeiro'
-          - lat: '-21.13'
-            lon: '-44.25'
-            label: 'Minas Gerais Sul'
-          - lat: '-20.32'
-            lon: '-40.34'
-            label: 'Vitoria'
-          - lat: '-19.92'
-            lon: '-43.94'
-            label: 'Belo Horizonte'
-          - lat: '-18.91'
-            lon: '-48.28'
-            label: 'Uberlandia'
-          - lat: '-17.73'
-            lon: '-49.10'
-            label: 'Goias Sul'
-          - lat: '-16.68'
-            lon: '-49.25'
-            label: 'Goiania'
-          - lat: '-15.78'
-            lon: '-47.93'
-            label: 'Brasilia'
-          - lat: '-15.60'
-            lon: '-56.10'
-            label: 'Cuiaba'
-          - lat: '-14.80'
-            lon: '-39.05'
-            label: 'Bahia Sul'
-          - lat: '-13.00'
-            lon: '-38.50'
-            label: 'Salvador'
-          - lat: '-12.97'
-            lon: '-38.51'
-            label: 'Salvador'
-          - lat: '-11.23'
-            lon: '-50.00'
-            label: 'Mato Grosso'
-          - lat: '-10.95'
-            lon: '-37.07'
-            label: 'Aracaju'
-          - lat: '-9.65'
-            lon: '-35.74'
-            label: 'Maceio'
-          - lat: '-8.05'
-            lon: '-34.90'
-            label: 'Recife'
-          - lat: '-7.12'
-            lon: '-34.86'
-            label: 'Joao Pessoa'
-          - lat: '-5.09'
-            lon: '-42.80'
-            label: 'Teresina'
-          - lat: '-5.79'
-            lon: '-35.21'
-            label: 'Natal'
-          - lat: '-4.97'
-            lon: '-39.00'
-            label: 'Ceara Central'
-          - lat: '-3.73'
-            lon: '-38.52'
-            label: 'Fortaleza'
-          - lat: '-2.53'
-            lon: '-44.30'
-            label: 'Sao Luis'
-          - lat: '-1.46'
-            lon: '-48.50'
-            label: 'Belem'
-          - lat: '-3.10'
-            lon: '-60.02'
-            label: 'Manaus'
-          - lat: '-8.76'
-            lon: '-63.90'
-            label: 'Porto Velho'
-          - lat: '-9.98'
-            lon: '-67.81'
-            label: 'Rio Branco'
-          - lat: '-0.04'
-            lon: '-51.07'
-            label: 'Macapa'
-          - lat: '2.82'
-            lon: '-60.67'
-            label: 'Boa Vista'
-          - lat: '-7.23'
-            lon: '-64.80'
-            label: 'Amazonas Oeste'
-          - lat: '-8.83'
-            lon: '-56.75'
-            label: 'Para Oeste'
-          - lat: '-10.18'
-            lon: '-48.33'
-            label: 'Palmas'
-          - lat: '-10.91'
-            lon: '-37.07'
-            label: 'Sergipe'
-          - lat: '-12.25'
-            lon: '-38.96'
-            label: 'Bahia Centro'
-          - lat: '-12.98'
-            lon: '-41.95'
-            label: 'Chapada Diamantina'
-          - lat: '-15.60'
-            lon: '-55.00'
-            label: 'Mato Grosso Leste'
-          - lat: '-19.00'
-            lon: '-54.00'
-            label: 'Mato Grosso do Sul'
-          - lat: '-20.47'
-            lon: '-54.62'
-            label: 'Campo Grande'
-          - lat: '-22.22'
-            lon: '-54.81'
-            label: 'Dourados'
-          - lat: '-22.90'
-            lon: '-51.15'
-            label: 'Londrina'
-          - lat: '-23.42'
-            lon: '-51.93'
-            label: 'Maringa'
-          - lat: '-25.52'
-            lon: '-54.59'
-            label: 'Foz do Iguacu'
-          - lat: '-29.17'
-            lon: '-51.18'
-            label: 'Serra Gaucha'
-          - lat: '-30.88'
-            lon: '-55.53'
-            label: 'Campanha Gaucha'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select ECMWF cycle
+        id: cycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.client_payload.cycle || '' }}" ]; then
+            CYCLE="${{ github.event.client_payload.cycle }}"
+          elif [ -n "${{ inputs.cycle || '' }}" ]; then
+            CYCLE="${{ inputs.cycle }}"
+          else
+            case "${{ github.event.schedule }}" in
+              '30 0 * * *') CYCLE='00' ;;
+              '30 6 * * *') CYCLE='06' ;;
+              '30 12 * * *') CYCLE='12' ;;
+              '30 18 * * *') CYCLE='18' ;;
+              *) CYCLE='00' ;;
+            esac
+          fi
+          echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
+
+      - name: Select point
+        id: point
+        shell: bash
+        run: |
+          echo "lat=${{ github.event.client_payload.lat || inputs.lat || '-15.78' }}" >> "$GITHUB_OUTPUT"
+          echo "lon=${{ github.event.client_payload.lon || inputs.lon || '-47.93' }}" >> "$GITHUB_OUTPUT"
+          echo "label=${{ github.event.client_payload.label || inputs.label || 'Brasil' }}" >> "$GITHUB_OUTPUT"
 
       - name: Python 3.10
         uses: actions/setup-python@v5
@@ -227,39 +95,56 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
-          python -m pip install PySide2 ecmwf-opendata eccodes numpy pillow
+          python -m pip install 'numpy<2' PySide2 ecmwf-opendata eccodes pillow
 
       - name: Generate complete pre-rendered point
         env:
-          LAT: ${{ matrix.lat }}
-          LON: ${{ matrix.lon }}
-          LABEL: ${{ matrix.label }}
+          LAT: ${{ steps.point.outputs.lat }}
+          LON: ${{ steps.point.outputs.lon }}
+          LABEL: ${{ steps.point.outputs.label }}
+          CYCLE: ${{ steps.cycle.outputs.cycle }}
         run: |
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
           xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py \
-            --lat "$LAT" --lon "$LON" --label "$LABEL" --out /tmp/skewt-out
+            --lat "$LAT" --lon "$LON" --label "$LABEL" --cycle "$CYCLE" --out /tmp/skewt-out
 
       - name: Verify complete product
         run: |
           test -s /tmp/skewt-out/latest.json
           test -s /tmp/skewt-out/animation.gif
+          test -s /tmp/skewt-out/f000/full.png
           test -s /tmp/skewt-out/f000/skewt.png
           test -s /tmp/skewt-out/f000/hodograph.png
-          test -s /tmp/skewt-out/f000/full.png
           test -s /tmp/skewt-out/f000/variables.json
 
-      - name: Publish complete pre-rendered point
-        env:
-          LAT: ${{ matrix.lat }}
-          LON: ${{ matrix.lon }}
+      - name: Publish snapped ECMWF 0.25 degree point
         shell: bash
         run: |
           set -euo pipefail
-          python -c 'import os, shutil; from pathlib import Path; lat=float(os.environ["LAT"]); lon=float(os.environ["LON"]); key=f"{lat:.2f}_{lon:.2f}".replace("-","m").replace(".","p"); src=Path("/tmp/skewt-out"); dst=Path("data/skewt/points")/key; dst.mkdir(parents=True, exist_ok=True); [shutil.copy2(src/name, dst/name) for name in ("latest.json","variables.json","full.png","skewt.png","hodograph.png","animation.gif")]; [(shutil.copy2(child/"full.png", dst/f"{child.name}.png"), shutil.copy2(child/"skewt.png", dst/f"{child.name}_skewt.png"), shutil.copy2(child/"hodograph.png", dst/f"{child.name}_hodograph.png"), shutil.copy2(child/"variables.json", dst/f"{child.name}.json")) for child in sorted(src.glob("f[0-9][0-9][0-9]"))]'
+          python - <<'PY'
+          import json, shutil
+          from pathlib import Path
+          d=json.loads(Path('/tmp/skewt-out/latest.json').read_text())
+          lat=float(d['latitude']); lon=float(d['longitude'])
+          key=f'{lat:.2f}_{lon:.2f}'.replace('-','m').replace('.','p')
+          src=Path('/tmp/skewt-out')
+          dst=Path('data/skewt/points')/key
+          dst.mkdir(parents=True, exist_ok=True)
+          for name in ('latest.json','variables.json','full.png','skewt.png','hodograph.png','animation.gif'):
+              shutil.copy2(src/name,dst/name)
+          for child in sorted(src.glob('f[0-9][0-9][0-9]')):
+              if child.is_dir():
+                  fh=child.name
+                  shutil.copy2(child/'full.png',dst/f'{fh}.png')
+                  shutil.copy2(child/'skewt.png',dst/f'{fh}_skewt.png')
+                  shutil.copy2(child/'hodograph.png',dst/f'{fh}_hodograph.png')
+                  shutil.copy2(child/'variables.json',dst/f'{fh}.json')
+          print('published', key)
+          PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add data/skewt/points
-          git commit -m "chore: publish Brazil Skew-T point $LAT $LON" || exit 0
+          git commit -m "chore: publish ECMWF Skew-T point" || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
