@@ -1,0 +1,90 @@
+name: Sideral Skew-T SHARPpy Operational
+
+on:
+  schedule:
+    - cron: '30 8,20 * * *'
+  workflow_dispatch:
+    inputs:
+      lat:
+        description: 'Latitude do ponto (graus decimais)'
+        required: true
+        default: '-25.43'
+        type: string
+      lon:
+        description: 'Longitude do ponto (graus decimais)'
+        required: true
+        default: '-49.27'
+        type: string
+      label:
+        description: 'Nome do ponto'
+        required: true
+        default: 'Curitiba, PR'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-skewt
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LAT: ${{ inputs.lat || '-25.43' }}
+      LON: ${{ inputs.lon || '-49.27' }}
+      LABEL: ${{ inputs.label || 'Curitiba, PR' }}
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: System libraries for SHARPpy Qt renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Install SHARPpy and data libraries
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
+          python -m pip install ecmwf-opendata eccodes numpy pillow
+
+      - name: Generate real SHARPpy PNG frames + GIF
+        run: |
+          rm -rf /tmp/skewt-out
+          mkdir -p /tmp/skewt-out
+          xvfb-run -a python tools/skewt/generate_sharppy_product.py \
+            --lat "$LAT" \
+            --lon "$LON" \
+            --label "$LABEL" \
+            --out /tmp/skewt-out
+
+      - name: Publish pre-rendered products
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin skewt-data:skewt-data || true
+          if git show-ref --verify --quiet refs/heads/skewt-data; then
+            git switch skewt-data
+          else
+            git switch --orphan skewt-data
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p data/skewt
+          rm -f data/skewt/f*.png data/skewt/latest.png data/skewt/animation.gif data/skewt/latest.json
+          cp /tmp/skewt-out/f*.png data/skewt/
+          cp /tmp/skewt-out/latest.png data/skewt/latest.png
+          cp /tmp/skewt-out/animation.gif data/skewt/animation.gif
+          cp /tmp/skewt-out/latest.json data/skewt/latest.json
+          git add data/skewt
+          git commit -m 'chore: publish pre-rendered SHARPpy Skew-T products' || exit 0
+          git push origin skewt-data
