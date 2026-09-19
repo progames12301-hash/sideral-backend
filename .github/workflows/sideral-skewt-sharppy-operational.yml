@@ -6,20 +6,28 @@ on:
   workflow_dispatch:
     inputs:
       lat:
-        description: 'Latitude do ponto'
-        required: true
-        default: '-15.78'
+        description: 'Latitude do ponto (opcional; vazio = grade Brasil)'
+        required: false
+        default: ''
         type: string
       lon:
-        description: 'Longitude do ponto'
-        required: true
-        default: '-47.93'
+        description: 'Longitude do ponto (opcional; vazio = grade Brasil)'
+        required: false
+        default: ''
         type: string
       label:
         description: 'Local'
-        required: true
+        required: false
         default: 'Brasil'
         type: string
+      mode:
+        description: 'Modo de geração'
+        required: true
+        default: 'brazil-grid'
+        type: choice
+        options:
+          - brazil-grid
+          - single-point
   repository_dispatch:
     types: [skewt_request]
 
@@ -27,20 +35,179 @@ permissions:
   contents: write
 
 concurrency:
-  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || 'default' }}-${{ github.event.client_payload.lon || inputs.lon || 'default' }}
-  cancel-in-progress: true
+  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || 'brazil-grid' }}-${{ github.event.client_payload.lon || inputs.lon || 'brazil-grid' }}
+  cancel-in-progress: false
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  ECMWF_SOURCE: aws
+  PYTHONUNBUFFERED: '1'
 
 jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    env:
-      LAT: ${{ github.event.client_payload.lat || inputs.lat || '-15.78' }}
-      LON: ${{ github.event.client_payload.lon || inputs.lon || '-47.93' }}
-      LABEL: ${{ github.event.client_payload.label || inputs.label || 'Brasil' }}
-      QT_QPA_PLATFORM: offscreen
-      ECMWF_SOURCE: aws
-      PYTHONUNBUFFERED: '1'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - lat: '-33.75'
+            lon: '-53.25'
+            label: 'Brasil Sul extremo'
+          - lat: '-31.77'
+            lon: '-52.34'
+            label: 'Pelotas'
+          - lat: '-30.03'
+            lon: '-51.23'
+            label: 'Porto Alegre'
+          - lat: '-28.68'
+            lon: '-49.37'
+            label: 'Santa Catarina Sul'
+          - lat: '-27.60'
+            lon: '-48.55'
+            label: 'Florianopolis'
+          - lat: '-26.30'
+            lon: '-48.85'
+            label: 'Joinville'
+          - lat: '-25.43'
+            lon: '-49.27'
+            label: 'Curitiba'
+          - lat: '-24.95'
+            lon: '-53.46'
+            label: 'Cascavel'
+          - lat: '-23.55'
+            lon: '-46.63'
+            label: 'Sao Paulo'
+          - lat: '-22.90'
+            lon: '-43.20'
+            label: 'Rio de Janeiro'
+          - lat: '-21.13'
+            lon: '-44.25'
+            label: 'Minas Gerais Sul'
+          - lat: '-20.32'
+            lon: '-40.34'
+            label: 'Vitoria'
+          - lat: '-19.92'
+            lon: '-43.94'
+            label: 'Belo Horizonte'
+          - lat: '-18.91'
+            lon: '-48.28'
+            label: 'Uberlandia'
+          - lat: '-17.73'
+            lon: '-49.10'
+            label: 'Goias Sul'
+          - lat: '-16.68'
+            lon: '-49.25'
+            label: 'Goiania'
+          - lat: '-15.78'
+            lon: '-47.93'
+            label: 'Brasilia'
+          - lat: '-15.60'
+            lon: '-56.10'
+            label: 'Cuiaba'
+          - lat: '-14.80'
+            lon: '-39.05'
+            label: 'Bahia Sul'
+          - lat: '-13.00'
+            lon: '-38.50'
+            label: 'Salvador'
+          - lat: '-12.97'
+            lon: '-38.51'
+            label: 'Salvador'
+          - lat: '-11.23'
+            lon: '-50.00'
+            label: 'Mato Grosso'
+          - lat: '-10.95'
+            lon: '-37.07'
+            label: 'Aracaju'
+          - lat: '-9.65'
+            lon: '-35.74'
+            label: 'Maceio'
+          - lat: '-8.05'
+            lon: '-34.90'
+            label: 'Recife'
+          - lat: '-7.12'
+            lon: '-34.86'
+            label: 'Joao Pessoa'
+          - lat: '-5.09'
+            lon: '-42.80'
+            label: 'Teresina'
+          - lat: '-5.79'
+            lon: '-35.21'
+            label: 'Natal'
+          - lat: '-4.97'
+            lon: '-39.00'
+            label: 'Ceara Central'
+          - lat: '-3.73'
+            lon: '-38.52'
+            label: 'Fortaleza'
+          - lat: '-2.53'
+            lon: '-44.30'
+            label: 'Sao Luis'
+          - lat: '-1.46'
+            lon: '-48.50'
+            label: 'Belem'
+          - lat: '-3.10'
+            lon: '-60.02'
+            label: 'Manaus'
+          - lat: '-8.76'
+            lon: '-63.90'
+            label: 'Porto Velho'
+          - lat: '-9.98'
+            lon: '-67.81'
+            label: 'Rio Branco'
+          - lat: '-0.04'
+            lon: '-51.07'
+            label: 'Macapa'
+          - lat: '2.82'
+            lon: '-60.67'
+            label: 'Boa Vista'
+          - lat: '-7.23'
+            lon: '-64.80'
+            label: 'Amazonas Oeste'
+          - lat: '-8.83'
+            lon: '-56.75'
+            label: 'Para Oeste'
+          - lat: '-10.18'
+            lon: '-48.33'
+            label: 'Palmas'
+          - lat: '-10.91'
+            lon: '-37.07'
+            label: 'Sergipe'
+          - lat: '-12.25'
+            lon: '-38.96'
+            label: 'Bahia Centro'
+          - lat: '-12.98'
+            lon: '-41.95'
+            label: 'Chapada Diamantina'
+          - lat: '-15.60'
+            lon: '-55.00'
+            label: 'Mato Grosso Leste'
+          - lat: '-19.00'
+            lon: '-54.00'
+            label: 'Mato Grosso do Sul'
+          - lat: '-20.47'
+            lon: '-54.62'
+            label: 'Campo Grande'
+          - lat: '-22.22'
+            lon: '-54.81'
+            label: 'Dourados'
+          - lat: '-22.90'
+            lon: '-51.15'
+            label: 'Londrina'
+          - lat: '-23.42'
+            lon: '-51.93'
+            label: 'Maringa'
+          - lat: '-25.52'
+            lon: '-54.59'
+            label: 'Foz do Iguacu'
+          - lat: '-29.17'
+            lon: '-51.18'
+            label: 'Serra Gaucha'
+          - lat: '-30.88'
+            lon: '-55.53'
+            label: 'Campanha Gaucha'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,14 +229,18 @@ jobs:
           python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
           python -m pip install PySide2 ecmwf-opendata eccodes numpy pillow
 
-      - name: Generate all real SHARPpy products
+      - name: Generate complete pre-rendered point
+        env:
+          LAT: ${{ matrix.lat }}
+          LON: ${{ matrix.lon }}
+          LABEL: ${{ matrix.label }}
         run: |
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
           xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py \
             --lat "$LAT" --lon "$LON" --label "$LABEL" --out /tmp/skewt-out
 
-      - name: Verify pre-rendered products
+      - name: Verify complete product
         run: |
           test -s /tmp/skewt-out/latest.json
           test -s /tmp/skewt-out/animation.gif
@@ -78,7 +249,10 @@ jobs:
           test -s /tmp/skewt-out/f000/full.png
           test -s /tmp/skewt-out/f000/variables.json
 
-      - name: Publish complete pre-rendered point product
+      - name: Publish complete pre-rendered point
+        env:
+          LAT: ${{ matrix.lat }}
+          LON: ${{ matrix.lon }}
         shell: bash
         run: |
           set -euo pipefail
@@ -86,6 +260,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add data/skewt/points
-          git commit -m "chore: publish complete SHARPpy Skew-T point $LAT $LON" || exit 0
+          git commit -m "chore: publish Brazil Skew-T point $LAT $LON" || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
