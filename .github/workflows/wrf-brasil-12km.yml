@@ -1,4 +1,4 @@
-name: SIDERAL WRF Brasil 15 km - 48h horario
+name: SIDERAL WRF Brasil 21 km - 48h horario
 
 on:
   workflow_dispatch:
@@ -23,22 +23,22 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  WRF_TARGET_RESOLUTION_KM: '15'
-  WRF_DX_METERS: '15000'
-  WRF_DY_METERS: '15000'
+  WRF_TARGET_RESOLUTION_KM: '21'
+  WRF_DX_METERS: '21000'
+  WRF_DY_METERS: '21000'
   WRF_HISTORY_INTERVAL_MINUTES: '60'
   WRF_START_HOUR: '0'
   WRF_END_HOUR: '48'
   WRF_RUN_HOURS: '48'
-  WRF_TIME_STEP: '60'
-  WRF_E_WE: '401'
-  WRF_E_SN: '401'
-  WRF_GRID_X: '400'
-  WRF_GRID_Y: '400'
+  WRF_TIME_STEP: '90'
+  WRF_E_WE: '191'
+  WRF_E_SN: '191'
+  WRF_GRID_X: '190'
+  WRF_GRID_Y: '190'
 
 jobs:
   brasil:
-    name: GFS -> WRF Brasil 15 km F000-F048 horario
+    name: GFS -> WRF Brasil 21 km F000-F048 horario
     runs-on: ubuntu-22.04
     timeout-minutes: 480
     steps:
@@ -90,7 +90,7 @@ jobs:
           def ready(date, cycle):
               url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f048'
               try:
-                  req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Sideral-WRF-Brasil-15km'})
+                  req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Sideral-WRF-Brasil-21km'})
                   with urllib.request.urlopen(req, timeout=30) as response:
                       return response.status in (200, 206)
               except Exception:
@@ -124,10 +124,10 @@ jobs:
               output.write(f'run_date={run_date}\n')
               output.write(f'run_cycle={run_cycle}\n')
               output.write(f'init_time={init_time}\n')
-          print(f'GFS selecionado: {run_date} {run_cycle}Z; Brasil 15 km F000-F048 horario')
+          print(f'GFS selecionado: {run_date} {run_cycle}Z; Brasil 21 km F000-F048 horario')
           PY
 
-      - name: Executar WRF Brasil 15 km em um unico runner
+      - name: Executar WRF Brasil 21 km em um unico runner
         env:
           FORCE_RUN_DATE: ${{ steps.run.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ steps.run.outputs.run_cycle }}
@@ -141,27 +141,27 @@ jobs:
           chmod +x wrf/run_gfs_segment.sh
           wrf/run_gfs_segment.sh
           grep -q 'SUCCESS COMPLETE WRF' wrf_work/run/rsl.error.0000
-          echo 'SUCCESS COMPLETE WRF confirmado para Brasil 15 km.'
+          echo 'SUCCESS COMPLETE WRF confirmado para Brasil 21 km.'
           ls -lh wrf_work/run/wrfout_d01_* | tail -10
           df -h
 
-      - name: Extrair JSON nativo Brasil 15 km
+      - name: Extrair JSON nativo Brasil 21 km
         run: |
           set -euo pipefail
           mkdir -p wrf_diagnostics wrf_publish
           python wrf/extract_wrf_json.py \
             --input-dir wrf_work/run \
-            --output wrf_publish/wrf_brasil_15km.json \
+            --output wrf_publish/wrf_brasil_21km.json \
             --metadata-out wrf_publish/metadata.json
 
-      - name: Validar 49 frames nativos Brasil 15 km
+      - name: Validar 49 frames nativos Brasil 21 km
         run: |
           set -euo pipefail
           python wrf/validate_wrf_publication.py \
-            --json wrf_publish/wrf_brasil_15km.json \
+            --json wrf_publish/wrf_brasil_21km.json \
             --metadata wrf_publish/metadata.json \
-            --resolution-km 15 \
-            --nx 400 --ny 400 \
+            --resolution-km 21 \
+            --nx 190 --ny 190 \
             --frames 49 \
             --require-reflectivity-source REFL_10CM_NATIVE \
             --require-native-grid \
@@ -180,7 +180,7 @@ jobs:
           cp -a wrf_publish/. /tmp/wrf-publication/
           cd /tmp/wrf-publication
           git add .
-          git commit -m 'publish: SIDERAL WRF Brasil 15 km F000-F048 nativo' || exit 0
+          git commit -m 'publish: SIDERAL WRF Brasil 21 km F000-F048 nativo' || exit 0
           git push origin wrf-brasil-12km-data
 
       - name: Diagnosticos
