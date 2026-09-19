@@ -2,18 +2,11 @@ import os
 from pathlib import Path
 from PySide2.QtWidgets import QApplication, QWidget, QGridLayout, QFrame
 from sharppy.sharptab.prof_collection import ProfCollection
-from sharppy.viz.skew import plotSkewT
-from sharppy.viz.hodo import plotHodo
-from sharppy.viz.plotText import plotText
-from sharppy.viz.plotKinematics import plotKinematics
-from sharppy.viz.plotSpeed import plotSpeed
-from sharppy.viz.plotAdvection import plotAdvection
-from sharppy.viz.plotSlinky import plotSlinky
-from sharppy.viz.plotThetae import plotThetae
-from sharppy.viz.plotWinds import plotWinds
-from sharppy.viz.plotWatch import plotWatch
-from sharppy.viz.plotAnalogues import plotAnalogues
-from sharppy.viz.plotSTP import plotSTP
+from sharppy.viz import (
+    plotSkewT, plotHodo, plotText, plotKinematics, plotSpeed,
+    plotAdvection, plotSlinky, plotThetae, plotWinds, plotWatch,
+    plotAnalogues, plotSTP,
+)
 
 
 def render_native_spc(prof, out_dir, meta):
@@ -48,8 +41,8 @@ def render_native_spc(prof, out_dir, meta):
     left_inset = plotAnalogues()
     right_inset = plotSTP()
 
-    # This is the native SHARPpy SPC-style arrangement: no custom HTML/CSS
-    # recreation and no browser-side meteorological rendering.
+    # Native SHARPpy SPC-style arrangement: Skew-T at left, native
+    # meteorological insets at right, and native parameter panels below.
     rg.addWidget(speed, 0, 0, 11, 3)
     rg.addWidget(advection, 0, 3, 11, 2)
     rg.addWidget(hodo, 0, 5, 8, 24)
@@ -74,7 +67,6 @@ def render_native_spc(prof, out_dir, meta):
 
     root.show()
     app.processEvents()
-
     skew.addProfileCollection(pc)
     hodo.addProfileCollection(pc)
     app.processEvents()
