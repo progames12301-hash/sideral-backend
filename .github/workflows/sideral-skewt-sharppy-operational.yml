@@ -9,12 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       lat:
-        description: 'Latitude (qualquer ponto do Brasil; associada à grade ECMWF 0.25°)'
+        description: 'Latitude para teste de um ponto (qualquer local do Brasil)'
         required: true
         default: '-15.78'
         type: string
       lon:
-        description: 'Longitude (qualquer ponto do Brasil; associada à grade ECMWF 0.25°)'
+        description: 'Longitude para teste de um ponto (qualquer local do Brasil)'
         required: true
         default: '-47.93'
         type: string
@@ -36,7 +36,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || 'scheduled' }}-${{ github.event.client_payload.lon || inputs.lon || github.event.schedule || 'manual' }}
+  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || github.event.schedule || 'manual' }}-${{ github.event.client_payload.lon || inputs.lon || 'national' }}
   cancel-in-progress: false
 
 env:
@@ -45,7 +45,60 @@ env:
   PYTHONUNBUFFERED: '1'
 
 jobs:
-  generate:
+  national-grid:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install geometry dependency
+        run: python -m pip install --upgrade pip shapely
+
+      - name: Build Brazil ECMWF 0.25 degree grid
+        run: |
+          rm -rf data/skewt/grid
+          python tools/skewt/build_brazil_grid.py --out data/skewt/grid/brazil-0p25.json
+
+      - name: Add cycle metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event.schedule }}" in
+            '30 0 * * *') CYCLE='00' ;;
+            '30 6 * * *') CYCLE='06' ;;
+            '30 12 * * *') CYCLE='12' ;;
+            '30 18 * * *') CYCLE='18' ;;
+            *) CYCLE='00' ;;
+          esac
+          python - "$CYCLE" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path('data/skewt/grid/brazil-0p25.json')
+          d=json.loads(p.read_text())
+          d['cycle_utc']=sys.argv[1]
+          d['updated_by']='Sideral Skew-T automatic national grid'
+          p.write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
+          Path('data/skewt/grid/latest.json').write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
+          PY
+
+      - name: Publish national grid manifest
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/skewt/grid
+          git commit -m "chore: refresh Brazil ECMWF 0.25 Skew-T grid" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+  generate-point:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -62,17 +115,11 @@ jobs:
           elif [ -n "${{ inputs.cycle || '' }}" ]; then
             CYCLE="${{ inputs.cycle }}"
           else
-            case "${{ github.event.schedule }}" in
-              '30 0 * * *') CYCLE='00' ;;
-              '30 6 * * *') CYCLE='06' ;;
-              '30 12 * * *') CYCLE='12' ;;
-              '30 18 * * *') CYCLE='18' ;;
-              *) CYCLE='00' ;;
-            esac
+            CYCLE='00'
           fi
           echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
 
-      - name: Select point
+      - name: Select requested point
         id: point
         shell: bash
         run: |
