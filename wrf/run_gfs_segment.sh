@@ -21,6 +21,12 @@ path=Path('wrf/run_gfs_test.sh')
 text=path.read_text(encoding='utf-8')
 start=int(os.environ['WRF_START_HOUR']); end=int(os.environ['WRF_END_HOUR']); duration=end-start
 cold=os.environ.get('WRF_COLD_START')=='1'
+# Regional workflows provide these values; Brasil 15 km keeps them as defaults.
+target_dx=os.environ.get('WRF_DX_METERS','15000')
+target_dy=os.environ.get('WRF_DY_METERS','15000')
+target_e_we=os.environ.get('WRF_E_WE','401')
+target_e_sn=os.environ.get('WRF_E_SN','401')
+target_time_step=os.environ.get('WRF_TIME_STEP','60')
 if 'do_radar_ref = 1' not in text: raise SystemExit('do_radar_ref=1 ausente')
 
 selection=f'''log "Usando rodada GFS fixa para segmento F{start:03d}-F{end:03d}"
@@ -50,7 +56,7 @@ def must(pattern,repl,label):
  text,n=re.subn(pattern,repl,text,count=1,flags=re.M)
  if n!=1: raise SystemExit(f'{label} nao encontrado no executor base')
 
-must(r'^\s*time_step\s*=\s*[^,]+,\s*$',' time_step = 60,','time_step')
+must(r'^\s*time_step\s*=\s*[^,]+,\s*$',f' time_step = {target_time_step},','time_step')
 wd=re.search(r'^\s*w_damping\s*=.*$',text,re.M)
 if wd: text=text[:wd.start()]+' w_damping = 1,'+text[wd.end():]
 else:
@@ -66,20 +72,21 @@ else:
   if n!=1: raise SystemExit('nao foi possivel inserir epssm')
 if not re.search(r'^\s*epssm\s*=\s*0\.2,\s*$',text,re.M): raise SystemExit('epssm=0.2 nao confirmado')
 
-# Force every hard-coded 4 km geometry value in the base executor to the Brasil 15 km grid.
-# The previous patch changed only the first matching occurrence, leaving namelist.input at 4 km.
-text=text.replace('dx = 4000,','dx = 15000,')
-text=text.replace('dy = 4000,','dy = 15000,')
-text=text.replace('e_we              = 300,','e_we              = 401,')
-text=text.replace('e_sn              = 360,','e_sn              = 401,')
-text=text.replace('e_we = 300,','e_we = 401,')
-text=text.replace('e_sn = 360,','e_sn = 401,')
-text=text.replace('dx = 4000.0,','dx = 15000.0,')
-text=text.replace('dy = 4000.0,','dy = 15000.0,')
-if 'e_we              = 300,' in text or 'e_sn              = 360,' in text or 'dx = 4000,' in text or 'dy = 4000,' in text:
+# Apply the geometry supplied by the calling workflow. Defaults preserve Brasil 15 km.
+text=text.replace('dx = 4000,',f'dx = {target_dx},')
+text=text.replace('dy = 4000,',f'dy = {target_dy},')
+text=text.replace('e_we              = 300,',f'e_we              = {target_e_we},')
+text=text.replace('e_sn              = 360,',f'e_sn              = {target_e_sn},')
+text=text.replace('e_we = 300,',f'e_we = {target_e_we},')
+text=text.replace('e_sn = 360,',f'e_sn = {target_e_sn},')
+text=text.replace('dx = 4000.0,',f'dx = {target_dx}.0,')
+text=text.replace('dy = 4000.0,',f'dy = {target_dy}.0,')
+if re.search(r'e_we\s*=\s*300,|e_sn\s*=\s*360,|dx\s*=\s*4000(?:\.0)?,|dy\s*=\s*4000(?:\.0)?,',text):
  raise SystemExit('geometria antiga 4 km ainda presente no executor')
-if 'e_we              = 401,' not in text or 'e_sn              = 401,' not in text or 'dx = 15000,' not in text or 'dy = 15000,' not in text:
- raise SystemExit('geometria Brasil 15 km nao confirmada no executor')
+if f'e_we              = {target_e_we},' not in text or f'e_sn              = {target_e_sn},' not in text:
+ raise SystemExit('e_we/e_sn nao confirmados no executor')
+if f'dx = {target_dx},' not in text or f'dy = {target_dy},' not in text:
+ raise SystemExit('dx/dy nao confirmados no executor')
 
 letters=['AAA','AAB','AAC','AAD','AAE','AAF','AAG','AAH','AAI','AAJ','AAK','AAL','AAM','AAN','AAO','AAP','AAQ']
 download_start=start if cold else 0
@@ -121,7 +128,7 @@ marker='log "Ajustando permissoes do volume para o container DTC"'
 text=text.replace(marker,'if [[ -n "${WRF_RESTART_FILE:-}" ]]; then mkdir -p "$WORK/restart_input"; cp -f "$WRF_RESTART_FILE" "$WORK/restart_input/"; fi\n\n'+marker,1)
 text=text.replace('mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe','mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe')
 text=text.replace('mpirun -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe','mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe')
-text=text.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===','=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===').replace('=== WRF 4 KM F000-F006 ===',f'=== WRF Brasil 15 KM SEGMENTO F{start:03d}-F{end:03d} ===')
+text=text.replace('=== WRF 4 KM SEGMENTO F{start:03d}-F{end:03d} ===','=== WRF regional ${WRF_DX_METERS:-15000} m SEGMENTO F{start:03d}-F{end:03d} ===').replace('=== WRF 4 KM F000-F006 ===',f'=== WRF regional ${{WRF_DX_METERS:-15000}} m SEGMENTO F{start:03d}-F{end:03d} ===')
 path.write_text(text,encoding='utf-8')
 PY
 chmod +x wrf/run_gfs_test.sh
