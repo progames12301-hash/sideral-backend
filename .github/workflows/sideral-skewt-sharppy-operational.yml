@@ -8,18 +8,26 @@ on:
     - cron: '30 18 * * *'
   workflow_dispatch:
     inputs:
-      lat:
-        description: 'Latitude para teste de um ponto (qualquer local do Brasil)'
+      mode:
+        description: 'Modo de geração'
         required: true
+        default: 'national'
+        type: choice
+        options:
+          - national
+          - point
+      lat:
+        description: 'Latitude (usado somente no modo point)'
+        required: false
         default: '-15.78'
         type: string
       lon:
-        description: 'Longitude para teste de um ponto (qualquer local do Brasil)'
-        required: true
+        description: 'Longitude (usado somente no modo point)'
+        required: false
         default: '-47.93'
         type: string
       label:
-        description: 'Local'
+        description: 'Local (usado somente no modo point)'
         required: false
         default: 'Brasil'
         type: string
@@ -35,10 +43,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || github.event.schedule || 'manual' }}-${{ github.event.client_payload.lon || inputs.lon || 'national' }}
-  cancel-in-progress: false
-
 env:
   QT_QPA_PLATFORM: offscreen
   ECMWF_SOURCE: aws
@@ -46,7 +50,7 @@ env:
 
 jobs:
   national-grid:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'national')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -70,13 +74,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "${{ github.event.schedule }}" in
-            '30 0 * * *') CYCLE='00' ;;
-            '30 6 * * *') CYCLE='06' ;;
-            '30 12 * * *') CYCLE='12' ;;
-            '30 18 * * *') CYCLE='18' ;;
-            *) CYCLE='00' ;;
-          esac
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            case "${{ github.event.schedule }}" in
+              '30 0 * * *') CYCLE='00' ;;
+              '30 6 * * *') CYCLE='06' ;;
+              '30 12 * * *') CYCLE='12' ;;
+              '30 18 * * *') CYCLE='18' ;;
+              *) CYCLE='00' ;;
+            esac
+          else
+            CYCLE='${{ inputs.cycle }}'
+          fi
           python - "$CYCLE" <<'PY'
           import json,sys
           from pathlib import Path
@@ -98,27 +106,18 @@ jobs:
           git push origin HEAD:main
 
   generate-point:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'point' || github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Select ECMWF cycle
         id: cycle
         shell: bash
         run: |
-          set -euo pipefail
-          if [ -n "${{ github.event.client_payload.cycle || '' }}" ]; then
-            CYCLE="${{ github.event.client_payload.cycle }}"
-          elif [ -n "${{ inputs.cycle || '' }}" ]; then
-            CYCLE="${{ inputs.cycle }}"
-          else
-            CYCLE='00'
-          fi
+          if [ -n "${{ github.event.client_payload.cycle || '' }}" ]; then CYCLE="${{ github.event.client_payload.cycle }}"; else CYCLE="${{ inputs.cycle || '00' }}"; fi
           echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
-
       - name: Select requested point
         id: point
         shell: bash
@@ -126,24 +125,20 @@ jobs:
           echo "lat=${{ github.event.client_payload.lat || inputs.lat || '-15.78' }}" >> "$GITHUB_OUTPUT"
           echo "lon=${{ github.event.client_payload.lon || inputs.lon || '-47.93' }}" >> "$GITHUB_OUTPUT"
           echo "label=${{ github.event.client_payload.label || inputs.label || 'Brasil' }}" >> "$GITHUB_OUTPUT"
-
       - name: Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: pip
-
       - name: System libraries for SHARPpy
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
-
       - name: Install SHARPpy and data libraries
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
           python -m pip install 'numpy<2' PySide2 ecmwf-opendata eccodes pillow
-
       - name: Generate complete pre-rendered point
         env:
           LAT: ${{ steps.point.outputs.lat }}
@@ -153,9 +148,7 @@ jobs:
         run: |
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
-          xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py \
-            --lat "$LAT" --lon "$LON" --label "$LABEL" --cycle "$CYCLE" --out /tmp/skewt-out
-
+          xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py --lat "$LAT" --lon "$LON" --label "$LABEL" --cycle "$CYCLE" --out /tmp/skewt-out
       - name: Verify complete product
         run: |
           test -s /tmp/skewt-out/latest.json
@@ -164,7 +157,6 @@ jobs:
           test -s /tmp/skewt-out/f000/skewt.png
           test -s /tmp/skewt-out/f000/hodograph.png
           test -s /tmp/skewt-out/f000/variables.json
-
       - name: Publish snapped ECMWF 0.25 degree point
         shell: bash
         run: |
@@ -175,19 +167,12 @@ jobs:
           d=json.loads(Path('/tmp/skewt-out/latest.json').read_text())
           lat=float(d['latitude']); lon=float(d['longitude'])
           key=f'{lat:.2f}_{lon:.2f}'.replace('-','m').replace('.','p')
-          src=Path('/tmp/skewt-out')
-          dst=Path('data/skewt/points')/key
-          dst.mkdir(parents=True, exist_ok=True)
-          for name in ('latest.json','variables.json','full.png','skewt.png','hodograph.png','animation.gif'):
-              shutil.copy2(src/name,dst/name)
+          src=Path('/tmp/skewt-out'); dst=Path('data/skewt/points')/key; dst.mkdir(parents=True, exist_ok=True)
+          for name in ('latest.json','variables.json','full.png','skewt.png','hodograph.png','animation.gif'): shutil.copy2(src/name,dst/name)
           for child in sorted(src.glob('f[0-9][0-9][0-9]')):
               if child.is_dir():
                   fh=child.name
-                  shutil.copy2(child/'full.png',dst/f'{fh}.png')
-                  shutil.copy2(child/'skewt.png',dst/f'{fh}_skewt.png')
-                  shutil.copy2(child/'hodograph.png',dst/f'{fh}_hodograph.png')
-                  shutil.copy2(child/'variables.json',dst/f'{fh}.json')
-          print('published', key)
+                  for srcname,dstname in [('full.png',f'{fh}.png'),('skewt.png',f'{fh}_skewt.png'),('hodograph.png',f'{fh}_hodograph.png'),('variables.json',f'{fh}.json')]: shutil.copy2(child/srcname,dst/dstname)
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
