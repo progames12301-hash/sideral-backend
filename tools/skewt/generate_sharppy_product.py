@@ -6,7 +6,6 @@ import numpy as np
 from ecmwf.opendata import Client
 from eccodes import codes_grib_new_from_file, codes_get, codes_grib_find_nearest, codes_release
 
-# ECMWF pressure levels used for a denser, operational sounding profile.
 LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10]
 
 
@@ -51,10 +50,8 @@ def make_profile(pl, sfc, lat, lon, valid_dt):
 
     pres, hght, tmp, dwpt, u, v, omega = [], [], [], [], [], [], []
     if sfc_t is not None and sfc_td is not None:
-        pres.append(psfc)
-        hght.append(sfc_h)
-        tmp.append(float(sfc_t) - 273.15)
-        dwpt.append(float(sfc_td) - 273.15)
+        pres.append(psfc); hght.append(sfc_h)
+        tmp.append(float(sfc_t) - 273.15); dwpt.append(float(sfc_td) - 273.15)
         u.append(float(sfc.get(('10u', 0), (0, 0, 0))[0] or 0) * 1.943844)
         v.append(float(sfc.get(('10v', 0), (0, 0, 0))[0] or 0) * 1.943844)
         omega.append(np.nan)
@@ -71,12 +68,9 @@ def make_profile(pl, sfc, lat, lon, valid_dt):
         a, b = 17.625, 243.04
         gamma = math.log(rh / 100.0) + (a * tc) / (b + tc)
         td = b * gamma / (a - gamma)
-        pres.append(float(lev))
-        hght.append(float(gh[0]) / 9.80665)
-        tmp.append(tc)
-        dwpt.append(td)
-        u.append(float(uu[0]) * 1.943844)
-        v.append(float(vv[0]) * 1.943844)
+        pres.append(float(lev)); hght.append(float(gh[0]) / 9.80665)
+        tmp.append(tc); dwpt.append(td)
+        u.append(float(uu[0]) * 1.943844); v.append(float(vv[0]) * 1.943844)
         omega.append(float(ww[0]) if ww is not None else np.nan)
 
     order = np.argsort(np.asarray(pres))[::-1]
@@ -148,7 +142,7 @@ def main():
         stem = f'f{fh:03d}'; pl = out / f'{stem}_pl.grib'; sf = out / f'{stem}_sfc.grib'; oro = out / f'{stem}_oro.grib'
         common = dict(date=run_dt.strftime('%Y-%m-%d'), time=run_dt.hour, type='fc', stream='oper', step=fh,
                       grid='0.1/0.1', area=[args.lat + 0.30, args.lon - 0.30, args.lat - 0.30, args.lon + 0.30])
-        atomic_retrieve(client, pl, **common, levtype='pl', levelist='/'.join(map(str, LEVELS)), param='130.128/131.128/132.128/157.128')
+        atomic_retrieve(client, pl, **common, levtype='pl', levelist='/'.join(map(str, LEVELS)), param='130.128/131.128/132.128/157.128/156.128')
         atomic_retrieve(client, sf, **common, levtype='sfc', param='134.128/167.128/168.128/165.128/166.128')
         atomic_retrieve(client, oro, **common, levtype='sfc', param='129.128')
         fields = read_fields(pl, args.lat, args.lon)
