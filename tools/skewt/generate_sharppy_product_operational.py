@@ -1,19 +1,30 @@
-"""Operational SHARPpy wrapper used by GitHub Actions.
+"""Operational SHARPpy entrypoint for GitHub Actions.
 
-All meteorological calculations and the complete visual product are produced
-inside the GitHub runner. The browser only receives finished PNG/GIF/JSON.
+The wrapper loads the generator by file path so it does not depend on Python
+package discovery for the repository's ``tools`` directory.
 """
 from pathlib import Path
+import importlib.util
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SKEWT_DIR = ROOT / "tools" / "skewt"
 
-from tools.skewt import generate_sharppy_product as g
-from tools.skewt.native_spc_render import render_native_spc
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+g = load_module("sideral_skewt_generator", SKEWT_DIR / "generate_sharppy_product.py")
+renderer = load_module("sideral_native_spc_render", SKEWT_DIR / "native_spc_render.py")
 
 g.PL_PARAMS = ["t", "r", "u", "v", "gh"]
-g.render_with_sharppy = render_native_spc
+g.render_with_sharppy = renderer.render_native_spc
 
 g.main()
