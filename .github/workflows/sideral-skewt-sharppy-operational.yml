@@ -39,6 +39,7 @@ jobs:
       LON: ${{ github.event.client_payload.lon || inputs.lon || '-47.93' }}
       LABEL: ${{ github.event.client_payload.label || inputs.label || 'Brasil' }}
       QT_QPA_PLATFORM: offscreen
+      ECMWF_SOURCE: aws
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,12 +57,13 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
           python -m pip install ecmwf-opendata eccodes numpy pillow
-      - name: Generate real SHARPpy PNG frames and GIF
+      - name: Generate ALL real SHARPpy products
         run: |
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
-          xvfb-run -a python tools/skewt/generate_sharppy_product.py --lat "$LAT" --lon "$LON" --label "$LABEL" --out /tmp/skewt-out
-      - name: Publish point product
+          xvfb-run -a python tools/skewt/generate_sharppy_product.py \
+            --lat "$LAT" --lon "$LON" --label "$LABEL" --out /tmp/skewt-out
+      - name: Publish complete pre-rendered point product
         run: |
           python - <<'PY'
           import os, shutil
@@ -70,12 +72,22 @@ jobs:
           key=f'{lat:.2f}_{lon:.2f}'.replace('-','m').replace('.','p')
           src=Path('/tmp/skewt-out'); dst=Path('data/skewt/points')/key
           dst.mkdir(parents=True, exist_ok=True)
-          for p in src.glob('f*.png'): shutil.copy2(p, dst/p.name)
-          for name in ('latest.png','latest.json','animation.gif'): shutil.copy2(src/name, dst/name)
-          PY
+
+          # Root products: everything here is already rendered/calculated by SHARPpy.
+          for name in ('latest.json','variables.json','full.png','skewt.png','hodograph.png','animation.gif'):
+              shutil.copy2(src/name, dst/name)
+
+          # Forecast frames: no frontend calculations are required.
+          for child in sorted(src.glob('f[0-9][0-9][0-9]')):
+              fh=child.name
+              shutil.copy2(child/'full.png', dst/f'{fh}.png')
+              shutil.copy2(child/'skewt.png', dst/f'{fh}_skewt.png')
+              shutil.copy2(child/'hodograph.png', dst/f'{fh}_hodograph.png')
+              shutil.copy2(child/'variables.json', dst/f'{fh}.json')
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add data/skewt/points
-          git commit -m "chore: publish SHARPpy Skew-T point $LAT $LON" || exit 0
+          git commit -m "chore: publish complete SHARPpy Skew-T point $LAT $LON" || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
