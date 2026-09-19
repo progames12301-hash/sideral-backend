@@ -1,4 +1,4 @@
-name: Sideral Skew-T SHARPpy Operational
+name: Sideral Skew-T SHARPpy Brasil
 
 on:
   schedule:
@@ -6,26 +6,28 @@ on:
   workflow_dispatch:
     inputs:
       lat:
-        description: 'Latitude do ponto (graus decimais)'
+        description: 'Latitude do ponto'
         required: true
-        default: '-25.43'
+        default: '-15.78'
         type: string
       lon:
-        description: 'Longitude do ponto (graus decimais)'
+        description: 'Longitude do ponto'
         required: true
-        default: '-49.27'
+        default: '-47.93'
         type: string
       label:
-        description: 'Nome do ponto'
+        description: 'Local'
         required: true
-        default: 'Curitiba, PR'
+        default: 'Brasil'
         type: string
+  repository_dispatch:
+    types: [skewt_request]
 
 permissions:
   contents: write
 
 concurrency:
-  group: sideral-skewt
+  group: sideral-skewt-${{ github.event.client_payload.lat || inputs.lat || 'default' }}-${{ github.event.client_payload.lon || inputs.lon || 'default' }}
   cancel-in-progress: true
 
 jobs:
@@ -33,58 +35,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      LAT: ${{ inputs.lat || '-25.43' }}
-      LON: ${{ inputs.lon || '-49.27' }}
-      LABEL: ${{ inputs.label || 'Curitiba, PR' }}
+      LAT: ${{ github.event.client_payload.lat || inputs.lat || '-15.78' }}
+      LON: ${{ github.event.client_payload.lon || inputs.lon || '-47.93' }}
+      LABEL: ${{ github.event.client_payload.label || inputs.label || 'Brasil' }}
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: pip
-
-      - name: System libraries for SHARPpy Qt renderer
+      - name: System libraries for SHARPpy
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
-
       - name: Install SHARPpy and data libraries
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
           python -m pip install ecmwf-opendata eccodes numpy pillow
-
-      - name: Generate real SHARPpy PNG frames + GIF
+      - name: Generate real SHARPpy PNG frames and GIF
         run: |
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
-          xvfb-run -a python tools/skewt/generate_sharppy_product.py \
-            --lat "$LAT" \
-            --lon "$LON" \
-            --label "$LABEL" \
-            --out /tmp/skewt-out
-
-      - name: Publish pre-rendered products
+          xvfb-run -a python tools/skewt/generate_sharppy_product.py --lat "$LAT" --lon "$LON" --label "$LABEL" --out /tmp/skewt-out
+      - name: Publish point product
         run: |
+          python - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          lat=float(os.environ['LAT']); lon=float(os.environ['LON'])
+          key=f'{lat:.2f}_{lon:.2f}'.replace('-','m').replace('.','p')
+          src=Path('/tmp/skewt-out'); dst=Path('data/skewt/points')/key
+          dst.mkdir(parents=True, exist_ok=True)
+          for p in src.glob('f*.png'): shutil.copy2(p, dst/p.name)
+          for name in ('latest.png','latest.json','animation.gif'): shutil.copy2(src/name, dst/name)
+          PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin skewt-data:skewt-data || true
-          if git show-ref --verify --quiet refs/heads/skewt-data; then
-            git switch skewt-data
-          else
-            git switch --orphan skewt-data
-            git rm -rf . >/dev/null 2>&1 || true
-          fi
-          mkdir -p data/skewt
-          rm -f data/skewt/f*.png data/skewt/latest.png data/skewt/animation.gif data/skewt/latest.json
-          cp /tmp/skewt-out/f*.png data/skewt/
-          cp /tmp/skewt-out/latest.png data/skewt/latest.png
-          cp /tmp/skewt-out/animation.gif data/skewt/animation.gif
-          cp /tmp/skewt-out/latest.json data/skewt/latest.json
-          git add data/skewt
-          git commit -m 'chore: publish pre-rendered SHARPpy Skew-T products' || exit 0
-          git push origin skewt-data
+          git add data/skewt/points
+          git commit -m "chore: publish SHARPpy Skew-T point $LAT $LON" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
