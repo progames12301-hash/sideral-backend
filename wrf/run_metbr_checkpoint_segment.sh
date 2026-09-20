@@ -12,6 +12,12 @@ ROOT="${GITHUB_WORKSPACE:-$PWD}"
 INPUT="$ROOT/metbr_restart_input"
 mkdir -p "$INPUT"
 
+# METBR segments must match the restart cadence used by the WRF runner.
+if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOUR % 3 != 0 || END_HOUR > 42 )); then
+  echo "Start/end precisam ser multiplos de 3 h entre F000 e F042" >&2
+  exit 1
+fi
+
 export WRF_TARGET_RESOLUTION_KM=4 WRF_DX_METERS=4000 WRF_DY_METERS=4000
 export WRF_E_WE=300 WRF_E_SN=360 WRF_HISTORY_INTERVAL_MINUTES=60
 export WRF_RUN_HOURS=$((END_HOUR-START_HOUR)) WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
@@ -21,23 +27,33 @@ export WRF_REFLECTIVITY_SOURCE=REFL_10CM_NATIVE WRF_NATIVE_GRID=true WRF_NO_FALL
 [[ "$WRF_DATA_SOURCE" == ICON && "$WRF_INPUT_MODEL" == ICON && "$WRF_INITIALIZATION_MODEL" == ICON ]] || { echo 'ERROR: METBR ICON-only contract violated' >&2; exit 1; }
 
 if [[ "$COLD_START" == "0" ]]; then
-  rm -f "$INPUT"/*
+  rm -rf "$INPUT"/*
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-run.env' --dir . --clobber
   source metbr-run.env
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "metbr-restart-${START_HOUR}-*" --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-040-*' --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-namelist.input' --dir "$INPUT" --clobber
   mkdir -p "$INPUT/normalized"
+  found=0
   for f in "$INPUT"/metbr-restart-${START_HOUR}-*; do
-    test -f "$f" || { echo "Restart F${START_HOUR} ausente" >&2; exit 22; }
-    cp -f "$f" "$INPUT/normalized/$(basename "${f#*-${START_HOUR}-}")"
+    [[ -f "$f" ]] || continue
+    cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed "s/^metbr-restart-${START_HOUR}-//")"
+    found=1
   done
-  for f in "$INPUT"/metbr-boundary-040-*; do cp -f "$f" "$INPUT/normalized/wrfbdy_d01"; done
+  (( found == 1 )) || { echo "Restart F${START_HOUR} ausente" >&2; exit 22; }
+  boundary_found=0
+  for f in "$INPUT"/metbr-boundary-040-*; do
+    [[ -f "$f" ]] || continue
+    cp -f "$f" "$INPUT/normalized/wrfbdy_d01"
+    boundary_found=1
+    break
+  done
+  (( boundary_found == 1 )) || { echo "wrfbdy_d01 ausente no checkpoint" >&2; exit 23; }
   cp -f "$INPUT/metbr-namelist.input" "$INPUT/normalized/namelist.input"
   export WRF_RESTART_DIR="$INPUT/normalized"
 else
   python3 - <<'PY'
-import datetime as dt, json, os, urllib.request
+import json, os, urllib.request
 repo=os.environ['GITHUB_REPOSITORY']
 url=f"https://raw.githubusercontent.com/{repo}/icon-data/metadata.json?run={os.environ.get('GITHUB_RUN_ID','0')}"
 req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'Sideral-METBR'})
@@ -46,7 +62,6 @@ if str(m.get('model','')).lower()!='icon': raise SystemExit('metadata nao e ICON
 run_date=str(m['runDate']).replace('-',''); run_cycle=''.join(c for c in str(m['runCycle']) if c.isdigit()).zfill(2)[:2]
 if run_cycle not in {'00','06','12','18'}: raise SystemExit('ciclo ICON invalido')
 with open('metbr-run.env','w') as f: f.write(f'RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n')
-gh_release_create=""
 PY
   source metbr-run.env
   gh release create "$CHECKPOINT_TAG" --target wrf-runner --prerelease --latest=false --notes "METBR WRF 4 KM ICON checkpoint $GITHUB_RUN_ID" || true
