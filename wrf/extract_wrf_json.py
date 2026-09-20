@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -31,6 +32,13 @@ def _set_arg(flag: str, value: int) -> None:
         sys.argv.extend([flag, str(value)])
 
 
+def _expected_resolution() -> tuple[int, int]:
+    """Use o contrato do workflow; preserve 4 km como default para os demais WRF."""
+    km = int(os.environ.get("WRF_EXPECTED_RESOLUTION_KM", "4"))
+    meters = int(os.environ.get("WRF_EXPECTED_DX_METERS", str(km * 1000)))
+    return km, meters
+
+
 def _native_grid() -> tuple[int, int, int, int]:
     run_dir = Path(_arg("--run-dir", "wrf_work/run"))
     files = sorted(run_dir.glob("wrfout_d01_*"))
@@ -49,22 +57,35 @@ def _validate_output(nx: int, ny: int) -> None:
     output = Path(_arg("--output-dir", "wrf_publish"))
     meta_path = output / "metadata.json"
     data = json.loads(meta_path.read_text(encoding="utf-8"))
-    if data.get("resolutionKm") != 4:
-        raise SystemExit(f"WRF Sideral deve publicar resolutionKm=4: {data.get('resolutionKm')}")
+    expected_km, _ = _expected_resolution()
+    if data.get("resolutionKm") != expected_km:
+        raise SystemExit(
+            f"WRF Sideral deve publicar resolutionKm={expected_km}: {data.get('resolutionKm')}"
+        )
     frames = data.get("frames") or []
     bad = [f for f in frames if int(f.get("gridX", -1)) != nx or int(f.get("gridY", -1)) != ny]
     if bad:
-        raise SystemExit(f"Downsampling detectado no WRF 4 km: esperado {nx}x{ny}; exemplo={bad[0]}")
+        raise SystemExit(
+            f"Downsampling detectado no WRF {expected_km} km: "
+            f"esperado {nx}x{ny}; exemplo={bad[0]}"
+        )
 
 
 def main() -> None:
     nx, ny, dx, dy = _native_grid()
-    if (dx, dy) != (4000, 4000):
-        raise SystemExit(f"WRF Sideral deveria ser 4 km, mas wrfout informa DX/DY={dx}/{dy} m")
-    # Sobrescreve 220x180 (ou qualquer outro alvo) com a grade REAL do wrfout.
+    expected_km, expected_m = _expected_resolution()
+    if (dx, dy) != (expected_m, expected_m):
+        raise SystemExit(
+            f"WRF Sideral deveria ser {expected_km} km para este workflow, "
+            f"mas wrfout informa DX/DY={dx}/{dy} m"
+        )
+    # Sobrescreve qualquer alvo de grade com a grade REAL do wrfout.
     _set_arg("--grid-x", nx)
     _set_arg("--grid-y", ny)
-    print(f"WRF Sideral: publicacao nativa travada em {nx}x{ny}, DX/DY={dx}/{dy} m")
+    print(
+        f"WRF Sideral: publicacao nativa travada em {nx}x{ny}, "
+        f"DX/DY={dx}/{dy} m, contrato={expected_km} km"
+    )
     _core_main()
     _validate_output(nx, ny)
 
