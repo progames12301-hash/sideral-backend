@@ -11,10 +11,6 @@ if (( WRF_END_HOUR <= WRF_START_HOUR )); then
   echo "Intervalo METBR invalido" >&2
   exit 2
 fi
-if (( WRF_START_HOUR % 1 != 0 || WRF_END_HOUR % 1 != 0 )); then
-  echo "Horas METBR invalidas" >&2
-  exit 3
-fi
 
 IMAGE="dtcenter/wps_wrf:latest"
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
@@ -36,6 +32,7 @@ SOURCE_END=$(( ((END_HOUR + 2) / 3) * 3 ))
 
 START_ISO="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${START_HOUR} hours" +%Y-%m-%d_%H:%M:%S)"
 END_ISO="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${END_HOUR} hours" +%Y-%m-%d_%H:%M:%S)"
+SOURCE_END_ISO="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${SOURCE_END} hours" +%Y-%m-%d_%H:%M:%S)"
 START_Y="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${START_HOUR} hours" +%Y)"
 START_M="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${START_HOUR} hours" +%m)"
 START_D="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${START_HOUR} hours" +%d)"
@@ -63,15 +60,12 @@ if [[ "$METBR_COLD_START" == "1" ]]; then
   for H in $(seq 0 3 "$SOURCE_END"); do
     printf -v FH '%03d' "$H"
     FILE="gfs.t${RUN_CYCLE}z.pgrb2.0p25.f${FH}"
-    URL="$BASE_URL/$FILE"
     echo "Baixando $FILE"
-    curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 900 -o "$WORK/gfs/$FILE" "$URL"
+    curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 900 -o "$WORK/gfs/$FILE" "$BASE_URL/$FILE"
   done
 
   mkdir -p "$WORK/WPS_GEOG"
-  curl -fL --retry 3 --connect-timeout 20 --max-time 900 \
-    -o "$WORK/geog.tar.gz" \
-    https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
+  curl -fL --retry 3 --connect-timeout 20 --max-time 900 -o "$WORK/geog.tar.gz" https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
   tar -xzf "$WORK/geog.tar.gz" -C "$WORK/WPS_GEOG"
 
   cat > "$WORK/namelist.wps" <<EOF
@@ -79,7 +73,7 @@ if [[ "$METBR_COLD_START" == "1" ]]; then
  wrf_core = 'ARW',
  max_dom = 1,
  start_date = '${START_ISO}',
- end_date = '${END_ISO}',
+ end_date = '${SOURCE_END_ISO}',
  interval_seconds = 10800,
  io_form_geogrid = 2,
 /
@@ -121,7 +115,6 @@ EOF
     ln -sf "gfs/$FILE" "$WORK/GRIBFILE.${LETTERS[$IDX]}"
     IDX=$((IDX+1))
   done
-
 else
   echo "METBR: restart F$(printf '%03d' "$START_HOUR")-F$(printf '%03d' "$END_HOUR")" | tee "$DIAG/segment.log"
   test -d "$RESTART_INPUT" || { echo "restart_input ausente" >&2; exit 20; }
@@ -214,6 +207,7 @@ cat > "$WORK/namelist.input" <<EOF
  non_hydrostatic = .true.,
  moist_adv_opt = 1,
  scalar_adv_opt = 1,
+ scalar_adv_opt = 1,
  gwd_opt = 1,
 /
 &bdy_control
@@ -230,54 +224,40 @@ cat > "$WORK/namelist.input" <<EOF
 EOF
 
 chmod -R a+rwX "$WORK" "$RESTART_INPUT" 2>/dev/null || true
-
 docker pull "$IMAGE"
-
-docker run --rm \
-  -e LOCAL_USER_ID="$HOST_UID" \
-  -e OMPI_ALLOW_RUN_AS_ROOT=1 \
-  -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
-  -v "$WORK:/work" \
-  -v "$RESTART_INPUT:/restart_input:ro" \
-  "$IMAGE" /bin/bash -lc '
-    set -euo pipefail
-    cd /work
-    mkdir -p run
-    if [[ "'"$METBR_COLD_START"'" == "1" ]]; then
-      echo "=== GEOGRID ==="
-      /comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1
-      test -f geo_em.d01.nc
-      echo "=== UNGRIB ==="
-      ln -sf /comsoftware/wrf/WPS-4.3/ungrib/Variable_Tables/Vtable.GFS Vtable
-      /comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib.stdout 2>&1
-      echo "=== METGRID ==="
-      /comsoftware/wrf/WPS-4.3/metgrid.exe > metgrid.stdout 2>&1
-      cp -a /comsoftware/wrf/WRF-4.3/run/. run/
-      cp namelist.input run/namelist.input
-      cp met_em.d01.*.nc run/
-      cd run
-      echo "=== REAL ==="
-      mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe
-    else
-      cp -a /comsoftware/wrf/WRF-4.3/run/. run/
-      cp namelist.input run/namelist.input
-      cp /restart_input/wrfbdy_d01 run/
-      cp /restart_input/wrfrst_d01_* run/
-      cd run
-    fi
-    echo "=== WRF METBR 4 KM ==="
-    START_TS=$(date +%s)
-    mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe
-    END_TS=$(date +%s)
-    echo "WRF_RUNTIME_SECONDS=$((END_TS-START_TS))" > /work/wrf-runtime.env
-    grep -q "SUCCESS COMPLETE WRF" rsl.error.0000
-    ls -lh wrfout_d01_* wrfrst_d01_* wrfbdy_d01
-  '
+docker run --rm -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -v "$WORK:/work" -v "$RESTART_INPUT:/restart_input:ro" "$IMAGE" /bin/bash -lc '
+set -euo pipefail
+cd /work
+mkdir -p run
+if [[ "'"$METBR_COLD_START"'" == "1" ]]; then
+  /comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1
+  test -f geo_em.d01.nc
+  ln -sf /comsoftware/wrf/WPS-4.3/ungrib/Variable_Tables/Vtable.GFS Vtable
+  /comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib.stdout 2>&1
+  /comsoftware/wrf/WPS-4.3/metgrid.exe > metgrid.stdout 2>&1
+  cp -a /comsoftware/wrf/WRF-4.3/run/. run/
+  cp namelist.input run/namelist.input
+  cp met_em.d01.*.nc run/
+  cd run
+  mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe
+else
+  cp -a /comsoftware/wrf/WRF-4.3/run/. run/
+  cp namelist.input run/namelist.input
+  cp /restart_input/wrfbdy_d01 run/
+  cp /restart_input/wrfrst_d01_* run/
+  cd run
+fi
+START_TS=$(date +%s)
+mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe
+END_TS=$(date +%s)
+echo "WRF_RUNTIME_SECONDS=$((END_TS-START_TS))" > /work/wrf-runtime.env
+grep -q "SUCCESS COMPLETE WRF" rsl.error.0000
+ls -lh wrfout_d01_* wrfrst_d01_* wrfbdy_d01
+'
 
 cp -f "$WORK/wrf-runtime.env" "$DIAG/" 2>/dev/null || true
 cp -f "$WORK/run/rsl.error.0000" "$DIAG/" 2>/dev/null || true
 cp -f "$WORK/run/rsl.out.0000" "$DIAG/" 2>/dev/null || true
 cp -f "$WORK/run/wrfout_d01_"* "$DIAG/" 2>/dev/null || true
-
 cat "$DIAG/run.env"
 cat "$DIAG/wrf-runtime.env" 2>/dev/null || true
