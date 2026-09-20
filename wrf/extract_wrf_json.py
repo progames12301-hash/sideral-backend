@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
 import xarray as xr
 
-# Mantem a API publica do extrator original para os outros modulos WRF.
-# REFL_10CM_NATIVE continua sendo a unica refletividade publicada.
-# A Sideral nao publica refletividade aproximada como substituta.
+# API publica mantida para os modulos WRF.
+# A grade e a resolucao sao lidas diretamente do wrfout nativo.
+# Nao bloquear a extracao por uma resolucao fixa: o workflow responsavel
+# decide qual resolucao esta sendo executada.
 from extract_wrf_json_core import *  # noqa: F401,F403
 from extract_wrf_json_core import main as _core_main
 
@@ -32,13 +32,6 @@ def _set_arg(flag: str, value: int) -> None:
         sys.argv.extend([flag, str(value)])
 
 
-def _expected_resolution() -> tuple[int, int]:
-    """Use o contrato do workflow; preserve 4 km como default para os demais WRF."""
-    km = int(os.environ.get("WRF_EXPECTED_RESOLUTION_KM", "4"))
-    meters = int(os.environ.get("WRF_EXPECTED_DX_METERS", str(km * 1000)))
-    return km, meters
-
-
 def _native_grid() -> tuple[int, int, int, int]:
     run_dir = Path(_arg("--run-dir", "wrf_work/run"))
     files = sorted(run_dir.glob("wrfout_d01_*"))
@@ -46,7 +39,7 @@ def _native_grid() -> tuple[int, int, int, int]:
         raise SystemExit(f"Nenhum wrfout encontrado em {run_dir}")
     with xr.open_dataset(files[0], engine="netcdf4", decode_times=False) as ds:
         if "XLAT" not in ds:
-            raise SystemExit("XLAT ausente; impossivel validar a grade nativa WRF")
+            raise SystemExit("XLAT ausente; impossivel obter a grade nativa WRF")
         ny, nx = ds["XLAT"].isel(Time=0).shape
         dx = int(round(float(ds.attrs.get("DX", 0))))
         dy = int(round(float(ds.attrs.get("DY", 0))))
@@ -56,36 +49,24 @@ def _native_grid() -> tuple[int, int, int, int]:
 def _validate_output(nx: int, ny: int) -> None:
     output = Path(_arg("--output-dir", "wrf_publish"))
     meta_path = output / "metadata.json"
+    if not meta_path.exists():
+        raise SystemExit("metadata.json nao foi gerado pelo extrator")
     data = json.loads(meta_path.read_text(encoding="utf-8"))
-    expected_km, _ = _expected_resolution()
-    if data.get("resolutionKm") != expected_km:
-        raise SystemExit(
-            f"WRF Sideral deve publicar resolutionKm={expected_km}: {data.get('resolutionKm')}"
-        )
     frames = data.get("frames") or []
     bad = [f for f in frames if int(f.get("gridX", -1)) != nx or int(f.get("gridY", -1)) != ny]
     if bad:
-        raise SystemExit(
-            f"Downsampling detectado no WRF {expected_km} km: "
-            f"esperado {nx}x{ny}; exemplo={bad[0]}"
-        )
+        raise SystemExit(f"Grade publicada nao corresponde ao wrfout nativo {nx}x{ny}; exemplo={bad[0]}")
 
 
 def main() -> None:
     nx, ny, dx, dy = _native_grid()
-    expected_km, expected_m = _expected_resolution()
-    if (dx, dy) != (expected_m, expected_m):
-        raise SystemExit(
-            f"WRF Sideral deveria ser {expected_km} km para este workflow, "
-            f"mas wrfout informa DX/DY={dx}/{dy} m"
-        )
-    # Sobrescreve qualquer alvo de grade com a grade REAL do wrfout.
+    if dx <= 0 or dy <= 0:
+        raise SystemExit(f"WRF wrfout sem DX/DY valido: {dx}/{dy} m")
+
+    # Nunca substituir a grade real por outro alvo fixo.
     _set_arg("--grid-x", nx)
     _set_arg("--grid-y", ny)
-    print(
-        f"WRF Sideral: publicacao nativa travada em {nx}x{ny}, "
-        f"DX/DY={dx}/{dy} m, contrato={expected_km} km"
-    )
+    print(f"WRF Sideral: publicacao nativa {nx}x{ny}, DX/DY={dx}/{dy} m")
     _core_main()
     _validate_output(nx, ny)
 
