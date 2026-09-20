@@ -49,6 +49,7 @@ permissions:
 
 env:
   QT_QPA_PLATFORM: offscreen
+  QT_API: pyside2
   ECMWF_SOURCE: aws
   PYTHONUNBUFFERED: '1'
 
@@ -61,10 +62,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Python 3.10
+      - name: Python 3.9
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.9'
           cache: pip
 
       - name: Install grid dependencies
@@ -135,10 +136,10 @@ jobs:
           echo "label=${LABEL:-Sideral}" >> "$GITHUB_OUTPUT"
           echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
 
-      - name: Python 3.10
+      - name: Python 3.9
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.9'
           cache: pip
 
       - name: System libraries
@@ -151,8 +152,10 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install --prefer-binary 'numpy==1.26.4'
           python -m pip install --prefer-binary 'PySide2==5.15.2.1'
-          python -m pip install --prefer-binary 'Pillow>=10,<12' 'ecmwf-opendata>=0.3,<0.4' 'eccodes>=2.36,<3'
+          python -m pip install --prefer-binary 'qtpy==2.4.3'
+          python -m pip install --prefer-binary 'Pillow>=10,<11' 'ecmwf-opendata>=0.3,<0.4' 'eccodes>=2.36,<3'
           python -m pip install --prefer-binary 'git+https://github.com/sharppy/SHARPpy.git@main'
+          python -c "import numpy, PySide2, qtpy, sharppy; print('SHARPpy stack OK:', numpy.__version__, PySide2.__version__, qtpy.__version__)"
 
       - name: Generate pre-rendered SHARPpy product
         env:
