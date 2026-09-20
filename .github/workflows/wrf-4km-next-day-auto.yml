@@ -1,4 +1,4 @@
-name: WRF 7 km SUL GFS - DOIS DIAS AUTOMATICO
+name: WRF 7 km SUL GFS - AUTOMATICO DIARIO
 
 on:
   workflow_dispatch:
@@ -8,25 +8,21 @@ on:
         required: false
         type: string
       run_cycle:
-        description: "Ciclo GFS: 00, 06, 12 ou 18 (vazio = mais recente com F042)"
+        description: "Ciclo GFS: 00, 06, 12 ou 18"
         required: false
         type: string
   schedule:
     - cron: '20 0 * * *'
-  workflow_run:
-    workflows: ["WRF 7 km SUL GFS - REFL NATIVO"]
-    types: [completed]
 
 permissions:
   contents: write
 
 concurrency:
-  group: sideral-wrf-two-days
+  group: sideral-wrf-sul-gfs-7km
   cancel-in-progress: false
 
 jobs:
   wrf:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: gfs
