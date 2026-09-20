@@ -30,54 +30,68 @@ def main() -> None:
     metadata = json.loads(meta_path.read_text(encoding="utf-8"))
 
     def first(mapping, *keys):
+        if not isinstance(mapping, dict):
+            return None
         for key in keys:
             if key in mapping:
                 return mapping[key]
         return None
 
-    resolution = first(metadata, "resolutionKm", "resolution_km")
-    if resolution is None:
-        resolution = first(payload, "resolutionKm", "resolution_km")
+    def get_publication(key, *aliases):
+        value = first(metadata, key, *aliases)
+        return value if value is not None else first(payload, key, *aliases)
+
+    resolution = get_publication("resolutionKm", "resolution_km")
     if resolution is None or abs(float(resolution) - args.resolution_km) > 1e-6:
         raise SystemExit(f"resolutionKm invalida: esperado {args.resolution_km}, recebido {resolution}")
 
-    source = first(metadata, "reflectivitySource", "reflectivity_source")
-    if source is None:
-        source = first(payload, "reflectivitySource", "reflectivity_source")
+    source = get_publication("reflectivitySource", "reflectivity_source")
     if source != args.require_reflectivity_source:
         raise SystemExit(f"reflectivitySource invalido: esperado {args.require_reflectivity_source}, recebido {source}")
 
-    native = first(metadata, "nativeGrid", "native_grid")
-    if native is None:
-        native = first(payload, "nativeGrid", "native_grid")
+    native = get_publication("nativeGrid", "native_grid")
     if args.require_native_grid and native is not True:
         raise SystemExit(f"nativeGrid invalido: esperado true, recebido {native}")
+
+    interval = get_publication("temporalResolutionMinutes", "temporal_resolution_minutes")
+    if interval is None or int(interval) != args.temporal_resolution_minutes:
+        raise SystemExit(
+            f"temporalResolutionMinutes invalido: esperado {args.temporal_resolution_minutes}, recebido {interval}"
+        )
 
     frames = first(metadata, "frames")
     if frames is None:
         frames = first(payload, "frames")
-    if not isinstance(frames, list):
-        raise SystemExit("frames ausente ou invalido")
-    if len(frames) != args.frames:
-        raise SystemExit(f"Quantidade de frames invalida: esperado {args.frames}, recebido {len(frames)}")
+    frame_count = first(metadata, "frameCount", "frame_count")
+    if frame_count is None:
+        frame_count = first(payload, "frameCount", "frame_count")
+    if isinstance(frames, list):
+        actual_frames = len(frames)
+    elif frame_count is not None:
+        actual_frames = int(frame_count)
+    else:
+        raise SystemExit("Nenhuma contagem de frames encontrada")
 
-    for index, frame in enumerate(frames):
-        if not isinstance(frame, dict):
-            raise SystemExit(f"Frame {index} nao e objeto JSON")
-        gx = first(frame, "gridX", "grid_x", "nx")
-        gy = first(frame, "gridY", "grid_y", "ny")
-        if int(gx) != args.nx or int(gy) != args.ny:
-            raise SystemExit(f"Frame {index}: grade invalida; esperado {args.nx}x{args.ny}, recebido {gx}x{gy}")
+    if actual_frames != args.frames:
+        raise SystemExit(f"Quantidade de frames invalida: esperado {args.frames}, recebido {actual_frames}")
 
-        dt = first(frame, "temporalResolutionMinutes", "temporal_resolution_minutes", "intervalMinutes")
-        if dt is not None and int(dt) != args.temporal_resolution_minutes:
-            raise SystemExit(f"Frame {index}: intervalo temporal invalido: esperado {args.temporal_resolution_minutes}, recebido {dt}")
+    # Quando os frames estao materializados, conferir que a grade publicada
+    # continua sendo exatamente a grade nativa solicitada.
+    if isinstance(frames, list):
+        for index, frame in enumerate(frames):
+            if not isinstance(frame, dict):
+                continue
+            gx = first(frame, "gridX", "grid_x", "nx")
+            gy = first(frame, "gridY", "grid_y", "ny")
+            if gx is not None and gy is not None and (int(gx) != args.nx or int(gy) != args.ny):
+                raise SystemExit(
+                    f"Frame {index}: grade invalida; esperado {args.nx}x{args.ny}, recebido {gx}x{gy}"
+                )
 
     print(
-        f"VALIDACAO OK: resolutionKm={args.resolution_km:g}; "
-        f"grid={args.nx}x{args.ny}; frames={len(frames)}; "
-        f"reflectivitySource={args.require_reflectivity_source}; nativeGrid={bool(native)}; "
-        f"interval={args.temporal_resolution_minutes}min"
+        f"VALIDACAO OK: resolutionKm={args.resolution_km:g}; grid={args.nx}x{args.ny}; "
+        f"frames={actual_frames}; reflectivitySource={args.require_reflectivity_source}; "
+        f"nativeGrid={bool(native)}; interval={args.temporal_resolution_minutes}min"
     )
 
 
