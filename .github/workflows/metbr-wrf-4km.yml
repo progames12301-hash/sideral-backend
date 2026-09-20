@@ -1,6 +1,6 @@
 name: METBR WRF 4 KM - restart continuo
 
-on:
+"on":
   workflow_dispatch:
 
 permissions:
@@ -20,42 +20,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Inicializar e executar
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input
-          mkdir -p metbr_restart_input
-          now=$(date -u +%s)
-          selected=''
-          for offset in $(seq 0 6 96); do
-            ts=$((now-offset*3600))
-            date=$(date -u -d "@$ts" +%Y%m%d)
-            cycle=$(date -u -d "@$ts" +%H)
-            case "$cycle" in 00|06|12|18) ;; *) continue ;; esac
-            url="https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.${date}/${cycle}/atmos/gfs.t${cycle}z.pgrb2.0p25.f006"
-            if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$url"; then
-              selected="$date $cycle"
-              break
-            fi
-          done
-          test -n "$selected"
-          read -r RUN_DATE RUN_CYCLE <<< "$selected"
-          printf 'RUN_DATE=%s\nRUN_CYCLE=%s\n' "$RUN_DATE" "$RUN_CYCLE" > metbr_run.env
-          gh release create "$CHECKPOINT_TAG" --target wrf-runner --prerelease --latest=false --notes "METBR WRF 4 KM checkpoint ${{ github.run_id }}"
-          gh release upload "$CHECKPOINT_TAG" metbr_run.env --repo "$GITHUB_REPOSITORY"
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
-          export WRF_START_HOUR=0 WRF_END_HOUR=4 METBR_COLD_START=1
-          chmod +x wrf/run_metbr_gfs_segment.sh
-          wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-004-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-004
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-00-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-004-* metbr-boundary-004 metbr-wrfout-00-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 0 4 0 1
 
   seg01:
     name: METBR WRF 4 KM F004-F008
@@ -67,29 +36,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input
-          mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
-          export WRF_START_HOUR=4 WRF_END_HOUR=8 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh
-          wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-008-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-008
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-01-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-008-* metbr-boundary-008 metbr-wrfout-01-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 4 8 1 0
 
   seg02:
     name: METBR WRF 4 KM F008-F012
@@ -101,26 +52,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=8 WRF_END_HOUR=12 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-012-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-012
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-02-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-012-* metbr-boundary-012 metbr-wrfout-02-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 8 12 2 0
 
   seg03:
     name: METBR WRF 4 KM F012-F016
@@ -132,26 +68,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=12 WRF_END_HOUR=16 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-016-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-016
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-03-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-016-* metbr-boundary-016 metbr-wrfout-03-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 12 16 3 0
 
   seg04:
     name: METBR WRF 4 KM F016-F020
@@ -163,26 +84,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=16 WRF_END_HOUR=20 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-020-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-020
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-04-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-020-* metbr-boundary-020 metbr-wrfout-04-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 16 20 4 0
 
   seg05:
     name: METBR WRF 4 KM F020-F024
@@ -194,26 +100,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=20 WRF_END_HOUR=24 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-024-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-024
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-05-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-024-* metbr-boundary-024 metbr-wrfout-05-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 20 24 5 0
 
   seg06:
     name: METBR WRF 4 KM F024-F028
@@ -225,26 +116,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=24 WRF_END_HOUR=28 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-028-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-028
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-06-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-028-* metbr-boundary-028 metbr-wrfout-06-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 24 28 6 0
 
   seg07:
     name: METBR WRF 4 KM F028-F032
@@ -256,26 +132,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=28 WRF_END_HOUR=32 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-032-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-032
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-07-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-032-* metbr-boundary-032 metbr-wrfout-07-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 28 32 7 0
 
   seg08:
     name: METBR WRF 4 KM F032-F036
@@ -287,26 +148,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=32 WRF_END_HOUR=36 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-036-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-036
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-08-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-036-* metbr-boundary-036 metbr-wrfout-08-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 32 36 8 0
 
   seg09:
     name: METBR WRF 4 KM F036-F040
@@ -318,26 +164,11 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Executar restart
+      - name: Executar segmento
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf metbr_restart_input && mkdir -p metbr_restart_input
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-restart-*' --dir metbr_restart_input --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-*' --dir metbr_restart_input --clobber
-          for f in metbr_restart_input/metbr-boundary-*; do cp -f "$f" metbr_restart_input/wrfbdy_d01; break; done
-          for f in metbr_restart_input/metbr-restart-*; do cp -f "$f" "metbr_restart_input/$(basename "$f" | sed -E 's/^metbr-restart-[0-9]{3}-//')"; done
-          source metbr_run.env
-          export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE" WRF_START_HOUR=36 WRF_END_HOUR=40 METBR_COLD_START=0
-          chmod +x wrf/run_metbr_gfs_segment.sh && wrf/run_metbr_gfs_segment.sh
-          for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-040-$(basename "$f")"; done
-          cp -f wrf_work/run/wrfbdy_d01 metbr-boundary-040
-          for f in wrf_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-09-$(basename "$f")"; done
-          gh release upload "$CHECKPOINT_TAG" metbr-restart-040-* metbr-boundary-040 metbr-wrfout-09-* --repo "$GITHUB_REPOSITORY"
+        run: bash wrf/run_metbr_checkpoint_segment.sh 36 40 9 0
 
   publish:
     name: Publicar METBR WRF 4 KM F000-F040
@@ -349,15 +180,15 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
-      - name: Baixar saidas
+      - name: Baixar e publicar
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf final_wrfouts wrf_work
-          mkdir -p final_wrfouts wrf_work/run
+          rm -rf final_wrfouts wrf_work wrf_publish wrf_diagnostics
+          mkdir -p final_wrfouts wrf_work/run wrf_publish wrf_diagnostics
           gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-wrfout-*' --dir final_wrfouts --clobber
           gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr_run.env' --dir . --clobber
           find final_wrfouts -type f -name 'metbr-wrfout-*' | while read -r f; do
@@ -367,36 +198,9 @@ jobs:
             cp -f "$f" "wrf_work/run/$name"
           done
           test "$(find wrf_work/run -maxdepth 1 -name 'wrfout_d01_*' | wc -l)" -eq 41
-      - name: Extrair e publicar
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf wrf_publish wrf_diagnostics
-          mkdir -p wrf_publish wrf_diagnostics
           cp -f metbr_run.env wrf_diagnostics/run.env
           python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 300 --grid-y 360
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          p=Path('wrf_publish/metadata.json')
-          m=json.loads(p.read_text())
-          frames=[f for f in m.get('frames',[]) if 0 <= int(f.get('forecastHour',-1)) <= 40]
-          if len(frames) != 41 or [int(f['forecastHour']) for f in frames] != list(range(41)):
-              raise SystemExit('METBR: frames F000-F040 invalidos')
-          m.update({'model':'metbr','source':'METBR WRF 4 km (REFL_10CM nativo)','resolutionKm':4,'dxMeters':4000,'dyMeters':4000,'nativeGrid':True,'reflectivitySource':'REFL_10CM_NATIVE','frameCount':41,'temporalResolutionMinutes':60})
-          for f in frames:
-              if int(f.get('gridX',0)) != 300 or int(f.get('gridY',0)) != 360:
-                  raise SystemExit('METBR: grade publicada diferente de 300x360')
-              f['file']=str(f['file']).replace('gfs/','metbr/')
-              f['source']='METBR WRF 4 km (REFL_10CM nativo)'
-          m['frames']=frames
-          p.write_text(json.dumps(m,ensure_ascii=False,indent=2),encoding='utf-8')
-          for f in frames:
-              if not (Path('wrf_publish')/f['file']).is_file():
-                  raise SystemExit('METBR: arquivo de frame ausente')
-          PY
+          python3 -c 'import json,pathlib; p=pathlib.Path("wrf_publish/metadata.json"); m=json.loads(p.read_text()); fs=[f for f in m.get("frames",[]) if 0 <= int(f.get("forecastHour",-1)) <= 40]; assert len(fs)==41 and [int(f["forecastHour"]) for f in fs]==list(range(41)), "METBR: frames F000-F040 invalidos"; m.update({"model":"metbr","source":"METBR WRF 4 km (REFL_10CM nativo)","resolutionKm":4,"dxMeters":4000,"dyMeters":4000,"nativeGrid":True,"reflectivitySource":"REFL_10CM_NATIVE","frameCount":41,"temporalResolutionMinutes":60}); [f.update({"source":"METBR WRF 4 km (REFL_10CM nativo)","file":str(f["file"]).replace("gfs/","metbr/")}) for f in fs]; m["frames"]=fs; p.write_text(json.dumps(m,ensure_ascii=False,indent=2),encoding="utf-8")'
           rm -rf /tmp/metbr-publication
           git clone --depth 1 --branch wrf-runner "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/metbr-publication
           cd /tmp/metbr-publication
@@ -411,6 +215,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .
-          git commit -m 'publish: METBR WRF 4 km F000-F040 nativo' || true
+          git commit -m 'publish: METBR WRF 4 km F000-F040 nativo'
           git push origin metbr-wrf-4km-data
-          gh release delete "metbr-wrf-4km-checkpoint-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          gh release delete "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
