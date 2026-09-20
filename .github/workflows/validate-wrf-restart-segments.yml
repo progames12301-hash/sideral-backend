@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/validate-wrf-restart-segments.yml'
+      - '.github/workflows/metbr-wrf-4km.yml'
       - 'wrf/**'
 
 jobs:
@@ -19,13 +20,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Validar sintaxe
+      - name: Validar sintaxe dos runners
         run: |
           set -euxo pipefail
           python -m py_compile wrf/prepare_restart_segment.py wrf/merge_wrf_segments.py wrf/filter_next_day.py
           bash -n wrf/run_icon_wrf.sh
           bash -n wrf/run_ecmwf_wrf.sh
           bash -n wrf/run_gfs_segment.sh
+          bash -n wrf/run_metbr_gfs_segment.sh
+      - name: Validar contrato METBR 4 km
+        run: |
+          set -euo pipefail
+          test -f wrf/run_metbr_gfs_segment.sh
+          grep -q 'dx = 4000' wrf/run_metbr_gfs_segment.sh
+          grep -q 'dy = 4000' wrf/run_metbr_gfs_segment.sh
+          grep -q 'e_we = 300' wrf/run_metbr_gfs_segment.sh
+          grep -q 'e_sn = 360' wrf/run_metbr_gfs_segment.sh
+          grep -q 'do_radar_ref = 1' wrf/run_metbr_gfs_segment.sh
+          grep -q 'io_form_restart = 102' wrf/run_metbr_gfs_segment.sh
+          grep -q 'METBR_BOUNDARY_END_HOUR:-40' wrf/run_metbr_gfs_segment.sh
+          echo 'Contrato estrutural METBR 4 km OK'
       - name: Testar patch ICON ECMWF sem executar WRF
         run: |
           set -euxo pipefail
