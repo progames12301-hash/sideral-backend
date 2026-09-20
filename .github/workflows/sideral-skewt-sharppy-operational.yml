@@ -92,6 +92,13 @@ jobs:
           p.write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
           Path('data/skewt/grid/latest.json').write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
           PY
+      - name: Archive national grid
+        uses: actions/upload-artifact@v4
+        with:
+          name: skewt-national-grid-${{ github.run_id }}
+          path: data/skewt/grid
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish national grid
         run: |
           git config user.name 'github-actions[bot]'
