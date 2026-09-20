@@ -35,22 +35,21 @@ jobs:
           grep -q "WRF_PUBLISH_MAX_HOUR: '40'" "$base"
           grep -q "REFL_10CM_NATIVE" "$base"
           grep -q "singleRunner.*True" "$base"
-          grep -q "GRID_X=171" "$base"
-          grep -q "GRID_X=222" "$base"
-
-          required=(
-            .github/workflows/wrf-4km-next-day-auto.yml
-            .github/workflows/wrf-icon-4km-native.yml
-            .github/workflows/wrf-ecmwf-4km-native.yml
-            .github/workflows/wrf-sudeste-gfs-4km.yml
-            .github/workflows/wrf-sudeste-icon-4km.yml
-            .github/workflows/wrf-sudeste-ecmwf-4km.yml
-          )
-          for f in "${required[@]}"; do
-            test -s "$f" || { echo "Workflow regional ausente: $f"; exit 1; }
-            grep -q 'wrf-regional-7km-single.yml' "$f"
-          done
           echo 'CONTRATO REGIONAL: 7 km · F000-F040 horario · runner unico · REFL nativo.'
+
+      - name: Impedir configuracao operacional WRF em 4 km
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -n --include='*.yml' --include='*.yaml' "WRF_TARGET_RESOLUTION_KM: '4'" .github/workflows; then
+            echo 'ERRO: existe workflow operacional configurado explicitamente para WRF 4 km.'
+            exit 1
+          fi
+          if grep -R -n --include='*.yml' --include='*.yaml' "WRF_DX_METERS: '4000'" .github/workflows; then
+            echo 'ERRO: existe workflow operacional configurado explicitamente para DX 4000 m.'
+            exit 1
+          fi
+          echo 'OK: nenhum workflow operacional exige WRF 4 km.'
 
       - name: Validar contrato CIM 8 km independente
         shell: bash
@@ -77,7 +76,7 @@ jobs:
           grep -q "WRF_START_HOUR: '0'" "$brasil"
           grep -q "WRF_END_HOUR: '48'" "$brasil"
           grep -q "WRF_GRID_X: '215'" "$brasil"
-          grep -q "WRF_GRID_Y: '215'" "$brasil"
+          grep -q "WRF_GRID_Y: '215'" "$brasil
           grep -q "REFL_10CM_NATIVE" "$brasil"
           echo 'CONTRATO BRASIL SCOPE: 21 km · 215x215 · F000-F048 horario · REFL nativo.'
 
@@ -120,12 +119,9 @@ jobs:
                   assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'reflectivitySource')
                   assert int(meta.get('temporalResolutionMinutes', 0)) == 60, (branch, 'temporalResolutionMinutes')
                   frames = meta.get('frames') or []
-                  if branch == 'wrf-brasil-12km-data':
-                      assert [int(frame.get('forecastHour', -1)) for frame in frames] == list(range(49)), (branch, 'hours')
-                      assert int(meta.get('frameCount', 0)) == 49, (branch, 'frameCount')
-                  else:
-                      assert [int(frame.get('forecastHour', -1)) for frame in frames] == list(range(41)), (branch, 'hours')
-                      assert int(meta.get('frameCount', 0)) == 41, (branch, 'frameCount')
+                  expected_hours = list(range(49)) if branch == 'wrf-brasil-12km-data' else list(range(41))
+                  assert [int(frame.get('forecastHour', -1)) for frame in frames] == expected_hours, (branch, 'hours')
+                  assert int(meta.get('frameCount', 0)) == len(expected_hours), (branch, 'frameCount')
                   assert meta.get('nativeGrid') is True, (branch, 'nativeGrid')
                   for frame in frames:
                       assert int(frame.get('gridX')) == nx and int(frame.get('gridY')) == ny, (branch, 'grid')
