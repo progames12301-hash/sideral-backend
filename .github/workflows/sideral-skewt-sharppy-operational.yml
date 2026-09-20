@@ -115,15 +115,33 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Select point and cycle
+      - name: Select and validate point
         id: point
         shell: bash
         run: |
+          set -euo pipefail
           LAT='${{ github.event.client_payload.lat || inputs.lat }}'
           LON='${{ github.event.client_payload.lon || inputs.lon }}'
           LABEL='${{ github.event.client_payload.label || inputs.label }}'
           CYCLE='${{ github.event.client_payload.cycle || inputs.cycle || '00' }}'
-          test -n "$LAT" && test -n "$LON"
+
+          if [ -z "$LAT" ] || [ -z "$LON" ]; then
+            echo "ERROR: Skew-T Point requires latitude and longitude."
+            echo "For the website, the backend must send client_payload.lat and client_payload.lon."
+            echo "For manual runs, fill the lat/lon inputs."
+            exit 1
+          fi
+
+          python - "$LAT" "$LON" <<'PY'
+          import sys
+          lat=float(sys.argv[1]); lon=float(sys.argv[2])
+          if not (-90 <= lat <= 90): raise SystemExit(f'Invalid latitude: {lat}')
+          if not (-180 <= lon <= 180): raise SystemExit(f'Invalid longitude: {lon}')
+          # Brazil bounding envelope; precise land/point-in-polygon filtering remains a frontend concern.
+          if not (-35 <= lat <= 6) or not (-75 <= lon <= -30):
+              raise SystemExit(f'Point outside Brazil envelope: {lat},{lon}')
+          PY
+
           echo "lat=$LAT" >> "$GITHUB_OUTPUT"
           echo "lon=$LON" >> "$GITHUB_OUTPUT"
           echo "label=${LABEL:-Sideral}" >> "$GITHUB_OUTPUT"
@@ -153,6 +171,7 @@ jobs:
           LABEL: ${{ steps.point.outputs.label }}
           CYCLE: ${{ steps.point.outputs.cycle }}
         run: |
+          set -euo pipefail
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
           xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py --lat "$LAT" --lon "$LON" --label "$LABEL" --cycle "$CYCLE" --out /tmp/skewt-out
