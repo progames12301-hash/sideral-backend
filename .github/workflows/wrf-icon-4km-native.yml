@@ -1,23 +1,19 @@
-name: WRF 7 km SUL ICON - REFL NATIVO
+name: WRF 7 km SUL ICON - AUTOMATICO DIARIO
 
 on:
   workflow_dispatch:
   schedule:
     - cron: '10 1 * * *'
-  workflow_run:
-    workflows: ["ICON Global - PROXIMO DIA AUTOMATICO"]
-    types: [completed]
 
 permissions:
   contents: write
 
 concurrency:
-  group: sideral-wrf-icon-daily
+  group: sideral-wrf-sul-icon-7km
   cancel-in-progress: false
 
 jobs:
   wrf:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: icon
