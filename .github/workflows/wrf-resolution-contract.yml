@@ -21,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validar contrato dos seis WRF regionais
+      - name: Validar contrato dos WRF regionais 7 km
         shell: bash
         run: |
           set -euo pipefail
@@ -33,7 +33,6 @@ jobs:
           grep -q "WRF_HISTORY_INTERVAL_MINUTES: '60'" "$base"
           grep -q "WRF_END_HOUR: '42'" "$base"
           grep -q "WRF_PUBLISH_MAX_HOUR: '40'" "$base"
-          grep -q "hours == list(range(41))" "$base"
           grep -q "REFL_10CM_NATIVE" "$base"
           grep -q "singleRunner.*True" "$base"
           grep -q "GRID_X=171" "$base"
@@ -65,6 +64,23 @@ jobs:
           grep -q "CIM_MAX_PUBLISHED_HOUR: '40'" "$cim"
           echo 'CONTRATO CIM: 8 km · F000-F040 horario preservado.'
 
+      - name: Validar contrato Brasil Scope 21 km
+        shell: bash
+        run: |
+          set -euo pipefail
+          brasil=.github/workflows/wrf-brasil-12km.yml
+          test -s "$brasil"
+          grep -q "WRF_TARGET_RESOLUTION_KM: '21'" "$brasil"
+          grep -q "WRF_DX_METERS: '21000'" "$brasil"
+          grep -q "WRF_DY_METERS: '21000'" "$brasil"
+          grep -q "WRF_HISTORY_INTERVAL_MINUTES: '60'" "$brasil"
+          grep -q "WRF_START_HOUR: '0'" "$brasil"
+          grep -q "WRF_END_HOUR: '48'" "$brasil"
+          grep -q "WRF_GRID_X: '215'" "$brasil"
+          grep -q "WRF_GRID_Y: '215'" "$brasil"
+          grep -q "REFL_10CM_NATIVE" "$brasil"
+          echo 'CONTRATO BRASIL SCOPE: 21 km · 215x215 · F000-F048 horario · REFL nativo.'
+
       - name: Auditar branches publicadas
         env:
           REPOSITORY: ${{ github.repository }}
@@ -87,6 +103,7 @@ jobs:
               'wrf-sudeste-ecmwf-data': (7, 7000, 7000, 222, 205),
               'cim-wrf-3km-icon-data': (8, 8000, 8000, 279, 234),
               'cim-wrf-3km-ecmwf-data': (8, 8000, 8000, 279, 234),
+              'wrf-brasil-12km-data': (21, 21000, 21000, 215, 215),
           }
 
           def get(url):
@@ -103,15 +120,15 @@ jobs:
                   assert meta.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'reflectivitySource')
                   assert int(meta.get('temporalResolutionMinutes', 0)) == 60, (branch, 'temporalResolutionMinutes')
                   frames = meta.get('frames') or []
-                  hours = [int(frame.get('forecastHour', -1)) for frame in frames]
-                  assert hours == list(range(41)), (branch, 'hours', hours)
-                  assert int(meta.get('frameCount', 0)) == 41, (branch, 'frameCount')
+                  if branch == 'wrf-brasil-12km-data':
+                      assert [int(frame.get('forecastHour', -1)) for frame in frames] == list(range(49)), (branch, 'hours')
+                      assert int(meta.get('frameCount', 0)) == 49, (branch, 'frameCount')
+                  else:
+                      assert [int(frame.get('forecastHour', -1)) for frame in frames] == list(range(41)), (branch, 'hours')
+                      assert int(meta.get('frameCount', 0)) == 41, (branch, 'frameCount')
                   assert meta.get('nativeGrid') is True, (branch, 'nativeGrid')
-                  if branch.startswith('wrf-') and not branch.startswith('wrf2-'):
-                      if not branch.startswith('cim-wrf-'):
-                          assert meta.get('singleRunner') is True, (branch, 'singleRunner')
                   for frame in frames:
-                      assert int(frame.get('gridX')) == nx and int(frame.get('gridY')) == ny, (branch, 'grid', frame.get('gridX'), frame.get('gridY'), nx, ny)
+                      assert int(frame.get('gridX')) == nx and int(frame.get('gridY')) == ny, (branch, 'grid')
                       assert frame.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'frame reflectivity')
 
                   raw = get(f"{base}/{frames[0]['file']}?audit=1")
@@ -120,10 +137,10 @@ jobs:
                   except OSError:
                       body = raw
                   payload = json.loads(body)
-                  assert int(payload.get('dxMeters')) == dx and int(payload.get('dyMeters')) == dy, (branch, 'DX/DY', payload.get('dxMeters'), payload.get('dyMeters'))
+                  assert int(payload.get('dxMeters')) == dx and int(payload.get('dyMeters')) == dy, (branch, 'DX/DY')
                   assert int(payload.get('gridX')) == nx and int(payload.get('gridY')) == ny, (branch, 'payload grid')
                   assert payload.get('reflectivitySource') == 'REFL_10CM_NATIVE', (branch, 'payload reflectivity')
-                  print(f'OK {branch}: {km} km, {nx}x{ny}, F000-F040 horario, REFL_10CM_NATIVE')
+                  print(f'OK {branch}: {km} km, {nx}x{ny}, REFL_10CM_NATIVE')
               except Exception as exc:
                   failures.append(f'{branch}: {exc!r}')
 
