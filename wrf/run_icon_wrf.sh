@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# METBR ICON dispatcher. Cold start delegates to the verified ICON implementation
-# that existed before the restart patch; continuation uses only wrfrst + wrfbdy.
+# METBR ICON dispatcher: cold start uses the verified ICON pipeline with restart
+# output enabled; continuation uses only the previous WRF restart state.
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
 WRF_START_HOUR="${WRF_START_HOUR:-0}"
 WRF_END_HOUR="${WRF_END_HOUR:-$WRF_RUN_HOURS}"
@@ -18,8 +18,10 @@ if (( WRF_START_HOUR > 0 )); then
   exec "$ROOT/wrf/run_wrf_restart_segment.sh" "$WRF_START_HOUR" "$WRF_END_HOUR" "$WRF_RESTART_DIR"
 fi
 
-# Recover the verified ICON cold-start script from repository history. This keeps
-# the existing WPS/ICON preprocessing intact instead of duplicating 150+ lines.
+# Enable a restart checkpoint exactly at the end of the cold-start segment.
+# This changes only the temporary working copy used by this Actions job.
+python3 "$ROOT/wrf/prepare_restart_segment.py" --start-hour "$WRF_START_HOUR" --end-hour "$WRF_END_HOUR" --root "$ROOT"
+
 LEGACY_COMMIT="08b38047f2103022bd1b40eefe4a84c0ef716d80"
 LEGACY="$ROOT/.metbr_legacy_run_icon_wrf.sh"
 if ! git cat-file -e "${LEGACY_COMMIT}:wrf/run_icon_wrf.sh" 2>/dev/null; then
