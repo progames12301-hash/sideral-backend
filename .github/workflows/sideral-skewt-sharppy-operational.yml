@@ -13,9 +13,7 @@ on:
         required: true
         default: 'national'
         type: choice
-        options:
-          - national
-          - point
+        options: [national, point]
       lat:
         description: 'Latitude — somente Point'
         required: false
@@ -36,11 +34,7 @@ on:
         required: true
         default: '00'
         type: choice
-        options:
-          - '00'
-          - '06'
-          - '12'
-          - '18'
+        options: ['00','06','12','18']
   repository_dispatch:
     types: [skewt_request]
 
@@ -61,24 +55,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Python 3.9
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
           cache: pip
-
       - name: Install grid dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install --prefer-binary shapely==2.0.6
-
       - name: Build Brazil 0.25 degree ECMWF grid
         run: |
           rm -rf data/skewt/grid
           mkdir -p data/skewt/grid
           python tools/skewt/build_brazil_grid.py --out data/skewt/grid/brazil-0p25.json
-
       - name: Set cycle metadata
         shell: bash
         run: |
@@ -95,16 +85,13 @@ jobs:
             CYCLE='${{ inputs.cycle }}'
           fi
           python - "$CYCLE" <<'PY'
-          import json, sys
+          import json,sys
           from pathlib import Path
-          p = Path('data/skewt/grid/brazil-0p25.json')
-          d = json.loads(p.read_text())
-          d['cycle_utc'] = sys.argv[1]
-          d['updated_by'] = 'Sideral Skew-T'
-          p.write_text(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
-          Path('data/skewt/grid/latest.json').write_text(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
+          p=Path('data/skewt/grid/brazil-0p25.json')
+          d=json.loads(p.read_text()); d['cycle_utc']=sys.argv[1]; d['updated_by']='Sideral Skew-T'
+          p.write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
+          Path('data/skewt/grid/latest.json').write_text(json.dumps(d,ensure_ascii=False,separators=(',',':')))
           PY
-
       - name: Publish national grid
         run: |
           git config user.name 'github-actions[bot]'
@@ -121,7 +108,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Select point and cycle
         id: point
         shell: bash
@@ -135,18 +121,15 @@ jobs:
           echo "lon=$LON" >> "$GITHUB_OUTPUT"
           echo "label=${LABEL:-Sideral}" >> "$GITHUB_OUTPUT"
           echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
-
       - name: Python 3.9
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
           cache: pip
-
       - name: System libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libx11-xcb1 libxcb1
-
       - name: Install SHARPpy and data libraries
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -156,7 +139,6 @@ jobs:
           python -m pip install --prefer-binary 'Pillow>=10,<11' 'ecmwf-opendata>=0.3,<0.4' 'eccodes>=2.36,<3'
           python -m pip install --prefer-binary 'git+https://github.com/sharppy/SHARPpy.git@main'
           python -c "import numpy, PySide2, qtpy, sharppy; print('SHARPpy stack OK:', numpy.__version__, PySide2.__version__, qtpy.__version__)"
-
       - name: Generate pre-rendered SHARPpy product
         env:
           LAT: ${{ steps.point.outputs.lat }}
@@ -167,7 +149,6 @@ jobs:
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
           xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py --lat "$LAT" --lon "$LON" --label "$LABEL" --cycle "$CYCLE" --out /tmp/skewt-out
-
       - name: Verify product
         run: |
           test -s /tmp/skewt-out/latest.json
@@ -176,18 +157,24 @@ jobs:
           test -s /tmp/skewt-out/f000/skewt.png
           test -s /tmp/skewt-out/f000/hodograph.png
           test -s /tmp/skewt-out/f000/variables.json
-
+      - name: Archive raw SHARPpy product
+        uses: actions/upload-artifact@v4
+        with:
+          name: skewt-sharppy-${{ github.run_id }}
+          path: /tmp/skewt-out
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish point
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, shutil
+          import json,shutil
           from pathlib import Path
           d=json.loads(Path('/tmp/skewt-out/latest.json').read_text())
           lat=float(d['latitude']); lon=float(d['longitude'])
           key=f'{lat:.2f}_{lon:.2f}'.replace('-','m').replace('.','p')
-          src=Path('/tmp/skewt-out'); dst=Path('data/skewt/points')/key; dst.mkdir(parents=True, exist_ok=True)
+          src=Path('/tmp/skewt-out'); dst=Path('data/skewt/points')/key; dst.mkdir(parents=True,exist_ok=True)
           for name in ('latest.json','variables.json','full.png','skewt.png','hodograph.png','animation.gif'):
               shutil.copy2(src/name,dst/name)
           for child in sorted(src.glob('f[0-9][0-9][0-9]')):
