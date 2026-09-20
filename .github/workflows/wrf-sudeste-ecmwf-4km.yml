@@ -1,23 +1,19 @@
-name: WRF 7 km SUDESTE ECMWF - REFL NATIVO
+name: WRF 7 km SUDESTE ECMWF - AUTOMATICO DIARIO
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 11,23 * * *"
-  workflow_run:
-    workflows: ["ECMWF IFS - PROXIMO DIA AUTOMATICO"]
-    types: [completed]
+    - cron: '30 11 * * *'
 
 permissions:
   contents: write
 
 concurrency:
-  group: sideral-wrf-sudeste-ecmwf
+  group: sideral-wrf-sudeste-ecmwf-7km
   cancel-in-progress: false
 
 jobs:
   wrf:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: ecmwf
