@@ -7,10 +7,7 @@ set -euo pipefail
 : "${WRF_END_HOUR:?WRF_END_HOUR ausente}"
 : "${METBR_COLD_START:?METBR_COLD_START ausente}"
 
-if (( WRF_END_HOUR <= WRF_START_HOUR )); then
-  echo "Intervalo METBR invalido" >&2
-  exit 2
-fi
+if (( WRF_END_HOUR <= WRF_START_HOUR )); then echo "Intervalo METBR invalido" >&2; exit 2; fi
 
 IMAGE="dtcenter/wps_wrf:latest"
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
@@ -19,7 +16,6 @@ DIAG="$ROOT/wrf_diagnostics"
 RESTART_INPUT="$ROOT/metbr_restart_input"
 HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
-
 rm -rf "$WORK" "$DIAG" "$RESTART_INPUT"
 mkdir -p "$WORK" "$DIAG"
 
@@ -29,7 +25,6 @@ BASE_URL="https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.${RUN_DATE}/${RUN_CYCLE}
 START_HOUR="$WRF_START_HOUR"
 END_HOUR="$WRF_END_HOUR"
 SOURCE_END=$(( ((END_HOUR + 2) / 3) * 3 ))
-
 START_ISO="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${START_HOUR} hours" +%Y-%m-%d_%H:%M:%S)"
 END_ISO="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${END_HOUR} hours" +%Y-%m-%d_%H:%M:%S)"
 SOURCE_END_ISO="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${SOURCE_END} hours" +%Y-%m-%d_%H:%M:%S)"
@@ -55,19 +50,14 @@ EOF
 
 if [[ "$METBR_COLD_START" == "1" ]]; then
   echo "METBR: cold start F$(printf '%03d' "$START_HOUR")-F$(printf '%03d' "$END_HOUR")" | tee "$DIAG/segment.log"
-  mkdir -p "$WORK/gfs"
-
+  mkdir -p "$WORK/gfs" "$WORK/WPS_GEOG"
   for H in $(seq 0 3 "$SOURCE_END"); do
     printf -v FH '%03d' "$H"
     FILE="gfs.t${RUN_CYCLE}z.pgrb2.0p25.f${FH}"
-    echo "Baixando $FILE"
     curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 900 -o "$WORK/gfs/$FILE" "$BASE_URL/$FILE"
   done
-
-  mkdir -p "$WORK/WPS_GEOG"
   curl -fL --retry 3 --connect-timeout 20 --max-time 900 -o "$WORK/geog.tar.gz" https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
   tar -xzf "$WORK/geog.tar.gz" -C "$WORK/WPS_GEOG"
-
   cat > "$WORK/namelist.wps" <<EOF
 &share
  wrf_core = 'ARW',
@@ -106,7 +96,6 @@ if [[ "$METBR_COLD_START" == "1" ]]; then
  opt_metgrid_tbl_path = '/comsoftware/wrf/WPS-4.3/metgrid/',
 /
 EOF
-
   LETTERS=(AAA AAB AAC AAD AAE AAF AAG AAH AAI AAJ AAK AAL AAM AAN AAO AAP AAQ)
   IDX=0
   for H in $(seq 0 3 "$SOURCE_END"); do
@@ -117,7 +106,6 @@ EOF
   done
 else
   echo "METBR: restart F$(printf '%03d' "$START_HOUR")-F$(printf '%03d' "$END_HOUR")" | tee "$DIAG/segment.log"
-  test -d "$RESTART_INPUT" || { echo "restart_input ausente" >&2; exit 20; }
   test -f "$RESTART_INPUT/wrfbdy_d01" || { echo "wrfbdy_d01 ausente" >&2; exit 21; }
   compgen -G "$RESTART_INPUT/wrfrst_d01_*" > /dev/null || { echo "wrfrst ausente" >&2; exit 22; }
 fi
@@ -206,7 +194,6 @@ cat > "$WORK/namelist.input" <<EOF
  kvdif = 0,
  non_hydrostatic = .true.,
  moist_adv_opt = 1,
- scalar_adv_opt = 1,
  scalar_adv_opt = 1,
  gwd_opt = 1,
 /
