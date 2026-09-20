@@ -150,11 +150,15 @@ jobs:
       - name: Extrair JSON nativo Brasil 21 km
         run: |
           set -euo pipefail
-          mkdir -p wrf_diagnostics wrf_publish
+          rm -rf wrf_publish
+          mkdir -p wrf_publish wrf_diagnostics
           python wrf/extract_wrf_json.py \
-            --input-dir wrf_work/run \
-            --output wrf_publish/wrf_brasil_21km.json \
-            --metadata-out wrf_publish/metadata.json
+            --run-dir wrf_work/run \
+            --output-dir wrf_publish \
+            --grid-x 215 \
+            --grid-y 215
+          test -s wrf_publish/metadata.json
+          echo 'Extracao nativa concluida.'
 
       - name: Validar 49 frames nativos Brasil 21 km
         run: |
