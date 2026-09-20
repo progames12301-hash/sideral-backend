@@ -59,13 +59,64 @@ if known.cycle:
 
 _original_client = g.Client
 
+
+def is_rate_limit_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return ('503' in text and ('slowdown' in text or 'slow down' in text)) or 'slowdown' in text
+
+
 class CycleClient(_original_client):
+    """ECMWF client with controlled mirror failover for S3 SlowDown."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('maximum_retries', 2)
+        kwargs.setdefault('retry_after', (5, 30, 2))
+        kwargs.setdefault('use_server_retry_after', True)
+        super().__init__(*args, **kwargs)
+        primary = kwargs.get('source', os.getenv('ECMWF_SOURCE', 'aws'))
+        configured = [x.strip() for x in os.getenv('ECMWF_FALLBACK_SOURCES', 'azure,google').split(',') if x.strip()]
+        self._sideral_sources = []
+        for source in [primary, *configured]:
+            if source not in self._sideral_sources:
+                self._sideral_sources.append(source)
+
     def retrieve(self, *args, **kwargs):
         if os.environ.get('SKEWT_CYCLE') and 'date' not in kwargs and 'time' not in kwargs:
             import datetime as dt
             kwargs['date'] = dt.datetime.utcnow().strftime('%Y-%m-%d')
             kwargs['time'] = int(os.environ['SKEWT_CYCLE'])
-        return super().retrieve(*args, **kwargs)
+
+        last_exc = None
+        for index, source in enumerate(self._sideral_sources):
+            try:
+                if index == 0:
+                    return super().retrieve(*args, **kwargs)
+
+                fallback = _original_client(
+                    source=source,
+                    model='ifs',
+                    resol='0p25',
+                    maximum_retries=2,
+                    retry_after=(5, 30, 2),
+                    use_server_retry_after=True,
+                )
+                print(f'[Sideral Skew-T] ECMWF mirror fallback: {source}', flush=True)
+                return fallback.retrieve(*args, **kwargs)
+            except Exception as exc:
+                last_exc = exc
+                if not is_rate_limit_error(exc):
+                    raise
+                if index + 1 < len(self._sideral_sources):
+                    print(
+                        f'[Sideral Skew-T] ECMWF {source} returned 503 SlowDown; '
+                        f'trying next mirror.',
+                        flush=True,
+                    )
+
+        raise RuntimeError(
+            'ECMWF Open Data mirrors exhausted after repeated 503 SlowDown responses.'
+        ) from last_exc
+
 
 g.Client = CycleClient
 
