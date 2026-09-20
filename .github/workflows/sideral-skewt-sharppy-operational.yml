@@ -124,24 +124,17 @@ jobs:
           LON='${{ github.event.client_payload.lon || inputs.lon }}'
           LABEL='${{ github.event.client_payload.label || inputs.label }}'
           CYCLE='${{ github.event.client_payload.cycle || inputs.cycle || '00' }}'
-
           if [ -z "$LAT" ] || [ -z "$LON" ]; then
             echo "ERROR: Skew-T Point requires latitude and longitude."
-            echo "For the website, the backend must send client_payload.lat and client_payload.lon."
-            echo "For manual runs, fill the lat/lon inputs."
             exit 1
           fi
-
           python - "$LAT" "$LON" <<'PY'
           import sys
           lat=float(sys.argv[1]); lon=float(sys.argv[2])
           if not (-90 <= lat <= 90): raise SystemExit(f'Invalid latitude: {lat}')
           if not (-180 <= lon <= 180): raise SystemExit(f'Invalid longitude: {lon}')
-          # Brazil bounding envelope; precise land/point-in-polygon filtering remains a frontend concern.
-          if not (-35 <= lat <= 6) or not (-75 <= lon <= -30):
-              raise SystemExit(f'Point outside Brazil envelope: {lat},{lon}')
+          if not (-35 <= lat <= 6) or not (-75 <= lon <= -30): raise SystemExit(f'Point outside Brazil envelope: {lat},{lon}')
           PY
-
           echo "lat=$LAT" >> "$GITHUB_OUTPUT"
           echo "lon=$LON" >> "$GITHUB_OUTPUT"
           echo "label=${LABEL:-Sideral}" >> "$GITHUB_OUTPUT"
@@ -175,14 +168,31 @@ jobs:
           rm -rf /tmp/skewt-out
           mkdir -p /tmp/skewt-out
           xvfb-run -a python tools/skewt/generate_sharppy_product_operational.py --lat "$LAT" --lon "$LON" --label "$LABEL" --cycle "$CYCLE" --out /tmp/skewt-out
-      - name: Verify product
+      - name: Verify product files and rendered content
         run: |
+          set -euo pipefail
           test -s /tmp/skewt-out/latest.json
           test -s /tmp/skewt-out/animation.gif
           test -s /tmp/skewt-out/f000/full.png
           test -s /tmp/skewt-out/f000/skewt.png
           test -s /tmp/skewt-out/f000/hodograph.png
           test -s /tmp/skewt-out/f000/variables.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image, ImageChops
+          root=Path('/tmp/skewt-out/f000')
+          d=json.loads((root/'variables.json').read_text())
+          assert d.get('renderer') == 'SHARPpy', d.get('renderer')
+          assert len(d.get('profile', [])) >= 5, 'profile missing'
+          for name in ('skewt.png','hodograph.png','full.png'):
+              im=Image.open(root/name).convert('RGB')
+              assert im.width > 300 and im.height > 250, f'{name}: invalid size'
+              bg=Image.new('RGB', im.size, (0,0,0))
+              diff=ImageChops.difference(im,bg)
+              assert diff.getbbox() is not None, f'{name}: completely blank'
+          print('SHARPpy render validation OK: profile + skewT + hodograph + full')
+          PY
       - name: Archive raw SHARPpy product
         uses: actions/upload-artifact@v4
         with:
