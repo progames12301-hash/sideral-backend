@@ -1,4 +1,4 @@
-name: WRF 7 km SUDESTE GFS - DOIS DIAS
+name: WRF 7 km SUDESTE GFS - AUTOMATICO DIARIO
 
 on:
   workflow_dispatch:
@@ -8,17 +8,17 @@ on:
         required: false
         type: string
       run_cycle:
-        description: "Ciclo GFS: 00, 06, 12 ou 18 (vazio = mais recente com F042)"
+        description: "Ciclo GFS: 00, 06, 12 ou 18"
         required: false
         type: string
   schedule:
-    - cron: "30 3,15 * * *"
+    - cron: '30 3 * * *'
 
 permissions:
   contents: write
 
 concurrency:
-  group: sideral-wrf-sudeste-gfs
+  group: sideral-wrf-sudeste-gfs-7km
   cancel-in-progress: false
 
 jobs:
