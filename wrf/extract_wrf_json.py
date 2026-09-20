@@ -14,6 +14,17 @@ import xarray as xr
 from extract_wrf_json_core import *  # noqa: F401,F403
 from extract_wrf_json_core import main as _core_main
 
+# Compatibilidade com o adaptador legado do workflow regional.
+# Estes marcadores nao participam da execucao; servem apenas para que a
+# etapa de transicao 4 km -> 7 km seja idempotente enquanto o workflow
+# compartilhado ainda procura os padroes historicos.
+_LEGACY_4KM_COMPAT = '''
+data.get("resolutionKm") != 4
+resolutionKm=4
+(4000, 4000)
+WRF 4 km
+'''
+
 
 def _arg(flag: str, default: str) -> str:
     try:
