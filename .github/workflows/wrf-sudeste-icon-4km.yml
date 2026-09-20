@@ -1,15 +1,15 @@
-name: WRF 7 km SUDESTE ICON - REFL NATIVO
+name: WRF 7 km SUDESTE ICON - AUTOMATICO DIARIO
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 7,19 * * *"
+    - cron: '30 7 * * *'
 
 permissions:
   contents: write
 
 concurrency:
-  group: sideral-wrf-sudeste-icon
+  group: sideral-wrf-sudeste-icon-7km
   cancel-in-progress: false
 
 jobs:
