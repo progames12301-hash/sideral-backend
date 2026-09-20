@@ -73,7 +73,7 @@ jobs:
           grep -q "WRF_DX_METERS: '21000'" "$brasil"
           grep -q "WRF_DY_METERS: '21000'" "$brasil"
           grep -q "WRF_HISTORY_INTERVAL_MINUTES: '60'" "$brasil"
-          grep -q "WRF_START_HOUR: '0'" "$brasil
+          grep -q "WRF_START_HOUR: '0'" "$brasil"
           grep -q "WRF_END_HOUR: '48'" "$brasil"
           grep -q "WRF_GRID_X: '215'" "$brasil"
           grep -q "WRF_GRID_Y: '215'" "$brasil"
