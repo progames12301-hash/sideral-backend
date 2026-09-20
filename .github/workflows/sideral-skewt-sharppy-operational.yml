@@ -55,7 +55,7 @@ env:
 jobs:
   national-grid:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'national')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -65,9 +65,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: pip
 
       - name: Install grid dependencies
-        run: python -m pip install --upgrade pip shapely
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --prefer-binary shapely==2.0.6
 
       - name: Build Brazil 0.25 degree ECMWF grid
         run: |
@@ -112,7 +115,7 @@ jobs:
 
   generate-point:
     if: (github.event_name == 'workflow_dispatch' && inputs.mode == 'point') || github.event_name == 'repository_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
       - name: Checkout
@@ -141,13 +144,15 @@ jobs:
       - name: System libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
+          sudo apt-get install -y xvfb libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libx11-xcb1 libxcb1
 
       - name: Install SHARPpy and data libraries
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install 'git+https://github.com/sharppy/SHARPpy.git@main'
-          python -m pip install 'numpy<2' PySide2 ecmwf-opendata eccodes pillow
+          python -m pip install --prefer-binary 'numpy==1.26.4'
+          python -m pip install --prefer-binary 'PySide2==5.15.2.1'
+          python -m pip install --prefer-binary 'Pillow>=10,<12' 'ecmwf-opendata>=0.3,<0.4' 'eccodes>=2.36,<3'
+          python -m pip install --prefer-binary 'git+https://github.com/sharppy/SHARPpy.git@main'
 
       - name: Generate pre-rendered SHARPpy product
         env:
