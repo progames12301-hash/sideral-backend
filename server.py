@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parent
 SKEWT_RUNNER = ROOT / 'tools' / 'skewt' / 'generate_sharppy_product_operational.py'
 CACHE_ROOT = Path(os.getenv('SKEWT_CACHE_DIR', '/tmp/sideral-skewt-cache'))
 CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+# ECMWF downloads can legitimately take several minutes on a cold Render instance.
+# Keep this configurable instead of imposing the old 180-second hard limit.
+SKEWT_TIMEOUT_SECONDS = max(300, int(os.getenv('SKEWT_TIMEOUT_SECONDS', '600')))
 
 class Handler(legacy.Handler):
     """Sideral stations API + on-demand ECMWF/SHARPpy requests."""
@@ -51,8 +54,10 @@ class Handler(legacy.Handler):
         with tempfile.TemporaryDirectory(prefix='sideral-skewt-') as tmp:
             out=Path(tmp); cmd=[sys.executable,str(SKEWT_RUNNER),'--lat',str(round(lat,2)),'--lon',str(round(lon,2)),'--label',label,'--out',str(out),'--hours',str(fh)]
             if cycle: cmd += ['--cycle',cycle]
-            try: proc=subprocess.run(cmd,cwd=str(ROOT),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=180,check=False,env={**os.environ,'QT_QPA_PLATFORM':'offscreen','QT_API':'pyqt5'})
-            except subprocess.TimeoutExpired: self.send_json(504, {'status': False, 'error': 'SHARPpy/ECMWF excedeu 180 s. Tente novamente.'}); return
+            try:
+                proc=subprocess.run(cmd,cwd=str(ROOT),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=SKEWT_TIMEOUT_SECONDS,check=False,env={**os.environ,'QT_QPA_PLATFORM':'offscreen','QT_API':'pyqt5'})
+            except subprocess.TimeoutExpired:
+                self.send_json(504, {'status': False, 'error': f'SHARPpy/ECMWF excedeu {SKEWT_TIMEOUT_SECONDS} s. Tente novamente.'}); return
             detail=proc.stdout[-6000:] if proc.stdout else ''
             if proc.returncode != 0:
                 print('[Sideral Skew-T] renderer failed:\n'+detail,file=sys.stderr,flush=True); self.send_json(502, {'status': False, 'error': 'Falha ao gerar Skew-T com SHARPpy.', 'details': detail}); return
