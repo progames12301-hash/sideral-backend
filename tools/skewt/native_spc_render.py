@@ -5,9 +5,33 @@ from pathlib import Path
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor, QPainter
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel
+
+
+def _patch_sharppy_qt_font_compat():
+    """SHARPpy was written for permissive Qt bindings; PyQt5 requires an int point size."""
+    try:
+        import sharppy.viz.skew as skew_mod
+        source = Path(skew_mod.__file__)
+        text = source.read_text(encoding='utf-8')
+        replacements = {
+            "QFont('Helvetica', fsizet + (self.hgt * 0.006))": "QFont('Helvetica', int(fsizet + (self.hgt * 0.006)))",
+            'QFont(\"Helvetica\", fsizet + (self.hgt * 0.006))': 'QFont(\"Helvetica\", int(fsizet + (self.hgt * 0.006)))',
+        }
+        patched = text
+        for old, new in replacements.items():
+            patched = patched.replace(old, new)
+        if patched != text:
+            source.write_text(patched, encoding='utf-8')
+        return True
+    except Exception:
+        return False
+
+
+_patch_sharppy_qt_font_compat()
 from sharppy.sharptab.prof_collection import ProfCollection
 from sharppy.viz.skew import plotSkewT
 from sharppy.viz.hodo import plotHodo
+
 
 class SideralBrand(QLabel):
     def __init__(self, parent=None):
@@ -15,6 +39,7 @@ class SideralBrand(QLabel):
         self.setMinimumWidth(270)
         self.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.setStyleSheet('background:#000;')
+
     def paintEvent(self, event):
         super().paintEvent(event)
         p = QPainter(self)
@@ -26,6 +51,7 @@ class SideralBrand(QLabel):
         p.setFont(QFont('Arial', QFont.Bold, 42))
         p.drawText(132, 38, 'X')
         p.end()
+
 
 def activate(widget, pc, prof):
     widget.addProfileCollection(pc)
@@ -39,11 +65,13 @@ def activate(widget, pc, prof):
     except Exception:
         pass
 
+
 def set_prof(widget, prof):
     try:
         widget.setProf(prof)
     except Exception:
         pass
+
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
     """Render the actual SHARPpy widgets with PyQt5 in headless mode."""
