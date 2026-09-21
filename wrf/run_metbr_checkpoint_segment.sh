@@ -17,17 +17,17 @@ if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOU
   exit 1
 fi
 
-# ecCodes provides grib_set/grib_copy/grib_count used by the ICON preprocessor.
+# ecCodes: Ubuntu/Debian package name is libeccodes-tools, not eccodes.
 if ! command -v grib_set >/dev/null 2>&1; then
   sudo apt-get update -qq
-  sudo apt-get install -y -qq eccodes
+  sudo apt-get install -y -qq libeccodes-tools
 fi
 for tool in grib_set grib_copy grib_count; do
   command -v "$tool" >/dev/null || { echo "ERRO: ecCodes/$tool indisponivel" >&2; exit 10; }
 done
 
-grub_set_check="$(grib_set -V 2>&1 | head -1)"
-echo "ecCodes OK: $grub_set_check"
+grib_set_check="$(grib_set -V 2>&1 | head -1)"
+echo "ecCodes OK: $grib_set_check"
 
 export WRF_TARGET_RESOLUTION_KM=4 WRF_DX_METERS=4000 WRF_DY_METERS=4000
 export WRF_E_WE=300 WRF_E_SN=360 WRF_HISTORY_INTERVAL_MINUTES=60
