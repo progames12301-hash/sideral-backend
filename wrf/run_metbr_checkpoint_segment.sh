@@ -17,7 +17,6 @@ if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOU
   exit 1
 fi
 
-# ecCodes: Ubuntu/Debian package name is libeccodes-tools, not eccodes.
 if ! command -v grib_set >/dev/null 2>&1; then
   sudo apt-get update -qq
   sudo apt-get install -y -qq libeccodes-tools
@@ -34,6 +33,7 @@ export WRF_E_WE=300 WRF_E_SN=360 WRF_HISTORY_INTERVAL_MINUTES=60
 export WRF_RUN_HOURS=$((END_HOUR-START_HOUR)) WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
 export WRF_DATA_SOURCE=ICON WRF_INPUT_MODEL=ICON WRF_INITIALIZATION_MODEL=ICON
 export WRF_REFLECTIVITY_SOURCE=REFL_10CM_NATIVE WRF_NATIVE_GRID=true WRF_NO_FALLBACK=true
+export WRF_MPI_PROCS="${WRF_MPI_PROCS:-8}"
 
 [[ "$WRF_DATA_SOURCE" == ICON && "$WRF_INPUT_MODEL" == ICON && "$WRF_INITIALIZATION_MODEL" == ICON ]] || { echo 'ERROR: METBR ICON-only contract violated' >&2; exit 1; }
 
