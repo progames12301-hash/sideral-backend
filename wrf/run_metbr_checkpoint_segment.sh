@@ -12,11 +12,22 @@ ROOT="${GITHUB_WORKSPACE:-$PWD}"
 INPUT="$ROOT/metbr_restart_input"
 mkdir -p "$INPUT"
 
-# METBR segments must match the restart cadence used by the WRF runner.
 if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOUR % 3 != 0 || END_HOUR > 42 )); then
   echo "Start/end precisam ser multiplos de 3 h entre F000 e F042" >&2
   exit 1
 fi
+
+# ecCodes provides grib_set/grib_copy/grib_count used by the ICON preprocessor.
+if ! command -v grib_set >/dev/null 2>&1; then
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq eccodes
+fi
+for tool in grib_set grib_copy grib_count; do
+  command -v "$tool" >/dev/null || { echo "ERRO: ecCodes/$tool indisponivel" >&2; exit 10; }
+done
+
+grub_set_check="$(grib_set -V 2>&1 | head -1)"
+echo "ecCodes OK: $grub_set_check"
 
 export WRF_TARGET_RESOLUTION_KM=4 WRF_DX_METERS=4000 WRF_DY_METERS=4000
 export WRF_E_WE=300 WRF_E_SN=360 WRF_HISTORY_INTERVAL_MINUTES=60
@@ -33,29 +44,18 @@ if [[ "$COLD_START" == "0" ]]; then
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "metbr-restart-${START_HOUR}-*" --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-040-*' --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-namelist.input' --dir "$INPUT" --clobber
-  mkdir -p "$INPUT/normalized"
-  found=0
-  for f in "$INPUT"/metbr-restart-${START_HOUR}-*; do
-    [[ -f "$f" ]] || continue
-    cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed "s/^metbr-restart-${START_HOUR}-//")"
-    found=1
-  done
+  mkdir -p "$INPUT/normalized"; found=0
+  for f in "$INPUT"/metbr-restart-${START_HOUR}-*; do [[ -f "$f" ]] || continue; cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed "s/^metbr-restart-${START_HOUR}-//")"; found=1; done
   (( found == 1 )) || { echo "Restart F${START_HOUR} ausente" >&2; exit 22; }
   boundary_found=0
-  for f in "$INPUT"/metbr-boundary-040-*; do
-    [[ -f "$f" ]] || continue
-    cp -f "$f" "$INPUT/normalized/wrfbdy_d01"
-    boundary_found=1
-    break
-  done
+  for f in "$INPUT"/metbr-boundary-040-*; do [[ -f "$f" ]] || continue; cp -f "$f" "$INPUT/normalized/wrfbdy_d01"; boundary_found=1; break; done
   (( boundary_found == 1 )) || { echo "wrfbdy_d01 ausente no checkpoint" >&2; exit 23; }
   cp -f "$INPUT/metbr-namelist.input" "$INPUT/normalized/namelist.input"
   export WRF_RESTART_DIR="$INPUT/normalized"
 else
   python3 - <<'PY'
 import json, os, urllib.request
-repo=os.environ['GITHUB_REPOSITORY']
-url=f"https://raw.githubusercontent.com/{repo}/icon-data/metadata.json?run={os.environ.get('GITHUB_RUN_ID','0')}"
+repo=os.environ['GITHUB_REPOSITORY']; url=f"https://raw.githubusercontent.com/{repo}/icon-data/metadata.json?run={os.environ.get('GITHUB_RUN_ID','0')}"
 req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'Sideral-METBR'})
 with urllib.request.urlopen(req,timeout=30) as r: m=json.load(r)
 if str(m.get('model','')).lower()!='icon': raise SystemExit('metadata nao e ICON')
@@ -69,8 +69,8 @@ PY
 fi
 
 export FORCE_RUN_DATE="${RUN_DATE:-}" FORCE_RUN_CYCLE="${RUN_CYCLE:-}"
-chmod +x wrf/run_icon_wrf.sh
-bash wrf/run_icon_wrf.sh
+chmod +x wrf/run_metbr_icon_wrf.sh
+bash wrf/run_metbr_icon_wrf.sh
 
 if [[ "$COLD_START" == "1" ]]; then
   for f in wrf_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-${END_HOUR}-$(basename "$f")"; done
