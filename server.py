@@ -110,19 +110,20 @@ class Handler(legacy.Handler):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    timeout=120,
+                    timeout=180,
                     check=False,
-                    env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen'},
+                    env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen', 'QT_API': 'pyside2'},
                 )
             except subprocess.TimeoutExpired:
                 self.send_json(504, {
                     'status': False,
-                    'error': 'SHARPpy/ECMWF excedeu 120 s. Tente novamente.'
+                    'error': 'SHARPpy/ECMWF excedeu 180 s. Tente novamente.'
                 })
                 return
 
+            detail = proc.stdout[-6000:] if proc.stdout else ''
             if proc.returncode != 0:
-                detail = proc.stdout[-4000:]
+                print('[Sideral Skew-T] renderer failed:\n' + detail, file=sys.stderr, flush=True)
                 self.send_json(502, {
                     'status': False,
                     'error': 'Falha ao gerar Skew-T com SHARPpy.',
@@ -132,10 +133,11 @@ class Handler(legacy.Handler):
 
             frame = out / f'f{fh:03d}'
             if not all((frame / name).is_file() for name in ('skewt.png', 'hodograph.png', 'full.png', 'variables.json')):
+                print('[Sideral Skew-T] renderer produced incomplete output:\n' + detail, file=sys.stderr, flush=True)
                 self.send_json(502, {
                     'status': False,
                     'error': 'SHARPpy terminou sem produzir todos os componentes do produto.',
-                    'details': proc.stdout[-4000:],
+                    'details': detail,
                 })
                 return
 
