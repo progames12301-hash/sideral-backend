@@ -27,8 +27,27 @@ if ! git cat-file -e "${LEGACY_COMMIT}:wrf/run_icon_wrf.sh" 2>/dev/null; then
 fi
 git show "${LEGACY_COMMIT}:wrf/run_icon_wrf.sh" > "$LEGACY"
 chmod +x "$LEGACY"
-# O METBR usa 8 MPI. O legado pode conter defaults antigos de 4 MPI;
-# normalizamos somente a cópia temporária executada nesta rodada.
+
+# O caminho legado chama run_wrf_with_source.sh diretamente. Como esse arquivo
+# ainda possui -np 4 no histórico, criamos uma cópia temporária NORMALIZADA e
+# fazemos o legado enxergar essa cópia. Assim nenhum outro WRF/CIM é alterado.
+SOURCE_RUN="$ROOT/wrf/run_wrf_with_source.sh"
+SOURCE_RUN_ORIG="$ROOT/wrf/.metbr_run_wrf_with_source.original"
+SOURCE_RUN_8="$ROOT/wrf/.metbr_run_wrf_with_source.8mpi"
+cp -f "$SOURCE_RUN" "$SOURCE_RUN_ORIG"
+cp -f "$SOURCE_RUN" "$SOURCE_RUN_8"
+sed -i -E 's/(mpirun[^\n]*-np[[:space:]]+)4([^0-9]|$)/\18\2/g; s/(mpirun[^\n]*--np[=[:space:]]*)4([^0-9]|$)/\18\2/g' "$SOURCE_RUN_8"
+chmod +x "$SOURCE_RUN_8"
+restore_source_run(){
+  if [[ -f "$SOURCE_RUN_ORIG" ]]; then
+    mv -f "$SOURCE_RUN_ORIG" "$SOURCE_RUN"
+  fi
+  rm -f "$SOURCE_RUN_8"
+}
+trap restore_source_run EXIT
+mv -f "$SOURCE_RUN_8" "$SOURCE_RUN"
+
+# Também normaliza qualquer mpirun literal de 4 processos no legado temporário.
 sed -i -E 's/(mpirun[^\n]*-np[[:space:]]+)4([^0-9]|$)/\18\2/g; s/(mpirun[^\n]*--np[=[:space:]]*)4([^0-9]|$)/\18\2/g' "$LEGACY"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 exec "$LEGACY"
