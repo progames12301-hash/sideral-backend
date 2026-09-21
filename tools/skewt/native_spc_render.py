@@ -5,33 +5,21 @@ from pathlib import Path
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor, QPainter
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel
-
-
-def _patch_sharppy_qt_font_compat():
-    """SHARPpy was written for permissive Qt bindings; PyQt5 requires an int point size."""
-    try:
-        import sharppy.viz.skew as skew_mod
-        source = Path(skew_mod.__file__)
-        text = source.read_text(encoding='utf-8')
-        replacements = {
-            "QFont('Helvetica', fsizet + (self.hgt * 0.006))": "QFont('Helvetica', int(fsizet + (self.hgt * 0.006)))",
-            'QFont(\"Helvetica\", fsizet + (self.hgt * 0.006))': 'QFont(\"Helvetica\", int(fsizet + (self.hgt * 0.006)))',
-        }
-        patched = text
-        for old, new in replacements.items():
-            patched = patched.replace(old, new)
-        if patched != text:
-            source.write_text(patched, encoding='utf-8')
-        return True
-    except Exception:
-        return False
-
-
-_patch_sharppy_qt_font_compat()
 from sharppy.sharptab.prof_collection import ProfCollection
+from sharppy.viz import skew as _sharppy_skew
 from sharppy.viz.skew import plotSkewT
 from sharppy.viz.hodo import plotHodo
 
+# SHARPpy passes a float point size to QFont on some widget sizes.
+# PyQt5 requires an integer. Patch only the SHARPpy skew module so the
+# native SHARPpy renderer remains unchanged otherwise.
+_OriginalQFont = _sharppy_skew.QtGui.QFont
+class _CompatQFont(_OriginalQFont):
+    def __new__(cls, *args, **kwargs):
+        if len(args) >= 2 and isinstance(args[1], float):
+            args = (args[0], int(round(args[1])), *args[2:])
+        return _OriginalQFont(*args, **kwargs)
+_sharppy_skew.QtGui.QFont = _CompatQFont
 
 class SideralBrand(QLabel):
     def __init__(self, parent=None):
@@ -39,7 +27,6 @@ class SideralBrand(QLabel):
         self.setMinimumWidth(270)
         self.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.setStyleSheet('background:#000;')
-
     def paintEvent(self, event):
         super().paintEvent(event)
         p = QPainter(self)
@@ -51,7 +38,6 @@ class SideralBrand(QLabel):
         p.setFont(QFont('Arial', QFont.Bold, 42))
         p.drawText(132, 38, 'X')
         p.end()
-
 
 def activate(widget, pc, prof):
     widget.addProfileCollection(pc)
@@ -65,36 +51,18 @@ def activate(widget, pc, prof):
     except Exception:
         pass
 
-
-def set_prof(widget, prof):
-    try:
-        widget.setProf(prof)
-    except Exception:
-        pass
-
-
 def render_native_spc(prof, out_dir: Path, meta: dict):
-    """Render the actual SHARPpy widgets with PyQt5 in headless mode."""
-    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
-    pc = ProfCollection(
-        {'ECMWF IFS': [prof]},
-        [prof.date],
-        highlight='ECMWF IFS',
-        location=meta.get('location', 'Brasil'),
-    )
+    pc = ProfCollection({'ECMWF IFS': [prof]}, [prof.date], highlight='ECMWF IFS', location=meta.get('location', 'Brasil'))
     root = QWidget()
     root.setStyleSheet('background:#000;color:#fff;')
     root.resize(1600, 980)
     layout = QVBoxLayout(root)
     layout.setContentsMargins(8, 8, 8, 8)
     layout.setSpacing(6)
-    header = QLabel(
-        f"SIDERAL SKEW-T  |  ECMWF IFS 0.25°  |  {meta.get('location','Brasil')}  |  "
-        f"F{int(meta.get('fh', 0)):03d}  |  VALID {meta.get('valid','')}"
-    )
+    header = QLabel(f"SIDERAL SKEW-T  |  ECMWF IFS 0.25°  |  {meta.get('location','Brasil')}  |  F{int(meta.get('fh', 0)):03d}  |  VALID {meta.get('valid','')}")
     header.setStyleSheet('color:white;background:#000;font:700 16px Consolas;padding:8px;border-bottom:1px solid #444;')
     layout.addWidget(header)
     top = QWidget()
