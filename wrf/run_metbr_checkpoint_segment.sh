@@ -79,7 +79,18 @@ if [[ "$COLD_START" == "1" ]]; then
   cp -f wrf_work/run/namelist.input metbr-namelist.input
   gh release upload "$CHECKPOINT_TAG" metbr-run.env metbr-namelist.input metbr-boundary-040-* metbr-restart-${END_HOUR}-* metbr-wrfout-${SEGMENT_INDEX}-* --repo "$GITHUB_REPOSITORY" --clobber
 else
-  for f in wrf_restart_work/run/wrfout_d01_*; do cp -f "$f" "metbr-wrfout-${SEGMENT_INDEX}-$(basename "$f")"; done
-  for f in wrf_restart_work/run/wrfrst_d01_*; do cp -f "$f" "metbr-restart-${END_HOUR}-$(basename "$f")"; done
+  # Restart segments execute in wrf_restart_work but publish their products
+  # to metbr_segment_output. Never assume wrf_restart_work/run contains the
+  # final wrfout/wrfrst files after the dispatcher returns.
+  OUTPUT_DIR="$ROOT/metbr_segment_output"
+  test -d "$OUTPUT_DIR" || { echo "METBR output directory ausente: $OUTPUT_DIR" >&2; exit 30; }
+  shopt -s nullglob
+  outs=("$OUTPUT_DIR"/wrfout_d01_*)
+  rsts=("$OUTPUT_DIR"/wrfrst_d01_*)
+  shopt -u nullglob
+  ((${#outs[@]} > 0)) || { echo "Nenhum wrfout produzido no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 31; }
+  ((${#rsts[@]} > 0)) || { echo "Nenhum wrfrst produzido no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 32; }
+  for f in "${outs[@]}"; do cp -f "$f" "metbr-wrfout-${SEGMENT_INDEX}-$(basename "$f")"; done
+  for f in "${rsts[@]}"; do cp -f "$f" "metbr-restart-${END_HOUR}-$(basename "$f")"; done
   gh release upload "$CHECKPOINT_TAG" metbr-restart-${END_HOUR}-* metbr-wrfout-${SEGMENT_INDEX}-* --repo "$GITHUB_REPOSITORY" --clobber
 fi
