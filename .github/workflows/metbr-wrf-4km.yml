@@ -1,6 +1,6 @@
 name: METBR WRF 4 KM - ICON 3h restart continuo
 
-"on":
+on:
   workflow_dispatch:
 
 permissions:
@@ -19,9 +19,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 0 3 0 1
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 0 3 0 14
   seg01:
     name: METBR ICON 4 KM F003-F006
     runs-on: ubuntu-22.04
@@ -31,9 +30,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 3 6 1 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 3 6 1 14
   seg02:
     name: METBR ICON 4 KM F006-F009
     runs-on: ubuntu-22.04
@@ -43,9 +41,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 6 9 2 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 6 9 2 14
   seg03:
     name: METBR ICON 4 KM F009-F012
     runs-on: ubuntu-22.04
@@ -55,9 +52,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 9 12 3 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 9 12 3 14
   seg04:
     name: METBR ICON 4 KM F012-F015
     runs-on: ubuntu-22.04
@@ -67,9 +63,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 12 15 4 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 12 15 4 14
   seg05:
     name: METBR ICON 4 KM F015-F018
     runs-on: ubuntu-22.04
@@ -79,9 +74,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 15 18 5 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 15 18 5 14
   seg06:
     name: METBR ICON 4 KM F018-F021
     runs-on: ubuntu-22.04
@@ -91,9 +85,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 18 21 6 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 18 21 6 14
   seg07:
     name: METBR ICON 4 KM F021-F024
     runs-on: ubuntu-22.04
@@ -103,9 +96,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 21 24 7 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 21 24 7 14
   seg08:
     name: METBR ICON 4 KM F024-F027
     runs-on: ubuntu-22.04
@@ -115,9 +107,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 24 27 8 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 24 27 8 14
   seg09:
     name: METBR ICON 4 KM F027-F030
     runs-on: ubuntu-22.04
@@ -127,9 +118,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 27 30 9 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 27 30 9 14
   seg10:
     name: METBR ICON 4 KM F030-F033
     runs-on: ubuntu-22.04
@@ -139,9 +129,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 30 33 10 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 30 33 10 14
   seg11:
     name: METBR ICON 4 KM F033-F036
     runs-on: ubuntu-22.04
@@ -151,9 +140,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 33 36 11 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 33 36 11 14
   seg12:
     name: METBR ICON 4 KM F036-F039
     runs-on: ubuntu-22.04
@@ -163,9 +151,8 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 36 39 12 0
-
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 36 39 12 14
   seg13:
     name: METBR ICON 4 KM F039-F042
     runs-on: ubuntu-22.04
@@ -175,61 +162,5 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        run: bash wrf/run_metbr_checkpoint_segment.sh 39 42 13 0
-
-  publish:
-    name: Publicar METBR WRF 4 KM F000-F040
-    runs-on: ubuntu-22.04
-    timeout-minutes: 355
-    needs: seg13
-    steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Baixar e publicar
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }} }
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf final_wrfouts wrf_work wrf_publish wrf_diagnostics
-          mkdir -p final_wrfouts wrf_work/run wrf_publish wrf_diagnostics
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-wrfout-*' --dir final_wrfouts --clobber
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-run.env' --dir . --clobber
-          find final_wrfouts -type f -name 'metbr-wrfout-*' | while read -r f; do
-            base=$(basename "$f")
-            name="${base#metbr-wrfout-}"
-            name="${name#*-}"
-            cp -f "$f" "wrf_work/run/$name"
-          done
-          python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env metbr-run.env --output-dir wrf_publish --grid-x 300 --grid-y 360
-          python3 - <<'PY'
-          import json, pathlib
-          p=pathlib.Path('wrf_publish/metadata.json')
-          m=json.loads(p.read_text())
-          frames=[f for f in m.get('frames',[]) if 0 <= int(f.get('forecastHour',-1)) <= 40]
-          hours=[int(f['forecastHour']) for f in frames]
-          assert hours == list(range(41)), f'METBR: frames invalidos: {hours}'
-          keep={str(f.get('file','')) for f in frames}
-          for f in list(m.get('frames',[])):
-              if int(f.get('forecastHour',-1)) > 40:
-                  q=pathlib.Path('wrf_publish')/str(f.get('file',''))
-                  if q.is_file(): q.unlink()
-          m.update({'model':'metbr','source':'METBR WRF 4 km (ICON / REFL_10CM nativo)','resolutionKm':4,'dxMeters':4000,'dyMeters':4000,'nativeGrid':True,'reflectivitySource':'REFL_10CM_NATIVE','frameCount':41,'temporalResolutionMinutes':60})
-          for f in frames:
-              f['source']='METBR WRF 4 km (ICON / REFL_10CM nativo)'
-              f['file']=str(f['file']).replace('gfs/','metbr/')
-          m['frames']=frames
-          p.write_text(json.dumps(m,ensure_ascii=False,indent=2),encoding='utf-8')
-          PY
-          rm -rf /tmp/metbr-publication
-          git clone --depth 1 --branch wrf-runner "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/metbr-publication
-          cd /tmp/metbr-publication
-          if git ls-remote --exit-code --heads origin metbr-wrf-4km-data >/dev/null 2>&1; then git fetch --depth 1 origin metbr-wrf-4km-data && git checkout -B metbr-wrf-4km-data FETCH_HEAD; else git checkout -B metbr-wrf-4km-data; fi
-          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp -a "$GITHUB_WORKSPACE/wrf_publish/." .
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .
-          git commit -m 'publish: METBR WRF 4 km ICON F000-F040'
-          git push origin metbr-wrf-4km-data
-          gh release delete "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        run: bash wrf/run_metbr_checkpoint_segment.sh 39 42 13 14
