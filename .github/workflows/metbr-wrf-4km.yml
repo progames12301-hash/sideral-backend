@@ -1,4 +1,4 @@
-name: METBR WRF 4 KM - ICON 3h restart continuo
+name: METBR WRF 4 KM - ICON
 
 on:
   workflow_dispatch:
@@ -6,161 +6,243 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: metbr-wrf-4km
-  cancel-in-progress: false
+env:
+  CHECKPOINT_PREFIX: metbr-wrf-4km-checkpoint
 
 jobs:
   seg00:
-    name: METBR ICON 4 KM F000-F003
+    name: METBR ICON F000-F003
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F000-F003
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 0 3 0 14
+
   seg01:
-    name: METBR ICON 4 KM F003-F006
+    name: METBR ICON F003-F006
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg00
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F003-F006
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 3 6 1 14
+
   seg02:
-    name: METBR ICON 4 KM F006-F009
+    name: METBR ICON F006-F009
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg01
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F006-F009
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 6 9 2 14
+
   seg03:
-    name: METBR ICON 4 KM F009-F012
+    name: METBR ICON F009-F012
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg02
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F009-F012
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 9 12 3 14
+
   seg04:
-    name: METBR ICON 4 KM F012-F015
+    name: METBR ICON F012-F015
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg03
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F012-F015
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 12 15 4 14
+
   seg05:
-    name: METBR ICON 4 KM F015-F018
+    name: METBR ICON F015-F018
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg04
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F015-F018
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 15 18 5 14
+
   seg06:
-    name: METBR ICON 4 KM F018-F021
+    name: METBR ICON F018-F021
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg05
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F018-F021
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 18 21 6 14
+
   seg07:
-    name: METBR ICON 4 KM F021-F024
+    name: METBR ICON F021-F024
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg06
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F021-F024
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 21 24 7 14
+
   seg08:
-    name: METBR ICON 4 KM F024-F027
+    name: METBR ICON F024-F027
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg07
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F024-F027
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 24 27 8 14
+
   seg09:
-    name: METBR ICON 4 KM F027-F030
+    name: METBR ICON F027-F030
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg08
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F027-F030
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 27 30 9 14
+
   seg10:
-    name: METBR ICON 4 KM F030-F033
+    name: METBR ICON F030-F033
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg09
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F030-F033
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 30 33 10 14
+
   seg11:
-    name: METBR ICON 4 KM F033-F036
+    name: METBR ICON F033-F036
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg10
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F033-F036
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 33 36 11 14
+
   seg12:
-    name: METBR ICON 4 KM F036-F039
+    name: METBR ICON F036-F039
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg11
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F036-F039
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 36 39 12 14
+
   seg13:
-    name: METBR ICON 4 KM F039-F042
+    name: METBR ICON F039-F042
     runs-on: ubuntu-22.04
     timeout-minutes: 355
     needs: seg12
     steps:
-      - uses: actions/checkout@v4
-        with: {ref: wrf-runner, fetch-depth: 1}
-      - name: Executar segmento
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+      - name: Run F039-F042
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 39 42 13 14
