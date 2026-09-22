@@ -96,7 +96,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Instalar dependencias
+      - name: Instalar dependências
         run: python -m pip install --disable-pip-version-check requests numpy xarray netCDF4 ecmwf-opendata
       - name: Executar segmento WRF com spin-up
         env:
@@ -118,6 +118,7 @@ jobs:
         env:
           SOURCE_MODEL: ${{ inputs.model }}
         run: |
+          set -euo pipefail
           rm -rf wrf_publish
           python wrf/extract_wrf_json.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf_publish --grid-x 220 --grid-y 180
           python wrf/retag_wrf_model.py --root wrf_publish --model "$SOURCE_MODEL"
@@ -128,23 +129,21 @@ jobs:
           retention-days: 1
           if-no-files-found: error
       - name: Extrair diagnosticos WRF2
-        if: always()
-        continue-on-error: true
         env:
           SOURCE_MODEL: ${{ inputs.model }}
           SEGMENT_START: ${{ matrix.start }}
           SEGMENT_END: ${{ matrix.end }}
         run: |
+          set -euo pipefail
           rm -rf wrf2_publish
           python wrf/extract_wrf_severe.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf2_publish --grid-x 220 --grid-y 180 --model "$SOURCE_MODEL" --interval-hours 3 --expected-start "$SEGMENT_START" --expected-end "$SEGMENT_END"
+          test -s wrf2_publish/metadata.json
       - uses: actions/upload-artifact@v4
-        if: always()
-        continue-on-error: true
         with:
           name: ${{ inputs.model }}-severe-${{ matrix.id }}
           path: wrf2_publish/
           retention-days: 1
-          if-no-files-found: warn
+          if-no-files-found: error
       - name: Diagnosticos
         if: failure()
         uses: actions/upload-artifact@v4
@@ -168,7 +167,7 @@ jobs:
         with:
           pattern: ${{ inputs.model }}-frames-*
           path: segments
-      - name: Unir e validar 48 horas horarias
+      - name: Unir e validar 48 horas horárias
         env:
           SOURCE_MODEL: ${{ inputs.model }}
           EXPECTED_INIT: ${{ needs.run-info.outputs.init_time }}
@@ -216,10 +215,9 @@ jobs:
           git push --force origin "HEAD:$PUBLISH_BRANCH"
 
   publish-severe:
-    continue-on-error: true
     name: Publicar WRF2 severo
     needs: [run-info, segments]
-    if: ${{ !cancelled() && needs.run-info.result == 'success' }}
+    if: ${{ !cancelled() && needs.run-info.result == 'success' && needs.segments.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     steps:
@@ -231,29 +229,37 @@ jobs:
         with:
           pattern: ${{ inputs.model }}-severe-*
           path: severe-segments
+          if-no-files-found: error
       - name: Consolidar WRF2
         env:
           SOURCE_MODEL: ${{ inputs.model }}
         run: |
-          set -u
-          mapfile -t roots < <(find severe-segments -type f -name metadata.json -printf '%h\n' 2>/dev/null | sort -u)
+          set -euo pipefail
+          mapfile -t roots < <(find severe-segments -type f -name metadata.json -printf '%h\n' | sort -u)
+          test "${#roots[@]}" -eq 8
           args=(); for root in "${roots[@]}"; do args+=(--input "$root"); done
-          python wrf/publish_wrf2_severe.py "${args[@]}" --output wrf2_publish --model "$SOURCE_MODEL" --temporal-resolution-minutes 180 || exit 0
+          python wrf/publish_wrf2_severe.py "${args[@]}" --output wrf2_publish --model "$SOURCE_MODEL" --temporal-resolution-minutes 180
           test -s wrf2_publish/metadata.json
+          python3 - <<'PY'
+          import json, os
+          p='wrf2_publish/metadata.json'
+          data=json.load(open(p, encoding='utf-8'))
+          assert str(data.get('model','')).lower()==os.environ['SOURCE_MODEL'].lower(), data
+          assert data.get('frameCount', 0) > 0, data
+          print('WRF2 VALIDADO:', data.get('model'), data.get('frameCount'), 'frames')
+          PY
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: ${{ inputs.model }}-wrf2-severe-published
           path: wrf2_publish/
           retention-days: 3
-          if-no-files-found: warn
+          if-no-files-found: error
       - name: Publicar branch WRF2
-        if: always()
         env:
           SOURCE_MODEL: ${{ inputs.model }}
         run: |
           set -euo pipefail
-          test -s wrf2_publish/metadata.json || exit 0
+          test -s wrf2_publish/metadata.json
           git config user.name "sideral-wrf-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           publish_branch="wrf2-${SOURCE_MODEL}-data"
