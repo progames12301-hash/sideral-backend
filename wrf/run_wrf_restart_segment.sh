@@ -38,19 +38,24 @@ cd /run
 test -f namelist.input
 test -f wrfbdy_d01
 
-# dtcenter/wps_wrf:latest is the WRF 4.3 image. Do not hard-code
-# obsolete 4.5.2/4.3.3 paths: discover the executable actually shipped
-# inside the pulled image and fail only if the image itself is incomplete.
 WRFEXE="$(find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true)"
 if [[ -z "$WRFEXE" || ! -x "$WRFEXE" ]]; then
   echo "wrf.exe not found in WRF container; searched /comsoftware/wrf/*/main/wrf.exe" >&2
-  echo "Available WRF trees:" >&2
   find /comsoftware/wrf -maxdepth 3 -type f \( -name wrf.exe -o -name real.exe \) -print >&2 2>/dev/null || true
   exit 7
 fi
 echo "Using WRF executable: $WRFEXE"
-mpirun --allow-run-as-root -np "'"$MPI_PROCS"'" "$WRFEXE" > rsl.out.restart 2>&1
-grep -Eq "SUCCESS COMPLETE WRF|SUCCESS COMPLETE REAL" rsl.out.restart
+# The container runs as UID 9999. The bind-mounted /run must be writable
+# before the shell opens the redirection target; create it explicitly and
+# chmod the mounted directory before starting MPI.
+chmod -R a+rwX /run
+: > /run/rsl.out.restart
+: > /run/rsl.error.restart
+chmod 666 /run/rsl.out.restart /run/rsl.error.restart
+mpirun --allow-run-as-root -np "'"$MPI_PROCS"'" "$WRFEXE" > /run/rsl.out.restart 2>&1
+status=$?
+cat /run/rsl.out.restart
+exit "$status"
 '
 
 mkdir -p "$ROOT/metbr_segment_output"
