@@ -3,7 +3,7 @@ name: WRF 7 km SUDESTE ECMWF - AUTOMATICO DIARIO
 on:
   workflow_dispatch:
   schedule:
-    - cron: '45 23 * * *'
+    - cron: '8 7 * * *'
   workflow_run:
     workflows: ["ECMWF IFS - PROXIMO DIA AUTOMATICO"]
     types: [completed]
