@@ -1,0 +1,227 @@
+name: WRF2 Sudeste 7 km - runner reutilizavel
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        required: true
+        type: string
+      source_data_branch:
+        required: true
+        type: string
+      run_script:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  WRF_HISTORY_INTERVAL_MINUTES: '60'
+  WRF_DX_METERS: '7000'
+  WRF_DY_METERS: '7000'
+  WRF_TIME_STEP: '42'
+
+jobs:
+  run-info:
+    runs-on: ubuntu-22.04
+    outputs:
+      run_date: ${{ steps.info.outputs.run_date }}
+      run_cycle: ${{ steps.info.outputs.run_cycle }}
+      init_time: ${{ steps.info.outputs.init_time }}
+    steps:
+      - id: info
+        env:
+          MODEL: ${{ inputs.model }}
+          SOURCE_BRANCH: ${{ inputs.source_data_branch }}
+          REPOSITORY: ${{ github.repository }}
+          CACHE_BUSTER: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt, json, os, urllib.request
+          from zoneinfo import ZoneInfo
+          model=os.environ['MODEL'].lower()
+          branch=os.environ['SOURCE_BRANCH']
+          url=f"https://raw.githubusercontent.com/{os.environ['REPOSITORY']}/{branch}/metadata.json?run={os.environ['CACHE_BUSTER']}"
+          req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'Sideral-WRF2-7km'})
+          with urllib.request.urlopen(req,timeout=30) as r: meta=json.load(r)
+          if str(meta.get('model')).lower()!=model: raise SystemExit(f"Modelo fonte incorreto: {meta.get('model')}")
+          date=str(meta['runDate']).replace('-','')
+          cycle=''.join(c for c in str(meta['runCycle']) if c.isdigit()).zfill(2)[:2]
+          if len(date)!=8 or cycle not in {'00','06','12','18'}: raise SystemExit('Rodada fonte invalida')
+          if 'initTime' not in meta: raise SystemExit('initTime ausente')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as o:
+              o.write(f'run_date={date}\nrun_cycle={cycle}\ninit_time={meta["initTime"]}\n')
+          print(f'{model.upper()} fonte validada: {meta["initTime"]}')
+          PY
+
+  segments:
+    name: ${{ inputs.model }} WRF2 Sudeste 7 km F${{ matrix.start }}-F${{ matrix.end }}
+    needs: run-info
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - {id: '000-009', start: 0, spinup_start: 0, end: 9}
+          - {id: '009-018', start: 9, spinup_start: 3, end: 18}
+          - {id: '018-027', start: 18, spinup_start: 12, end: 27}
+          - {id: '027-036', start: 27, spinup_start: 21, end: 36}
+          - {id: '036-045', start: 36, spinup_start: 30, end: 45}
+          - {id: '045-048', start: 45, spinup_start: 39, end: 48}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - name: Preparar runner
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools
+          docker pull dtcenter/wps_wrf:latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Dependencias
+        run: python -m pip install --disable-pip-version-check requests numpy xarray netCDF4 ecmwf-opendata
+      - name: Adaptar executor Sudeste para 7 km
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('wrf/run_wrf_with_source_sudeste.sh')
+          s=p.read_text(encoding='utf-8')
+          replacements={
+            'e_we              = 390,':'e_we              = 223,',
+            'e_sn              = 360,':'e_sn              = 206,',
+            'e_we = 390,':'e_we = 223,',
+            'e_sn = 360,':'e_sn = 206,',
+            'dx = 4000,':'dx = 7000,',
+            'dy = 4000,':'dy = 7000,',
+            'time_step = 24,':'time_step = 42,',
+          }
+          for old,new in replacements.items():
+            if old not in s: raise SystemExit(f'Padrao ausente: {old}')
+            s=s.replace(old,new)
+          p.write_text(s,encoding='utf-8')
+          PY
+          bash -n wrf/run_wrf_with_source_sudeste.sh
+      - name: Executar segmento WRF2
+        env:
+          FORCE_RUN_DATE: ${{ needs.run-info.outputs.run_date }}
+          FORCE_RUN_CYCLE: ${{ needs.run-info.outputs.run_cycle }}
+          SOURCE_MODEL: ${{ inputs.model }}
+          WRF_START_HOUR: ${{ matrix.spinup_start }}
+          WRF_END_HOUR: ${{ matrix.end }}
+          WRF_RUN_HOURS: ${{ matrix.end }}
+          WRF_NOMINAL_START_HOUR: ${{ matrix.start }}
+          WRF_SPINUP_HOURS: '6'
+          WRF_HISTORY_INTERVAL_MINUTES: '60'
+          WRF_DX_METERS: '7000'
+          WRF_DY_METERS: '7000'
+          WRF_TIME_STEP: '42'
+          WRF_E_WE: '223'
+          WRF_E_SN: '206'
+          WRF_REF_LAT: '-19.50'
+          WRF_REF_LON: '-46.50'
+          WRF_STAND_LON: '-46.50'
+          RUN_SCRIPT: ${{ inputs.run_script }}
+        run: |
+          set -euo pipefail
+          chmod +x "wrf/$RUN_SCRIPT"
+          "wrf/$RUN_SCRIPT"
+          test -s wrf_work/run/rsl.error.0000
+          grep -q 'SUCCESS COMPLETE WRF' wrf_work/run/rsl.error.0000
+      - name: Extrair WRF2 severo real
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+          SEGMENT_START: ${{ matrix.start }}
+          SEGMENT_END: ${{ matrix.end }}
+        run: |
+          set -euo pipefail
+          rm -rf wrf2_publish
+          python wrf/extract_wrf_severe.py --run-dir wrf_work/run --run-env wrf_diagnostics/run.env --output-dir wrf2_publish --grid-x 222 --grid-y 205 --model "$SOURCE_MODEL" --interval-hours 3 --expected-start "$SEGMENT_START" --expected-end "$SEGMENT_END"
+          test -s wrf2_publish/metadata.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wrf2-${{ inputs.model }}-severe-${{ matrix.id }}
+          path: wrf2_publish/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Diagnosticos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrf2-${{ inputs.model }}-diagnostics-${{ matrix.id }}
+          path: wrf_diagnostics/
+          retention-days: 3
+          if-no-files-found: warn
+
+  publish:
+    name: Publicar WRF2 Sudeste ${{ inputs.model }} 7 km
+    needs: [run-info, segments]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wrf2-${{ inputs.model }}-severe-*
+          path: severe-segments
+      - name: Consolidar WRF2 48h
+        env:
+          SOURCE_MODEL: ${{ inputs.model }}
+        run: |
+          set -euo pipefail
+          mapfile -t roots < <(find severe-segments -type f -name metadata.json -printf '%h\n' | sort -u)
+          test "${#roots[@]}" -eq 6
+          args=(); for root in "${roots[@]}"; do args+=(--input "$root"); done
+          python wrf/publish_wrf2_severe.py "${args[@]}" --output wrf2_publish --model "$SOURCE_MODEL" --temporal-resolution-minutes 180
+          test -s wrf2_publish/metadata.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('wrf2_publish/metadata.json')
+          d=json.loads(p.read_text())
+          d['resolutionKm']=7
+          d['gridX']=222
+          d['gridY']=205
+          d['domain']='sudeste'
+          d['forecastHours']=48
+          d['status']='complete'
+          p.write_text(json.dumps(d,ensure_ascii=False,indent=2))
+          assert d['resolutionKm']==7 and d['gridX']==222 and d['gridY']==205
+          PY
+      - name: Publicar branch WRF2
+        env:
+          MODEL: ${{ inputs.model }}
+        run: |
+          set -euxo pipefail
+          git config user.name 'sideral-wrf-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          branch="wrf2-${MODEL}-data"
+          target="/tmp/${branch}"
+          rm -rf "$target"
+          git worktree add --detach "$target"
+          cd "$target"
+          git checkout --orphan "${branch}-next"
+          git rm -rf . || true
+          git clean -fdx || true
+          cp -a "$GITHUB_WORKSPACE/wrf2_publish/." .
+          printf '# Sideral WRF2 Sudeste %s 7 km\nDiagnosticos severos derivados dos wrfout reais; grade nativa 7 km; 48 horas.\n' "${MODEL^^}" > README.md
+          git add .
+          git commit -m "${MODEL^^} WRF2 Sudeste 7 km 48h [skip render]"
+          git push --force origin "HEAD:${branch}"
