@@ -22,12 +22,17 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow run wrf-resolution-contract.yml --repo "$GITHUB_REPOSITORY" --ref main
-          echo "Contrato WRF disparado para validar resolução e saída horária."
+          gh workflow run validate-wrf-sudeste.yml --repo "$GITHUB_REPOSITORY" --ref main
 
       - name: Iniciar WRF Sul GFS 7 km
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run wrf-4km-next-day-auto.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Iniciar WRF Sul ICON 7 km
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run wrf-icon-4km-native.yml --repo "$GITHUB_REPOSITORY" --ref main
 
       - name: Iniciar WRF Sul ECMWF 7 km
         env:
@@ -49,6 +54,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run wrf-sudeste-ecmwf-4km.yml --repo "$GITHUB_REPOSITORY" --ref main
 
+      - name: Iniciar WRF2 Sudeste GFS 7 km
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run wrf2-sudeste-gfs-7km.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Iniciar WRF2 Sudeste ICON 7 km
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run wrf2-sudeste-icon-7km.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Iniciar WRF2 Sudeste ECMWF 7 km
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run wrf2-sudeste-ecmwf-7km.yml --repo "$GITHUB_REPOSITORY" --ref main
+
       - name: Iniciar METBR ICON 4 km
         env:
           GH_TOKEN: ${{ github.token }}
@@ -56,7 +76,7 @@ jobs:
 
       - name: Resumo
         run: |
-          echo 'WRF regionais: 7 km, saída horária, aproximadamente 40-48 h.'
+          echo 'WRF regionais: 7 km, saida horaria, aproximadamente 40 h.'
+          echo 'WRF2 Sudeste: 7 km, 48 h, diagnosticos severos derivados dos wrfout.'
           echo 'CIM: contrato separado em 8 km.'
           echo 'METBR: 4 km ICON, separado dos WRF regionais.'
-          echo 'Nenhum bootstrap antigo de 4 km regional será executado.'
