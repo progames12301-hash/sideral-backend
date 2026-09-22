@@ -35,10 +35,20 @@ PY
 docker run --rm -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -v "$WORK/run:/run" "$IMAGE" /bin/bash -lc '
 set -euo pipefail
 cd /run
-test -f namelist.input; test -f wrfbdy_d01
-WRFEXE=/comsoftware/wrf/WRF-4.5.2/main/wrf.exe
-test -x "$WRFEXE" || WRFEXE=/comsoftware/wrf/WRF-4.3.3/main/wrf.exe
-test -x "$WRFEXE" || { echo "wrf.exe not found in WRF container" >&2; exit 7; }
+test -f namelist.input
+test -f wrfbdy_d01
+
+# dtcenter/wps_wrf:latest is the WRF 4.3 image. Do not hard-code
+# obsolete 4.5.2/4.3.3 paths: discover the executable actually shipped
+# inside the pulled image and fail only if the image itself is incomplete.
+WRFEXE="$(find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true)"
+if [[ -z "$WRFEXE" || ! -x "$WRFEXE" ]]; then
+  echo "wrf.exe not found in WRF container; searched /comsoftware/wrf/*/main/wrf.exe" >&2
+  echo "Available WRF trees:" >&2
+  find /comsoftware/wrf -maxdepth 3 -type f \( -name wrf.exe -o -name real.exe \) -print >&2 2>/dev/null || true
+  exit 7
+fi
+echo "Using WRF executable: $WRFEXE"
 mpirun --allow-run-as-root -np "'"$MPI_PROCS"'" "$WRFEXE" > rsl.out.restart 2>&1
 grep -Eq "SUCCESS COMPLETE WRF|SUCCESS COMPLETE REAL" rsl.out.restart
 '
