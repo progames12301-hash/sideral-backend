@@ -16,6 +16,10 @@ if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOU
   echo "Start/end precisam ser multiplos de 3 h entre F000 e F042" >&2
   exit 1
 fi
+case "$COLD_START" in
+  0|1) ;;
+  *) echo "COLD_START invalido: use 1 no F000 e 0 nos segmentos de continuacao" >&2; exit 1 ;;
+esac
 
 if ! command -v grib_set >/dev/null 2>&1; then
   sudo apt-get update -qq
