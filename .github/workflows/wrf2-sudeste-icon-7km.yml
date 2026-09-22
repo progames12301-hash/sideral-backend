@@ -1,0 +1,26 @@
+name: WRF2 7 km SUDESTE ICON - AUTOMATICO DIARIO
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 1 * * *'
+  workflow_run:
+    workflows: ["ICON Global - PROXIMO DIA AUTOMATICO"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-wrf2-sudeste-icon-7km
+  cancel-in-progress: false
+
+jobs:
+  wrf2:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    uses: ./.github/workflows/wrf2-sudeste-7km-reusable.yml
+    with:
+      model: icon
+      source_data_branch: icon-data
+      run_script: run_icon_wrf_sudeste.sh
+    secrets: inherit
