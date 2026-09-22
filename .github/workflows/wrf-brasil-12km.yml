@@ -18,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sideral-wrf-brasil-12km-daily
+  group: sideral-wrf-brasil-21km-daily
   cancel-in-progress: false
 
 env:
@@ -28,13 +28,14 @@ env:
   WRF_DY_METERS: '21000'
   WRF_EXPECTED_RESOLUTION_KM: '21'
   WRF_EXPECTED_DX_METERS: '21000'
+  WRF_EXPECTED_DY_METERS: '21000'
   WRF_HISTORY_INTERVAL_MINUTES: '60'
   WRF_START_HOUR: '0'
   WRF_END_HOUR: '48'
   WRF_RUN_HOURS: '48'
   WRF_TIME_STEP: '90'
-  WRF_E_WE: '216'
-  WRF_E_SN: '216'
+  WRF_E_WE: '215'
+  WRF_E_SN: '215'
   WRF_GRID_X: '215'
   WRF_GRID_Y: '215'
 
@@ -126,7 +127,7 @@ jobs:
               output.write(f'run_date={run_date}\n')
               output.write(f'run_cycle={run_cycle}\n')
               output.write(f'init_time={init_time}\n')
-          print(f'GFS selecionado: {run_date} {run_cycle}Z; Brasil 21 km F000-F048 horario')
+          print(f'GFS selecionado: {run_date} {run_cycle}Z; Brasil 21 km F000-F048 horario; grade 215x215')
           PY
 
       - name: Executar WRF Brasil 21 km em um unico runner
@@ -137,32 +138,50 @@ jobs:
           WRF_REF_LAT: '-14.50'
           WRF_REF_LON: '-54.00'
           WRF_STAND_LON: '-54.00'
+          WRF_E_WE: '215'
+          WRF_E_SN: '215'
+          WRF_GRID_X: '215'
+          WRF_GRID_Y: '215'
+          WRF_HISTORY_INTERVAL_MINUTES: '60'
+          WRF_TARGET_RESOLUTION_KM: '21'
+          WRF_DX_METERS: '21000'
+          WRF_DY_METERS: '21000'
+          WRF_TIME_STEP: '90'
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x wrf/run_gfs_segment.sh
+          chmod +x wrf/run_gfs_segment.sh wrf/run_gfs_test.sh
           wrf/run_gfs_segment.sh
           grep -q 'SUCCESS COMPLETE WRF' wrf_work/run/rsl.error.0000
           echo 'SUCCESS COMPLETE WRF confirmado para Brasil 21 km.'
+          mapfile -t OUTS < <(find wrf_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print | sort)
+          test "${#OUTS[@]}" -eq 49 || { echo "ERRO: esperado 49 wrfout horários F000-F048; recebido ${#OUTS[@]}" >&2; printf '%s\n' "${OUTS[@]}" >&2; exit 50; }
+          printf '%s\n' "${OUTS[@]}" > wrf_work/hourly-wrfout-files.txt
           ls -lh wrf_work/run/wrfout_d01_* | tail -10
           df -h
 
       - name: Extrair JSON nativo Brasil 21 km
+        shell: bash
         run: |
           set -euo pipefail
           rm -rf wrf_publish
           mkdir -p wrf_publish wrf_diagnostics
+          test "$(find wrf_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)" -eq 49
           python wrf/extract_wrf_json.py \
             --run-dir wrf_work/run \
             --output-dir wrf_publish \
             --grid-x 215 \
             --grid-y 215
+          test -s wrf_publish/wrf_brasil_21km.json
           test -s wrf_publish/metadata.json
-          echo 'Extracao nativa concluida.'
+          echo 'Extracao nativa Brasil 21 km concluida: JSON + metadata presentes.'
 
       - name: Validar 49 frames nativos Brasil 21 km
+        shell: bash
         run: |
           set -euo pipefail
+          test -s wrf_publish/wrf_brasil_21km.json
+          test -s wrf_publish/metadata.json
           python wrf/validate_wrf_publication.py \
             --json wrf_publish/wrf_brasil_21km.json \
             --metadata wrf_publish/metadata.json \
@@ -193,10 +212,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wrf-brasil-12km-diagnostics-${{ github.run_id }}
+          name: wrf-brasil-21km-diagnostics-${{ github.run_id }}
           path: |
             wrf_work/run/rsl.error.*
             wrf_work/run/rsl.out.*
+            wrf_work/hourly-wrfout-files.txt
             wrf_diagnostics/**
             wrf_publish/**
           if-no-files-found: ignore
