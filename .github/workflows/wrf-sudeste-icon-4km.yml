@@ -3,7 +3,10 @@ name: WRF 7 km SUDESTE ICON - AUTOMATICO DIARIO
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 7 * * *'
+    - cron: '30 0 * * *'
+  workflow_run:
+    workflows: ["ICON Global - PROXIMO DIA AUTOMATICO"]
+    types: [completed]
 
 permissions:
   contents: write
@@ -14,6 +17,7 @@ concurrency:
 
 jobs:
   wrf:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: icon
