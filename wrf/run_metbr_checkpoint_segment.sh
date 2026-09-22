@@ -45,6 +45,7 @@ if [[ "$COLD_START" == "0" ]]; then
   rm -rf "$INPUT"/*
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-run.env' --dir . --clobber
   source metbr-run.env
+  [[ -n "${RUN_DATE:-}" && -n "${RUN_CYCLE:-}" ]] || { echo "Checkpoint sem RUN_DATE/RUN_CYCLE" >&2; exit 24; }
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "metbr-restart-${START_HOUR}-*" --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-040-*' --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-namelist.input' --dir "$INPUT" --clobber
@@ -72,9 +73,14 @@ PY
   gh release upload "$CHECKPOINT_TAG" metbr-run.env --repo "$GITHUB_REPOSITORY" --clobber
 fi
 
-export FORCE_RUN_DATE="${RUN_DATE:-}" FORCE_RUN_CYCLE="${RUN_CYCLE:-}"
-# Every segment uses this wrapper. Ensure the full executable chain is restored
-# after checkout, including the restart helper called by run_metbr_icon_wrf.sh.
+# source does not export variables by itself. Explicitly export the ICON
+# initialization timestamp so every wrapper/restart subprocess receives it.
+export RUN_DATE RUN_CYCLE
+[[ "$RUN_DATE" =~ ^[0-9]{8}$ ]] || { echo "RUN_DATE invalido antes do WRF: ${RUN_DATE:-}" >&2; exit 25; }
+[[ "$RUN_CYCLE" =~ ^(00|06|12|18)$ ]] || { echo "RUN_CYCLE invalido antes do WRF: ${RUN_CYCLE:-}" >&2; exit 26; }
+export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
+
+echo "METBR ICON initialization: ${RUN_DATE} ${RUN_CYCLE}Z"
 chmod +x wrf/run_metbr_icon_wrf.sh wrf/run_wrf_restart_segment.sh
 bash wrf/run_metbr_icon_wrf.sh
 
