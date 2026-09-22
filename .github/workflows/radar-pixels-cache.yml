@@ -14,6 +14,9 @@ on:
 permissions:
   contents: write
 
+env:
+  REDEMET_API_KEY: ${{ secrets.REDEMET_API_KEY }}
+
 concurrency:
   group: sideral-radar-pixels
   cancel-in-progress: true
@@ -39,12 +42,32 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy pillow requests
 
-      - name: Gerar PNGs polares
+      - name: Validar credencial REDEMET
+        run: |
+          set -euo pipefail
+          if [ -z "${REDEMET_API_KEY:-}" ]; then
+            echo "REDEMET_API_KEY não configurada nos Secrets do GitHub." >&2
+            echo "A API oficial de radar da REDEMET exige autenticação." >&2
+            exit 20
+          fi
+
+      - name: Gerar PNGs polares oficiais
         run: |
           set -euxo pipefail
           rm -rf radar-cache
           python .github/scripts/build_radar_pixels.py --output radar-cache
           test -s radar-cache/manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('radar-cache/manifest.json').read_text(encoding='utf-8'))
+          frames=data.get('frames') or []
+          items=[item for frame in frames for item in (frame.get('items') or [])]
+          if not items:
+              raise SystemExit('A REDEMET respondeu sem nenhuma imagem de radar utilizável.')
+          print('Imagens REDEMET obtidas:', len(items))
+          print('Quadros:', len(frames))
+          PY
 
       - name: Publicar no ramo radar-pixels
         run: |
@@ -60,8 +83,9 @@ jobs:
           cp -a "$GITHUB_WORKSPACE/radar-cache/." .
           cat > README.md <<'EOF'
           # Sideral radar pixels
-          Cache dos PNGs polares oficiais da REDEMET/DECEA.
-          Este ramo é rotacionado automaticamente e contém somente os últimos quadros.
+          Cache dos PNGs oficiais da REDEMET/DECEA.
+          Os arquivos são obtidos da API oficial autenticada da REDEMET e somente
+          são publicados quando há imagens reais e metadados de georreferenciamento.
           EOF
           git add .
           git commit -m "Atualiza cache de pixels REDEMET"
@@ -79,9 +103,9 @@ jobs:
           data=json.loads(Path('/tmp/radar-manifest.json').read_text(encoding='utf-8'))
           assert data.get('schema') == 'sideral-radar-pixel-cache-v1'
           assert data.get('product') == '03km'
-          assert data.get('frames')
-          assert any(frame.get('items') for frame in data['frames'])
-          print('Manifesto publicado:', len(data['frames']), 'quadros')
+          frames=data.get('frames') or []
+          assert frames and any(frame.get('items') for frame in frames)
+          print('Manifesto publicado:', len(frames), 'quadros')
           PY
               exit 0
             fi
