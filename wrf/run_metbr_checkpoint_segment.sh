@@ -73,7 +73,9 @@ PY
 fi
 
 export FORCE_RUN_DATE="${RUN_DATE:-}" FORCE_RUN_CYCLE="${RUN_CYCLE:-}"
-chmod +x wrf/run_metbr_icon_wrf.sh
+# Every segment uses this wrapper. Ensure the full executable chain is restored
+# after checkout, including the restart helper called by run_metbr_icon_wrf.sh.
+chmod +x wrf/run_metbr_icon_wrf.sh wrf/run_wrf_restart_segment.sh
 bash wrf/run_metbr_icon_wrf.sh
 
 if [[ "$COLD_START" == "1" ]]; then
