@@ -6,10 +6,26 @@ from .server import Store, handler_for
 _handler=None
 _lock=threading.Lock()
 
+
+def _radar_origins():
+    """Return the Sideral frontend origins allowed to consume radar data."""
+    configured = os.environ.get('RADAR_V3_ORIGINS')
+    if configured:
+        return configured
+    return ','.join((
+        'https://sideralmeteorologiabrasil.web.app',
+        'https://sideral-meteorologia.pages.dev',
+    ))
+
+
 def dispatch(request):
     global _handler
     with _lock:
         if _handler is None:
+            # Keep the radar API usable by both the existing Firebase frontend
+            # and the current Cloudflare Pages deployment. A deployment can
+            # override this list with RADAR_V3_ORIGINS without changing code.
+            os.environ.setdefault('RADAR_V3_ORIGINS', _radar_origins())
             store=Store(os.environ.get('RADAR_V3_INPUT','radar_v3_data'),os.environ.get('RADAR_V3_CACHE','radar_v3_cache'),cptec=True)
             _handler=handler_for(store)
             feeds=os.environ.get('RADAR_V3_FEEDS')
