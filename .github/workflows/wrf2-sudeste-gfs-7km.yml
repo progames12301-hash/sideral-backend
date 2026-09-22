@@ -1,0 +1,22 @@
+name: WRF2 7 km SUDESTE GFS - AUTOMATICO DIARIO
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 4 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-wrf2-sudeste-gfs-7km
+  cancel-in-progress: false
+
+jobs:
+  wrf2:
+    uses: ./.github/workflows/wrf2-sudeste-7km-reusable.yml
+    with:
+      model: gfs
+      source_data_branch: gfs-model-data
+      run_script: run_gfs_segment_sudeste.sh
+    secrets: inherit
