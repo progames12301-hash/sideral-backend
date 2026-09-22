@@ -8,6 +8,7 @@ permissions:
 
 env:
   CHECKPOINT_PREFIX: metbr-wrf-4km-checkpoint
+  WRF_MPI_PROCS: 8
 
 jobs:
   seg00:
@@ -24,7 +25,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 0 3 0 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 0 3 0 1
 
   seg01:
     name: METBR ICON F003-F006
@@ -41,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 3 6 1 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 3 6 1 0
 
   seg02:
     name: METBR ICON F006-F009
@@ -58,7 +59,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 6 9 2 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 6 9 2 0
 
   seg03:
     name: METBR ICON F009-F012
@@ -75,7 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 9 12 3 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 9 12 3 0
 
   seg04:
     name: METBR ICON F012-F015
@@ -92,7 +93,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 12 15 4 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 12 15 4 0
 
   seg05:
     name: METBR ICON F015-F018
@@ -109,7 +110,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 15 18 5 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 15 18 5 0
 
   seg06:
     name: METBR ICON F018-F021
@@ -126,7 +127,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 18 21 6 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 18 21 6 0
 
   seg07:
     name: METBR ICON F021-F024
@@ -143,7 +144,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 21 24 7 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 21 24 7 0
 
   seg08:
     name: METBR ICON F024-F027
@@ -160,7 +161,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 24 27 8 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 24 27 8 0
 
   seg09:
     name: METBR ICON F027-F030
@@ -177,7 +178,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 27 30 9 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 27 30 9 0
 
   seg10:
     name: METBR ICON F030-F033
@@ -194,7 +195,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 30 33 10 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 30 33 10 0
 
   seg11:
     name: METBR ICON F033-F036
@@ -211,7 +212,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 33 36 11 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 33 36 11 0
 
   seg12:
     name: METBR ICON F036-F039
@@ -228,7 +229,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 36 39 12 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 36 39 12 0
 
   seg13:
     name: METBR ICON F039-F042
@@ -245,4 +246,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
-        run: bash wrf/run_metbr_checkpoint_segment.sh 39 42 13 14
+        run: bash wrf/run_metbr_checkpoint_segment.sh 39 42 13 0
