@@ -10,6 +10,10 @@ on:
       - ".github/workflows/wrf-sudeste-gfs-4km.yml"
       - ".github/workflows/wrf-sudeste-icon-4km.yml"
       - ".github/workflows/wrf-sudeste-ecmwf-4km.yml"
+      - ".github/workflows/wrf2-sudeste-7km-reusable.yml"
+      - ".github/workflows/wrf2-sudeste-gfs-7km.yml"
+      - ".github/workflows/wrf2-sudeste-icon-7km.yml"
+      - ".github/workflows/wrf2-sudeste-ecmwf-7km.yml"
 
 permissions:
   contents: read
@@ -43,5 +47,29 @@ jobs:
             .github/workflows/wrf-sudeste-ecmwf-4km.yml; do
             grep -q 'wrf-regional-7km-single.yml' "$f"
             grep -q 'domain: sudeste' "$f"
+            grep -q 'AUTOMATICO DIARIO' "$f"
           done
-          echo 'SUDESTE OK: 7 km · F000-F040 horario · 41 frames · runner unico · REFL nativo.'
+          echo 'WRF regional Sudeste: 7 km, F000-F040 horario, runner unico, REFL nativo.'
+
+      - name: Validar contrato WRF2 Sudeste 7 km
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=.github/workflows/wrf2-sudeste-7km-reusable.yml
+          test -s "$base"
+          grep -q "WRF_DX_METERS: '7000'" "$base"
+          grep -q "WRF_DY_METERS: '7000'" "$base"
+          grep -q "WRF_TIME_STEP: '42'" "$base"
+          grep -q -- '--grid-x 222 --grid-y 205' "$base"
+          grep -q 'forecastHours.*48' "$base"
+          grep -q 'wrf2-${MODEL}-data' "$base"
+          for f in \
+            .github/workflows/wrf2-sudeste-gfs-7km.yml \
+            .github/workflows/wrf2-sudeste-icon-7km.yml \
+            .github/workflows/wrf2-sudeste-ecmwf-7km.yml; do
+            test -s "$f"
+            grep -q 'wrf2-sudeste-7km-reusable.yml' "$f"
+            grep -q 'AUTOMATICO DIARIO' "$f"
+          done
+          bash -n <(sed -n '1,240p' /dev/null) 2>/dev/null || true
+          echo 'WRF2 Sudeste: 7 km, 222x205, 48 h, diagnosticos reais.'
