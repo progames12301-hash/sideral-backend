@@ -10,13 +10,12 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 # Open-Meteo is the ONLY upstream used by this provider.
-# The ECMWF API exposes pressure-level IFS 0.25° fields through Open-Meteo.
-# No direct ECMWF OpenData/eccodes retrieval is used here.
+# Pressure-level IFS 0.25° fields are requested from Open-Meteo's ECMWF API.
+# No direct ECMWF OpenData/eccodes retrieval is used by the Skew-T provider.
 
 PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 50]
 USER_AGENT = "SideralMeteorologia/2.0 (ECMWF Skew-T via Open-Meteo)"
-LIVE_URL = "https://api.open-meteo.com/v1/ecmwf"
-SINGLE_RUN_URL = "https://single-runs-api.open-meteo.com/v1/forecast"
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/ecmwf"
 
 
 def finite(value):
@@ -27,8 +26,8 @@ def finite(value):
         return None
 
 
-def get_json(url: str, params: dict, retries: int = 4) -> dict:
-    full = url + "?" + urlencode(params, doseq=True)
+def get_json(params: dict, retries: int = 4) -> dict:
+    full = OPEN_METEO_URL + "?" + urlencode(params, doseq=True)
     last = None
     for attempt in range(retries):
         try:
@@ -47,28 +46,6 @@ def get_json(url: str, params: dict, retries: int = 4) -> dict:
     raise RuntimeError(f"Open-Meteo indisponível: {last}")
 
 
-def latest_cycle(now: dt.datetime) -> dt.datetime:
-    """Latest ECMWF global cycle with normal dissemination margin."""
-    now = now.replace(minute=0, second=0, microsecond=0)
-    # ECMWF global cycles are 00/06/12/18 UTC. Leave a conservative
-    # 5-hour margin because the run must be processed before Single Runs
-    # makes it available.
-    candidate = now - dt.timedelta(hours=5)
-    hour = (candidate.hour // 6) * 6
-    return candidate.replace(hour=hour)
-
-
-def requested_run(cycle: str | None) -> dt.datetime | None:
-    if not cycle:
-        return None
-    hour = int(cycle)
-    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
-    run = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-    if run > now:
-        run -= dt.timedelta(days=1)
-    return run
-
-
 def build_hourly_variables():
     names = ["temperature_2m", "dewpoint_2m", "surface_pressure", "wind_speed_10m", "wind_direction_10m"]
     for lev in PRESSURE_LEVELS:
@@ -82,17 +59,19 @@ def build_hourly_variables():
     return ",".join(names)
 
 
+def parse_time(raw: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+
+
 def nearest_index(times: list[str], valid: dt.datetime) -> int:
     if not times:
         raise RuntimeError("Open-Meteo não retornou horários")
-    best_i = 0
-    best_d = None
+    best_i, best_d = 0, None
     for i, raw in enumerate(times):
         try:
-            t = dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+            d = abs((parse_time(raw) - valid).total_seconds())
         except ValueError:
             continue
-        d = abs((t - valid).total_seconds())
         if best_d is None or d < best_d:
             best_i, best_d = i, d
     if best_d is None or best_d > 90 * 60:
@@ -105,60 +84,38 @@ def wind_uv(speed_kmh, direction_deg):
     direction = finite(direction_deg)
     if speed is None or direction is None:
         return None, None
-    # Meteorological direction: direction FROM which the wind blows.
-    # U/V here are the vector components TOWARD east/north.
     speed_ms = speed / 3.6
     rad = math.radians(direction)
+    # Meteorological direction is FROM; U/V are vector components TOWARD east/north.
     return -speed_ms * math.sin(rad), -speed_ms * math.cos(rad)
 
 
-def make_request(lat: float, lon: float, fh: int, cycle: str | None):
-    hourly = build_hourly_variables()
-    run = requested_run(cycle)
-
-    if run is not None:
-        params = {
-            "latitude": lat,
-            "longitude": lon,
-            "hourly": hourly,
-            "temperature_unit": "celsius",
-            "wind_speed_unit": "kmh",
-            "timeformat": "iso8601",
-            "forecast_days": 10,
-            "run": run.strftime("%Y-%m-%dT%H:%M"),
-        }
-        return get_json(SINGLE_RUN_URL, params), run
-
-    # Live Open-Meteo ECMWF endpoint. It always represents the latest
-    # available forecast; do not substitute another provider/model.
+def fetch_open_meteo(lat: float, lon: float):
     params = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": hourly,
+        "hourly": build_hourly_variables(),
         "temperature_unit": "celsius",
         "wind_speed_unit": "kmh",
         "timeformat": "iso8601",
         "forecast_days": 15,
+        "cell_selection": "nearest",
     }
-    return get_json(LIVE_URL, params), None
+    return get_json(params)
 
 
-def extract(payload: dict, lat: float, lon: float, fh: int, requested: dt.datetime | None):
+def extract(payload: dict, fh: int):
     hourly = payload.get("hourly") or {}
     times = hourly.get("time") or []
-    if requested is not None:
-        valid_target = requested + dt.timedelta(hours=fh)
-    else:
-        # Live forecast time starts at today's 00 UTC. For the browser product
-        # forecast hour is therefore the lead from that available time axis.
-        valid_target = dt.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) + dt.timedelta(hours=fh)
+    # The live Open-Meteo ECMWF endpoint exposes the latest continuously updated
+    # forecast. F000 is the first available forecast hour on its time axis.
+    first = parse_time(times[0])
+    valid_target = first + dt.timedelta(hours=fh)
     i = nearest_index(times, valid_target)
 
     def value(name):
         arr = hourly.get(name)
-        if not isinstance(arr, list) or i >= len(arr):
-            return None
-        return finite(arr[i])
+        return finite(arr[i]) if isinstance(arr, list) and i < len(arr) else None
 
     rows = []
     sp = value("surface_pressure")
@@ -194,9 +151,8 @@ def extract(payload: dict, lat: float, lon: float, fh: int, requested: dt.dateti
         u, v = wind_uv(speed, direction)
         if u is None or v is None:
             continue
-        # Open-Meteo provides RH at each pressure level. Dew point is derived
-        # here using the Magnus relation, preserving the ECMWF pressure-level T/RH.
         rh = max(0.1, min(100.0, rh))
+        # Magnus relation: dew point from the ECMWF pressure-level T/RH supplied by Open-Meteo.
         a, b = 17.625, 243.04
         gamma = math.log(rh / 100.0) + a * temp / (b + temp)
         dew = b * gamma / (a - gamma)
@@ -214,9 +170,7 @@ def extract(payload: dict, lat: float, lon: float, fh: int, requested: dt.dateti
     rows.sort(key=lambda r: r["pressure_hpa"], reverse=True)
     if len(rows) < 6:
         raise RuntimeError(f"Perfil ECMWF/Open-Meteo insuficiente: {len(rows)} níveis")
-
-    valid = dt.datetime.fromisoformat(times[i].replace("Z", "+00:00"))
-    return rows, valid
+    return rows, parse_time(times[i])
 
 
 def main():
@@ -224,6 +178,9 @@ def main():
     ap.add_argument("--lat", type=float, required=True)
     ap.add_argument("--lon", type=float, required=True)
     ap.add_argument("--fh", "--forecast-hour", type=int, default=0)
+    # Kept only for frontend/backward compatibility. Open-Meteo's live ECMWF
+    # endpoint determines the latest available run itself; we never substitute
+    # another source merely to honor a cycle selector.
     ap.add_argument("--cycle", choices=["00", "06", "12", "18"])
     ap.add_argument("--cache", default="/tmp/sideral-skewt-profile")
     args = ap.parse_args()
@@ -235,17 +192,8 @@ def main():
     if args.fh % 3:
         raise SystemExit("forecast_hour deve ser múltiplo de 3")
 
-    requested = requested_run(args.cycle)
-    payload, _ = make_request(args.lat, args.lon, args.fh, args.cycle)
-    rows, valid = extract(payload, args.lat, args.lon, args.fh, requested)
-
-    run_dt = requested
-    if run_dt is None:
-        # Open-Meteo's live endpoint does not expose a model-run timestamp as a
-        # separate field. Keep this explicitly marked instead of fabricating it.
-        run_label = "latest-open-meteo"
-    else:
-        run_label = run_dt.strftime("%Y-%m-%d %HZ")
+    payload = fetch_open_meteo(args.lat, args.lon)
+    rows, valid = extract(payload, args.fh)
 
     root = Path(args.cache)
     root.mkdir(parents=True, exist_ok=True)
@@ -253,8 +201,9 @@ def main():
     out = root / tag
     out.mkdir(parents=True, exist_ok=True)
     payload_path = out / "profile.json"
+
     result = {
-        "schema": "sideral-skewt-openmeteo-ecmwf-v2",
+        "schema": "sideral-skewt-openmeteo-ecmwf-v3",
         "provider": "Open-Meteo",
         "provider_url": "https://open-meteo.com/",
         "model": "ECMWF IFS 0.25°",
@@ -265,7 +214,7 @@ def main():
         "longitude": args.lon,
         "forecast_hour": args.fh,
         "cycle_requested": args.cycle,
-        "run_utc": run_label,
+        "run_utc": "latest-open-meteo",
         "valid_utc": valid.strftime("%Y-%m-%d %H:%MZ"),
         "source": "Open-Meteo ECMWF API",
         "profile": rows,
