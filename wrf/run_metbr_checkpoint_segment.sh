@@ -32,6 +32,12 @@ done
 grib_set_check="$(grib_set -V 2>&1 | head -1)"
 echo "ecCodes OK: $grib_set_check"
 
+# GitHub pode preservar o checkout sem o bit executável dos scripts.
+# Corrija a cadeia inteira antes de QUALQUER segmento, não apenas o F000.
+chmod +x wrf/run_metbr_checkpoint_segment.sh
+chmod +x wrf/run_metbr_icon_wrf.sh
+chmod +x wrf/run_wrf_restart_segment.sh
+
 export WRF_TARGET_RESOLUTION_KM=4 WRF_DX_METERS=4000 WRF_DY_METERS=4000
 export WRF_E_WE=300 WRF_E_SN=360 WRF_HISTORY_INTERVAL_MINUTES=60
 export WRF_RUN_HOURS=$((END_HOUR-START_HOUR)) WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
@@ -73,7 +79,8 @@ PY
 fi
 
 export FORCE_RUN_DATE="${RUN_DATE:-}" FORCE_RUN_CYCLE="${RUN_CYCLE:-}"
-chmod +x wrf/run_metbr_icon_wrf.sh
+# Reforce a permissão imediatamente antes da execução também.
+chmod +x wrf/run_metbr_icon_wrf.sh wrf/run_wrf_restart_segment.sh
 bash wrf/run_metbr_icon_wrf.sh
 
 if [[ "$COLD_START" == "1" ]]; then
