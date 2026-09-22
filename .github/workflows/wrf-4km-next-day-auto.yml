@@ -12,7 +12,8 @@ on:
         required: false
         type: string
   schedule:
-    - cron: '20 0 * * *'
+    # Fallback diário em horário seguro para que F042 da rodada escolhida já exista.
+    - cron: '30 6 * * *'
 
 permissions:
   contents: write
