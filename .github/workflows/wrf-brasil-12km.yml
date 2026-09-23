@@ -34,8 +34,9 @@ env:
   WRF_END_HOUR: '48'
   WRF_RUN_HOURS: '48'
   WRF_TIME_STEP: '90'
-  WRF_E_WE: '215'
-  WRF_E_SN: '215'
+  # WRF usa e_we/e_sn com pontos de grade escalonados; a grade de massa publicada e 215x215.
+  WRF_E_WE: '216'
+  WRF_E_SN: '216'
   WRF_GRID_X: '215'
   WRF_GRID_Y: '215'
 
@@ -127,7 +128,7 @@ jobs:
               output.write(f'run_date={run_date}\n')
               output.write(f'run_cycle={run_cycle}\n')
               output.write(f'init_time={init_time}\n')
-          print(f'GFS selecionado: {run_date} {run_cycle}Z; Brasil 21 km F000-F048 horario; grade 215x215')
+          print(f'GFS selecionado: {run_date} {run_cycle}Z; Brasil 21 km F000-F048 horario; grade de massa 215x215; e_we/e_sn 216x216')
           PY
 
       - name: Executar WRF Brasil 21 km em um unico runner
@@ -135,12 +136,11 @@ jobs:
           FORCE_RUN_DATE: ${{ steps.run.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ steps.run.outputs.run_cycle }}
           WRF_COLD_START: '1'
-          # Domínio nacional: 215x215 em 21 km, centrado para cobrir o Brasil continental.
           WRF_REF_LAT: '-13.50'
           WRF_REF_LON: '-54.00'
           WRF_STAND_LON: '-54.00'
-          WRF_E_WE: '215'
-          WRF_E_SN: '215'
+          WRF_E_WE: '216'
+          WRF_E_SN: '216'
           WRF_GRID_X: '215'
           WRF_GRID_Y: '215'
           WRF_HISTORY_INTERVAL_MINUTES: '60'
@@ -156,9 +156,11 @@ jobs:
           test "${WRF_END_HOUR}" = '48'
           test "${WRF_DX_METERS}" = '21000'
           test "${WRF_DY_METERS}" = '21000'
-          test "${WRF_E_WE}" = '215'
-          test "${WRF_E_SN}" = '215'
-          echo 'Contrato Brasil 21 km: domínio nacional, cold-start F000-F048, 215x215, 21 km; nenhum restart segmentado.'
+          test "${WRF_E_WE}" = '216'
+          test "${WRF_E_SN}" = '216'
+          test "${WRF_GRID_X}" = '215'
+          test "${WRF_GRID_Y}" = '215'
+          echo 'Contrato Brasil 21 km: cold-start F000-F048, massa 215x215, e_we/e_sn 216x216, 21 km; nenhum restart segmentado.'
           chmod +x wrf/run_gfs_segment.sh wrf/run_gfs_test.sh
           wrf/run_gfs_segment.sh
           grep -q 'SUCCESS COMPLETE WRF' wrf_work/run/rsl.error.0000
