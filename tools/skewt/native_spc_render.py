@@ -8,7 +8,11 @@ from numbers import Real
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor, QPainter
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QFrame, QActionGroup
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
+    QAbstractItemView, QActionGroup
+)
 from sharppy.sharptab.prof_collection import ProfCollection
 from sharppy.viz import skew as _sharppy_skew
 from sharppy.viz.skew import plotSkewT
@@ -35,7 +39,6 @@ def _compat_qfont(*args, **kwargs):
 _sharppy_skew.QtGui.QFont = _compat_qfont
 
 _original_action_group = QActionGroup
-
 class _CompatActionGroup(_original_action_group):
     def __init__(self, parent=None, *args, **kwargs):
         exclusive = kwargs.pop('exclusive', None)
@@ -72,12 +75,6 @@ QPainter.drawText = _draw_text
 
 
 def _select_parcel(prof):
-    """Choose a valid SHARPpy parcel for the native renderer.
-
-    SHARPpy's plotData() expects widget.pcl to be populated before
-    setActiveCollection() triggers the first draw. Prefer MU, then ML, then
-    surface based so a missing most-unstable parcel does not abort the run.
-    """
     for attr in ('mupcl', 'mlpcl', 'sfcpcl'):
         pcl = getattr(prof, attr, None)
         if pcl is not None:
@@ -94,74 +91,17 @@ def activate(widget, pc, parcel=None):
     widget.setActiveCollection(0, update_gui=True)
 
 
-def _fmt(value, digits=1, suffix=''):
+def _num(value, digits=0, suffix='--'):
     try:
         import numpy as np
-        if np.ma.is_masked(value):
-            return '--'
+        if value is None or np.ma.is_masked(value):
+            return suffix
         value = float(value)
         if not np.isfinite(value):
-            return '--'
-        return f'{value:.{digits}f}{suffix}'
+            return suffix
+        return f'{value:.{digits}f}'
     except Exception:
-        return '--'
-
-
-def _parcel_rows(prof):
-    rows = []
-    for name, pcl in [('SFC', getattr(prof, 'sfcpcl', None)), ('ML', getattr(prof, 'mlpcl', None)), ('MU', getattr(prof, 'mupcl', None))]:
-        if pcl is None:
-            continue
-        rows.append((name,
-                     f'CAPE {_fmt(getattr(pcl, "bplus", None), 0)} J/kg',
-                     f'CIN {_fmt(getattr(pcl, "bminus", None), 0)} J/kg',
-                     f'LCL {_fmt(getattr(pcl, "lclhght", None), 0)} m',
-                     f'LFC {_fmt(getattr(pcl, "lfchght", None), 0)} m',
-                     f'EL {_fmt(getattr(pcl, "elhght", None), 0)} m'))
-    return rows
-
-
-def _metric_label(text, strong=False):
-    label = QLabel(text)
-    label.setWordWrap(True)
-    label.setStyleSheet('color:#fff;background:#080808;border:1px solid #292929;padding:7px;font:%s 11px Consolas;' % ('700' if strong else '600'))
-    return label
-
-
-def _build_diagnostics(prof):
-    grid = QGridLayout()
-    grid.setContentsMargins(0, 0, 0, 0)
-    grid.setHorizontalSpacing(4)
-    grid.setVerticalSpacing(4)
-    items = [
-        ('SBCAPE', _fmt(getattr(prof.sfcpcl, 'bplus', None), 0, ' J/kg')),
-        ('MLCAPE', _fmt(getattr(prof.mlpcl, 'bplus', None), 0, ' J/kg')),
-        ('MUCAPE', _fmt(getattr(prof.mupcl, 'bplus', None), 0, ' J/kg')),
-        ('SBCIN', _fmt(getattr(prof.sfcpcl, 'bminus', None), 0, ' J/kg')),
-        ('MLCIN', _fmt(getattr(prof.mlpcl, 'bminus', None), 0, ' J/kg')),
-        ('MUCIN', _fmt(getattr(prof.mupcl, 'bminus', None), 0, ' J/kg')),
-        ('SBLI', _fmt(getattr(prof.sfcpcl, 'li5', None), 1, ' °C')),
-        ('MLLI', _fmt(getattr(prof.mlpcl, 'li5', None), 1, ' °C')),
-        ('MULI', _fmt(getattr(prof.mupcl, 'li5', None), 1, ' °C')),
-        ('K', _fmt(getattr(prof, 'k_idx', None), 1)),
-        ('TT', _fmt(getattr(prof, 'totals_totals', None), 1)),
-        ('PWAT', _fmt(getattr(prof, 'pwat', None), 2, ' in')),
-        ('0–1 km SRH', _fmt(getattr(prof, 'srh1km', [None])[0], 0, ' m²/s²')),
-        ('0–3 km SRH', _fmt(getattr(prof, 'srh3km', [None])[0], 0, ' m²/s²')),
-        ('0–1 km SHEAR', _fmt(_mag(prof, 'sfc_1km_shear'), 1, ' kt')),
-        ('0–3 km SHEAR', _fmt(_mag(prof, 'sfc_3km_shear'), 1, ' kt')),
-        ('0–6 km SHEAR', _fmt(_mag(prof, 'sfc_6km_shear'), 1, ' kt')),
-        ('SCP', _fmt(getattr(prof, 'scp', None), 2)),
-        ('STP', _fmt(getattr(prof, 'stp_cin', None), 2)),
-        ('SHIP', _fmt(getattr(prof, 'ship', None), 2)),
-        ('LCL', _fmt(getattr(prof.mlpcl, 'lclhght', None), 0, ' m')),
-        ('LFC', _fmt(getattr(prof.mlpcl, 'lfchght', None), 0, ' m')),
-        ('EL', _fmt(getattr(prof.mlpcl, 'elhght', None), 0, ' m')),
-        ('Critical Angle', _fmt(getattr(prof, 'critical_angle', None), 0, '°')),
-    ]
-    for i, (name, value) in enumerate(items):
-        grid.addWidget(_metric_label(f'{name}\n{value}', strong=True), i // 8, i % 8)
-    return grid
+        return suffix
 
 
 def _mag(prof, attr):
@@ -173,6 +113,123 @@ def _mag(prof, attr):
         return None
 
 
+def _parcel(pcl, attr, digits=0, unit=''):
+    return _num(getattr(pcl, attr, None) if pcl is not None else None, digits) + unit
+
+
+def _value(prof, names, digits=0, unit=''):
+    for name in names:
+        value = getattr(prof, name, None)
+        if value is not None:
+            return _num(value, digits) + unit
+    return '--'
+
+
+def _title(text):
+    label = QLabel(text)
+    label.setStyleSheet('color:#fff;background:#050505;border:1px solid #333;padding:4px 6px;font:700 10px Consolas;')
+    return label
+
+
+def _table(headers, rows, widths=None):
+    table = QTableWidget(len(rows), len(headers))
+    table.setHorizontalHeaderLabels(headers)
+    table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    table.setSelectionMode(QAbstractItemView.NoSelection)
+    table.setFocusPolicy(Qt.NoFocus)
+    table.setStyleSheet('''
+        QTableWidget { background:#030303; color:#fff; border:1px solid #333; gridline-color:#292929;
+                       font:600 9px Consolas; }
+        QHeaderView::section { background:#090909; color:#fff; border:1px solid #333;
+                               padding:3px; font:700 9px Consolas; }
+    ''')
+    table.verticalHeader().setVisible(False)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    table.setMinimumHeight(72)
+    for r, row in enumerate(rows):
+        for c, value in enumerate(row):
+            item = QTableWidgetItem(str(value))
+            item.setTextAlignment(Qt.AlignCenter)
+            table.setItem(r, c, item)
+    if widths:
+        for i, w in enumerate(widths):
+            table.setColumnWidth(i, w)
+    return table
+
+
+def _parcel_table(prof):
+    p = [getattr(prof, 'sfcpcl', None), getattr(prof, 'mlpcl', None), getattr(prof, 'mupcl', None)]
+    names = ['Surface-Based', 'Mixed-Layer', 'Most Unstable']
+    rows = []
+    for name, pcl in zip(names, p):
+        rows.append([
+            name,
+            _parcel(pcl, 'bplus'),
+            _parcel(pcl, 'lclhght'),
+            _parcel(pcl, 'lfchght'),
+            _parcel(pcl, 'elhght'),
+            _parcel(pcl, 'bminus'),
+            _parcel(pcl, 'li5', 1),
+            _parcel(pcl, 'tmpc', 1, ' °C'),
+            _parcel(pcl, 'dwpc', 1, ' °C'),
+        ])
+    return _table(['PARCEL','CAPE','LCL','LFC','EL','CINH','LI','TEMP','DWPT'], rows)
+
+
+def _diagnostic_table(prof):
+    sb = getattr(prof, 'sfcpcl', None)
+    ml = getattr(prof, 'mlpcl', None)
+    mu = getattr(prof, 'mupcl', None)
+    rows = [
+        ['SBCAPE', _parcel(sb,'bplus')+' J/kg', 'MLCAPE', _parcel(ml,'bplus')+' J/kg', 'MUCAPE', _parcel(mu,'bplus')+' J/kg', 'SBCIN', _parcel(sb,'bminus')+' J/kg'],
+        ['MLCIN', _parcel(ml,'bminus')+' J/kg', 'MUCIN', _parcel(mu,'bminus')+' J/kg', 'SBLI', _parcel(sb,'li5',1)+' °C', 'MLLI', _parcel(ml,'li5',1)+' °C'],
+        ['MULI', _parcel(mu,'li5',1)+' °C', 'PWAT', _value(prof,['pwat','pw','precip_water'],2)+' in', 'K', _value(prof,['k_idx','k_index'],1), 'TT', _value(prof,['totals_totals','tt'],1)],
+        ['0–1 km SRH', _value(prof,['srh1km'],0)+' m²/s²', '0–3 km SRH', _value(prof,['srh3km'],0)+' m²/s²', '0–1 km SHEAR', _num(_mag(prof,'sfc_1km_shear'),1)+' kt', '0–3 km SHEAR', _num(_mag(prof,'sfc_3km_shear'),1)+' kt'],
+        ['0–6 km SHEAR', _num(_mag(prof,'sfc_6km_shear'),1)+' kt', 'SCP', _value(prof,['scp'],2), 'STP', _value(prof,['stp_cin','stp_fixed'],2), 'SHIP', _value(prof,['ship'],2)],
+    ]
+    # Flatten to a compact 8-column diagnostic grid.
+    flat = []
+    for row in rows:
+        flat.append(row)
+    return _table(['PARAM','VALUE','PARAM','VALUE','PARAM','VALUE','PARAM','VALUE'], flat)
+
+
+def _shear_table(prof):
+    levels = [
+        ('Sfc–500 m','sfc_500m_shear','srh500m'),
+        ('Sfc–1 km','sfc_1km_shear','srh1km'),
+        ('Sfc–3 km','sfc_3km_shear','srh3km'),
+        ('Sfc–6 km','sfc_6km_shear','srh6km'),
+        ('LCL–EL','effective_shear','effective_srh'),
+    ]
+    rows=[]
+    for name, shear, srh in levels:
+        rows.append([name, _num(_mag(prof,shear),1)+' kt', _value(prof,[srh],0)+' m²/s²'])
+    eff = _mag(prof,'effective_shear')
+    rows.append(['Effective Shear', _num(eff,1)+' kt', _value(prof,['effective_srh'],0)+' m²/s²'])
+    return _table(['LAYER','BWD','SRH'], rows)
+
+
+def _legend():
+    frame = QFrame()
+    frame.setStyleSheet('QFrame{background:#030303;border:1px solid #333;} QLabel{font:700 9px Consolas;padding:2px;}')
+    grid = QGridLayout(frame)
+    grid.setContentsMargins(6,4,6,4)
+    items = [
+        ('#ff3b30','Temperatura'),('#34c759','Ponto de orvalho'),('#00e5ff','Temperatura Virtual'),
+        ('#ffffff','Temp. Bulbo Úmido'),('#ff00ff','Parcela Descendente'),('#ffff00','Parcela Efetiva'),
+        ('#ffd400','Parcela Most Unstable'),('#ffffff','Wind Barbs')
+    ]
+    for i,(color,text) in enumerate(items):
+        box=QLabel('━━')
+        box.setStyleSheet(f'color:{color};background:#030303;font:700 11px Consolas;border:0;')
+        grid.addWidget(box,i//4*2,i%4*2)
+        grid.addWidget(QLabel(text),i//4*2,i%4*2+1)
+    return frame
+
+
 def render_native_spc(prof, out_dir: Path, meta: dict):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -181,49 +238,59 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     fh = int(meta.get('fh', 0))
     valid = prof.date
     run = valid - timedelta(hours=fh)
+    location = meta.get('location', 'Brasil')
     pc = ProfCollection(
         {'ECMWF IFS': [prof]}, [valid], highlight='ECMWF IFS',
-        location=meta.get('location', 'Brasil'), model='ECMWF IFS', run=run,
-        base_time=run, fhour=[f'F{fh:03d}'], observed=False,
-        loc=meta.get('location', 'Brasil'),
+        location=location, model='ECMWF IFS', run=run,
+        base_time=run, fhour=[f'F{fh:03d}'], observed=False, loc=location,
     )
 
     root = QWidget()
     root.setStyleSheet('background:#000;color:#fff;')
-    root.resize(1800, 1180)
+    root.resize(1600, 1180)
     layout = QVBoxLayout(root)
-    layout.setContentsMargins(8, 8, 8, 8)
-    layout.setSpacing(5)
+    layout.setContentsMargins(8,8,8,8)
+    layout.setSpacing(4)
 
-    header = QLabel(f"SIDERAL SKEW-T  |  ECMWF IFS 0.25°  |  {meta.get('location','Brasil')}  |  F{fh:03d}  |  VALID {valid:%Y-%m-%d %HZ}")
-    header.setStyleSheet('color:white;background:#000;font:700 16px Consolas;padding:8px;border-bottom:1px solid #444;')
+    header = QLabel(f'SIDERAL SKEW-T   |   ECMWF IFS 0.25°   |   {location}   |   F{fh:03d}   |   VALID {valid:%Y-%m-%d %HZ}')
+    header.setStyleSheet('color:#fff;background:#000;font:700 15px Consolas;padding:5px;border-bottom:1px solid #444;')
     layout.addWidget(header)
 
-    top = QWidget()
-    top_layout = QHBoxLayout(top)
-    top_layout.setContentsMargins(0, 0, 0, 0)
-    top_layout.setSpacing(6)
+    main = QHBoxLayout()
+    main.setSpacing(5)
+    skew_box = QWidget()
+    skew_layout = QVBoxLayout(skew_box)
+    skew_layout.setContentsMargins(0,0,0,0)
+    skew_layout.setSpacing(3)
+    skew_layout.addWidget(_legend())
     skew = plotSkewT(plot_omega=True)
+    skew.setMinimumSize(1010, 720)
+    skew_layout.addWidget(skew, 1)
+
+    hodo_box = QWidget()
+    hodo_layout = QVBoxLayout(hodo_box)
+    hodo_layout.setContentsMargins(0,0,0,0)
+    hodo_layout.setSpacing(3)
+    hodo_layout.addWidget(_title('HODOGRAPH   •   0–3 km SHEAR / SRH'))
     hodo = plotHodo()
-    skew.setMinimumSize(1120, 760)
-    hodo.setMinimumSize(560, 760)
-    top_layout.addWidget(skew, 2)
-    top_layout.addWidget(hodo, 1)
-    layout.addWidget(top, 1)
+    hodo.setMinimumSize(540,720)
+    hodo_layout.addWidget(hodo,1)
 
-    diag_frame = QFrame()
-    diag_frame.setStyleSheet('QFrame{background:#000;border-top:1px solid #333;}')
-    diag_frame.setLayout(_build_diagnostics(prof))
-    layout.addWidget(diag_frame)
+    main.addWidget(skew_box, 2)
+    main.addWidget(hodo_box, 1)
+    layout.addLayout(main, 1)
 
-    parcel_text = '   '.join(' | '.join(row) for row in _parcel_rows(prof))
-    parcel = QLabel(parcel_text)
-    parcel.setWordWrap(True)
-    parcel.setStyleSheet('color:#ddd;background:#050505;font:600 10px Consolas;padding:6px;border:1px solid #333;')
-    layout.addWidget(parcel)
+    layout.addWidget(_parcel_table(prof))
+    layout.addWidget(_diagnostic_table(prof))
 
-    footer = QLabel('ECMWF IFS • SHARPpy • Sideral Meteorologia • valores calculados pelo SHARPpy')
-    footer.setStyleSheet('color:white;background:#050505;font:11px Consolas;padding:6px;border:1px solid #333;')
+    bottom = QHBoxLayout()
+    bottom.setSpacing(4)
+    bottom.addWidget(_shear_table(prof), 1)
+    bottom.addWidget(_title('PARÂMETROS SHARPpy\nSBCAPE / MLCAPE / MUCAPE • CIN • LCL • LFC • EL\nSRH • SHEAR • SCP • STP • SHIP • PWAT'), 1)
+    layout.addLayout(bottom)
+
+    footer = QLabel('ECMWF IFS  •  SHARPpy  •  Sideral Meteorologia  •  valores calculados pelo SHARPpy')
+    footer.setStyleSheet('color:#ddd;background:#050505;font:10px Consolas;padding:5px;border:1px solid #333;')
     layout.addWidget(footer)
 
     root.show()
@@ -235,9 +302,9 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     app.processEvents()
     app.processEvents()
 
-    skew.grab().save(str(out_dir / 'skewt.png'), 'PNG')
-    hodo.grab().save(str(out_dir / 'hodograph.png'), 'PNG')
-    root.grab().save(str(out_dir / 'full.png'), 'PNG')
+    skew.grab().save(str(out_dir/'skewt.png'),'PNG')
+    hodo.grab().save(str(out_dir/'hodograph.png'),'PNG')
+    root.grab().save(str(out_dir/'full.png'),'PNG')
     root.close()
     app.processEvents()
-    return out_dir / 'full.png'
+    return out_dir/'full.png'
