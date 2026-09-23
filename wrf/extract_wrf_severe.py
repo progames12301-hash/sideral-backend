@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -49,16 +50,27 @@ def _validate_output(nx: int, ny: int) -> None:
     data = json.loads(meta_path.read_text(encoding="utf-8"))
     for frame in data.get("frames") or []:
         if int(frame.get("gridX", -1)) != nx or int(frame.get("gridY", -1)) != ny:
-            raise SystemExit(f"Downsampling detectado no WRF2 4 km: esperado {nx}x{ny}; frame={frame}")
+            raise SystemExit(
+                f"Downsampling detectado no WRF2: esperado {nx}x{ny}; "
+                f"frame={frame}"
+            )
 
 
 def main() -> None:
     nx, ny, dx, dy = _native_grid()
-    if (dx, dy) != (4000, 4000):
-        raise SystemExit(f"WRF2 deveria derivar do WRF 4 km, mas DX/DY={dx}/{dy} m")
+    expected_dx = int(os.environ.get("WRF_DX_METERS", "4000"))
+    expected_dy = int(os.environ.get("WRF_DY_METERS", str(expected_dx)))
+    if (dx, dy) != (expected_dx, expected_dy):
+        raise SystemExit(
+            f"WRF2 resolução inesperada: esperado DX/DY={expected_dx}/{expected_dy} m, "
+            f"encontrado {dx}/{dy} m"
+        )
     _set_arg("--grid-x", nx)
     _set_arg("--grid-y", ny)
-    print(f"WRF2: diagnosticos na grade nativa {nx}x{ny}, DX/DY={dx}/{dy} m")
+    print(
+        f"WRF2: diagnósticos na grade nativa {nx}x{ny}, "
+        f"DX/DY={dx}/{dy} m"
+    )
     _core_main()
     _validate_output(nx, ny)
 
