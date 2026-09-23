@@ -51,6 +51,7 @@ if not re.fullmatch(r'\d{8}', run_date) or run_cycle not in {'00','06','12','18'
     raise SystemExit(f'RUN_DATE/RUN_CYCLE invalidos para restart: {run_date!r} {run_cycle!r}')
 base = dt.datetime.strptime(run_date + run_cycle, '%Y%m%d%H')
 restart_time = base + dt.timedelta(hours=start_h)
+expected_rst = f"wrfrst_d01_{restart_time:%Y-%m-%d_%H:%M:%S}"
 vals = {
     'start_year': restart_time.year,
     'start_month': restart_time.month,
@@ -64,6 +65,7 @@ vals = {
     'run_seconds': 0,
     'restart': '.true.',
     'restart_interval': 180,
+    'override_restart_timers': '.true.',
     'history_interval': hist,
 }
 for key, value in vals.items():
@@ -71,14 +73,38 @@ for key, value in vals.items():
     replacement = f' {key} = {value},'
     if re.search(pattern, s):
         s = re.sub(pattern, replacement, s)
-    elif key in {'restart','restart_interval','history_interval','run_days','run_hours','run_minutes','run_seconds'}:
+    elif key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds'}:
         s = s.replace('&time_control', f'&time_control\n{replacement}', 1)
 open(p, 'w', encoding='utf-8').write(s)
 print('RESTART NAMELIST:', restart_time.isoformat(), '->', hours, 'h')
+print('EXPECTED RESTART FILE:', expected_rst)
+with open(os.path.join(os.path.dirname(p), '.expected_restart'), 'w', encoding='utf-8') as f:
+    f.write(expected_rst + '\n')
 PY
 
-# Validate that the checkpoint files are readable NetCDF files before MPI starts.
-# This turns silent/corrupt restart inputs into an explicit failure.
+EXPECTED_RST="$(cat "$WORK/run/.expected_restart")"
+if [[ ! -s "$WORK/run/$EXPECTED_RST" ]]; then
+  echo "Restart exato nao encontrado: $EXPECTED_RST" >&2
+  echo "Restarts disponiveis:" >&2
+  ls -lh "$WORK/run"/wrfrst_d01_* >&2 || true
+  exit 8
+fi
+# Remove every restart except the exact valid checkpoint for this segment.
+find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -delete
+
+echo "Using exact restart: $EXPECTED_RST"
+
+# Lightweight runner diagnostics. The METBR domain/MPI settings are intentionally
+# preserved; these diagnostics only expose resource failures instead of changing them.
+echo '--- runner diagnostics ---'
+date -u
+uname -a || true
+nproc || true
+free -h || true
+df -h "$WORK" || true
+ulimit -a || true
+
+# Validate checkpoint files before MPI starts.
 docker run --rm --entrypoint /bin/bash \
   -v "$WORK/run:/run" \
   "$IMAGE" -lc '
@@ -86,16 +112,18 @@ docker run --rm --entrypoint /bin/bash \
     cd /run
     test -r namelist.input
     test -r wrfbdy_d01
-    ls -lh wrfrst_d01_* wrfbdy_d01 namelist.input
+    test -s .expected_restart
+    rst="$(cat .expected_restart)"
+    test -s "$rst"
+    ls -lh "$rst" wrfbdy_d01 namelist.input
     if command -v ncdump >/dev/null 2>&1; then
-      for f in wrfrst_d01_* wrfbdy_d01; do
-        echo "=== NETCDF HEADER: $f ==="
-        ncdump -h "$f" >/dev/null
-      done
+      echo "=== NETCDF HEADER: $rst ==="
+      ncdump -h "$rst" >/dev/null
+      echo "=== NETCDF HEADER: wrfbdy_d01 ==="
+      ncdump -h wrfbdy_d01 >/dev/null
     fi
   '
 
-# Bypass the image entrypoint. It can modify /run when it is a bind mount.
 WRFEXE="$(docker run --rm --entrypoint /bin/bash "$IMAGE" -lc "find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true")"
 if [[ -z "$WRFEXE" ]]; then
   echo "wrf.exe not found in WRF container" >&2
@@ -118,17 +146,25 @@ docker run --rm \
     cd /run
     test -r namelist.input
     test -r wrfbdy_d01
-    ls wrfrst_d01_* >/dev/null
+    rst="$(cat .expected_restart)"
+    test -s "$rst"
     test -x "'"$WRFEXE"'"
     rm -f rsl.error.* rsl.out.*
     echo "Starting WRF restart in $(pwd)"
     echo "MPI_PROCS=${WRF_MPI_PROCS:-8}"
-    echo "Restart files:"
-    ls -lh wrfrst_d01_* wrfbdy_d01
-    mpirun --allow-run-as-root --oversubscribe \
-      --mca orte_base_help_aggregate 0 \
-      -np "${WRF_MPI_PROCS:-8}" \
-      "'"$WRFEXE"'" > /run/rsl.out.restart 2>&1
+    echo "Exact restart: $rst"
+    ls -lh "$rst" wrfbdy_d01
+    if command -v /usr/bin/time >/dev/null 2>&1; then
+      /usr/bin/time -v mpirun --allow-run-as-root --oversubscribe \
+        --mca orte_base_help_aggregate 0 \
+        -np "${WRF_MPI_PROCS:-8}" \
+        "'"$WRFEXE"'" > /run/rsl.out.restart 2>&1
+    else
+      mpirun --allow-run-as-root --oversubscribe \
+        --mca orte_base_help_aggregate 0 \
+        -np "${WRF_MPI_PROCS:-8}" \
+        "'"$WRFEXE"'" > /run/rsl.out.restart 2>&1
+    fi
     rc=$?
     echo "WRF_MPI_EXIT_CODE=$rc" >> /run/rsl.out.restart
     exit "$rc"
@@ -136,8 +172,6 @@ docker run --rm \
 STATUS=$?
 set -e
 
-# WRF writes the real diagnostics to rsl.error.* and rsl.out.*. The previous
-# script only showed rsl.out.restart, which hid the actual WRF failure.
 cp -f "$WORK/run/rsl.out.restart" "$OUTPUT/" 2>/dev/null || true
 cp -f "$WORK/run"/rsl.error.* "$OUTPUT/" 2>/dev/null || true
 cp -f "$WORK/run"/rsl.out.* "$OUTPUT/" 2>/dev/null || true
@@ -148,19 +182,21 @@ cp -f "$RESTART_DIR/wrfbdy_d01" "$OUTPUT/" 2>/dev/null || true
 if (( STATUS != 0 )); then
   echo "WRF restart F${START_H}-F${END_H} failed with exit code ${STATUS}" >&2
   echo '--- ultimo log wrapper ---' >&2
-  tail -n 160 "$WORK/run/rsl.out.restart" 2>/dev/null || true
+  tail -n 200 "$WORK/run/rsl.out.restart" 2>/dev/null || true
   echo '--- rsl.error.* ---' >&2
   for f in "$WORK/run"/rsl.error.*; do
     [[ -f "$f" ]] || continue
     echo "===== $(basename "$f") =====" >&2
-    tail -n 160 "$f" >&2 || true
+    tail -n 200 "$f" >&2 || true
   done
   echo '--- rsl.out.* ---' >&2
   for f in "$WORK/run"/rsl.out.*; do
     [[ -f "$f" ]] || continue
     echo "===== $(basename "$f") =====" >&2
-    tail -n 80 "$f" >&2 || true
+    tail -n 120 "$f" >&2 || true
   done
+  echo '--- host memory after failure ---' >&2
+  free -h >&2 || true
   exit "$STATUS"
 fi
 
