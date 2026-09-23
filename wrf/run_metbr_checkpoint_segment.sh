@@ -40,11 +40,32 @@ export WRF_REFLECTIVITY_SOURCE=REFL_10CM_NATIVE WRF_NATIVE_GRID=true WRF_NO_FALL
 export WRF_MPI_PROCS="${WRF_MPI_PROCS:-8}"
 [[ "$WRF_DATA_SOURCE" == ICON && "$WRF_INPUT_MODEL" == ICON && "$WRF_INITIALIZATION_MODEL" == ICON ]] || { echo 'ERROR: METBR ICON-only contract violated' >&2; exit 1; }
 
+# GitHub Releases can expose a newly uploaded asset a few seconds after the
+# upload request returns. Never turn that propagation delay into a failed
+# WRF segment. Also verify the exact asset exists before attempting download.
+download_checkpoint() {
+  local asset="$1" dest="$2" attempt
+  mkdir -p "$dest"
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null | grep -Fxq "$asset"; then
+      if gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$dest" --clobber; then
+        test -s "$dest/$asset" && return 0
+      fi
+    fi
+    echo "Checkpoint $asset ainda nao disponivel (tentativa $attempt/8); aguardando 10s..." >&2
+    sleep 10
+  done
+  echo "ERRO: asset de checkpoint nao encontrado apos 8 tentativas: $asset" >&2
+  echo "Assets disponiveis no release $CHECKPOINT_TAG:" >&2
+  gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' >&2 || true
+  return 20
+}
+
 if [[ "$COLD_START" == "0" ]]; then
   rm -rf "$INPUT"/*
   ARCHIVE="$INPUT/metbr-checkpoint-${START_HOUR}.tar.gz"
   echo "Baixando checkpoint atomico F${START_HOUR}: $ARCHIVE"
-  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "metbr-checkpoint-${START_HOUR}.tar.gz" --dir "$INPUT" --clobber
+  download_checkpoint "metbr-checkpoint-${START_HOUR}.tar.gz" "$INPUT"
   test -s "$ARCHIVE" || { echo "Checkpoint atomico F${START_HOUR} ausente" >&2; exit 20; }
   tar -xzf "$ARCHIVE" -C "$INPUT"
   test -s "$INPUT/metbr-run.env" || { echo "metbr-run.env ausente no checkpoint F${START_HOUR}" >&2; exit 21; }
