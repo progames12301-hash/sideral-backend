@@ -2,12 +2,9 @@ name: Sideral Skew-T SHARPpy — 27 Capitais
 
 on:
   schedule:
-    # ECMWF IFS dissemination windows end at roughly 12:27, 18:27 and 00:27 UTC
-    # for the 06Z, 12Z and 18Z deterministic runs respectively. These schedules
-    # leave a safety margin before generation starts.
-    - cron: '45 13 * * *'   # 06Z run
-    - cron: '45 19 * * *'   # 12Z run
-    - cron: '45 1 * * *'    # 18Z run (next UTC day)
+    - cron: '45 13 * * *'
+    - cron: '45 19 * * *'
+    - cron: '45 1 * * *'
   workflow_dispatch:
     inputs:
       cycle:
@@ -93,6 +90,32 @@ jobs:
             fi
           done < <(find build/skewt-capitals -type f -name '*.png')
 
+      - name: Construir índice público dos assets
+        shell: bash
+        run: |
+          tag="skewt-live-${CYCLE}"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import os
+          root = Path('build/skewt-capitals')
+          tag = f"skewt-live-{os.environ['CYCLE']}"
+          assets = sorted(p.name for p in root.glob('*/*.png'))
+          if len(assets) != 459:
+              raise SystemExit(f'Índice público: esperados 459 PNG, encontrados {len(assets)}')
+          publication = {
+              'schema': 'sideral-skewt-publication-v1',
+              'repository': os.environ['GH_REPO'],
+              'tag': tag,
+              'asset_count': len(assets),
+              'download_base': f'https://github.com/{os.environ["GH_REPO"]}/releases/download/{tag}/',
+              'assets': assets,
+          }
+          (root / 'publication.json').write_text(json.dumps(publication, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(f'publication.json: {len(assets)} assets indexados')
+          PY
+          test -s build/skewt-capitals/publication.json
+
       - name: Publicar release operacional
         shell: bash
         env:
@@ -100,19 +123,31 @@ jobs:
         run: |
           tag="skewt-live-${CYCLE}"
           gh release delete "$tag" --repo "$GH_REPO" --yes --cleanup-tag || true
-          shopt -s nullglob
-          files=(build/skewt-capitals/**/*.png)
+          files=()
+          while IFS= read -r -d '' file; do files+=("$file"); done < <(find build/skewt-capitals -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
           test "${#files[@]}" -eq 459
           gh release create "$tag" \
             --repo "$GH_REPO" \
             --title "Sideral Skew-T ECMWF ${CYCLE}Z — 27 capitais" \
-            --notes "PNG pré-renderizado diretamente pelo SHARPpy. Fonte: ECMWF IFS 0.25° via Open-Meteo Single Runs. Forecast F000–F048 em passos de 3h. Este release é substituído a cada nova rodada ${CYCLE}Z." \
+            --notes "PNG pré-renderizado diretamente pelo SHARPpy. Fonte: ECMWF IFS 0.25° via Open-Meteo Single Runs. Forecast F000–F048 em passos de 3h. publication.json contém o índice determinístico dos assets para o HTML." \
             "${files[@]}" \
-            build/skewt-capitals/manifest.json
+            build/skewt-capitals/manifest.json \
+            build/skewt-capitals/publication.json
+
+      - name: Verificar release publicado
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="skewt-live-${CYCLE}"
+          gh release view "$tag" --repo "$GH_REPO" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'
+          test "$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '.assets|map(.name)|map(select(.=="publication.json"))|length')" -eq 1
 
       - name: Artefato de diagnóstico
         uses: actions/upload-artifact@v4
         with:
           name: skewt-${{ env.CYCLE }}-manifest
-          path: build/skewt-capitals/manifest.json
+          path: |
+            build/skewt-capitals/manifest.json
+            build/skewt-capitals/publication.json
           retention-days: 3
