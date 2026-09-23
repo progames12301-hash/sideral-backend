@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sideral — Skew-T SHARPpy</title>
+<link rel="icon" href="/favicon.png">
+<style>
+:root{--bg:#050505;--panel:#0a0a0c;--line:#29292e;--text:#f4f4f5;--muted:#96969e;--red:#e31b23}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Segoe UI,Arial,sans-serif}button,select{font:inherit}.bar{position:sticky;top:0;z-index:10;background:#08080a;border-bottom:1px solid var(--line);padding:12px;display:flex;gap:9px;align-items:end;flex-wrap:wrap}.brand{font:900 18px Consolas;margin:0 14px 6px 0}.field{display:flex;flex-direction:column;gap:4px}.field label{font:800 10px Consolas;color:var(--muted)}select,.btn{height:36px;background:#121216;color:#fff;border:1px solid #393940;padding:0 10px}.city select{min-width:210px}.btn{padding:0 14px;font-weight:900;cursor:pointer}.btn.primary{background:var(--red);border-color:var(--red)}.btn:disabled{opacity:.45;cursor:not-allowed}.status{flex-basis:100%;font:600 11px Consolas;color:#aaa}.status.ok{color:#81d58a}.status.err{color:#ff6870}.frame{margin:10px;border:1px solid var(--line);background:#000}.viewer{min-height:620px;display:flex;align-items:center;justify-content:center;overflow:auto}.viewer img{display:block;max-width:100%;height:auto}.empty{padding:40px;text-align:center;color:#777;font:700 12px Consolas}.meta{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}.meta>div{padding:10px;border-right:1px solid var(--line);min-height:70px}.meta>div:last-child{border:0}.k{font:800 10px Consolas;color:#888;margin-bottom:5px}.v{font:700 11px Consolas;color:#ddd}.note{padding:9px 12px;border-top:1px solid var(--line);color:#777;font:600 10px Consolas}.busy{position:fixed;inset:0;background:#000c;display:none;place-items:center;z-index:30;font:900 12px Consolas}@media(max-width:700px){.bar{position:static}.brand{width:100%}.field,.field select,.city select,.btn{width:100%}.meta{grid-template-columns:1fr 1fr}.meta>div:nth-child(2){border-right:0}.meta>div:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:450px){.meta{grid-template-columns:1fr}.meta>div{border-right:0!important;border-bottom:1px solid var(--line)}.viewer{min-height:420px}}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">SIDERAL / SKEW-T</div>
+  <div class="field city"><label>CAPITAL</label><select id="city"></select></div>
+  <div class="field"><label>CICLO</label><select id="cycle"><option value="06">06Z</option><option value="12">12Z</option><option value="18">18Z</option></select></div>
+  <div class="field"><label>PREVISÃO</label><select id="fh"></select></div>
+  <button class="btn primary" id="open">ABRIR</button>
+  <button class="btn" id="download" disabled>BAIXAR PNG</button>
+  <div id="status" class="status">Verificando a publicação...</div>
+</header>
+
+<main class="frame">
+  <section id="viewer" class="viewer"><div class="empty">Carregando disponibilidade das 27 capitais...</div></section>
+  <section class="meta">
+    <div><div class="k">MODELO</div><div class="v">ECMWF IFS 0.25°</div></div>
+    <div><div class="k">RENDERIZAÇÃO</div><div class="v">SHARPpy — PNG pré-renderizado</div></div>
+    <div><div class="k">FONTE</div><div class="v">Open-Meteo Single Runs</div></div>
+    <div><div class="k">FRAME</div><div class="v" id="frame">--</div></div>
+  </section>
+  <div class="note">O navegador somente recebe e exibe o PNG produzido pelo GitHub Actions. O diagrama não é desenhado nem calculado pelo HTML.</div>
+</main>
+<div id="busy" class="busy">CARREGANDO SHARPpy...</div>
+
+<script>
+const BASE='https://github.com/progames12301-hash/sideral-backend/releases/download';
+const CAPITALS=[
+['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']
+];
+const $=id=>document.getElementById(id);let current='';let available=[];
+for(let h=0;h<=48;h+=3){let o=document.createElement('option');o.value=h;o.textContent='F'+String(h).padStart(3,'0');$('fh').appendChild(o)}
+function asset(slug,cycle,fh){return `${BASE}/skewt-live-${cycle}/${slug}-f${String(fh).padStart(3,'0')}.png`}
+function status(text,cls=''){$('status').textContent=text;$('status').className='status '+cls}
+function probe(cap,cycle){return new Promise(resolve=>{let im=new Image();im.onload=()=>resolve(cap);im.onerror=()=>resolve(null);im.src=asset(cap[1],cycle,0)+'?probe='+Date.now()})}
+function fill(){let s=$('city');s.innerHTML='';available.forEach(c=>{let o=document.createElement('option');o.value=c[1];o.textContent=c[0];s.appendChild(o)});$('open').disabled=!available.length}
+async function check(){
+ $('busy').style.display='grid';$('viewer').innerHTML='<div class="empty">Verificando F000 das 27 capitais...</div>';available=[];fill();
+ let cycle=$('cycle').value;let r=await Promise.all(CAPITALS.map(c=>probe(c,cycle)));available=r.filter(Boolean);fill();$('busy').style.display='none';
+ if(!available.length){status(`Nenhum PNG publicado para ${cycle}Z.`,'err');$('viewer').innerHTML='<div class="empty">Nenhuma rodada disponível neste ciclo.</div>';return}
+ status(`${available.length}/27 capitais disponíveis em ${cycle}Z.`,'ok');load();
+}
+function load(){
+ let slug=$('city').value;if(!slug)return;let cycle=$('cycle').value;let fh=Number($('fh').value);let cap=CAPITALS.find(c=>c[1]===slug);let src=asset(slug,cycle,fh)+'?t='+Date.now();
+ $('busy').style.display='grid';$('viewer').innerHTML='';let im=new Image();im.alt=`Skew-T SHARPpy — ${cap?cap[0]:slug} — ${cycle}Z — F${String(fh).padStart(3,'0')}`;
+ im.onload=()=>{$('busy').style.display='none';$('viewer').appendChild(im);current=src.split('?')[0];$('download').disabled=false;$('frame').textContent=`${cap?cap[0]:slug} • ${cycle}Z • F${String(fh).padStart(3,'0')}`};
+ im.onerror=()=>{$('busy').style.display='none';$('download').disabled=true;$('viewer').innerHTML='<div class="empty">Este frame ainda não foi publicado para esta rodada.</div>';status('PNG não disponível para este frame.','err')};im.src=src;
+}
+$('cycle').addEventListener('change',check);$('city').addEventListener('change',load);$('fh').addEventListener('change',load);$('open').addEventListener('click',load);
+$('download').addEventListener('click',()=>{if(!current)return;let a=document.createElement('a');a.href=current;a.download='sideral-skewt-sharppy.png';document.body.appendChild(a);a.click();a.remove()});
+check();
+</script>
+</body>
+</html>
