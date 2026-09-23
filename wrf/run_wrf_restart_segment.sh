@@ -89,20 +89,33 @@ if [[ ! -s "$WORK/run/$EXPECTED_RST" ]]; then
   ls -lh "$WORK/run"/wrfrst_d01_* >&2 || true
   exit 8
 fi
-# Remove every restart except the exact valid checkpoint for this segment.
 find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -delete
 
 echo "Using exact restart: $EXPECTED_RST"
 
-# Lightweight runner diagnostics. The METBR domain/MPI settings are intentionally
-# preserved; these diagnostics only expose resource failures instead of changing them.
-echo '--- runner diagnostics ---'
-date -u
-uname -a || true
-nproc || true
-free -h || true
-df -h "$WORK" || true
-ulimit -a || true
+# METBR must not depend on a host-side ozone file. The WRF container ships the
+# runtime ozone lookup table required by some radiation configurations. Stage
+# the real table from the same WRF image into the run directory when available;
+# never generate a synthetic replacement.
+echo '--- staging WRF radiation lookup tables ---'
+docker run --rm \
+  -v "$WORK/run:/run" \
+  "$IMAGE" /bin/bash -lc '
+    set -euo pipefail
+    if [[ -s /run/ozone_plev.formatted ]]; then
+      echo "ozone_plev.formatted already present in restart package"
+      exit 0
+    fi
+    ozone="$(find /comsoftware /opt /usr/local -type f -name ozone_plev.formatted -print -quit 2>/dev/null || true)"
+    if [[ -n "$ozone" && -s "$ozone" ]]; then
+      cp -f "$ozone" /run/ozone_plev.formatted
+      echo "Staged real ozone_plev.formatted from: $ozone"
+      exit 0
+    fi
+    echo "ERROR: WRF image does not contain ozone_plev.formatted and checkpoint did not provide it" >&2
+    exit 12
+  '
+test -s "$WORK/run/ozone_plev.formatted" || { echo "ozone_plev.formatted missing after WRF image staging" >&2; exit 12; }
 
 # Validate checkpoint files before MPI starts.
 docker run --rm --entrypoint /bin/bash \
@@ -115,11 +128,10 @@ docker run --rm --entrypoint /bin/bash \
     test -s .expected_restart
     rst="$(cat .expected_restart)"
     test -s "$rst"
-    ls -lh "$rst" wrfbdy_d01 namelist.input
+    test -s ozone_plev.formatted
+    ls -lh "$rst" wrfbdy_d01 namelist.input ozone_plev.formatted
     if command -v ncdump >/dev/null 2>&1; then
-      echo "=== NETCDF HEADER: $rst ==="
       ncdump -h "$rst" >/dev/null
-      echo "=== NETCDF HEADER: wrfbdy_d01 ==="
       ncdump -h wrfbdy_d01 >/dev/null
     fi
   '
@@ -146,6 +158,7 @@ docker run --rm \
     cd /run
     test -r namelist.input
     test -r wrfbdy_d01
+    test -s ozone_plev.formatted
     rst="$(cat .expected_restart)"
     test -s "$rst"
     test -x "'"$WRFEXE"'"
@@ -153,7 +166,8 @@ docker run --rm \
     echo "Starting WRF restart in $(pwd)"
     echo "MPI_PROCS=${WRF_MPI_PROCS:-8}"
     echo "Exact restart: $rst"
-    ls -lh "$rst" wrfbdy_d01
+    echo "Ozone lookup: /run/ozone_plev.formatted"
+    ls -lh "$rst" wrfbdy_d01 ozone_plev.formatted
     if command -v /usr/bin/time >/dev/null 2>&1; then
       /usr/bin/time -v mpirun --allow-run-as-root --oversubscribe \
         --mca orte_base_help_aggregate 0 \
