@@ -18,8 +18,8 @@ SEG_H=$((END_H-START_H))
 }
 test -d "$RESTART_DIR" || { echo "Restart directory missing: $RESTART_DIR" >&2; exit 3; }
 
-mapfile -t RST < <(find "$RESTART_DIR" -maxdepth 1 -type f -name 'wrfrst_d01_*' -print | sort)
-((${#RST[@]} > 0)) || { echo "No wrfrst_d01_* found in checkpoint F${START_H}" >&2; exit 4; }
+mapfile -t RST < <(find "$RESTART_DIR" -maxdepth 1 -type f -name 'wrfrst_d01_*' -size +0c -print | sort)
+((${#RST[@]} > 0)) || { echo "No wrfrst_d01_* non-empty found in checkpoint F${START_H}" >&2; exit 4; }
 test -s "$RESTART_DIR/wrfbdy_d01" || { echo "wrfbdy_d01 missing/empty" >&2; exit 5; }
 
 rm -rf "$WORK" "$OUTPUT"
@@ -77,8 +77,25 @@ open(p, 'w', encoding='utf-8').write(s)
 print('RESTART NAMELIST:', restart_time.isoformat(), '->', hours, 'h')
 PY
 
-# IMPORTANT: dtcenter/wps_wrf has an entrypoint that can modify /run and fail
-# on a bind mount. Always bypass that entrypoint for discovery and execution.
+# Validate that the checkpoint files are readable NetCDF files before MPI starts.
+# This turns silent/corrupt restart inputs into an explicit failure.
+docker run --rm --entrypoint /bin/bash \
+  -v "$WORK/run:/run" \
+  "$IMAGE" -lc '
+    set -euo pipefail
+    cd /run
+    test -r namelist.input
+    test -r wrfbdy_d01
+    ls -lh wrfrst_d01_* wrfbdy_d01 namelist.input
+    if command -v ncdump >/dev/null 2>&1; then
+      for f in wrfrst_d01_* wrfbdy_d01; do
+        echo "=== NETCDF HEADER: $f ==="
+        ncdump -h "$f" >/dev/null
+      done
+    fi
+  '
+
+# Bypass the image entrypoint. It can modify /run when it is a bind mount.
 WRFEXE="$(docker run --rm --entrypoint /bin/bash "$IMAGE" -lc "find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true")"
 if [[ -z "$WRFEXE" ]]; then
   echo "wrf.exe not found in WRF container" >&2
@@ -86,8 +103,8 @@ if [[ -z "$WRFEXE" ]]; then
 fi
 echo "Using WRF executable: $WRFEXE"
 
-touch "$WORK/run/rsl.out.restart" "$WORK/run/rsl.error.restart"
-chmod 666 "$WORK/run/rsl.out.restart" "$WORK/run/rsl.error.restart"
+touch "$WORK/run/rsl.out.restart"
+chmod 666 "$WORK/run/rsl.out.restart"
 
 set +e
 docker run --rm \
@@ -97,28 +114,53 @@ docker run --rm \
   -e WRF_MPI_PROCS="$MPI_PROCS" \
   -v "$WORK/run:/run" \
   "$IMAGE" -lc '
-    set -euo pipefail
+    set -u
     cd /run
     test -r namelist.input
     test -r wrfbdy_d01
     ls wrfrst_d01_* >/dev/null
     test -x "'"$WRFEXE"'"
+    rm -f rsl.error.* rsl.out.*
     echo "Starting WRF restart in $(pwd)"
-    mpirun --allow-run-as-root --oversubscribe -np "${WRF_MPI_PROCS:-8}" \
+    echo "MPI_PROCS=${WRF_MPI_PROCS:-8}"
+    echo "Restart files:"
+    ls -lh wrfrst_d01_* wrfbdy_d01
+    mpirun --allow-run-as-root --oversubscribe \
+      --mca orte_base_help_aggregate 0 \
+      -np "${WRF_MPI_PROCS:-8}" \
       "'"$WRFEXE"'" > /run/rsl.out.restart 2>&1
+    rc=$?
+    echo "WRF_MPI_EXIT_CODE=$rc" >> /run/rsl.out.restart
+    exit "$rc"
   '
 STATUS=$?
 set -e
 
+# WRF writes the real diagnostics to rsl.error.* and rsl.out.*. The previous
+# script only showed rsl.out.restart, which hid the actual WRF failure.
 cp -f "$WORK/run/rsl.out.restart" "$OUTPUT/" 2>/dev/null || true
-cp -f "$WORK/run/rsl.error.restart" "$OUTPUT/" 2>/dev/null || true
+cp -f "$WORK/run"/rsl.error.* "$OUTPUT/" 2>/dev/null || true
+cp -f "$WORK/run"/rsl.out.* "$OUTPUT/" 2>/dev/null || true
+cp -f "$WORK/run/namelist.input" "$OUTPUT/namelist.restart.input" 2>/dev/null || true
+cp -f "$RESTART_DIR"/wrfrst_d01_* "$OUTPUT/" 2>/dev/null || true
+cp -f "$RESTART_DIR/wrfbdy_d01" "$OUTPUT/" 2>/dev/null || true
 
 if (( STATUS != 0 )); then
   echo "WRF restart F${START_H}-F${END_H} failed with exit code ${STATUS}" >&2
-  echo '--- ultimo log WRF ---' >&2
+  echo '--- ultimo log wrapper ---' >&2
   tail -n 160 "$WORK/run/rsl.out.restart" 2>/dev/null || true
-  echo '--- erros WRF ---' >&2
-  grep -Ei 'fatal|error|forrtl|namelist|restart|boundary|time|abort' "$WORK/run/rsl.out.restart" 2>/dev/null | tail -n 80 >&2 || true
+  echo '--- rsl.error.* ---' >&2
+  for f in "$WORK/run"/rsl.error.*; do
+    [[ -f "$f" ]] || continue
+    echo "===== $(basename "$f") =====" >&2
+    tail -n 160 "$f" >&2 || true
+  done
+  echo '--- rsl.out.* ---' >&2
+  for f in "$WORK/run"/rsl.out.*; do
+    [[ -f "$f" ]] || continue
+    echo "===== $(basename "$f") =====" >&2
+    tail -n 80 "$f" >&2 || true
+  done
   exit "$STATUS"
 fi
 
