@@ -34,8 +34,6 @@ def _compat_qfont(*args, **kwargs):
 
 _sharppy_skew.QtGui.QFont = _compat_qfont
 
-# SHARPpy's current source still constructs QActionGroup(..., exclusive=True),
-# while PyQt5 exposes exclusivity through setExclusive().
 _original_action_group = QActionGroup
 
 class _CompatActionGroup(_original_action_group):
@@ -108,10 +106,7 @@ def _parcel_rows(prof):
 def _metric_label(text, strong=False):
     label = QLabel(text)
     label.setWordWrap(True)
-    label.setStyleSheet(
-        'color:#fff;background:#080808;border:1px solid #292929;'
-        f'padding:7px;font:{"700" if strong else "600"} 11px Consolas;'
-    )
+    label.setStyleSheet('color:#fff;background:#080808;border:1px solid #292929;padding:7px;font:%s 11px Consolas;' % ('700' if strong else '600'))
     return label
 
 
@@ -120,7 +115,6 @@ def _build_diagnostics(prof):
     grid.setContentsMargins(0, 0, 0, 0)
     grid.setHorizontalSpacing(4)
     grid.setVerticalSpacing(4)
-
     items = [
         ('SBCAPE', _fmt(getattr(prof.sfcpcl, 'bplus', None), 0, ' J/kg')),
         ('MLCAPE', _fmt(getattr(prof.mlpcl, 'bplus', None), 0, ' J/kg')),
@@ -128,7 +122,9 @@ def _build_diagnostics(prof):
         ('SBCIN', _fmt(getattr(prof.sfcpcl, 'bminus', None), 0, ' J/kg')),
         ('MLCIN', _fmt(getattr(prof.mlpcl, 'bminus', None), 0, ' J/kg')),
         ('MUCIN', _fmt(getattr(prof.mupcl, 'bminus', None), 0, ' J/kg')),
-        ('LI', _fmt(getattr(prof, 'li5', None), 1, ' °C')),
+        ('SBLI', _fmt(getattr(prof.sfcpcl, 'li5', None), 1, ' °C')),
+        ('MLLI', _fmt(getattr(prof.mlpcl, 'li5', None), 1, ' °C')),
+        ('MULI', _fmt(getattr(prof.mupcl, 'li5', None), 1, ' °C')),
         ('K', _fmt(getattr(prof, 'k_idx', None), 1)),
         ('TT', _fmt(getattr(prof, 'totals_totals', None), 1)),
         ('PWAT', _fmt(getattr(prof, 'pwat', None), 2, ' in')),
@@ -146,8 +142,7 @@ def _build_diagnostics(prof):
         ('Critical Angle', _fmt(getattr(prof, 'critical_angle', None), 0, '°')),
     ]
     for i, (name, value) in enumerate(items):
-        cell = _metric_label(f'{name}\n{value}', strong=True)
-        grid.addWidget(cell, i // 8, i % 8)
+        grid.addWidget(_metric_label(f'{name}\n{value}', strong=True), i // 8, i % 8)
     return grid
 
 
@@ -169,15 +164,9 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     valid = prof.date
     run = valid - timedelta(hours=fh)
     pc = ProfCollection(
-        {'ECMWF IFS': [prof]},
-        [valid],
-        highlight='ECMWF IFS',
-        location=meta.get('location', 'Brasil'),
-        model='ECMWF IFS',
-        run=run,
-        base_time=run,
-        fhour=[f'F{fh:03d}'],
-        observed=False,
+        {'ECMWF IFS': [prof]}, [valid], highlight='ECMWF IFS',
+        location=meta.get('location', 'Brasil'), model='ECMWF IFS', run=run,
+        base_time=run, fhour=[f'F{fh:03d}'], observed=False,
         loc=meta.get('location', 'Brasil'),
     )
 
@@ -188,10 +177,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     layout.setContentsMargins(8, 8, 8, 8)
     layout.setSpacing(5)
 
-    header = QLabel(
-        f"SIDERAL SKEW-T  |  ECMWF IFS 0.25°  |  {meta.get('location','Brasil')}  |  "
-        f"F{fh:03d}  |  VALID {valid:%Y-%m-%d %HZ}"
-    )
+    header = QLabel(f"SIDERAL SKEW-T  |  ECMWF IFS 0.25°  |  {meta.get('location','Brasil')}  |  F{fh:03d}  |  VALID {valid:%Y-%m-%d %HZ}")
     header.setStyleSheet('color:white;background:#000;font:700 16px Consolas;padding:8px;border-bottom:1px solid #444;')
     layout.addWidget(header)
 
@@ -199,7 +185,6 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     top_layout = QHBoxLayout(top)
     top_layout.setContentsMargins(0, 0, 0, 0)
     top_layout.setSpacing(6)
-
     skew = plotSkewT(plot_omega=True)
     hodo = plotHodo()
     skew.setMinimumSize(1120, 760)
@@ -227,8 +212,6 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     app.processEvents()
     activate(skew, pc)
     activate(hodo, pc)
-    # The native SHARPpy widget only draws the parcel trace when a parcel is
-    # selected. Use the most-unstable parcel calculated by ConvectiveProfile.
     if getattr(prof, 'mupcl', None) is not None:
         skew.setParcel(prof.mupcl)
     app.processEvents()
