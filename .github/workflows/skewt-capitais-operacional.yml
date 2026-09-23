@@ -31,6 +31,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       MPLBACKEND: Agg
       PYTHONUNBUFFERED: '1'
+      PYTHONPATH: ${{ github.workspace }}
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout
@@ -67,6 +68,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
+
+      - name: Verificar compatibilidade Qt/SHARPpy
+        run: |
+          python - <<'PY'
+          import os
+          print('PYTHONPATH=', os.environ.get('PYTHONPATH'))
+          import sitecustomize
+          from PyQt5 import QtCore
+          print('QRect float compatibility:', QtCore.QRect(1, 2, 3, 4.7).width())
+          PY
 
       - name: Gerar 27 capitais × F000–F048
         run: |
