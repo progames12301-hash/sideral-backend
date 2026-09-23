@@ -173,64 +173,48 @@ def profile_at(obj: dict, index: int, lat: float, lon: float, location: str, val
     if len(pres) < 6:
         raise RuntimeError(f"Perfil insuficiente para {location}: {len(pres)} níveis")
 
-    order = np.argsort(np.asarray(pres))[::-1]
-    return {
-        "pres": np.asarray(pres)[order],
-        "hght": np.asarray(hght)[order],
-        "tmp": np.asarray(tmp)[order],
-        "dwpt": np.asarray(dwpt)[order],
-        "u": np.asarray(uu)[order],
-        "v": np.asarray(vv)[order],
-        "omega": np.asarray(omg)[order],
-        "valid": valid,
-    }
+    from sharppy.sharptab.profile import create_profile
+    prof = create_profile(
+        profile="default",
+        pres=np.asarray(pres, dtype=float),
+        hght=np.asarray(hght, dtype=float),
+        tmpc=np.asarray(tmp, dtype=float),
+        dwpc=np.asarray(dwpt, dtype=float),
+        u=np.asarray(uu, dtype=float),
+        v=np.asarray(vv, dtype=float),
+        omega=np.asarray(omg, dtype=float),
+        latitude=lat,
+        longitude=lon,
+        date=valid,
+    )
+    return prof
 
 
 def load_renderer():
     import importlib.util
     spec = importlib.util.spec_from_file_location("sideral_native_spc_render", RENDERER)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"Não foi possível carregar {RENDERER}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+        raise RuntimeError(f"Não foi possível carregar renderer: {RENDERER}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def render_one(renderer, sounding, capital, fh, out_file):
-    from sharppy.sharptab import profile as shp_profile
-
-    prof = shp_profile.create_profile(
-        profile="convective",
-        pres=sounding["pres"],
-        hght=sounding["hght"],
-        tmpc=sounding["tmp"],
-        dwpc=sounding["dwpt"],
-        u=sounding["u"],
-        v=sounding["v"],
-        omeg=np.ma.masked_invalid(sounding["omega"]),
-        strictQC=False,
-        latitude=capital[2],
-        date=sounding["valid"],
-        location="SIDERAL",
-    )
-
-    tmp_dir = out_file.parent / (out_file.stem + "_render")
+def render_one(renderer, sounding, capital, fh, output):
+    tmp_dir = output.parent / f".tmp-f{fh:03d}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     meta = {
+        "capital": capital[0],
         "location": capital[0],
         "fh": fh,
-        "valid": sounding["valid"].strftime("%Y-%m-%d %H:%MZ"),
+        "valid": sounding.date.strftime("%Y-%m-%d %HZ"),
+        "title": f"SIDERAL SKEW-T — {capital[0]} — F{fh:03d}",
     }
-    renderer.render_native_spc(prof, tmp_dir, meta)
-    generated = tmp_dir / "full.png"
-    if not generated.exists() or generated.stat().st_size < 10000:
-        raise RuntimeError(f"SHARPpy não gerou PNG válido para {capital[0]} F{fh:03d}")
-    generated.replace(out_file)
-    for child in tmp_dir.glob("*"):
-        try:
-            child.unlink()
-        except OSError:
-            pass
+    native = renderer.render_native_spc(sounding, tmp_dir, meta)
+    native = Path(native)
+    if not native.exists() or native.stat().st_size < 1000:
+        raise RuntimeError(f"SHARPpy não produziu PNG válido para {capital[0]} F{fh:03d}")
+    native.replace(output)
     try:
         tmp_dir.rmdir()
     except OSError:
@@ -238,17 +222,16 @@ def render_one(renderer, sounding, capital, fh, out_file):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--cycle", choices=["06", "12", "18"], required=True)
-    ap.add_argument("--out", default="build/skewt-capitals")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cycle", required=True, choices=["06", "12", "18"])
+    parser.add_argument("--out", required=True)
+    args = parser.parse_args()
 
     run = run_datetime(args.cycle)
-    latitudes = ",".join(f"{x[2]:.4f}" for x in CAPITALS)
-    longitudes = ",".join(f"{x[3]:.4f}" for x in CAPITALS)
-
+    latitudes = [c[2] for c in CAPITALS]
+    longitudes = [c[3] for c in CAPITALS]
     variables = [
-        "temperature_2m", "dew_point_2m", "surface_pressure",
+        "surface_pressure", "temperature_2m", "dew_point_2m",
         "wind_speed_10m", "wind_direction_10m",
     ]
     for level in LEVELS:
@@ -268,7 +251,9 @@ def main():
         "hourly": ",".join(variables),
         "models": "ecmwf_ifs025",
         "run": run.strftime("%Y-%m-%dT%H:%M"),
-        "forecast_hours": "48",
+        # forecast_hours is a duration. Request 49 hours so the inclusive
+        # F048 timestamp is present (0..48) instead of stopping at F045/47.
+        "forecast_hours": "49",
         "wind_speed_unit": "kn",
         "temperature_unit": "celsius",
         "timeformat": "iso8601",
