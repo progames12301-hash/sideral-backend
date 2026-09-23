@@ -10,6 +10,10 @@ export SOURCE_MODEL=icon WRF_INPUT_MODEL=ICON WRF_DATA_SOURCE=ICON
 export WRF_INITIALIZATION_MODEL=ICON WRF_NO_FALLBACK=true
 export WRF_REFLECTIVITY_SOURCE=REFL_10CM_NATIVE WRF_NATIVE_GRID=true
 export WRF_MPI_PROCS="${WRF_MPI_PROCS:-8}"
+# METBR 4 km uses 20 s instead of 24 s: with the domain Lambert map factor
+# (~1.01), 24 s produces dt/dx=6.04 s/km and crosses the configured WRF
+# reasonable-time-step guard of 6 s/km.
+export WRF_TIME_STEP="${WRF_TIME_STEP:-20}"
 
 (( WRF_END_HOUR > WRF_START_HOUR && WRF_START_HOUR % 3 == 0 && WRF_END_HOUR % 3 == 0 && WRF_END_HOUR <= 42 )) || { echo "METBR segmento invalido: inicio/fim precisam ser multiplos de 3 h entre F000 e F042" >&2; exit 2; }
 
@@ -28,9 +32,8 @@ fi
 git show "${LEGACY_COMMIT}:wrf/run_icon_wrf.sh" > "$LEGACY"
 chmod +x "$LEGACY"
 
-# O caminho legado chama run_wrf_with_source.sh diretamente. Como esse arquivo
-# ainda possui -np 4 no histórico, criamos uma cópia temporária NORMALIZADA e
-# fazemos o legado enxergar essa cópia. Assim nenhum outro WRF/CIM é alterado.
+# The legacy path calls run_wrf_with_source.sh directly. Normalize its MPI
+# count in a temporary copy so METBR remains at 8 ranks without touching CIM.
 SOURCE_RUN="$ROOT/wrf/run_wrf_with_source.sh"
 SOURCE_RUN_ORIG="$ROOT/wrf/.metbr_run_wrf_with_source.original"
 SOURCE_RUN_8="$ROOT/wrf/.metbr_run_wrf_with_source.8mpi"
@@ -47,7 +50,7 @@ restore_source_run(){
 trap restore_source_run EXIT
 mv -f "$SOURCE_RUN_8" "$SOURCE_RUN"
 
-# Também normaliza qualquer mpirun literal de 4 processos no legado temporário.
+# Also normalize any literal 4-rank mpirun in the temporary legacy script.
 sed -i -E 's/(mpirun[^\n]*-np[[:space:]]+)4([^0-9]|$)/\18\2/g; s/(mpirun[^\n]*--np[=[:space:]]*)4([^0-9]|$)/\18\2/g' "$LEGACY"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 exec "$LEGACY"
