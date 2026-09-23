@@ -135,7 +135,8 @@ jobs:
           FORCE_RUN_DATE: ${{ steps.run.outputs.run_date }}
           FORCE_RUN_CYCLE: ${{ steps.run.outputs.run_cycle }}
           WRF_COLD_START: '1'
-          WRF_REF_LAT: '-14.50'
+          # Domínio nacional: 215x215 em 21 km, centrado para cobrir o Brasil continental.
+          WRF_REF_LAT: '-13.50'
           WRF_REF_LON: '-54.00'
           WRF_STAND_LON: '-54.00'
           WRF_E_WE: '215'
@@ -157,7 +158,7 @@ jobs:
           test "${WRF_DY_METERS}" = '21000'
           test "${WRF_E_WE}" = '215'
           test "${WRF_E_SN}" = '215'
-          echo 'Contrato Brasil 21 km: cold-start F000-F048, 215x215, 21 km; nenhum restart segmentado.'
+          echo 'Contrato Brasil 21 km: domínio nacional, cold-start F000-F048, 215x215, 21 km; nenhum restart segmentado.'
           chmod +x wrf/run_gfs_segment.sh wrf/run_gfs_test.sh
           wrf/run_gfs_segment.sh
           grep -q 'SUCCESS COMPLETE WRF' wrf_work/run/rsl.error.0000
