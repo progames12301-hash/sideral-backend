@@ -37,10 +37,6 @@ fi
 
 chmod -R a+rwX "$WORK"
 
-# A WRF restart must start at the timestamp represented by wrfrst_d01_*.
-# The old script reused the F000 start time from the cold-start namelist,
-# which can make WRF abort immediately on F003-F006 with a restart-time
-# mismatch. Rewrite the start timestamp from RUN_DATE/RUN_CYCLE + START_H.
 python3 - "$WORK/run/namelist.input" "$START_H" "$SEG_H" "$HIST" <<'PY'
 import datetime as dt
 import os
@@ -49,12 +45,10 @@ import sys
 
 p, start_h, hours, hist = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 s = open(p, encoding='utf-8').read()
-
 run_date = os.environ.get('RUN_DATE', '')
 run_cycle = os.environ.get('RUN_CYCLE', '')
 if not re.fullmatch(r'\d{8}', run_date) or run_cycle not in {'00','06','12','18'}:
     raise SystemExit(f'RUN_DATE/RUN_CYCLE invalidos para restart: {run_date!r} {run_cycle!r}')
-
 base = dt.datetime.strptime(run_date + run_cycle, '%Y%m%d%H')
 restart_time = base + dt.timedelta(hours=start_h)
 vals = {
@@ -72,22 +66,20 @@ vals = {
     'restart_interval': 180,
     'history_interval': hist,
 }
-
 for key, value in vals.items():
-    if isinstance(value, bool):
-        value = '.true.' if value else '.false.'
     pattern = rf'(?m)^\s*{re.escape(key)}\s*=.*$'
     replacement = f' {key} = {value},'
     if re.search(pattern, s):
         s = re.sub(pattern, replacement, s)
     elif key in {'restart','restart_interval','history_interval','run_days','run_hours','run_minutes','run_seconds'}:
         s = s.replace('&time_control', f'&time_control\n{replacement}', 1)
-
 open(p, 'w', encoding='utf-8').write(s)
 print('RESTART NAMELIST:', restart_time.isoformat(), '->', hours, 'h')
 PY
 
-WRFEXE="$(docker run --rm "$IMAGE" /bin/bash -lc "find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true")"
+# IMPORTANT: dtcenter/wps_wrf has an entrypoint that can modify /run and fail
+# on a bind mount. Always bypass that entrypoint for discovery and execution.
+WRFEXE="$(docker run --rm --entrypoint /bin/bash "$IMAGE" -lc "find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true")"
 if [[ -z "$WRFEXE" ]]; then
   echo "wrf.exe not found in WRF container" >&2
   exit 7
@@ -99,11 +91,12 @@ chmod 666 "$WORK/run/rsl.out.restart" "$WORK/run/rsl.error.restart"
 
 set +e
 docker run --rm \
+  --entrypoint /bin/bash \
   -e OMPI_ALLOW_RUN_AS_ROOT=1 \
   -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
   -e WRF_MPI_PROCS="$MPI_PROCS" \
   -v "$WORK/run:/run" \
-  "$IMAGE" /bin/bash -lc '
+  "$IMAGE" -lc '
     set -euo pipefail
     cd /run
     test -r namelist.input
