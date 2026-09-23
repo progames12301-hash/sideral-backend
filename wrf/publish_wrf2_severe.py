@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -221,7 +222,15 @@ def main() -> None:
         for meta in metas
         if meta.get("source")
     })
-    source = sources[0] if len(sources) == 1 else f"WRF 2 Sudeste 4 km {args.model.upper()} · diagnósticos severos"
+    resolution_km = None
+    try:
+        dx = float(os.environ.get("WRF_DX_METERS", ""))
+        if dx > 0:
+            resolution_km = dx / 1000.0
+    except ValueError:
+        pass
+    resolution_label = f"{resolution_km:g} km " if resolution_km else ""
+    source = sources[0] if len(sources) == 1 else f"WRF 2 Sudeste {resolution_label}{args.model.upper()} · diagnósticos severos"
 
     variables = {
         field: merge_classifications(variable_entries[field])
