@@ -93,31 +93,67 @@ find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST
 
 echo "Using exact restart: $EXPECTED_RST"
 
-# METBR must not depend on a host-side ozone file. The WRF container ships the
-# runtime ozone lookup table required by some radiation configurations. Stage
-# the real table from the same WRF image into the run directory when available;
-# never generate a synthetic replacement.
+# METBR must not depend on host-side radiation lookup files. WRF 4.3 with
+# RRTMG physics (ra_lw_physics/ra_sw_physics = 4) reads the ozone and aerosol
+# tables from the current working directory. Stage the real tables shipped by
+# the exact WRF container image; never generate synthetic replacements.
+#
+# The previous implementation staged only ozone_plev.formatted. The restart
+# then reached module_ra_cam_support and failed on ozone_lat.formatted.
 echo '--- staging WRF radiation lookup tables ---'
 docker run --rm \
   -v "$WORK/run:/run" \
   "$IMAGE" /bin/bash -lc '
     set -euo pipefail
-    if [[ -s /run/ozone_plev.formatted ]]; then
-      echo "ozone_plev.formatted already present in restart package"
-      exit 0
-    fi
-    ozone="$(find /comsoftware /opt /usr/local -type f -name ozone_plev.formatted -print -quit 2>/dev/null || true)"
-    if [[ -n "$ozone" && -s "$ozone" ]]; then
-      cp -f "$ozone" /run/ozone_plev.formatted
-      echo "Staged real ozone_plev.formatted from: $ozone"
-      exit 0
-    fi
-    echo "ERROR: WRF image does not contain ozone_plev.formatted and checkpoint did not provide it" >&2
-    exit 12
-  '
-test -s "$WORK/run/ozone_plev.formatted" || { echo "ozone_plev.formatted missing after WRF image staging" >&2; exit 12; }
 
-# Validate checkpoint files before MPI starts.
+    files=(
+      ozone.formatted
+      ozone_lat.formatted
+      ozone_plev.formatted
+      aerosol.formatted
+      aerosol_lat.formatted
+      aerosol_lon.formatted
+      aerosol_plev.formatted
+      RRTMG_LW_DATA
+      RRTMG_SW_DATA
+    )
+
+    for name in "${files[@]}"; do
+      if [[ -s "/run/$name" ]]; then
+        echo "$name already present in restart package"
+        continue
+      fi
+
+      src="$(find /comsoftware /opt /usr/local -type f -name "$name" -print -quit 2>/dev/null || true)"
+      if [[ -z "$src" || ! -s "$src" ]]; then
+        echo "ERROR: WRF image does not contain required radiation file: $name" >&2
+        exit 12
+      fi
+
+      cp -f "$src" "/run/$name"
+      echo "Staged real $name from: $src"
+    done
+  '
+
+RADIATION_FILES=(
+  ozone.formatted
+  ozone_lat.formatted
+  ozone_plev.formatted
+  aerosol.formatted
+  aerosol_lat.formatted
+  aerosol_lon.formatted
+  aerosol_plev.formatted
+  RRTMG_LW_DATA
+  RRTMG_SW_DATA
+)
+for file in "${RADIATION_FILES[@]}"; do
+  test -s "$WORK/run/$file" || {
+    echo "$file missing after WRF image staging" >&2
+    exit 12
+  }
+done
+
+# Validate checkpoint and all radiation lookup files before MPI starts.
 docker run --rm --entrypoint /bin/bash \
   -v "$WORK/run:/run" \
   "$IMAGE" -lc '
@@ -128,8 +164,26 @@ docker run --rm --entrypoint /bin/bash \
     test -s .expected_restart
     rst="$(cat .expected_restart)"
     test -s "$rst"
-    test -s ozone_plev.formatted
-    ls -lh "$rst" wrfbdy_d01 namelist.input ozone_plev.formatted
+
+    for file in \
+      ozone.formatted \
+      ozone_lat.formatted \
+      ozone_plev.formatted \
+      aerosol.formatted \
+      aerosol_lat.formatted \
+      aerosol_lon.formatted \
+      aerosol_plev.formatted \
+      RRTMG_LW_DATA \
+      RRTMG_SW_DATA
+    do
+      test -s "$file"
+    done
+
+    ls -lh "$rst" wrfbdy_d01 namelist.input \
+      ozone.formatted ozone_lat.formatted ozone_plev.formatted \
+      aerosol.formatted aerosol_lat.formatted aerosol_lon.formatted \
+      aerosol_plev.formatted RRTMG_LW_DATA RRTMG_SW_DATA
+
     if command -v ncdump >/dev/null 2>&1; then
       ncdump -h "$rst" >/dev/null
       ncdump -h wrfbdy_d01 >/dev/null
@@ -158,7 +212,15 @@ docker run --rm \
     cd /run
     test -r namelist.input
     test -r wrfbdy_d01
+    test -s ozone.formatted
+    test -s ozone_lat.formatted
     test -s ozone_plev.formatted
+    test -s aerosol.formatted
+    test -s aerosol_lat.formatted
+    test -s aerosol_lon.formatted
+    test -s aerosol_plev.formatted
+    test -s RRTMG_LW_DATA
+    test -s RRTMG_SW_DATA
     rst="$(cat .expected_restart)"
     test -s "$rst"
     test -x "'"$WRFEXE"'"
@@ -166,8 +228,10 @@ docker run --rm \
     echo "Starting WRF restart in $(pwd)"
     echo "MPI_PROCS=${WRF_MPI_PROCS:-8}"
     echo "Exact restart: $rst"
-    echo "Ozone lookup: /run/ozone_plev.formatted"
-    ls -lh "$rst" wrfbdy_d01 ozone_plev.formatted
+    echo "Ozone lookups: /run/ozone.formatted /run/ozone_lat.formatted /run/ozone_plev.formatted"
+    echo "Aerosol lookups: /run/aerosol.formatted /run/aerosol_lat.formatted /run/aerosol_lon.formatted /run/aerosol_plev.formatted"
+    echo "RRTMG data: /run/RRTMG_LW_DATA /run/RRTMG_SW_DATA"
+    ls -lh "$rst" wrfbdy_d01 ozone.formatted ozone_lat.formatted ozone_plev.formatted
     if command -v /usr/bin/time >/dev/null 2>&1; then
       /usr/bin/time -v mpirun --allow-run-as-root --oversubscribe \
         --mca orte_base_help_aggregate 0 \
