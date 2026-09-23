@@ -71,8 +71,26 @@ QPainter.drawArc = _draw_arc
 QPainter.drawText = _draw_text
 
 
-def activate(widget, pc):
+def _select_parcel(prof):
+    """Choose a valid SHARPpy parcel for the native renderer.
+
+    SHARPpy's plotData() expects widget.pcl to be populated before
+    setActiveCollection() triggers the first draw. Prefer MU, then ML, then
+    surface based so a missing most-unstable parcel does not abort the run.
+    """
+    for attr in ('mupcl', 'mlpcl', 'sfcpcl'):
+        pcl = getattr(prof, attr, None)
+        if pcl is not None:
+            return pcl
+    return None
+
+
+def activate(widget, pc, parcel=None):
     widget.addProfileCollection(pc)
+    if parcel is not None and hasattr(widget, 'setParcel'):
+        widget.setParcel(parcel)
+    elif parcel is not None:
+        widget.pcl = parcel
     widget.setActiveCollection(0, update_gui=True)
 
 
@@ -210,10 +228,10 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
 
     root.show()
     app.processEvents()
-    activate(skew, pc)
+
+    parcel_obj = _select_parcel(prof)
+    activate(skew, pc, parcel=parcel_obj)
     activate(hodo, pc)
-    if getattr(prof, 'mupcl', None) is not None:
-        skew.setParcel(prof.mupcl)
     app.processEvents()
     app.processEvents()
 
