@@ -34,7 +34,6 @@ env:
   WRF_END_HOUR: '48'
   WRF_RUN_HOURS: '48'
   WRF_TIME_STEP: '90'
-  # WRF usa e_we/e_sn com pontos de grade escalonados; a grade de massa publicada e 215x215.
   WRF_E_WE: '216'
   WRF_E_SN: '216'
   WRF_GRID_X: '215'
@@ -224,14 +223,17 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin wrf-brasil-12km-data
           rm -rf /tmp/wrf-publication
-          git clone --depth 1 --branch wrf-brasil-12km-data "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/wrf-publication
-          rm -rf /tmp/wrf-publication/*
+          git worktree add --detach /tmp/wrf-publication origin/wrf-brasil-12km-data
+          rm -rf /tmp/wrf-publication/* /tmp/wrf-publication/.[!.]* /tmp/wrf-publication/..?* 2>/dev/null || true
           cp -a wrf_publish/. /tmp/wrf-publication/
           cd /tmp/wrf-publication
-          git add .
+          git add -A
           git commit -m 'publish: SIDERAL WRF Brasil 21 km F000-F048 nativo' || exit 0
-          git push origin wrf-brasil-12km-data
+          git push origin HEAD:wrf-brasil-12km-data
+          cd - >/dev/null
+          git worktree remove --force /tmp/wrf-publication
 
       - name: Diagnosticos
         if: always()
