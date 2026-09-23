@@ -6,8 +6,8 @@
 <title>Sideral | Skew-T SHARPpy</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <style>
-:root{--bg:#050505;--panel:#09090c;--line:#28282f;--text:#f4f4f5;--muted:#9b9ba3;--red:#e31b23;--blue:#3b82f6}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Arial,sans-serif}.toolbar{padding:12px;background:#08080a;border-bottom:1px solid var(--line);display:flex;gap:9px;flex-wrap:wrap;align-items:end;position:sticky;top:0;z-index:10}.toolbar h1{font:900 17px Consolas;margin:0 16px 5px 0}.g{display:flex;flex-direction:column;gap:4px}.g label{font:800 10px Consolas;color:var(--muted)}.g select{height:35px;min-width:170px;background:#111116;color:#fff;border:1px solid #33343b;padding:0 9px;font-weight:700}.g.city select{min-width:210px}.btn{height:35px;background:#17171c;color:#fff;border:1px solid #3a3a42;font-weight:900;padding:0 13px;cursor:pointer}.btn:hover{border-color:#666}.btn.primary{background:var(--red);border-color:var(--red)}.status{width:100%;font:600 11px Consolas;color:#aaa}.status.ok{color:#80d98a}.status.error{color:#ff646e}.board{margin:10px;border:1px solid var(--line);background:#000}.image-wrap{position:relative;background:#000;display:flex;justify-content:center;align-items:center;min-height:500px;overflow:auto}.image-wrap img{display:block;width:100%;height:auto;max-width:1800px;image-rendering:auto}.empty{min-height:650px;display:flex;align-items:center;justify-content:center;text-align:center;color:#777;font:700 13px Consolas;padding:30px}.meta{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}.panel{padding:10px;background:#09090c;border-right:1px solid var(--line);min-height:74px}.panel:last-child{border-right:0}.title{font:900 10px Consolas;color:#aaa;border-bottom:1px solid var(--line);padding-bottom:5px;margin-bottom:6px}.body{font:700 11px Consolas;color:#ddd;line-height:1.45}.loading{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:30;font:900 12px Consolas}.note{padding:9px 12px;background:#08080a;border-top:1px solid var(--line);font:600 10px Consolas;color:#777}@media(max-width:900px){.meta{grid-template-columns:1fr 1fr}.panel:nth-child(2){border-right:0}.panel:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:600px){.toolbar{position:static}.toolbar h1{width:100%}.g,.g.city,.g select,.g.city select{width:100%}.btn{width:100%}.meta{grid-template-columns:1fr}.panel{border-right:0!important;border-bottom:1px solid var(--line)}.image-wrap{min-height:350px}}
+:root{--bg:#050505;--panel:#09090c;--line:#28282f;--text:#f4f4f5;--muted:#9b9ba3;--red:#e31b23;--green:#70e08a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Arial,sans-serif}.toolbar{padding:12px;background:#08080a;border-bottom:1px solid var(--line);display:flex;gap:9px;flex-wrap:wrap;align-items:end;position:sticky;top:0;z-index:10}.toolbar h1{font:900 17px Consolas;margin:0 16px 5px 0}.g{display:flex;flex-direction:column;gap:4px}.g label{font:800 10px Consolas;color:var(--muted)}.g select{height:35px;min-width:170px;background:#111116;color:#fff;border:1px solid #33343b;padding:0 9px;font-weight:700}.g.city select{min-width:210px}.btn{height:35px;background:#17171c;color:#fff;border:1px solid #3a3a42;font-weight:900;padding:0 13px;cursor:pointer}.btn:hover{border-color:#666}.btn.primary{background:var(--red);border-color:var(--red)}.status{width:100%;font:600 11px Consolas;color:#aaa}.status.ok{color:var(--green)}.status.error{color:#ff646e}.board{margin:10px;border:1px solid var(--line);background:#000}.image-wrap{position:relative;background:#000;display:flex;justify-content:center;align-items:center;min-height:500px;overflow:auto}.image-wrap img{display:block;width:100%;height:auto;max-width:1900px;image-rendering:auto}.empty{min-height:650px;display:flex;align-items:center;justify-content:center;text-align:center;color:#777;font:700 13px Consolas;padding:30px}.meta{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}.panel{padding:10px;background:#09090c;border-right:1px solid var(--line);min-height:74px}.panel:last-child{border-right:0}.title{font:900 10px Consolas;color:#aaa;border-bottom:1px solid var(--line);padding-bottom:5px;margin-bottom:6px}.body{font:700 11px Consolas;color:#ddd;line-height:1.45}.loading{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:30;font:900 12px Consolas}.note{padding:9px 12px;background:#08080a;border-top:1px solid var(--line);font:600 10px Consolas;color:#777}.pub{font:600 10px Consolas;color:#777;margin-left:auto;padding-bottom:8px}@media(max-width:900px){.meta{grid-template-columns:1fr 1fr}.panel:nth-child(2){border-right:0}.panel:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:600px){.toolbar{position:static}.toolbar h1{width:100%}.g,.g.city,.g select,.g.city select{width:100%}.btn{width:100%}.meta{grid-template-columns:1fr}.panel{border-right:0!important;border-bottom:1px solid var(--line)}.image-wrap{min-height:350px}.pub{width:100%;margin-left:0}}
 </style>
 </head>
 <body>
@@ -18,49 +18,98 @@
   <div class="g"><label>FORECAST</label><select id="fh"></select></div>
   <button class="btn primary" id="load">Abrir sondagem</button>
   <button class="btn" id="download" disabled>Baixar PNG</button>
-  <div id="status" class="status">Verificando capitais disponíveis...</div>
+  <div id="status" class="status">Carregando índice público das imagens...</div>
+  <div id="pub" class="pub">PUBLICAÇÃO: --</div>
 </div>
 
 <div class="board">
-  <div class="image-wrap" id="viewer"><div class="empty">Carregando disponibilidade das sondagens SHARPpy...</div></div>
+  <div class="image-wrap" id="viewer"><div class="empty">Carregando publicação SHARPpy...</div></div>
   <div class="meta">
     <div class="panel"><div class="title">MODELO</div><div class="body">ECMWF IFS 0.25°</div></div>
     <div class="panel"><div class="title">RENDERIZADOR</div><div class="body">SHARPpy — PNG pré-renderizado</div></div>
     <div class="panel"><div class="title">VALIDADE</div><div class="body" id="valid">--</div></div>
-    <div class="panel"><div class="title">FONTE</div><div class="body">Open-Meteo Single Runs</div></div>
+    <div class="panel"><div class="title">PUBLICAÇÃO</div><div class="body" id="source">GitHub Release — --</div></div>
   </div>
-  <div class="note">O navegador NÃO calcula nem desenha o Skew-T. A imagem exibida é o PNG final gerado no GitHub Actions pelo SHARPpy a partir do ECMWF IFS 0.25°.</div>
+  <div class="note">O navegador não calcula nem desenha o sounding. Ele resolve o índice de publicação do GitHub Release e abre diretamente o PNG produzido pelo SHARPpy. São 27 capitais × 17 frames (F000–F048, passo de 3h) = 459 PNG por ciclo.</div>
 </div>
 
-<div class="loading" id="loading">Abrindo PNG SHARPpy...</div>
+<div class="loading" id="loading">Localizando publicação SHARPpy...</div>
 
 <script>
-const RELEASE_BASE='https://github.com/progames12301-hash/sideral-backend/releases/download';
+const OWNER='progames12301-hash';
+const REPO='sideral-backend';
+const API=`https://api.github.com/repos/${OWNER}/${REPO}`;
+const RELEASE_BASE=`https://github.com/${OWNER}/${REPO}/releases/download`;
 const CAPITALS=[
  ['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']
 ];
 const $=id=>document.getElementById(id);
-let available=[];let currentUrl='';
+let publication=null;
+let currentUrl='';
 for(let h=0;h<=48;h+=3){const o=document.createElement('option');o.value=h;o.textContent='F'+String(h).padStart(3,'0');$('fh').appendChild(o)}
-function url(slug,cycle,fh){return `${RELEASE_BASE}/skewt-live-${cycle}/${slug}-f${String(fh).padStart(3,'0')}.png?v=${Date.now()}`}
 function setStatus(t,cls=''){$('status').textContent=t;$('status').className='status '+cls}
-function fillCities(){const s=$('city');s.innerHTML='';available.forEach(c=>{const o=document.createElement('option');o.value=c[1];o.textContent=c[0];s.appendChild(o)});$('load').disabled=!available.length}
-function probeCity(c,cycle){return new Promise(resolve=>{const im=new Image();let done=false;const finish=v=>{if(done)return;done=true;resolve(v)};im.onload=()=>finish(c);im.onerror=()=>finish(null);im.src=url(c[1],cycle,0)})}
+function assetName(slug,fh){return `${slug}-f${String(fh).padStart(3,'0')}.png`}
+function assetUrl(name){
+  if(publication?.download_base) return publication.download_base+encodeURIComponent(name);
+  return `${RELEASE_BASE}/skewt-live-${$('cycle').value}/${encodeURIComponent(name)}`;
+}
+function fillCities(){
+  const s=$('city');const previous=s.value;s.innerHTML='';
+  const names=(publication?.assets||[]).map(a=>a.replace(/-f\d{3}\.png$/,''));
+  CAPITALS.filter(c=>names.some(n=>n===c[1])).forEach(c=>{const o=document.createElement('option');o.value=c[1];o.textContent=c[0];s.appendChild(o)});
+  if([...s.options].some(o=>o.value===previous))s.value=previous;
+}
+async function fetchPublication(cycle){
+  const tag=`skewt-live-${cycle}`;
+  // First use the deterministic publication manifest shipped as a release asset.
+  const manifestUrl=`${RELEASE_BASE}/${tag}/publication.json?v=${Date.now()}`;
+  try{
+    const r=await fetch(manifestUrl,{cache:'no-store'});
+    if(r.ok){const p=await r.json();if(p?.schema==='sideral-skewt-publication-v1'&&Array.isArray(p.assets))return p}
+  }catch(e){}
+  // Backward compatibility for releases generated before publication.json existed.
+  const r=await fetch(`${API}/releases/tags/${tag}`,{cache:'no-store'});
+  if(!r.ok)throw new Error(`release ${tag} não encontrado (${r.status})`);
+  const release=await r.json();
+  const assets=(release.assets||[]).map(a=>a.name).filter(n=>n.endsWith('.png'));
+  return {schema:'legacy-release',repository:`${OWNER}/${REPO}`,tag,asset_count:assets.length,download_base:`${RELEASE_BASE}/${tag}/`,assets};
+}
 async function refreshAvailability(){
- $('loading').style.display='flex';setStatus('Verificando PNG F000 das 27 capitais...');available=[];fillCities();
- const cycle=$('cycle').value;
- const results=await Promise.all(CAPITALS.map(c=>probeCity(c,cycle)));
- available=results.filter(Boolean);fillCities();$('loading').style.display='none';
- if(available.length)setStatus(`${available.length}/27 capitais disponíveis no ciclo ${cycle}Z.`,'ok');else setStatus(`Nenhuma capital publicada ainda para ${cycle}Z.`,'error');
- if(available.length)openImage();else $('viewer').innerHTML='<div class="empty">Nenhuma sondagem publicada para este ciclo ainda.</div>';
+  $('loading').style.display='flex';setStatus('Localizando publicação do ciclo '+$('cycle').value+'Z...');publication=null;fillCities();
+  try{
+    publication=await fetchPublication($('cycle').value);
+    fillCities();
+    const count=publication.assets?.length||0;
+    $('pub').textContent=`PUBLICAÇÃO: ${publication.tag} • ${count} PNG`;
+    $('source').textContent=`GitHub Release — ${publication.tag}`;
+    $('loading').style.display='none';
+    if(count===459)setStatus(`Publicação encontrada: 459 PNG / 27 capitais.`,'ok');
+    else if(count>0)setStatus(`Publicação encontrada: ${count} PNG.`,'ok');
+    else setStatus('Release encontrado, mas sem PNG.','error');
+    if($('city').options.length)openImage();
+    else $('viewer').innerHTML='<div class="empty">Nenhuma capital encontrada no índice desta publicação.</div>';
+  }catch(e){
+    $('loading').style.display='none';
+    $('viewer').innerHTML=`<div class="empty">Não foi possível localizar a publicação ${$('cycle').value}Z.<br><br>${e.message}</div>`;
+    setStatus('Publicação não localizada para este ciclo.','error');
+    $('pub').textContent='PUBLICAÇÃO: indisponível';
+  }
 }
 function openImage(){
- const slug=$('city').value,cycle=$('cycle').value,fh=Number($('fh').value);if(!slug)return;
- const cap=CAPITALS.find(x=>x[1]===slug);const src=url(slug,cycle,fh);$('loading').style.display='flex';$('viewer').innerHTML='';
- const im=new Image();im.alt=`Sideral Skew-T SHARPpy — ${cap?cap[0]:slug} — ${cycle}Z — F${String(fh).padStart(3,'0')}`;im.onload=()=>{$('loading').style.display='none';$('viewer').appendChild(im);currentUrl=src.replace(/\?v=.*/,'');$('download').disabled=false;$('valid').textContent=`Ciclo ${cycle}Z • F${String(fh).padStart(3,'0')}`};im.onerror=()=>{$('loading').style.display='none';$('download').disabled=true;$('viewer').innerHTML='<div class="empty">Este frame ainda não foi publicado. Escolha outro forecast.</div>';setStatus('PNG não disponível para este frame.', 'error')};im.src=src;
+  const slug=$('city').value,fh=Number($('fh').value);if(!slug||!publication)return;
+  const cap=CAPITALS.find(x=>x[1]===slug);const name=assetName(slug,fh);
+  if(!(publication.assets||[]).includes(name)){
+    $('download').disabled=true;$('viewer').innerHTML='<div class="empty">Este frame não está no índice da publicação.</div>';return;
+  }
+  const src=assetUrl(name);$('loading').style.display='flex';$('viewer').innerHTML='';
+  const im=new Image();
+  im.alt=`Sideral Skew-T SHARPpy — ${cap?cap[0]:slug} — ${$('cycle').value}Z — F${String(fh).padStart(3,'0')}`;
+  im.onload=()=>{$('loading').style.display='none';$('viewer').appendChild(im);currentUrl=src;$('download').disabled=false;$('valid').textContent=`Ciclo ${$('cycle').value}Z • F${String(fh).padStart(3,'0')}`};
+  im.onerror=()=>{$('loading').style.display='none';$('download').disabled=true;$('viewer').innerHTML='<div class="empty">O PNG está no índice, mas o asset não pôde ser aberto.</div>';setStatus('Asset localizado, porém não abriu.', 'error')};
+  im.src=src;
 }
 $('cycle').addEventListener('change',refreshAvailability);$('city').addEventListener('change',openImage);$('fh').addEventListener('change',openImage);$('load').addEventListener('click',openImage);
-$('download').addEventListener('click',()=>{if(!currentUrl)return;const a=document.createElement('a');a.href=currentUrl;a.download='sideral-skewt-sharppy.png';document.body.appendChild(a);a.click();a.remove()});
+$('download').addEventListener('click',()=>{if(!currentUrl)return;const a=document.createElement('a');a.href=currentUrl;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove()});
 refreshAvailability();
 </script>
 </body>
