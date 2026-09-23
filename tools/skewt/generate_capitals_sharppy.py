@@ -97,20 +97,24 @@ def profile_at(obj: dict, index: int, lat: float, lon: float, location: str, val
     times = as_series(hourly, "time")
     if index >= len(times):
         raise RuntimeError(f"Horário F não disponível para {location}")
+
     sp = finite(as_series(hourly, "surface_pressure")[index])
     t2 = finite(as_series(hourly, "temperature_2m")[index])
     td2 = finite(as_series(hourly, "dew_point_2m")[index])
     ws2 = finite(as_series(hourly, "wind_speed_10m")[index])
     wd2 = finite(as_series(hourly, "wind_direction_10m")[index])
     elev = finite(obj.get("elevation")) or 0.0
-    su, sv = to_uv(ws2, wd2)
+
     pres, hght, tmp, dwpt, uu, vv, omg = [], [], [], [], [], [], []
-    if sp is not None and t2 is not None and td2 is not None:
+    su, sv = to_uv(ws2, wd2)
+    if sp is not None and t2 is not None and td2 is not None and su is not None and sv is not None and sp > 100:
         pres.append(sp); hght.append(elev); tmp.append(t2); dwpt.append(td2)
-        uu.append(su if su is not None else 0.0); vv.append(sv if sv is not None else 0.0); omg.append(np.nan)
+        uu.append(su); vv.append(sv); omg.append(np.nan)
+
     for level in LEVELS:
         p = float(level)
-        if sp is not None and p > sp + 2: continue
+        if sp is not None and p > sp + 2:
+            continue
         tarr = as_series(hourly, hourly_name("temperature", level))
         tdarr = as_series(hourly, hourly_name("dew_point", level))
         rharr = as_series(hourly, hourly_name("relative_humidity", level)) if not tdarr else []
@@ -118,7 +122,9 @@ def profile_at(obj: dict, index: int, lat: float, lon: float, location: str, val
         wdarr = as_series(hourly, hourly_name("wind_direction", level))
         gharr = as_series(hourly, hourly_name("geopotential_height", level))
         warr = as_series(hourly, hourly_name("vertical_velocity", level))
-        if not tarr or not wsarr or not wdarr or not gharr: continue
+        if not tarr or not wsarr or not wdarr or not gharr:
+            continue
+
         t = finite(tarr[index]); td = finite(tdarr[index]) if tdarr else None
         if td is None and rharr:
             rh = finite(rharr[index])
@@ -127,36 +133,60 @@ def profile_at(obj: dict, index: int, lat: float, lon: float, location: str, val
                 gamma = math.log(max(0.1, min(100.0, rh)) / 100.0) + a * t / (b + t)
                 td = b * gamma / (a - gamma)
         ws = finite(wsarr[index]); wd = finite(wdarr[index]); gh = finite(gharr[index])
-        if t is None or td is None or ws is None or wd is None or gh is None: continue
+        if t is None or td is None or ws is None or wd is None or gh is None or p <= 100:
+            continue
         u, v = to_uv(ws, wd)
+        if u is None or v is None:
+            continue
         pres.append(p); hght.append(gh); tmp.append(t); dwpt.append(td)
-        uu.append(u if u is not None else 0.0); vv.append(v if v is not None else 0.0)
-        omg.append(finite(warr[index]) if warr else np.nan)
+        uu.append(u); vv.append(v); omg.append(finite(warr[index]) if warr else np.nan)
+
     if len(pres) < 6:
         raise RuntimeError(f"Perfil insuficiente para {location}: {len(pres)} níveis")
-    order = np.argsort(np.asarray(pres))[::-1]
+
+    # SHARPpy interpolation and parcel routines require one strictly ordered
+    # pressure coordinate. Remove duplicate pressure levels before creating
+    # the ConvectiveProfile (surface pressure can equal a standard level).
+    rows = {}
+    for row in zip(pres, hght, tmp, dwpt, uu, vv, omg):
+        p = float(row[0])
+        if p > 100 and math.isfinite(p):
+            rows[p] = row
+    ordered = [rows[p] for p in sorted(rows, reverse=True)]
+    if len(ordered) < 6:
+        raise RuntimeError(f"Perfil insuficiente após limpeza para {location}: {len(ordered)} níveis")
+
+    arr = np.asarray(ordered, dtype=float)
     from sharppy.sharptab import profile as shp_profile
-    return shp_profile.create_profile(profile="convective", pres=np.asarray(pres)[order], hght=np.asarray(hght)[order],
-        tmpc=np.asarray(tmp)[order], dwpc=np.asarray(dwpt)[order], u=np.asarray(uu)[order], v=np.asarray(vv)[order],
-        omeg=np.ma.masked_invalid(np.asarray(omg)[order]), strictQC=False, latitude=lat, date=valid, location=location)
+    return shp_profile.create_profile(
+        profile="convective",
+        pres=arr[:, 0], hght=arr[:, 1], tmpc=arr[:, 2], dwpc=arr[:, 3],
+        u=arr[:, 4], v=arr[:, 5], omeg=np.ma.masked_invalid(arr[:, 6]),
+        strictQC=False, latitude=lat, date=valid, location=location,
+    )
 
 
 def load_renderer():
     import importlib.util
     spec = importlib.util.spec_from_file_location("sideral_native_spc_render", RENDERER)
-    if spec is None or spec.loader is None: raise RuntimeError(f"Não foi possível carregar renderer: {RENDERER}")
-    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Não foi possível carregar renderer: {RENDERER}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def render_one(renderer, sounding, capital, fh, output):
     tmp_dir = output.parent / f".tmp-f{fh:03d}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    meta = {"capital": capital[0], "location": capital[0], "fh": fh,
-            "valid": sounding.date.strftime("%Y-%m-%d %HZ"), "title": f"SIDERAL SKEW-T — {capital[0]} — F{fh:03d}"}
+    meta = {
+        "capital": capital[0], "location": capital[0], "fh": fh,
+        "valid": sounding.date.strftime("%Y-%m-%d %HZ"),
+        "title": f"SIDERAL SKEW-T — {capital[0]} — F{fh:03d}",
+    }
     result = renderer.render_native_spc(sounding, tmp_dir, meta)
     native = Path(result) if result is not None else tmp_dir / "full.png"
     if not native.exists() or native.stat().st_size < 1000:
-        # Native renderer produces full.png even when it intentionally returns None.
         candidates = [tmp_dir / "full.png", tmp_dir / "skewt.png"]
         native = next((p for p in candidates if p.exists() and p.stat().st_size >= 1000), native)
     if not native.exists() or native.stat().st_size < 1000:
@@ -170,7 +200,10 @@ def render_one(renderer, sounding, capital, fh, output):
 
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--cycle", required=True, choices=["06", "12", "18"]); parser.add_argument("--out", required=True); args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cycle", required=True, choices=["06", "12", "18"])
+    parser.add_argument("--out", required=True)
+    args = parser.parse_args()
     run = run_datetime(args.cycle)
     latitudes = [c[2] for c in CAPITALS]; longitudes = [c[3] for c in CAPITALS]
     variables = ["surface_pressure", "temperature_2m", "dew_point_2m", "wind_speed_10m", "wind_direction_10m"]
@@ -178,8 +211,8 @@ def main():
         variables += [hourly_name("temperature", level), hourly_name("dew_point", level), hourly_name("relative_humidity", level),
                       hourly_name("wind_speed", level), hourly_name("wind_direction", level), hourly_name("geopotential_height", level), hourly_name("vertical_velocity", level)]
     params = {"latitude": latitudes, "longitude": longitudes, "hourly": ",".join(variables), "models": "ecmwf_ifs025",
-              "run": run.strftime("%Y-%m-%dT%H:%M"), "forecast_hours": "49", "wind_speed_unit": "kn", "temperature_unit": "celsius",
-              "timeformat": "iso8601", "timezone": "UTC", "cell_selection": "nearest"}
+              "run": run.strftime("%Y-%m-%dT%H:%M"), "forecast_hours": "49", "wind_speed_unit": "kn",
+              "temperature_unit": "celsius", "timeformat": "iso8601", "timezone": "UTC", "cell_selection": "nearest"}
     print(f"[Sideral] ECMWF IFS 0.25° via Open-Meteo Single Runs: {run:%Y-%m-%d %HZ}", flush=True)
     payload = get_json(params)
     locations = [payload] if isinstance(payload, dict) else payload if isinstance(payload, list) else None
