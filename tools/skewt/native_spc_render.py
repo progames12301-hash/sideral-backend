@@ -7,7 +7,7 @@ from numbers import Real
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor, QPainter, QPen
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QActionGroup
 from sharppy.sharptab.prof_collection import ProfCollection
 from sharppy.viz import skew as _sharppy_skew
 from sharppy.viz.skew import plotSkewT
@@ -15,7 +15,6 @@ from sharppy.viz.hodo import plotHodo
 
 
 def _qt_int(value):
-    """Convert Python/NumPy numeric scalars to a Qt-compatible int."""
     if isinstance(value, Real):
         return int(round(float(value)))
     return value
@@ -25,9 +24,6 @@ def _qt_args(args):
     return tuple(_qt_int(x) for x in args)
 
 
-# SHARPpy versions commonly deployed on Render predate current PyQt5's
-# stricter overload resolution. Keep the compatibility shim local to the
-# SHARPpy modules instead of modifying site-packages.
 _original_qfont = _sharppy_skew.QtGui.QFont
 
 def _compat_qfont(*args, **kwargs):
@@ -37,10 +33,20 @@ def _compat_qfont(*args, **kwargs):
 
 _sharppy_skew.QtGui.QFont = _compat_qfont
 
-# Patch the QPainter primitives used by SHARPpy's skew/hodograph widgets.
-# PyQt5 rejects NumPy float scalars even where the old Qt bindings accepted
-# them. Preserve QLine/QLineF/QPoint/QPointF objects and normalize numeric
-# overloads only.
+# SHARPpy passes exclusive=True to QActionGroup. Newer PyQt5 exposes
+# exclusivity through setExclusive() rather than accepting it as a
+# constructor keyword. Adapt only this call; keep SHARPpy's native widget.
+_original_action_group = QActionGroup
+
+class _CompatActionGroup(_original_action_group):
+    def __init__(self, parent=None, *args, **kwargs):
+        exclusive = kwargs.pop('exclusive', None)
+        super().__init__(parent, *args, **kwargs)
+        if exclusive is not None:
+            self.setExclusive(bool(exclusive))
+
+_sharppy_skew.QtWidgets.QActionGroup = _CompatActionGroup
+
 _orig_draw_line = QPainter.drawLine
 _orig_draw_polyline = QPainter.drawPolyline
 _orig_draw_point = QPainter.drawPoint
@@ -75,8 +81,6 @@ def _draw_arc(self, *args):
 
 
 def _draw_text(self, *args):
-    # drawText has both geometry and string overloads. Only normalize numeric
-    # arguments; QString/text arguments remain untouched.
     return _orig_draw_text(self, *_qt_args(args))
 
 QPainter.drawLine = _draw_line
