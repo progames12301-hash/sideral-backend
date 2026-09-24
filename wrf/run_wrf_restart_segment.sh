@@ -29,6 +29,10 @@ else
   echo "namelist.input ausente no checkpoint" >&2
   exit 6
 fi
+# Checkpoints created by older METBR runs may contain ghg_input, which is not
+# a runtime namelist variable in the WRF 4.3 executable used by METBR.
+# Strip only that unsupported option; preserve the rest of the checkpoint.
+sed -i -E '/^[[:space:]]*ghg_input[[:space:]]*=/d' "$WORK/run/namelist.input"
 chmod -R a+rwX "$WORK"
 
 python3 - "$WORK/run/namelist.input" "$START_H" "$SEG_H" "$HIST" <<'PY'
