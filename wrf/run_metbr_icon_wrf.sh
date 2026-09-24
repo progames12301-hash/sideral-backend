@@ -40,16 +40,19 @@ SOURCE_RUN_8="$ROOT/wrf/.metbr_run_wrf_with_source.8mpi"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_ORIG"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_8"
 sed -i -E 's/(mpirun[^\n]*-np[[:space:]]+)4([^0-9]|$)/\18\2/g; s/(mpirun[^\n]*--np[=[:space:]]*)4([^0-9]|$)/\18\2/g' "$SOURCE_RUN_8"
-# WRF 4.3 does not define ghg_input as a runtime namelist option.
-# Do not inject it into the generated &physics namelist. The previous
-# compatibility shim was for newer WRF releases and makes WRF 4.3 abort
-# while parsing the physics namelist.
-chmod +x "$SOURCE_RUN_8"
+
+# Install the complete WRF-4.3 physics/runtime support set into the WRF
+# working directory immediately after the official image copies its run/
+# tree. This is deliberately METBR-only and does not change CIM.
+cp -f "$ROOT/wrf/ensure_metbr_wrf_runtime.sh" "$ROOT/wrf/.metbr_ensure_runtime.sh"
+sed -i '/cp -a \/comsoftware\/wrf\/WRF-4\.3\/run\/. run\//a\\    /bin/bash /work/.metbr_ensure_runtime.sh run' "$SOURCE_RUN_8"
+chmod +x "$SOURCE_RUN_8" "$ROOT/wrf/.metbr_ensure_runtime.sh"
+
 restore_source_run(){
   if [[ -f "$SOURCE_RUN_ORIG" ]]; then
     mv -f "$SOURCE_RUN_ORIG" "$SOURCE_RUN"
   fi
-  rm -f "$SOURCE_RUN_8"
+  rm -f "$SOURCE_RUN_8" "$ROOT/wrf/.metbr_ensure_runtime.sh"
 }
 trap restore_source_run EXIT
 mv -f "$SOURCE_RUN_8" "$SOURCE_RUN"
