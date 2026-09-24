@@ -40,10 +40,10 @@ SOURCE_RUN_8="$ROOT/wrf/.metbr_run_wrf_with_source.8mpi"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_ORIG"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_8"
 sed -i -E 's/(mpirun[^\n]*-np[[:space:]]+)4([^0-9]|$)/\18\2/g; s/(mpirun[^\n]*--np[=[:space:]]*)4([^0-9]|$)/\18\2/g' "$SOURCE_RUN_8"
-# WRF 4.3's RRTMG startup checks for CAMtr_volume_mixing_ratio when ghg_input
-# is left at its default. METBR does not use time-varying GHG forcing, so
-# disable that optional table read instead of shipping an unrelated forcing file.
-sed -i -E '/^[[:space:]]*fractional_seaice[[:space:]]*=[[:space:]]*1,/a\ ghg_input = 0,' "$SOURCE_RUN_8"
+# WRF 4.3 does not define ghg_input as a runtime namelist option.
+# Do not inject it into the generated &physics namelist. The previous
+# compatibility shim was for newer WRF releases and makes WRF 4.3 abort
+# while parsing the physics namelist.
 chmod +x "$SOURCE_RUN_8"
 restore_source_run(){
   if [[ -f "$SOURCE_RUN_ORIG" ]]; then
