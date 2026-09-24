@@ -226,7 +226,7 @@ jobs:
           git fetch origin wrf-brasil-12km-data
           rm -rf /tmp/wrf-publication
           git worktree add --detach /tmp/wrf-publication origin/wrf-brasil-12km-data
-          rm -rf /tmp/wrf-publication/* /tmp/wrf-publication/.[!.]* /tmp/wrf-publication/..?* 2>/dev/null || true
+          find /tmp/wrf-publication -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
           cp -a wrf_publish/. /tmp/wrf-publication/
           cd /tmp/wrf-publication
           git add -A
