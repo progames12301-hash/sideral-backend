@@ -36,11 +36,16 @@ cp -f "$SOURCE_RUN" "$SOURCE_RUN_ORIG"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_8"
 sed -i -E 's/(mpirun[^\n]*-np[[:space:]]+)4([^0-9]|$)/\18\2/g; s/(mpirun[^\n]*--np[=[:space:]]*)4([^0-9]|$)/\18\2/g' "$SOURCE_RUN_8"
 
-# Provision the official WRF-4.3 physics support set inside the same /work
-# volume used by the Docker WRF job. This avoids piecemeal missing-table
-# failures such as CAMtr_volume_mixing_ratio.
-RUNTIME_HELPER_URL="https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-runner/wrf/ensure_metbr_wrf_runtime.sh"
-sed -i "/cp -a \/comsoftware\/wrf\/WRF-4\.3\/run\/. run\//a\\    curl -fL --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 600 -o /work/.metbr_ensure_runtime.sh '$RUNTIME_HELPER_URL'\n    chmod +x /work/.metbr_ensure_runtime.sh\n    /bin/bash /work/.metbr_ensure_runtime.sh run" "$SOURCE_RUN_8"
+# METBR uses the DTCenter WRF-4.3 image. Its runtime can require the
+# CLWRFGHG CAMtr_volume_mixing_ratio tables. Provision the complete runtime
+# set in the same /work volume used by Docker. The injection is anchored to
+# the stable `cd /work` line rather than a fragile table-copy command.
+RUNTIME_HELPER="$ROOT/wrf/ensure_metbr_wrf_runtime.sh"
+RUNTIME_HELPER_IN_WORK="$ROOT/wrf_work/.metbr_ensure_runtime.sh"
+mkdir -p "$ROOT/wrf_work"
+cp -f "$RUNTIME_HELPER" "$RUNTIME_HELPER_IN_WORK"
+chmod +x "$RUNTIME_HELPER_IN_WORK"
+sed -i "/^[[:space:]]*cd \/work[[:space:]]*$/a\\    /bin/bash /work/.metbr_ensure_runtime.sh /work/run" "$SOURCE_RUN_8"
 chmod +x "$SOURCE_RUN_8"
 
 restore_source_run(){
