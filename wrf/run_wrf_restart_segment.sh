@@ -65,20 +65,22 @@ EXPECTED_RST="$(cat "$WORK/run/.expected_restart")"
 [[ -s "$WORK/run/$EXPECTED_RST" ]] || { echo "Restart exato nao encontrado: $EXPECTED_RST" >&2; ls -lh "$WORK/run"/wrfrst_d01_* >&2 || true; exit 8; }
 find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -delete
 
-# A restart checkpoint contains model state, not necessarily the WRF physics
-# tables. Noah requires VEGPARM.TBL at startup; copy the canonical runtime
-# tables from the exact dtcenter image used for wrf.exe before launching MPI.
+# WRF reads physics tables from its current working directory. The restart
+# checkpoint does not contain them, so stage the canonical tables from the
+# SAME dtcenter/wps_wrf image immediately before MPI. Older versions searched
+# only /comsoftware/wrf, /opt and /usr/local; the current image may keep the
+# tables under /home, /root or another installation prefix.
 WRF_TABLES=(VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL URBPARM.TBL RRTMG_LW_DATA RRTMG_SW_DATA ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_lon.formatted aerosol_plev.formatted CAM_ABS_DATA CAMtr_volume_mixing_ratio)
 for name in "${WRF_TABLES[@]}"; do
   if [[ ! -s "$WORK/run/$name" ]]; then
-    docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" "$IMAGE" -lc "set -e; src=\$(find /comsoftware/wrf /opt /usr/local -type f -name '$name' -print -quit 2>/dev/null || true); test -n \"\$src\" || { echo 'Missing WRF runtime table: $name' >&2; exit 1; }; cp -f \"\$src\" /run/$name"
+    docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" "$IMAGE" -lc "set -e; src=\$(find / -type f -name '$name' -not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' -print -quit 2>/dev/null || true); test -n \"\$src\" || { echo 'Missing WRF runtime table: $name' >&2; exit 1; }; echo \"Using WRF table $name from \$src\"; cp -f \"\$src\" /run/$name"
   fi
 done
 for name in VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL RRTMG_LW_DATA RRTMG_SW_DATA; do
   test -s "$WORK/run/$name" || { echo "Missing mandatory WRF runtime table: $name" >&2; exit 12; }
 done
 
-WRFEXE="$(docker run --rm --entrypoint /bin/bash "$IMAGE" -lc "find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true")"
+WRFEXE="$(docker run --rm --entrypoint /bin/bash "$IMAGE" -lc "find / -type f -path '*/main/wrf.exe' -not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' -print -quit 2>/dev/null || true")"
 [[ -n "$WRFEXE" ]] || { echo "wrf.exe not found in WRF container" >&2; exit 7; }
 
 touch "$WORK/run/rsl.out.restart"
