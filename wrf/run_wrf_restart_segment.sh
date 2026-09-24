@@ -44,9 +44,12 @@ if not re.fullmatch(r'\d{8}',run_date) or run_cycle not in {'00','06','12','18'}
     raise SystemExit(f'RUN_DATE/RUN_CYCLE invalidos para restart: {run_date!r} {run_cycle!r}')
 base=dt.datetime.strptime(run_date+run_cycle,'%Y%m%d%H')
 restart_time=base+dt.timedelta(hours=start_h)
+end_time=restart_time+dt.timedelta(hours=hours)
 vals={
  'start_year':restart_time.year,'start_month':restart_time.month,'start_day':restart_time.day,'start_hour':restart_time.hour,
- 'start_minute':0,'start_second':0,'run_days':0,'run_hours':hours,'run_minutes':0,'run_seconds':0,
+ 'start_minute':0,'start_second':0,
+ 'end_year':end_time.year,'end_month':end_time.month,'end_day':end_time.day,'end_hour':end_time.hour,
+ 'run_days':0,'run_hours':hours,'run_minutes':0,'run_seconds':0,
  'restart':'.true.','restart_interval':180,'override_restart_timers':'.true.','history_interval':hist,
  'time_step':20,'time_step_fract_num':0,'time_step_fract_den':1,
 }
@@ -54,14 +57,14 @@ for key,value in vals.items():
     pat=rf'(?m)^\s*{re.escape(key)}\s*=.*$'
     rep=f' {key} = {value},'
     if re.search(pat,s): s=re.sub(pat,rep,s)
-    elif key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds'}:
+    elif key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds','end_year','end_month','end_day','end_hour'}:
         s=s.replace('&time_control', f'&time_control\n{rep}',1)
     elif key in {'time_step','time_step_fract_num','time_step_fract_den'}:
         s=s.replace('&domains', f'&domains\n{rep}',1)
 open(p,'w',encoding='utf-8').write(s)
 expected=f"wrfrst_d01_{restart_time:%Y-%m-%d_%H:%M:%S}"
 open(os.path.join(os.path.dirname(p),'.expected_restart'),'w').write(expected+'\n')
-print('RESTART NAMELIST:',restart_time.isoformat(),'->',hours,'h; time_step=20 s')
+print('RESTART NAMELIST:',restart_time.isoformat(),'->',hours,'h; end=',end_time.isoformat(),'; time_step=20 s')
 print('EXPECTED RESTART FILE:',expected)
 PY
 
