@@ -47,6 +47,10 @@ cp -f "$SOURCE_RUN" "$SOURCE_RUN_8"
 sed -i -E 's/(WRF_SEGMENT_HOURS=\$\(\(WRF_END_HOUR-WRF_START_HOUR\)\))/WRF_SEGMENT_HOURS=$((WRF_SIM_END_HOUR-WRF_START_HOUR))/g' "$SOURCE_RUN_8"
 sed -i 's/--max-hour "\$WRF_END_HOUR"/--max-hour "\$WRF_BOUNDARY_END_HOUR"/' "$SOURCE_RUN_8"
 
+# run_wrf_with_source writes the WPS namelist and the WRF namelist from the
+# same END_ISO. Keep WPS at F042, then reset only namelist.input to F000-F003.
+sed -i '/^chmod -R a+rwX "\$WORK"$/i\SIM_END_Y=$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${WRF_SIM_END_HOUR} hours" +%Y)\nSIM_END_M=$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${WRF_SIM_END_HOUR} hours" +%m)\nSIM_END_D=$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${WRF_SIM_END_HOUR} hours" +%d)\nSIM_END_H=$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC +${WRF_SIM_END_HOUR} hours" +%H)\nsed -i -E "s/^ end_year = .*/ end_year = ${SIM_END_Y},/; s/^ end_month = .*/ end_month = ${SIM_END_M},/; s/^ end_day = .*/ end_day = ${SIM_END_D},/; s/^ end_hour = .*/ end_hour = ${SIM_END_H},/; s/^ run_hours = .*/ run_hours = ${WRF_SIM_END_HOUR},/" "$WORK/namelist.input"' "$SOURCE_RUN_8"
+
 # WRF's wrfbdy_d01 must be generated for the complete horizon. Temporarily
 # expand the real.exe namelist to F042, then restore the F000-F003 namelist
 # before wrf.exe starts. RUN_DATE/RUN_CYCLE are passed into the container.
