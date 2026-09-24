@@ -50,8 +50,10 @@ for key,value in vals.items():
     pat=rf'(?m)^\s*{re.escape(key)}\s*=.*$'
     rep=f' {key} = {value},'
     if re.search(pat,s): s=re.sub(pat,rep,s)
-    elif key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds','time_step','time_step_fract_num','time_step_fract_den'}:
-        s=s.replace('&time_control' if key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds'} else '&domains', f"{'&time_control' if key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds'} else '&domains'}\n{rep}",1)
+    elif key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds'}:
+        s=s.replace('&time_control', f'&time_control\n{rep}',1)
+    elif key in {'time_step','time_step_fract_num','time_step_fract_den'}:
+        s=s.replace('&domains', f'&domains\n{rep}',1)
 open(p,'w',encoding='utf-8').write(s)
 expected=f"wrfrst_d01_{restart_time:%Y-%m-%d_%H:%M:%S}"
 open(os.path.join(os.path.dirname(p),'.expected_restart'),'w').write(expected+'\n')
@@ -63,13 +65,18 @@ EXPECTED_RST="$(cat "$WORK/run/.expected_restart")"
 [[ -s "$WORK/run/$EXPECTED_RST" ]] || { echo "Restart exato nao encontrado: $EXPECTED_RST" >&2; ls -lh "$WORK/run"/wrfrst_d01_* >&2 || true; exit 8; }
 find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -delete
 
-RADIATION_FILES=(ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_lon.formatted aerosol_plev.formatted RRTMG_LW_DATA RRTMG_SW_DATA)
-for name in "${RADIATION_FILES[@]}"; do
+# A restart checkpoint contains model state, not necessarily the WRF physics
+# tables. Noah requires VEGPARM.TBL at startup; copy the canonical runtime
+# tables from the exact dtcenter image used for wrf.exe before launching MPI.
+WRF_TABLES=(VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL URBPARM.TBL RRTMG_LW_DATA RRTMG_SW_DATA ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_lon.formatted aerosol_plev.formatted CAM_ABS_DATA CAMtr_volume_mixing_ratio)
+for name in "${WRF_TABLES[@]}"; do
   if [[ ! -s "$WORK/run/$name" ]]; then
-    docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" "$IMAGE" -lc "set -e; src=\$(find /comsoftware /opt /usr/local -type f -name '$name' -print -quit 2>/dev/null || true); test -n \"\$src\"; cp -f \"\$src\" /run/$name"
+    docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" "$IMAGE" -lc "set -e; src=\$(find /comsoftware/wrf /opt /usr/local -type f -name '$name' -print -quit 2>/dev/null || true); test -n \"\$src\" || { echo 'Missing WRF runtime table: $name' >&2; exit 1; }; cp -f \"\$src\" /run/$name"
   fi
 done
-for name in "${RADIATION_FILES[@]}"; do test -s "$WORK/run/$name" || { echo "Missing radiation table: $name" >&2; exit 12; }; done
+for name in VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL RRTMG_LW_DATA RRTMG_SW_DATA; do
+  test -s "$WORK/run/$name" || { echo "Missing mandatory WRF runtime table: $name" >&2; exit 12; }
+done
 
 WRFEXE="$(docker run --rm --entrypoint /bin/bash "$IMAGE" -lc "find /comsoftware/wrf -type f -path '*/main/wrf.exe' -print -quit 2>/dev/null || true")"
 [[ -n "$WRFEXE" ]] || { echo "wrf.exe not found in WRF container" >&2; exit 7; }
