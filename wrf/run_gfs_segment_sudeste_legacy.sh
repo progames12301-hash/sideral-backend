@@ -39,15 +39,18 @@ path=Path('wrf/run_gfs_test.sh')
 text=path.read_text(encoding='utf-8')
 # Dominio independente do Sudeste: SP, MG, RJ e ES, mantendo o Sul intacto.
 domain_replacements = {
-    ' e_we              = 300,': ' e_we              = 390,',
-    ' e_sn              = 360,': ' e_sn              = 360,',
+    ' e_we              = 300,': ' e_we              = 223,',
+    ' e_sn              = 360,': ' e_sn              = 206,',
     ' ref_lat   = -28.10,': ' ref_lat   = -19.50,',
     ' ref_lon   = -53.45,': ' ref_lon   = -46.50,',
     ' truelat1  = -25.0,': ' truelat1  = -15.0,',
     ' truelat2  = -35.0,': ' truelat2  = -25.0,',
     ' stand_lon = -53.45,': ' stand_lon = -46.50,',
-    ' e_we = 300,': ' e_we = 390,',
-    ' e_sn = 360,': ' e_sn = 360,',
+    ' dx = 4000,': ' dx = 7000,',
+    ' dy = 4000,': ' dy = 7000,',
+    ' time_step = 18,': ' time_step = 42,',
+    ' e_we = 300,': ' e_we = 223,',
+    ' e_sn = 360,': ' e_sn = 206,',
 }
 for old, new in domain_replacements.items():
     if old not in text:
