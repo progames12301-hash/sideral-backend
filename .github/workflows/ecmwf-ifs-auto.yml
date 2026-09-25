@@ -9,9 +9,7 @@ on:
       - ".github/workflows/ecmwf-ifs-auto.yml"
       - "wrf/ecmwf_ifs_runner.py"
   schedule:
-    # 10:10 UTC = 07:10 BRT: rodada 00Z normalmente ja esta disponivel.
     - cron: '10 10 * * *'
-    # 22:10 UTC = 19:10 BRT: rodada 12Z normalmente ja esta disponivel.
     - cron: '10 22 * * *'
 
 permissions:
@@ -42,6 +40,53 @@ jobs:
           set -euxo pipefail
           python -m pip install --upgrade pip
           python -m pip install numpy scipy requests eccodes ecmwf-opendata
+
+      - name: Limitar leitura do GRIB ao dominio da America do Sul
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('wrf/ecmwf_ifs_runner.py')
+          text = p.read_text(encoding='utf-8')
+          start = text.index('def read_grib(path: Path) -> list[dict]:')
+          end = text.index('\ndef grib_step', start)
+          replacement = '''def read_grib(path: Path) -> list[dict]:
+              """Read GRIB messages while retaining only South America in RAM."""
+              out = []
+              with path.open("rb") as fh:
+                  while True:
+                      gid = codes_grib_new_from_file(fh)
+                      if gid is None:
+                          break
+                      try:
+                          item = {"shortName": str(codes_get(gid, "shortName")), "values": None}
+                          for key in ("endStep", "forecastTime", "level", "typeOfLevel", "units"):
+                              try:
+                                  item[key] = codes_get(gid, key)
+                              except Exception:
+                                  item[key] = None
+                          lat = np.asarray(codes_get_array(gid, "latitudes"), dtype=float)
+                          lon = np.asarray(codes_get_array(gid, "longitudes"), dtype=float)
+                          lon = ((lon + 180.0) % 360.0) - 180.0
+                          mask = ((lat >= SOUTH - 1.0) & (lat <= NORTH + 1.0) &
+                                  (lon >= WEST - 1.0) & (lon <= EAST + 1.0))
+                          idx = np.flatnonzero(mask)
+                          if idx.size < 100:
+                              raise RuntimeError(f"Poucos pontos no dominio {path.name}: {idx.size}")
+                          values = np.asarray(codes_get_values(gid), dtype=float)
+                          item["latitudes"] = lat[idx]
+                          item["longitudes"] = lon[idx]
+                          item["values"] = values[idx]
+                          out.append(item)
+                      finally:
+                          codes_release(gid)
+              if not out:
+                  raise RuntimeError(f"GRIB vazio: {path}")
+              return out
+'''
+          p.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          print('Extrator IFS: leitura regional ativa para', p)
+          PY
 
       - name: Gerar IFS 0-120h
         run: |
