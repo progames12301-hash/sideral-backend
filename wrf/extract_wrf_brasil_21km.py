@@ -58,9 +58,25 @@ def native_reflectivity(ds: Dataset, path: Path) -> np.ndarray:
             f"Grade de refletividade inesperada em {path.name}: {values.shape}; "
             f"esperado {(EXPECTED_NY, EXPECTED_NX)}"
         )
-    values = np.asarray(values, dtype=np.float32)
+    return np.nan_to_num(values, nan=-9999.0, posinf=-9999.0, neginf=-9999.0).astype(np.float32)
+
+
+def sea_level_pressure(ds: Dataset, path: Path) -> np.ndarray:
+    """Retorna SLP em hPa para isobaras. Usa SLP/SLP_P se presente; nunca inventa campo."""
+    name = next((candidate for candidate in ("slp", "SLP", "PMSL", "MSLP") if candidate in ds.variables), None)
+    if name is None:
+        raise RuntimeError(f"Campo de pressao ao nivel do mar (SLP/MSLP) ausente em {path.name}; nao e possivel gerar isobaras reais.")
+    values = np.asarray(ds.variables[name][:], dtype=np.float32)
+    while values.ndim > 2:
+        values = values[0]
+    if values.shape != (EXPECTED_NY, EXPECTED_NX):
+        raise RuntimeError(f"SLP com shape inesperado em {path.name}: {values.shape}")
+    # WRF normalmente grava SLP em hPa; somente converte se os valores forem inequivocamente Pa.
+    finite = values[np.isfinite(values)]
+    if finite.size and float(np.nanmedian(finite)) > 2000.0:
+        values = values / 100.0
     values = np.nan_to_num(values, nan=-9999.0, posinf=-9999.0, neginf=-9999.0)
-    return values
+    return values.astype(np.float32)
 
 
 def inspect_grid(ds: Dataset, path: Path) -> None:
@@ -108,9 +124,9 @@ def main() -> None:
 
     first_stats = None
     with temp_path.open("w", encoding="utf-8") as stream:
-        stream.write('{"schemaVersion":"1.0","model":"WRF Brasil","resolutionKm":21,')
+        stream.write('{"schemaVersion":"1.1","model":"WRF Brasil","resolutionKm":21,')
         stream.write('"grid":{"nx":215,"ny":215,"dxMeters":21000,"dyMeters":21000},')
-        stream.write('"reflectivitySource":"REFL_10CM_NATIVE","nativeGrid":true,')
+        stream.write('"reflectivitySource":"REFL_10CM_NATIVE","pressureSource":"SLP_NATIVE","nativeGrid":true,')
         stream.write(f'"initTime":{json.dumps(init_time.strftime("%Y-%m-%dT%H:%M:%SZ"))},')
         stream.write('"temporalResolutionMinutes":60,"frameCount":49,"frames":[')
 
@@ -118,15 +134,24 @@ def main() -> None:
             with Dataset(path, "r") as ds:
                 inspect_grid(ds, path)
                 refl = native_reflectivity(ds, path)
+                slp = sea_level_pressure(ds, path)
                 t = read_times(ds, times[index])
             if index == 0:
+                valid = refl[refl > -9000]
                 first_stats = {
-                    "minDbz": float(np.nanmin(refl[refl > -9000])) if np.any(refl > -9000) else None,
-                    "maxDbz": float(np.nanmax(refl[refl > -9000])) if np.any(refl > -9000) else None,
+                    "minDbz": float(np.nanmin(valid)) if valid.size else None,
+                    "maxDbz": float(np.nanmax(valid)) if valid.size else None,
+                    "minSlpHpa": float(np.nanmin(slp[slp > -9000])) if np.any(slp > -9000) else None,
+                    "maxSlpHpa": float(np.nanmax(slp[slp > -9000])) if np.any(slp > -9000) else None,
                 }
             if index:
                 stream.write(",")
-            frame = {"forecastHour": index, "time": t, "reflectivityDbz": refl.tolist()}
+            frame = {
+                "forecastHour": index,
+                "time": t,
+                "reflectivityDbz": refl.tolist(),
+                "seaLevelPressureHpa": slp.tolist(),
+            }
             json.dump(frame, stream, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
             print(f"Brasil 21 km: F{index:03d} {path.name}")
 
@@ -134,7 +159,7 @@ def main() -> None:
 
     temp_path.replace(json_path)
     metadata = {
-        "schemaVersion": "1.0",
+        "schemaVersion": "1.1",
         "model": "WRF Brasil",
         "resolutionKm": 21,
         "nx": EXPECTED_NX,
@@ -144,6 +169,7 @@ def main() -> None:
         "frameCount": EXPECTED_FRAMES,
         "temporalResolutionMinutes": 60,
         "reflectivitySource": "REFL_10CM_NATIVE",
+        "pressureSource": "SLP_NATIVE",
         "nativeGrid": True,
         "initTime": init_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "lastValidTime": times[-1].strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -154,7 +180,7 @@ def main() -> None:
     metadata_tmp.write_text(json.dumps(metadata, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     metadata_tmp.replace(metadata_path)
 
-    print(f"Extracao Brasil 21 km concluida: {EXPECTED_FRAMES} frames, 215x215, REFL_10CM nativo")
+    print(f"Extracao Brasil 21 km concluida: {EXPECTED_FRAMES} frames, 215x215, REFL_10CM nativo + SLP nativo")
 
 
 if __name__ == "__main__":
