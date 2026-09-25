@@ -1,4 +1,4 @@
-"""SIGMA's public menu/logs and official PNG+PGW products, cached server-side."""
+"""CPTEC/INPE SIGMA radar products, with honest freshness metadata."""
 import datetime as dt
 import hashlib
 import html
@@ -17,6 +17,7 @@ from PIL import Image
 BASE='https://sigma2.cptec.inpe.br/radar'
 RADAR_DATA='https://s0.cptec.inpe.br/webdsa/json_dsa/dados_radar.json'
 
+
 def get(url, limit=8*1024*1024):
     parsed=urlparse(url)
     if parsed.scheme!='https' or not (parsed.hostname or '').endswith('.cptec.inpe.br'):
@@ -29,15 +30,6 @@ def get(url, limit=8*1024*1024):
             if len(result)>limit: raise ValueError('Produto excessivo')
         return bytes(result)
 
-def products_in_menu(item):
-    if isinstance(item,list):
-        for value in item: yield from products_in_menu(value)
-    elif isinstance(item,dict):
-        name=html.unescape(item.get('nome',''))
-        if re.match(r'^(CAPPI|VENTO) ',name) and 'codigo' in item:
-            yield item | {'nome':name}
-        for value in item.values():
-            if isinstance(value,(dict,list)): yield from products_in_menu(value)
 
 def radars_in_menu(item):
     if isinstance(item,list):
@@ -49,11 +41,9 @@ def radars_in_menu(item):
         for value in item.values():
             if isinstance(value,(dict,list)): yield from radars_in_menu(value)
 
-def reproject_png(png, pgw):
-    """CPTEC geographic worldfile, pixel CENTERS; nearest sampling into Mercator.
 
-    Only axis-aligned lon/lat PGWs accepted. Do not assign approximate radar bounds.
-    """
+def reproject_png(png, pgw):
+    """CPTEC geographic worldfile, pixel CENTERS; nearest sampling into Mercator."""
     a,d,b,e,c,f=map(float,pgw.split())
     if not all(math.isfinite(v) for v in (a,d,b,e,c,f)) or a<=0 or e>=0 or d!=0 or b!=0:
         raise ValueError('Georreferenciamento CPTEC não suportado')
@@ -63,8 +53,7 @@ def reproject_png(png, pgw):
         pixels=np.asarray(image.convert('RGBA'))
     west,north=c-a/2,f-e/2;east,south=west+a*w,north+e*h
     if not(-180<=west<east<=180 and -85<south<north<85): raise ValueError('PGW não geográfico')
-    if not np.any(pixels[:,:,3]==0):
-        raise ValueError('Produto sem máscara transparente; não ocultar cores arbitrariamente')
+    if not np.any(pixels[:,:,3]==0): raise ValueError('Produto sem máscara transparente')
     if not np.any(pixels[:,:,3]>0): raise ValueError('Imagem sem dados visíveis')
     merc=lambda lat: math.log(math.tan(math.pi/4+math.radians(lat)/2))
     ys=merc(north)+(np.arange(h)+.5)/h*(merc(south)-merc(north))
@@ -72,6 +61,7 @@ def reproject_png(png, pgw):
     rows=np.clip(np.rint((lats-f)/e).astype(int),0,h-1)
     output=io.BytesIO();Image.fromarray(pixels[rows,:,:]).save(output,format='PNG')
     return output.getvalue(), [[west,north],[east,north],[east,south],[west,south]]
+
 
 class Adapter:
     def __init__(self, cache):
@@ -116,12 +106,12 @@ class Adapter:
             result=[]
             try:
                 rows=self.radar_data().get(record['codes'][product],[])
-                for row in list(reversed(rows))[:3]:
+                for row in list(reversed(rows))[:12]:
                     stamp=dt.datetime.fromisoformat(row['fileDate']+'T'+row['fileTime']).replace(tzinfo=dt.timezone.utc)
-                    if (dt.datetime.now(dt.timezone.utc)-stamp).total_seconds()>48*3600: continue
+                    age=max(0,(dt.datetime.now(dt.timezone.utc)-stamp).total_seconds())
                     url=row['url']
                     if not url.endswith('.png'): continue
-                    key=hashlib.sha256(f'cptec|{radar}|{stamp.isoformat()}|{product}|mercator-v1'.encode()).hexdigest()
+                    key=hashlib.sha256(f'cptec|{radar}|{stamp.isoformat()}|{product}|mercator-v2'.encode()).hexdigest()
                     meta_path=self.cache/(key+'.json');image_path=self.cache/(key+'.png')
                     if not meta_path.exists() or not image_path.exists():
                         binary,coordinates=reproject_png(get(url),get(url[:-4]+'.pgw',4096).decode('utf-8'))
@@ -129,27 +119,28 @@ class Adapter:
                             timestamp=stamp.isoformat(),coordinates=coordinates,crs='EPSG:3857',sourceCrs='EPSG:4326',
                             longitude=(coordinates[0][0]+coordinates[1][0])/2,latitude=(coordinates[0][1]+coordinates[2][1])/2,
                             unit='source-palette',quantitative=False,sourceUrl=url,georeferenceUrl=url[:-4]+'.pgw',
-                            dataUrl='/api/radar/v3/image?id='+key, palette='source-original')
+                            dataUrl='/api/radar/v3/image?id='+key,palette='source-original',
+                            stale=age>48*3600,ageSeconds=int(age))
                         tmp=image_path.with_suffix('.tmp');tmp.write_bytes(binary);tmp.replace(image_path)
                         tmp=meta_path.with_suffix('.tmp');tmp.write_text(json.dumps(metadata),encoding='utf-8');tmp.replace(meta_path)
                     frame=json.loads(meta_path.read_text('utf-8'));frame.pop('legendUrl',None);frame['palette']='source-original'
+                    frame['stale']=age>48*3600;frame['ageSeconds']=int(age)
                     result.append(frame)
                 if result and product not in record['products']: record['products'].append(product)
             except (requests.RequestException,ValueError,KeyError,OSError):
                 result=entry[1] if entry else []
-            # Retain already downloaded frames across refreshes and process restarts.
             by_id={frame['frameId']:frame for frame in result}
             for path in self.cache.glob('*.json'):
                 try:
                     frame=json.loads(path.read_text('utf-8'))
                     frame.pop('legendUrl',None)
                     if frame.get('radar')!=radar or frame.get('product')!=product or frame.get('kind')!='raster': continue
-                    age=(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(frame['timestamp'])).total_seconds()
-                    if 0<=age<=48*3600 and (self.cache/(frame['frameId']+'.png')).exists(): by_id[frame['frameId']]=frame
+                    age=max(0,(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(frame['timestamp'])).total_seconds())
+                    if (self.cache/(frame['frameId']+'.png')).exists():
+                        frame['stale']=age>48*3600;frame['ageSeconds']=int(age);by_id[frame['frameId']]=frame
                 except (ValueError,KeyError,OSError): continue
             result=sorted(by_id.values(),key=lambda x:x['timestamp'])
             if result and product not in record['products']: record['products'].append(product)
             if not result and product in record['products']: record['products'].remove(product)
             self.probed[cachekey]=(time.time()+120,result)
             return result
-
