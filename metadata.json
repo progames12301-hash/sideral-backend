@@ -1,0 +1,103 @@
+{
+  "schema": "sideral-model-metadata-v1",
+  "model": "ecmwf",
+  "provider": "ECMWF",
+  "resolutionKm": 9,
+  "publishedGridDegrees": 0.25,
+  "publishedGridApproxKm": 28,
+  "runDate": "20260924",
+  "runCycle": "18Z",
+  "initTime": "2026-09-24T18:00:00Z",
+  "generatedAt": "2026-09-25T05:32:25.501815Z",
+  "forecastLocalDate": "2026-09-26",
+  "timezone": "America/Sao_Paulo",
+  "scope": "next_local_day",
+  "temporalResolutionMinutes": 180,
+  "frameCount": 8,
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 33,
+      "validTime": "2026-09-26T03:00:00Z",
+      "localValidTime": "2026-09-26T00:00:00-03:00",
+      "file": "ecmwf/f033.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 1,
+      "forecastHour": 36,
+      "validTime": "2026-09-26T06:00:00Z",
+      "localValidTime": "2026-09-26T03:00:00-03:00",
+      "file": "ecmwf/f036.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 2,
+      "forecastHour": 39,
+      "validTime": "2026-09-26T09:00:00Z",
+      "localValidTime": "2026-09-26T06:00:00-03:00",
+      "file": "ecmwf/f039.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 3,
+      "forecastHour": 42,
+      "validTime": "2026-09-26T12:00:00Z",
+      "localValidTime": "2026-09-26T09:00:00-03:00",
+      "file": "ecmwf/f042.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 4,
+      "forecastHour": 45,
+      "validTime": "2026-09-26T15:00:00Z",
+      "localValidTime": "2026-09-26T12:00:00-03:00",
+      "file": "ecmwf/f045.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 5,
+      "forecastHour": 48,
+      "validTime": "2026-09-26T18:00:00Z",
+      "localValidTime": "2026-09-26T15:00:00-03:00",
+      "file": "ecmwf/f048.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 6,
+      "forecastHour": 51,
+      "validTime": "2026-09-26T21:00:00Z",
+      "localValidTime": "2026-09-26T18:00:00-03:00",
+      "file": "ecmwf/f051.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    },
+    {
+      "index": 7,
+      "forecastHour": 54,
+      "validTime": "2026-09-27T00:00:00Z",
+      "localValidTime": "2026-09-26T21:00:00-03:00",
+      "file": "ecmwf/f054.json.gz",
+      "gridX": 221,
+      "gridY": 301
+    }
+  ],
+  "capabilities": {
+    "reflectivity": false,
+    "precipitation": true,
+    "wind": true,
+    "temperature": true,
+    "humidity": true,
+    "mucape": true,
+    "bulkShear": false,
+    "vorticity850": false,
+    "waterVapor": true
+  },
+  "note": "IFS Open Data nao fornece refletividade composta nativa neste produto; o site nao deve sintetizar dBZ."
+}
