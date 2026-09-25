@@ -83,7 +83,7 @@ jobs:
               if not out:
                   raise RuntimeError(f"GRIB vazio: {path}")
               return out
-'''
+          '''
           p.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
           print('Extrator IFS: leitura regional ativa para', p)
           PY
