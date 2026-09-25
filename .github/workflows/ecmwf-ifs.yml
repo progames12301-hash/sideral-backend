@@ -1,0 +1,67 @@
+name: ECMWF IFS 00Z - Sideral
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 00Z IFS is normally available several hours after initialization.
+    # Run at 11:00 UTC (08:00 BRT) to avoid starting before dissemination.
+    - cron: '0 11 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  ecmwf-ifs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout runner
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: wrf-runner
+
+      - name: Install ECMWF/OpenData dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ecmwf-opendata eccodes numpy scipy
+
+      - name: Generate ECMWF IFS 00Z JSON
+        run: |
+          set -euo pipefail
+          rm -rf ecmwf_output
+          python wrf/run_ecmwf_ifs.py --output ecmwf_output
+          test -s ecmwf_output/ecmwf/f003.json.gz
+          test -s ecmwf_output/ecmwf/f120.json.gz
+          test -s ecmwf_output/ecmwf/metadata.json.gz
+
+      - name: Publish ECMWF IFS data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'sideral-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          if git ls-remote --exit-code --heads origin ecmwf-ifs-data >/dev/null 2>&1; then
+            git fetch origin ecmwf-ifs-data:refs/remotes/origin/ecmwf-ifs-data
+            git checkout -B ecmwf-ifs-data origin/ecmwf-ifs-data
+            rm -rf ecmwf
+          else
+            git checkout --orphan ecmwf-ifs-data
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          cp -R ecmwf_output/ecmwf ./ecmwf
+          test -s ecmwf/metadata.json.gz
+          git add ecmwf
+          git commit -m "data: ECMWF IFS 00Z $(date -u +%Y-%m-%d)" || echo 'Sem alterações para publicar'
+          git push origin ecmwf-ifs-data
+
+      - name: Upload diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecmwf-ifs-diagnostic
+          path: ecmwf_output/
+          if-no-files-found: ignore
