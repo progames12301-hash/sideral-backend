@@ -69,7 +69,7 @@ jobs:
       - name: Instalar dependências de extracao
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'netCDF4>=1.7,<2'
+          python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'netCDF4>=1.7,<2' 'xarray>=2025.1,<2027'
 
       - name: Resolver rodada GFS com F048
         id: run
@@ -160,17 +160,26 @@ jobs:
           test "$(find wrf_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)" -eq 49
           python wrf/extract_wrf_brasil_21km.py --run-dir wrf_work/run --output-dir wrf_publish --grid-x 215 --grid-y 215
           test -s wrf_publish/wrf_brasil_21km.json && test -s wrf_publish/metadata.json
+          test -s wrf_publish/fields/f000.json.gz && test -s wrf_publish/fields/f048.json.gz
           python - <<'PY'
-          import json
+          import gzip, json
           from pathlib import Path
           data=json.loads(Path('wrf_publish/wrf_brasil_21km.json').read_text(encoding='utf-8'))
+          meta=json.loads(Path('wrf_publish/metadata.json').read_text(encoding='utf-8'))
           assert data['resolutionKm']==21 and data['grid']['nx']==215 and data['grid']['ny']==215
           assert data['grid']['dxMeters']==21000 and data['grid']['dyMeters']==21000
           assert data['frameCount']==49 and len(data['frames'])==49
           assert data['reflectivitySource']=='REFL_10CM_NATIVE' and data['nativeGrid'] is True
           assert [f['forecastHour'] for f in data['frames']]==list(range(49))
           assert all(len(f['reflectivityDbz'])==215 and len(f['reflectivityDbz'][0])==215 for f in data['frames'])
-          print('JSON Brasil 21 km validado: 49 frames nativos 215x215.')
+          required={'mslp','pwat','sbcape','mlcape','mucapeWrf2','cin','stp','scp','srh01','srh03','bulkShear06','effectiveBulkShear','temperature','humidity','dewpoint','windSpeed','windDirection','levels'}
+          assert required.issubset(set(meta['availableFields'])), sorted(required-set(meta['availableFields']))
+          assert meta['pressureLevelsHpa']==[925,850,700,500,300,200]
+          with gzip.open('wrf_publish/fields/f000.json.gz','rt',encoding='utf-8') as fh:
+              frame=json.load(fh)
+          assert required.issubset(frame['fields'].keys())
+          assert all(str(p) in frame['fields']['levels'] for p in [925,850,700,500,300,200])
+          print('Brasil 21 km validado: 49 frames + campos completos + niveis 925/850/700/500/300/200.')
           PY
 
       - name: Validar 49 frames nativos Brasil 21 km
