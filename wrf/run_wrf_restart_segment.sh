@@ -50,7 +50,7 @@ vals={
  'start_minute':0,'start_second':0,
  'end_year':end_time.year,'end_month':end_time.month,'end_day':end_time.day,'end_hour':end_time.hour,
  'run_days':0,'run_hours':hours,'run_minutes':0,'run_seconds':0,
- 'restart':'.true.','restart_interval':180,'override_restart_timers':'.true.','history_interval':hist,
+ 'restart':'.true.','restart_interval':hours*60,'override_restart_timers':'.true.','history_interval':hist,
  'time_step':20,'time_step_fract_num':0,'time_step_fract_den':1,
 }
 for key,value in vals.items():
@@ -73,9 +73,6 @@ EXPECTED_RST="$(cat "$WORK/run/.expected_restart")"
 find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -delete
 
 # Provision the complete WRF 4.3 runtime physics set before real/wrf starts.
-# This intentionally includes the CLWRFGHG scenario files and the generic
-# CAMtr_volume_mixing_ratio expected by WRF when the executable was built with
-# -DCLWRFGHG. It prevents one-missing-table-per-run failures.
 RUNTIME_HELPER_URL="https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-runner/wrf/ensure_metbr_wrf_runtime.sh"
 curl -fL --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 600 \
   -o "$WORK/ensure_metbr_wrf_runtime.sh" "$RUNTIME_HELPER_URL"
@@ -84,9 +81,6 @@ docker run --rm --entrypoint /bin/bash \
   -v "$WORK/run:/run" -v "$WORK/ensure_metbr_wrf_runtime.sh:/ensure_metbr_wrf_runtime.sh:ro" \
   "$IMAGE" -lc 'set -e; /bin/bash /ensure_metbr_wrf_runtime.sh /run'
 
-# Stage any additional runtime files already shipped in the same image. The
-# helper above validates the core WRF 4.3 physics set; this pass also catches
-# image-specific optional files without failing on unrelated build artifacts.
 WRF_TABLES=(VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL URBPARM.TBL RRTMG_LW_DATA RRTMG_SW_DATA ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_lon.formatted aerosol_plev.formatted CAM_ABS_DATA)
 for name in "${WRF_TABLES[@]}"; do
   test -s "$WORK/run/$name" || {
@@ -128,11 +122,13 @@ if (( STATUS != 0 )); then
 fi
 
 mapfile -t OUTS < <(find "$WORK/run" -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print | sort)
-mapfile -t NEW_RST < <(find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' -size +0c -print | sort)
+mapfile -t NEW_RST < <(find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -size +0c -print | sort)
 ((${#OUTS[@]} > 0)) || { echo "No non-empty wrfout produced for F${START_H}-F${END_H}" >&2; exit 41; }
 ((${#NEW_RST[@]} > 0)) || { echo "No non-empty wrfrst produced for F${START_H}-F${END_H}" >&2; exit 42; }
 cp -f "${OUTS[@]}" "$OUTPUT/"
 cp -f "${NEW_RST[@]}" "$OUTPUT/"
+test -s "$WORK/run/wrfbdy_d01" || { echo "wrfbdy_d01 ausente em $WORK/run apos o restart" >&2; exit 43; }
+cp -f "$WORK/run/wrfbdy_d01" "$OUTPUT/wrfbdy_d01"
 chmod -R a+rwX "$OUTPUT"
 echo "METBR restart F${START_H}-F${END_H} completed successfully."
 echo "wrfout files: ${#OUTS[@]}"
