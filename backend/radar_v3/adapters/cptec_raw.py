@@ -120,22 +120,6 @@ def _timestamp(path):
     return dt.datetime.strptime(match.group("stamp"), "%Y%m%d%H%M").replace(tzinfo=dt.timezone.utc)
 
 
-def _prepare_array(ds, variable, elevation_name, azimuth_name, range_name, elevation_index):
-    da = ds[variable]
-    if elevation_name in da.dims:
-        da = da.isel({elevation_name: elevation_index})
-    for dim in list(da.dims):
-        if da.sizes[dim] == 1 and dim not in (azimuth_name, range_name):
-            da = da.isel({dim: 0})
-    if azimuth_name not in da.dims or range_name not in da.dims:
-        raise ValueError("Variável CPTEC não mantém azimute e range como dimensões polares")
-    da = da.transpose(azimuth_name, range_name)
-    values = np.asarray(da.values, dtype=np.float32)
-    if values.ndim != 2:
-        raise ValueError("Campo polar CPTEC não é 2-D após seleção da elevação")
-    return values
-
-
 def _azimuth_edges(azimuths):
     az = np.mod(np.asarray(azimuths, dtype=float).reshape(-1), 360.0)
     if az.size < 1 or not np.all(np.isfinite(az)):
@@ -144,7 +128,7 @@ def _azimuth_edges(azimuths):
         width = 1.0
         return np.array([(az[0] - width / 2) % 360]), np.array([(az[0] + width / 2) % 360]), width
     deltas = np.mod(np.roll(az, -1) - az, 360.0)
-    good = deltas[(deltas > 0.001) & (deltas < 10)]
+    good = deltas[(deltas > 0.001) & (deltas <= 10)]
     if not good.size:
         raise ValueError("Azimutes não formam uma varredura polar válida")
     width = float(np.median(good))
