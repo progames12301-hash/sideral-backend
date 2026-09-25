@@ -1,16 +1,17 @@
 name: ECMWF IFS - PROXIMO DIA AUTOMATICO
 
-# Ao concluir com sucesso, o workflow WRF ECMWF 4 km e disparado por workflow_run.
-# Domínio operacional: América do Sul.
+# Publica o IFS HRES em 0-120h com superficie, pressao/isobaras e niveis de pressao.
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - ".github/workflows/ecmwf-ifs-auto.yml"
+      - "wrf/ecmwf_ifs_runner.py"
   schedule:
-    # 22:10 UTC = 19:10 BRT. O cliente oficial escolhe a rodada IFS mais
-    # recente que ja contenha os campos necessarios para o proximo dia.
+    # 10:10 UTC = 07:10 BRT: rodada 00Z normalmente ja esta disponivel.
+    - cron: '10 10 * * *'
+    # 22:10 UTC = 19:10 BRT: rodada 12Z normalmente ja esta disponivel.
     - cron: '10 22 * * *'
 
 permissions:
@@ -21,9 +22,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ecmwf-next-day:
+  ecmwf-ifs:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - name: Checkout wrf-runner
         uses: actions/checkout@v4
@@ -42,28 +43,36 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy scipy requests eccodes ecmwf-opendata
 
-      - name: Baixar e processar IFS Open Data
+      - name: Gerar IFS 0-120h
         run: |
           set -euxo pipefail
           rm -rf ecmwf_publish
-          python wrf/publish_global_model.py --model ecmwf --output ecmwf_publish
+          python wrf/ecmwf_ifs_runner.py --output ecmwf_publish
+
+      - name: Validar produto
+        run: |
+          set -euxo pipefail
           python - <<'PY'
-          import datetime as dt
-          import json
+          import gzip, json
           from pathlib import Path
-          from zoneinfo import ZoneInfo
-          d=json.loads(Path('ecmwf_publish/metadata.json').read_text(encoding='utf-8'))
-          expected=(dt.datetime.now(ZoneInfo('America/Sao_Paulo')).date()+dt.timedelta(days=1)).isoformat()
-          assert d['schema']=='sideral-model-metadata-v1', d
-          assert d['model']=='ecmwf', d
-          assert d['frameCount']==8, d
-          assert d['temporalResolutionMinutes']==180, d
-          assert d['forecastLocalDate']==expected, (d, expected)
-          assert d['resolutionKm']==9, d
-          assert d['publishedGridDegrees']==0.25, d
-          assert d['capabilities']['reflectivity'] is False, d
-          assert d['capabilities']['waterVapor'] is True, d
-          print('ECMWF pronto:', d['initTime'], d['forecastLocalDate'], d['frameCount'])
+          meta = json.loads(Path('ecmwf_publish/metadata.json').read_text(encoding='utf-8'))
+          assert meta['model'] == 'ecmwf-ifs', meta
+          assert meta['runCycle'].startswith(('00Z','12Z')), meta
+          assert meta['frameCount'] == 40, meta
+          assert meta['forecastHours'][0] == 3 and meta['forecastHours'][-1] == 120, meta
+          assert meta['temporalResolutionMinutes'] == 180, meta
+          assert meta['resolutionKm'] == 9, meta
+          assert meta['publishedGridDegrees'] == 0.25, meta
+          for key in ('temperature','humidity','pressure','isobars','precipitation','mucape','bulkShear','upperAir','vorticity850','waterVapor'):
+              assert meta['capabilities'][key] is True, key
+          for f in meta['frames']:
+              p = Path('ecmwf_publish') / f['file']
+              assert p.stat().st_size > 0, p
+              with gzip.open(p, 'rt', encoding='utf-8') as fh:
+                  payload = json.load(fh)
+              for key in ('temperature','humidity','pressure','mslp','windSpeed','precipitation','mucape','bulkShear','vorticity850','waterVapor','upperAir'):
+                  assert key in payload['fields'], (f['file'], key)
+          print('IFS validado:', meta['runDate'], meta['runCycle'], 'frames=', meta['frameCount'])
           PY
 
       - name: Publicar em ecmwf-data
@@ -79,27 +88,27 @@ jobs:
           git clean -fdx || true
           cp -a "$GITHUB_WORKSPACE/ecmwf_publish/." .
           cat > README.md <<'EOF'
-          # Sideral ECMWF Data
-          ECMWF IFS HRES para o proximo dia, atualizado automaticamente.
-          Modelo atmosferico: aproximadamente 9 km. Produto Open Data publicado em grade 0.25 grau (~28 km).
-          Resolucao temporal: 3 horas.
-          O IFS Open Data nao e apresentado como fonte de refletividade composta de radar.
+          # Sideral ECMWF IFS Data
+          IFS HRES Open Data 0.25 grau (~9 km de resolucao do modelo), publicado em grade regular 0.25 grau para a America do Sul.
+          Frames de 3 em 3 horas de F003 a F120.
+          Inclui superficie, MSLP para isobaras, precipitacao/QPF, MUCAPE, cisalhamento 925-500 hPa e campos em 925/850/700/500/300/200 hPa.
+          Refletividade radar nao e sintetizada.
           EOF
           git add .
-          git commit -m "Atualiza ECMWF IFS do proximo dia [skip render]"
+          git commit -m "Atualiza ECMWF IFS 0-120h [skip render]"
           git push --force origin HEAD:ecmwf-data
 
       - name: Confirmar publicacao
         run: |
           set -euxo pipefail
           URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/ecmwf-data/metadata.json?run=${GITHUB_RUN_ID}"
-          for N in $(seq 1 12); do
+          for N in $(seq 1 18); do
             if curl -fsSL --connect-timeout 10 --max-time 30 "$URL-$N" -o /tmp/ecmwf-meta.json; then
               if python - <<'PY'
           import json
           d=json.load(open('/tmp/ecmwf-meta.json',encoding='utf-8'))
-          ok=d.get('model')=='ecmwf' and d.get('frameCount')==8 and d.get('temporalResolutionMinutes')==180
-          print(d)
+          ok=(d.get('model')=='ecmwf-ifs' and d.get('frameCount')==40 and d.get('forecastHours',[None])[0]==3 and d.get('forecastHours',[None])[-1]==120)
+          print(d.get('runDate'), d.get('runCycle'), d.get('frameCount'))
           raise SystemExit(0 if ok else 1)
           PY
               then
@@ -115,7 +124,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ecmwf-ifs-preview
+          name: ecmwf-ifs-0-120h
           path: ecmwf_publish/
           retention-days: 3
           if-no-files-found: warn
