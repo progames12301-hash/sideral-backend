@@ -40,9 +40,6 @@ export WRF_REFLECTIVITY_SOURCE=REFL_10CM_NATIVE WRF_NATIVE_GRID=true WRF_NO_FALL
 export WRF_MPI_PROCS="${WRF_MPI_PROCS:-8}"
 [[ "$WRF_DATA_SOURCE" == ICON && "$WRF_INPUT_MODEL" == ICON && "$WRF_INITIALIZATION_MODEL" == ICON ]] || { echo 'ERROR: METBR ICON-only contract violated' >&2; exit 1; }
 
-# GitHub Releases can expose a newly uploaded asset a few seconds after the
-# upload request returns. Never turn that propagation delay into a failed
-# WRF segment. Also verify the exact asset exists before attempting download.
 download_checkpoint() {
   local asset="$1" dest="$2" attempt
   mkdir -p "$dest"
@@ -88,8 +85,8 @@ req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':
 with urllib.request.urlopen(req,timeout=30) as r: m=json.load(r)
 if str(m.get('model','')).lower()!='icon': raise SystemExit('metadata nao e ICON')
 run_date=str(m['runDate']).replace('-','')
-run_cycle=''.join(c for c in str(m['runCycle']) if c.isdigit()).zfill(2)[:2]
-if run_cycle not in {'00','06','12','18'}: raise SystemExit('ciclo ICON invalido')
+# METBR must always initialize from the 00Z ICON cycle.
+run_cycle='00'
 with open('metbr-run.env','w') as f: f.write(f'RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n')
 PY
   source metbr-run.env
