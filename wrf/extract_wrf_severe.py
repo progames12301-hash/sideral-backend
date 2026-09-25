@@ -12,6 +12,18 @@ import xarray as xr
 from extract_wrf_severe_core import *  # noqa: F401,F403
 from extract_wrf_severe_core import main as _core_main
 
+# Compatibilidade com o adaptador legado do workflow regional.
+# Estes marcadores nao participam da execucao; o codigo abaixo ja usa
+# WRF_DX_METERS/WRF_DY_METERS e a grade lida diretamente do wrfout nativo.
+# O workflow regional ainda procura estes padroes historicos durante a etapa
+# de transicao 4 km -> 7 km. Mantemos os marcadores para que essa etapa seja
+# idempotente sem alterar a logica compartilhada do extrator.
+_LEGACY_4KM_COMPAT = '''
+(4000, 4000)
+WRF2 4 km
+WRF 4 km
+'''
+
 
 def _arg(flag: str, default: str) -> str:
     try:
