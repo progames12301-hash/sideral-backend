@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sideral — Skew-T 27 Capitais</title>
+<style>
+:root{--bg:#050505;--panel:#0b0b0d;--line:#29292e;--text:#f4f4f5;--muted:#92929a;--red:#e31b23}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Arial,sans-serif}body{min-height:100vh}.bar{position:sticky;top:0;z-index:10;background:#08080a;border-bottom:1px solid var(--line);padding:12px;display:flex;gap:10px;align-items:end;flex-wrap:wrap}.brand{font:900 18px Consolas;margin:0 15px 6px 0}.field{display:flex;flex-direction:column;gap:4px}.field label{font:800 10px Consolas;color:var(--muted)}select,button{height:38px;background:#121216;color:#fff;border:1px solid #393940;padding:0 11px;font:inherit}select{min-width:210px}button{cursor:pointer;font-weight:800}button.primary{background:var(--red);border-color:var(--red)}.status{flex-basis:100%;font:600 11px Consolas;color:#aaa}.ok{color:#81d58a}.err{color:#ff6870}.frame{margin:10px;border:1px solid var(--line);background:#000}.viewer{min-height:620px;display:flex;align-items:center;justify-content:center;overflow:auto}.viewer img{display:block;max-width:100%;height:auto}.empty{padding:45px;text-align:center;color:#777;font:700 12px Consolas}.meta{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}.meta>div{padding:11px;border-right:1px solid var(--line)}.meta>div:last-child{border:0}.k{font:800 10px Consolas;color:#888;margin-bottom:5px}.v{font:700 11px Consolas;color:#ddd}.busy{position:fixed;inset:0;background:#000c;display:none;place-items:center;z-index:30;font:900 12px Consolas}@media(max-width:700px){.bar{position:static}.brand{width:100%}.field,.field select,button{width:100%}.meta{grid-template-columns:1fr}.meta>div{border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header class="bar">
+<div class="brand">SIDERAL / SKEW-T</div>
+<div class="field"><label>CAPITAL</label><select id="city"></select></div>
+<div class="field"><label>CICLO ECMWF</label><select id="cycle"><option value="00">00Z</option><option value="06">06Z</option><option value="12" selected>12Z</option><option value="18">18Z</option></select></div>
+<div class="field"><label>PREVISÃO</label><select id="fh"></select></div>
+<button class="primary" id="open">ABRIR</button>
+<button id="download" disabled>BAIXAR PNG</button>
+<div id="status" class="status">Verificando publicação...</div>
+</header>
+<main class="frame">
+<section id="viewer" class="viewer"><div class="empty">Carregando...</div></section>
+<section class="meta">
+<div><div class="k">MODELO</div><div class="v">ECMWF IFS 0.25°</div></div>
+<div><div class="k">FONTE</div><div class="v">GitHub / Sideral</div></div>
+<div><div class="k">FRAME</div><div class="v" id="frame">--</div></div>
+</section>
+</main>
+<div id="busy" class="busy">CARREGANDO...</div>
+<script>
+const RELEASE='https://github.com/progames12301-hash/sideral-backend/releases/download';
+const CAPITALS=[['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']];
+const $=id=>document.getElementById(id);let current='';
+for(let h=0;h<=48;h+=3){let o=document.createElement('option');o.value=h;o.textContent='F'+String(h).padStart(3,'0');if(h===0)o.selected=true;$('fh').appendChild(o)}
+CAPITALS.forEach(c=>{let o=document.createElement('option');o.value=c[1];o.textContent=c[0];$('city').appendChild(o)});
+function asset(slug,cycle,fh){return `${RELEASE}/skewt-live-${cycle}/${slug}-f${String(fh).padStart(3,'0')}.png`}
+function setStatus(t,cls=''){ $('status').textContent=t;$('status').className='status '+cls }
+function load(){const slug=$('city').value,cycle=$('cycle').value,fh=Number($('fh').value),cap=CAPITALS.find(c=>c[1]===slug),url=asset(slug,cycle,fh)+'?t='+Date.now();$('busy').style.display='grid';$('viewer').innerHTML='';let im=new Image();im.alt=`Skew-T ${cap[0]} ${cycle}Z F${String(fh).padStart(3,'0')}`;im.onload=()=>{$('busy').style.display='none';$('viewer').appendChild(im);current=url.split('?')[0];$('download').disabled=false;$('frame').textContent=`${cap[0]} • ${cycle}Z • F${String(fh).padStart(3,'0')}`;setStatus('PNG carregado.','ok')};im.onerror=()=>{$('busy').style.display='none';$('download').disabled=true;$('viewer').innerHTML='<div class="empty">Este PNG não está publicado para esta capital/ciclo/frame.</div>';setStatus('PNG não disponível.','err')};im.src=url}
+$('open').onclick=load;$('city').onchange=load;$('cycle').onchange=load;$('fh').onchange=load;$('download').onclick=()=>{if(!current)return;let a=document.createElement('a');a.href=current;a.download='sideral-skewt.png';a.click()};
+load();
+</script>
+</body>
+</html>
