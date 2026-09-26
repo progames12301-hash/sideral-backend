@@ -85,7 +85,6 @@ req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':
 with urllib.request.urlopen(req,timeout=30) as r: m=json.load(r)
 if str(m.get('model','')).lower()!='icon': raise SystemExit('metadata nao e ICON')
 run_date=str(m['runDate']).replace('-','')
-# METBR must always initialize from the 00Z ICON cycle.
 run_cycle='00'
 with open('metbr-run.env','w') as f: f.write(f'RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n')
 PY
@@ -101,6 +100,27 @@ echo "METBR ICON initialization: ${RUN_DATE} ${RUN_CYCLE}Z"
 chmod +x wrf/run_metbr_icon_wrf.sh wrf/run_wrf_restart_segment.sh
 bash wrf/run_metbr_icon_wrf.sh
 
+publish_outputs() {
+  local output_dir="$1"
+  local -a files=()
+  shopt -s nullglob
+  files=("$output_dir"/wrfout_d01_*)
+  shopt -u nullglob
+  ((${#files[@]} > 0)) || { echo "Nenhum wrfout para publicar no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 45; }
+  echo "Publicando ${#files[@]} wrfout do segmento F${START_HOUR}-F${END_HOUR}..."
+  for f in "${files[@]}"; do
+    test -s "$f" || { echo "wrfout vazio: $f" >&2; exit 46; }
+    gh release upload "$CHECKPOINT_TAG" "$f" --repo "$GITHUB_REPOSITORY" --clobber
+  done
+  printf '%s\n' "METBR WRF 4 KM ICON" "run_id=$GITHUB_RUN_ID" "run_date=$RUN_DATE" "run_cycle=${RUN_CYCLE}Z" "segment=F${START_HOUR}-F${END_HOUR}" "published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "metbr-publication-F${END_HOUR}.txt"
+  gh release upload "$CHECKPOINT_TAG" "metbr-publication-F${END_HOUR}.txt" --repo "$GITHUB_REPOSITORY" --clobber
+  if (( END_HOUR == 42 )); then
+    printf '%s\n' "METBR WRF 4 KM ICON - RODADA COMPLETA" "run_id=$GITHUB_RUN_ID" "run_date=$RUN_DATE" "run_cycle=${RUN_CYCLE}Z" "final_forecast=F042" "status=complete" "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > metbr-latest-complete.txt
+    gh release upload "$CHECKPOINT_TAG" metbr-latest-complete.txt --repo "$GITHUB_REPOSITORY" --clobber
+    echo "RODADA COMPLETA PUBLICADA: F042"
+  fi
+}
+
 if [[ "$COLD_START" == "1" ]]; then
   shopt -s nullglob
   rst_files=(wrf_work/run/wrfrst_d01_*)
@@ -110,6 +130,7 @@ if [[ "$COLD_START" == "1" ]]; then
   ((${#out_files[@]} > 0)) || { echo "Nenhum wrfout produzido no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 30; }
   ((${#rst_files[@]} > 0)) || { echo "Nenhum wrfrst produzido no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 31; }
   ((${#bdy_files[@]} > 0)) || { echo "Nenhum wrfbdy produzido no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 32; }
+  publish_outputs "wrf_work/run"
   rm -rf checkpoint_pack && mkdir checkpoint_pack
   cp -f "${rst_files[@]}" checkpoint_pack/
   cp -f "${bdy_files[0]}" checkpoint_pack/wrfbdy_d01
@@ -131,6 +152,7 @@ else
   ((${#rsts[@]} > 0)) || { echo "Nenhum wrfrst produzido no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 42; }
   ((${#bdy[@]} == 1)) || { echo "wrfbdy_d01 ausente no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 43; }
   test -s "$OUTPUT_DIR/namelist.restart.input" || { echo "namelist.restart.input ausente" >&2; exit 44; }
+  publish_outputs "$OUTPUT_DIR"
   rm -rf checkpoint_pack && mkdir checkpoint_pack
   cp -f "${rsts[@]}" checkpoint_pack/
   cp -f "$OUTPUT_DIR/wrfbdy_d01" checkpoint_pack/wrfbdy_d01
