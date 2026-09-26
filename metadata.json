@@ -1,0 +1,473 @@
+{
+  "schema": "sideral-cim-wrf-native-metadata-v2",
+  "model": "ecmwf",
+  "resolutionKm": 8.0,
+  "dxMeters": 8000,
+  "dyMeters": 8000,
+  "nativeGrid": true,
+  "source": "CIM WRF 8 km · ECMWF",
+  "runDate": "20260926",
+  "runCycle": "06Z",
+  "initTime": "2026-09-26T06:00:00Z",
+  "generatedAt": "2026-09-26T17:09:47.010015Z",
+  "status": "complete",
+  "forecastHorizonHours": 40,
+  "frameCount": 41,
+  "temporalResolutionMinutes": 60,
+  "reflectivitySource": "REFL_10CM_NATIVE",
+  "availableVariables": [
+    "reflectivity",
+    "stp",
+    "scp",
+    "temperature",
+    "humidity"
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 0,
+      "validTime": "2026-09-26T06:00:00Z",
+      "file": "frames/f000.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 1,
+      "forecastHour": 1,
+      "validTime": "2026-09-26T07:00:00Z",
+      "file": "frames/f001.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 2,
+      "forecastHour": 2,
+      "validTime": "2026-09-26T08:00:00Z",
+      "file": "frames/f002.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 3,
+      "forecastHour": 3,
+      "validTime": "2026-09-26T09:00:00Z",
+      "file": "frames/f003.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 4,
+      "forecastHour": 4,
+      "validTime": "2026-09-26T10:00:00Z",
+      "file": "frames/f004.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 5,
+      "forecastHour": 5,
+      "validTime": "2026-09-26T11:00:00Z",
+      "file": "frames/f005.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 6,
+      "forecastHour": 6,
+      "validTime": "2026-09-26T12:00:00Z",
+      "file": "frames/f006.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 7,
+      "forecastHour": 7,
+      "validTime": "2026-09-26T13:00:00Z",
+      "file": "frames/f007.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 8,
+      "forecastHour": 8,
+      "validTime": "2026-09-26T14:00:00Z",
+      "file": "frames/f008.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 9,
+      "forecastHour": 9,
+      "validTime": "2026-09-26T15:00:00Z",
+      "file": "frames/f009.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 10,
+      "forecastHour": 10,
+      "validTime": "2026-09-26T16:00:00Z",
+      "file": "frames/f010.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 11,
+      "forecastHour": 11,
+      "validTime": "2026-09-26T17:00:00Z",
+      "file": "frames/f011.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 12,
+      "forecastHour": 12,
+      "validTime": "2026-09-26T18:00:00Z",
+      "file": "frames/f012.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 13,
+      "forecastHour": 13,
+      "validTime": "2026-09-26T19:00:00Z",
+      "file": "frames/f013.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 14,
+      "forecastHour": 14,
+      "validTime": "2026-09-26T20:00:00Z",
+      "file": "frames/f014.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 15,
+      "forecastHour": 15,
+      "validTime": "2026-09-26T21:00:00Z",
+      "file": "frames/f015.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 16,
+      "forecastHour": 16,
+      "validTime": "2026-09-26T22:00:00Z",
+      "file": "frames/f016.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 17,
+      "forecastHour": 17,
+      "validTime": "2026-09-26T23:00:00Z",
+      "file": "frames/f017.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 18,
+      "forecastHour": 18,
+      "validTime": "2026-09-27T00:00:00Z",
+      "file": "frames/f018.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 19,
+      "forecastHour": 19,
+      "validTime": "2026-09-27T01:00:00Z",
+      "file": "frames/f019.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 20,
+      "forecastHour": 20,
+      "validTime": "2026-09-27T02:00:00Z",
+      "file": "frames/f020.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 21,
+      "forecastHour": 21,
+      "validTime": "2026-09-27T03:00:00Z",
+      "file": "frames/f021.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 22,
+      "forecastHour": 22,
+      "validTime": "2026-09-27T04:00:00Z",
+      "file": "frames/f022.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 23,
+      "forecastHour": 23,
+      "validTime": "2026-09-27T05:00:00Z",
+      "file": "frames/f023.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 24,
+      "forecastHour": 24,
+      "validTime": "2026-09-27T06:00:00Z",
+      "file": "frames/f024.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 25,
+      "forecastHour": 25,
+      "validTime": "2026-09-27T07:00:00Z",
+      "file": "frames/f025.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 26,
+      "forecastHour": 26,
+      "validTime": "2026-09-27T08:00:00Z",
+      "file": "frames/f026.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 27,
+      "forecastHour": 27,
+      "validTime": "2026-09-27T09:00:00Z",
+      "file": "frames/f027.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 28,
+      "forecastHour": 28,
+      "validTime": "2026-09-27T10:00:00Z",
+      "file": "frames/f028.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 29,
+      "forecastHour": 29,
+      "validTime": "2026-09-27T11:00:00Z",
+      "file": "frames/f029.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 30,
+      "forecastHour": 30,
+      "validTime": "2026-09-27T12:00:00Z",
+      "file": "frames/f030.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 31,
+      "forecastHour": 31,
+      "validTime": "2026-09-27T13:00:00Z",
+      "file": "frames/f031.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 32,
+      "forecastHour": 32,
+      "validTime": "2026-09-27T14:00:00Z",
+      "file": "frames/f032.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 33,
+      "forecastHour": 33,
+      "validTime": "2026-09-27T15:00:00Z",
+      "file": "frames/f033.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 34,
+      "forecastHour": 34,
+      "validTime": "2026-09-27T16:00:00Z",
+      "file": "frames/f034.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 35,
+      "forecastHour": 35,
+      "validTime": "2026-09-27T17:00:00Z",
+      "file": "frames/f035.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 36,
+      "forecastHour": 36,
+      "validTime": "2026-09-27T18:00:00Z",
+      "file": "frames/f036.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 37,
+      "forecastHour": 37,
+      "validTime": "2026-09-27T19:00:00Z",
+      "file": "frames/f037.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 38,
+      "forecastHour": 38,
+      "validTime": "2026-09-27T20:00:00Z",
+      "file": "frames/f038.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 39,
+      "forecastHour": 39,
+      "validTime": "2026-09-27T21:00:00Z",
+      "file": "frames/f039.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    },
+    {
+      "index": 40,
+      "forecastHour": 40,
+      "validTime": "2026-09-27T22:00:00Z",
+      "file": "frames/f040.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true,
+      "reflectivitySource": "REFL_10CM_NATIVE"
+    }
+  ],
+  "domainId": "cim-sigma-area-v1-8km",
+  "domainName": "CIM Sul/Sudeste 8 km",
+  "domainTargets": [
+    "Sul do Brasil",
+    "Sudeste do Brasil",
+    "Uruguai",
+    "leste do Paraguai",
+    "nordeste/centro-leste da Argentina"
+  ],
+  "displayBoundingBox": {
+    "west": -63.6,
+    "east": -41.8,
+    "south": -35.6,
+    "north": -19.4
+  },
+  "sourceBoundingBox": {
+    "west": -67.0,
+    "east": -39.0,
+    "south": -39.0,
+    "north": -17.0
+  },
+  "wrfGridConfig": {
+    "e_we": 280,
+    "e_sn": 235,
+    "gridX": 279,
+    "gridY": 234,
+    "dxMeters": 8000,
+    "dyMeters": 8000,
+    "refLat": -27.5,
+    "refLon": -52.75,
+    "standLon": -52.75,
+    "timeStepSeconds": 48,
+    "historyIntervalMinutes": 60,
+    "integrationHours": 42,
+    "publishedHorizonHours": 40
+  }
+}
