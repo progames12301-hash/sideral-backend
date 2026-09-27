@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 from pathlib import Path
 
 import numpy as np
 from netCDF4 import Dataset
 
-# Somente nomes que representam explicitamente refletividade/reflectividade radar.
-# Nao existe fallback para chuva, Z-R ou calculo aproximado de dBZ.
 REFLECTIVITY_NAMES = (
     "REFL_10CM",
     "REFL_10CM_NATIVE",
@@ -26,10 +23,7 @@ def read_time(ds):
     if times is None:
         return ""
     raw = np.asarray(times[:])
-    if raw.ndim == 2:
-        chars = raw[0]
-    else:
-        chars = raw
+    chars = raw[0] if raw.ndim == 2 else raw
     text = "".join(x.decode() if isinstance(x, bytes) else str(x) for x in chars)
     return text.replace("_", "T") + "Z"
 
@@ -40,21 +34,30 @@ def describe_variables(ds):
     return names, radar
 
 
-def _as_2d_reflectivity(value, name):
+def _as_2d_reflectivity(value, name, expected_shape=None):
     a = np.ma.asarray(value)
     if np.ma.isMaskedArray(a):
         a = a.filled(np.nan)
     a = np.asarray(a, dtype=np.float32)
 
-    # WRF normalmente pode guardar uma dimensao vertical.
-    if a.ndim == 3:
-        a = np.nanmax(a, axis=0)
-    elif a.ndim != 2:
+    # REFL_10CM em WRF pode vir como (Time, bottom_top, south_north, west_east),
+    # (bottom_top, south_north, west_east) ou diretamente como grade 2-D.
+    # Mantemos os dois últimos eixos como a grade horizontal e fazemos o máximo
+    # apenas nas dimensões extras (tempo/altura). Nenhum valor é calculado.
+    if a.ndim < 2:
         return None
 
-    if not np.isfinite(a).any():
+    if expected_shape is not None and tuple(a.shape[-2:]) != tuple(expected_shape):
         return None
-    return a
+
+    if a.ndim > 2:
+        reduce_axes = tuple(range(a.ndim - 2))
+        with np.errstate(all="ignore"):
+            a = np.nanmax(a, axis=reduce_axes)
+
+    if a.ndim != 2 or not np.isfinite(a).any():
+        return None
+    return np.asarray(a, dtype=np.float32)
 
 
 def try_reflectivity_file(path, expected_shape=None):
@@ -64,24 +67,16 @@ def try_reflectivity_file(path, expected_shape=None):
             print(f"[METBR][DIAG] {path.name}: {len(names)} variaveis")
             print(f"[METBR][DIAG] {path.name}: candidatas de refletividade: {radar_names or 'nenhuma'}")
 
-            # Prioridade explícita: nomes oficiais/nativos primeiro.
             ordered = [n for n in REFLECTIVITY_NAMES if n in ds.variables]
-            # Depois aceitar variantes com o mesmo significado, desde que o nome
-            # contenha REFLECT/REFL/DBZ/ZH. Isso continua sendo somente leitura
-            # de uma variável fornecida pelo arquivo, nunca cálculo.
             for n in radar_names:
                 if n not in ordered:
                     ordered.append(n)
 
             for name in ordered:
-                refl = _as_2d_reflectivity(ds.variables[name][:], name)
+                var = ds.variables[name]
+                print(f"[METBR][DIAG] {path.name}:{name}: dimensoes={getattr(var, 'dimensions', ())} shape={getattr(var, 'shape', ())}")
+                refl = _as_2d_reflectivity(var[:], name, expected_shape)
                 if refl is None:
-                    continue
-                if expected_shape is not None and tuple(refl.shape) != tuple(expected_shape):
-                    print(
-                        f"[METBR][DIAG] ignorando {path.name}:{name}: "
-                        f"shape {refl.shape} != esperado {expected_shape}"
-                    )
                     continue
                 print(f"[METBR] refletividade nativa encontrada: {path.name}:{name} shape={refl.shape}")
                 return refl, name
@@ -91,11 +86,11 @@ def try_reflectivity_file(path, expected_shape=None):
 
 
 def find_native_reflectivity(run_dir, expected_shape=None):
-    # Primeiro os wrfout, depois arquivos NetCDF auxiliares produzidos junto da rodada.
-    candidates = sorted(Path(run_dir).glob("wrfout_d01_*"))
+    root = Path(run_dir)
+    candidates = sorted(root.glob("wrfout_d01_*"))
     others = []
     for pattern in ("*.nc", "*.nc4", "*.cdf", "*reflect*", "*refl*", "*dbz*"):
-        for p in Path(run_dir).glob(pattern):
+        for p in root.glob(pattern):
             if p not in candidates and p.is_file():
                 others.append(p)
     candidates += sorted(set(others))
@@ -108,11 +103,10 @@ def find_native_reflectivity(run_dir, expected_shape=None):
         if refl is not None:
             return refl, source, path.name
 
-    # Diagnóstico final: não fabricar dBZ.
     raise RuntimeError(
         "Nenhuma variável de refletividade nativa foi encontrada. "
-        "Foram inspecionados os WRFOUT/NetCDF disponíveis; veja os logs "
-        "[METBR][DIAG] para a lista de variáveis e candidatas. "
+        "Os arquivos possuem candidatas, mas nenhuma tinha uma grade horizontal "
+        "compatível com XLAT/XLONG. Veja [METBR][DIAG] dimensoes/shape. "
         "Nenhuma aproximação dBZ será usada."
     )
 
@@ -154,10 +148,9 @@ def main():
         with Dataset(path) as ds:
             x, y = grid_shape(ds)
             expected = (y, x)
-
-            # Primeiro procura no próprio WRFOUT; se não houver, procura nos
-            # NetCDF auxiliares da mesma rodada.
-            refl, source_name, source_file = find_native_reflectivity(args.run_dir, expected)
+            refl, source_name, source_file = try_reflectivity_file(path, expected)
+            if refl is None:
+                refl, source_name, source_file = find_native_reflectivity(args.run_dir, expected)
             source_descriptions.add(f"{source_file}:{source_name}")
 
             if refl.shape != expected:
@@ -179,9 +172,6 @@ def main():
             })
 
     sources = sorted(source_descriptions)
-    if not sources:
-        raise RuntimeError("Fonte nativa de refletividade não identificada")
-
     payload = {
         "schemaVersion": "1.0",
         "model": "METBR WRF 4 km",
@@ -202,10 +192,7 @@ def main():
         "modelKey": "metbr_wrf",
         "resolutionKm": 4,
         "grid": {"nx": nx, "ny": ny},
-        "frames": [
-            {"file": f["file"], "time": f["time"], "forecastHour": f["forecastHour"]}
-            for f in frames
-        ],
+        "frames": [{"file": f["file"], "time": f["time"], "forecastHour": f["forecastHour"]} for f in frames],
         "frameCount": len(frames),
         "temporalResolutionMinutes": 60,
         "reflectivitySource": sources,
@@ -213,12 +200,8 @@ def main():
         "initTime": init_time,
     }
 
-    (out / "metbr_wrf_4km.json").write_text(
-        json.dumps(payload, separators=(",", ":"), allow_nan=False), encoding="utf-8"
-    )
-    (out / "metadata.json").write_text(
-        json.dumps(metadata, separators=(",", ":"), allow_nan=False), encoding="utf-8"
-    )
+    (out / "metbr_wrf_4km.json").write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+    (out / "metadata.json").write_text(json.dumps(metadata, separators=(",", ":"), allow_nan=False), encoding="utf-8")
     print(f"METBR JSON publicado: {len(frames)} frames, grade {nx}x{ny}")
     print(f"[METBR] fontes nativas usadas: {', '.join(sources)}")
 
