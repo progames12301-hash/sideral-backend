@@ -33,6 +33,7 @@ jobs:
 
       - name: Instalar dependências
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2'
 
@@ -88,59 +89,59 @@ jobs:
           meta = json.loads((root / 'metadata.json').read_text())
           data = json.loads((root / 'metbr_wrf_4km.json').read_text())
           source = meta.get('reflectivitySource')
-          if isinstance(source, str):
-              sources = [source]
-          elif isinstance(source, list):
-              sources = source
-          else:
-              raise AssertionError(f'reflectivitySource inválido: {source!r}')
-          assert meta['modelKey'] == 'metbr_wrf', meta
-          assert meta['resolutionKm'] == 4, meta
+          sources = [source] if isinstance(source, str) else source if isinstance(source, list) else []
+          assert meta.get('modelKey') == 'metbr_wrf', meta
+          assert meta.get('resolutionKm') == 4, meta
           assert any('REFL_10CM' in str(item).upper() for item in sources), sources
-          assert meta['frames'], meta
-          assert data['modelKey'] == 'metbr_wrf', data
-          assert len(data['frames']) == len(meta['frames'])
+          assert meta.get('frames'), meta
+          assert data.get('modelKey') == 'metbr_wrf', data
+          assert len(data.get('frames', [])) == len(meta['frames'])
           print(f"METBR JSON OK: {len(meta['frames'])} frames, {meta['grid']['nx']}x{meta['grid']['ny']}")
           print(f"Fonte nativa: {sources}")
           PY
 
-      - name: Publicar JSON + WRFOUT na branch temporária
+      - name: Preparar branch de publicação
         run: |
           set -euo pipefail
-          git fetch origin "$METBR_JSON_BRANCH" || true
           rm -rf published-metbr-json
+          git fetch origin "$METBR_JSON_BRANCH" || true
 
           if git show-ref --verify --quiet "refs/remotes/origin/$METBR_JSON_BRANCH"; then
             git worktree add --detach published-metbr-json "origin/$METBR_JSON_BRANCH"
             find published-metbr-json -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           else
-            git worktree add --detach published-metbr-json HEAD
-            find published-metbr-json -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            mkdir published-metbr-json
+            git -C published-metbr-json init
+            git -C published-metbr-json checkout --orphan "$METBR_JSON_BRANCH"
           fi
 
-          cp -a metbr_json/. published-metbr-json/
-          mkdir -p published-metbr-json/wrfout
-          cp -a metbr_input/wrfout_d01_* published-metbr-json/wrfout/
-
+          cp -f metbr_json/metadata.json published-metbr-json/metadata.json
+          cp -f metbr_json/metbr_wrf_4km.json published-metbr-json/metbr_wrf_4km.json
           cat > published-metbr-json/README.md <<'EOF'
-          # METBR WRF 4 km - publicação JSON temporária
+          # METBR WRF 4 km — JSON temporário
 
-          Esta branch é temporária para compatibilidade do Sideral.
+          Publicação leve para o Sideral.
 
           - `metadata.json`: horários disponíveis
           - `metbr_wrf_4km.json`: refletividade nativa `REFL_10CM`
-          - `wrfout/`: WRFOUTs brutos preservados
+
+          Os WRFOUT brutos permanecem no checkpoint/release do METBR e não são enviados para esta branch, evitando o limite de tamanho do GitHub.
           EOF
 
           git -C published-metbr-json config user.name 'github-actions[bot]'
           git -C published-metbr-json config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -C published-metbr-json add --all
-          git -C published-metbr-json commit -m "METBR 4 km: JSON temporário + WRFOUT bruto" || true
-          git -C published-metbr-json push origin HEAD:"$METBR_JSON_BRANCH"
-          git worktree remove --force published-metbr-json
+          git -C published-metbr-json add metadata.json metbr_wrf_4km.json README.md
+          git -C published-metbr-json diff --cached --quiet || git -C published-metbr-json commit -m "METBR 4 km: atualizar JSON"
+
+      - name: Publicar branch METBR
+        run: |
+          set -euo pipefail
+          git -C published-metbr-json remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" 2>/dev/null || true
+          git -C published-metbr-json remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git"
+          git -C published-metbr-json push --force origin HEAD:"$METBR_JSON_BRANCH"
+          echo "METBR JSON publicado com sucesso em $METBR_JSON_BRANCH"
 
       - name: Resumo
         run: |
           echo "METBR JSON: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/metadata.json"
           echo "METBR dados: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/metbr_wrf_4km.json"
-          echo "METBR WRFOUT: https://github.com/${GITHUB_REPOSITORY}/tree/${METBR_JSON_BRANCH}/wrfout"
