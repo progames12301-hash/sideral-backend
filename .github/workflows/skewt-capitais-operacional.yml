@@ -2,9 +2,10 @@ name: Sideral Skew-T SHARPpy — 27 Capitais
 
 on:
   schedule:
-    - cron: '45 13 * * *'
-    - cron: '45 19 * * *'
-    - cron: '45 1 * * *'
+    # GitHub cron é UTC. Estes horários executam os ciclos ECMWF 06Z, 12Z e 18Z.
+    - cron: '45 13 * * *' # 06Z
+    - cron: '45 19 * * *' # 12Z
+    - cron: '45 1 * * *'  # 18Z
   workflow_dispatch:
     inputs:
       cycle:
@@ -86,20 +87,39 @@ jobs:
             --cycle "$CYCLE" \
             --out build/skewt-capitals
 
-      - name: Validar saída antes de publicar
+      - name: Validar 27 capitais × 17 PNGs
         shell: bash
         run: |
+          set -euo pipefail
           count=$(find build/skewt-capitals -type f -name '*.png' | wc -l)
           echo "PNG encontrados: $count"
           test "$count" -eq 459
+
+          capitals=(
+            rio-branco maceio macapa manaus salvador fortaleza brasilia vitoria goiania
+            sao-luis cuiaba campo-grande belo-horizonte belem joao-pessoa curitiba recife
+            teresina rio-de-janeiro natal porto-alegre porto-velho boa-vista florianopolis
+            sao-paulo aracaju palmas
+          )
+
+          for city in "${capitals[@]}"; do
+            dir="build/skewt-capitals/$city"
+            test -d "$dir" || { echo "Diretório ausente: $dir"; exit 1; }
+            city_count=$(find "$dir" -maxdepth 1 -type f -name '*.png' | wc -l)
+            echo "$city: $city_count PNG"
+            test "$city_count" -eq 17 || { echo "Quantidade inválida para $city"; exit 1; }
+            for fh in 000 003 006 009 012 015 018 021 024 027 030 033 036 039 042 045 048; do
+              file="$dir/$city-f$fh.png"
+              test -s "$file" || { echo "PNG ausente/vazio: $file"; exit 1; }
+              size=$(stat -c '%s' "$file")
+              if (( size < 10000 )); then
+                echo "PNG suspeito: $file ($size bytes)"
+                exit 1
+              fi
+            done
+          done
+
           test -s build/skewt-capitals/manifest.json
-          while IFS= read -r file; do
-            size=$(stat -c '%s' "$file")
-            if (( size < 10000 )); then
-              echo "PNG suspeito: $file ($size bytes)"
-              exit 1
-            fi
-          done < <(find build/skewt-capitals -type f -name '*.png')
 
       - name: Construir índice público dos assets
         shell: bash
@@ -119,6 +139,9 @@ jobs:
               'repository': os.environ['GH_REPO'],
               'tag': tag,
               'asset_count': len(assets),
+              'cities': 27,
+              'frames_per_city': 17,
+              'cycles': ['06', '12', '18'],
               'download_base': f'https://github.com/{os.environ["GH_REPO"]}/releases/download/{tag}/',
               'assets': assets,
           }
@@ -140,7 +163,7 @@ jobs:
           gh release create "$tag" \
             --repo "$GH_REPO" \
             --title "Sideral Skew-T ECMWF ${CYCLE}Z — 27 capitais" \
-            --notes "PNG pré-renderizado diretamente pelo SHARPpy. Fonte: ECMWF IFS 0.25° via Open-Meteo Single Runs. Forecast F000–F048 em passos de 3h. publication.json contém o índice determinístico dos assets para o HTML." \
+            --notes "PNG pré-renderizado diretamente pelo SHARPpy. Fonte: ECMWF IFS 0.25° via Open-Meteo Single Runs. Forecast F000–F048 em passos de 3h. São publicados 459 PNGs: 27 capitais × 17 frames. publication.json contém o índice determinístico dos assets para o HTML." \
             "${files[@]}" \
             build/skewt-capitals/manifest.json \
             build/skewt-capitals/publication.json
@@ -150,9 +173,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           tag="skewt-live-${CYCLE}"
           gh release view "$tag" --repo "$GH_REPO" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'
           test "$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '.assets|map(.name)|map(select(.=="publication.json"))|length')" -eq 1
+          png_count=$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')
+          echo "PNG no release: $png_count"
+          test "$png_count" -eq 459
 
       - name: Artefato de diagnóstico
         uses: actions/upload-artifact@v4
