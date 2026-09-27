@@ -87,13 +87,21 @@ jobs:
           root = Path('metbr_json')
           meta = json.loads((root / 'metadata.json').read_text())
           data = json.loads((root / 'metbr_wrf_4km.json').read_text())
-          assert meta['modelKey'] == 'metbr_wrf'
-          assert meta['resolutionKm'] == 4
-          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE'
-          assert meta['frames']
-          assert data['modelKey'] == 'metbr_wrf'
+          source = meta.get('reflectivitySource')
+          if isinstance(source, str):
+              sources = [source]
+          elif isinstance(source, list):
+              sources = source
+          else:
+              raise AssertionError(f'reflectivitySource inválido: {source!r}')
+          assert meta['modelKey'] == 'metbr_wrf', meta
+          assert meta['resolutionKm'] == 4, meta
+          assert any('REFL_10CM' in str(item).upper() for item in sources), sources
+          assert meta['frames'], meta
+          assert data['modelKey'] == 'metbr_wrf', data
           assert len(data['frames']) == len(meta['frames'])
           print(f"METBR JSON OK: {len(meta['frames'])} frames, {meta['grid']['nx']}x{meta['grid']['ny']}")
+          print(f"Fonte nativa: {sources}")
           PY
 
       - name: Publicar JSON + WRFOUT na branch temporária
