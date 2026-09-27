@@ -1,0 +1,138 @@
+name: METBR WRF 4 KM - JSON temporário
+
+on:
+  workflow_run:
+    workflows: ["METBR WRF 4 KM - ICON"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  METBR_JSON_BRANCH: metbr-json-data
+  METBR_TAG_PREFIX: metbr-wrf-4km-checkpoint-
+
+jobs:
+  extract:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2'
+
+      - name: Definir execução METBR
+        env:
+          RUN_ID_EVENT: ${{ github.event.workflow_run.id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RUN_ID_EVENT:-}" ]; then
+            echo "RUN_ID=$RUN_ID_EVENT" >> "$GITHUB_ENV"
+          else
+            RUN_ID=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+            test -n "$RUN_ID"
+            echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          fi
+          echo "METBR_RUN_ID=$RUN_ID"
+
+      - name: Baixar WRFOUT bruto do checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${METBR_TAG_PREFIX}${RUN_ID}"
+          rm -rf metbr_input
+          mkdir -p metbr_input
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'wrfout_d01_*' \
+            --dir metbr_input \
+            --clobber
+          count=$(find metbr_input -type f -name 'wrfout_d01_*' -size +0c | wc -l)
+          echo "WRFOUT encontrados: $count"
+          test "$count" -gt 0
+
+      - name: Extrair JSON nativo
+        run: |
+          set -euo pipefail
+          rm -rf metbr_json
+          python wrf/metbr_extract_json.py \
+            --run-dir metbr_input \
+            --output-dir metbr_json
+          test -s metbr_json/metadata.json
+          test -s metbr_json/metbr_wrf_4km.json
+
+      - name: Validar JSON
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('metbr_json')
+          meta = json.loads((root / 'metadata.json').read_text())
+          data = json.loads((root / 'metbr_wrf_4km.json').read_text())
+          assert meta['modelKey'] == 'metbr_wrf'
+          assert meta['resolutionKm'] == 4
+          assert meta['reflectivitySource'] == 'REFL_10CM_NATIVE'
+          assert meta['frames']
+          assert data['modelKey'] == 'metbr_wrf'
+          assert len(data['frames']) == len(meta['frames'])
+          print(f"METBR JSON OK: {len(meta['frames'])} frames, {meta['grid']['nx']}x{meta['grid']['ny']}")
+          PY
+
+      - name: Publicar JSON + WRFOUT na branch temporária
+        run: |
+          set -euo pipefail
+          git fetch origin "$METBR_JSON_BRANCH" || true
+          rm -rf published-metbr-json
+
+          if git show-ref --verify --quiet "refs/remotes/origin/$METBR_JSON_BRANCH"; then
+            git worktree add --detach published-metbr-json "origin/$METBR_JSON_BRANCH"
+            find published-metbr-json -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          else
+            git worktree add --detach published-metbr-json HEAD
+            find published-metbr-json -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          fi
+
+          cp -a metbr_json/. published-metbr-json/
+          mkdir -p published-metbr-json/wrfout
+          cp -a metbr_input/wrfout_d01_* published-metbr-json/wrfout/
+
+          cat > published-metbr-json/README.md <<'EOF'
+          # METBR WRF 4 km - publicação JSON temporária
+
+          Esta branch é temporária para compatibilidade do Sideral.
+
+          - `metadata.json`: horários disponíveis
+          - `metbr_wrf_4km.json`: refletividade nativa `REFL_10CM`
+          - `wrfout/`: WRFOUTs brutos preservados
+          EOF
+
+          git -C published-metbr-json config user.name 'github-actions[bot]'
+          git -C published-metbr-json config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C published-metbr-json add --all
+          git -C published-metbr-json commit -m "METBR 4 km: JSON temporário + WRFOUT bruto" || true
+          git -C published-metbr-json push origin HEAD:"$METBR_JSON_BRANCH"
+          git worktree remove --force published-metbr-json
+
+      - name: Resumo
+        run: |
+          echo "METBR JSON: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/metadata.json"
+          echo "METBR dados: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/metbr_wrf_4km.json"
+          echo "METBR WRFOUT: https://github.com/${GITHUB_REPOSITORY}/tree/${METBR_JSON_BRANCH}/wrfout"
