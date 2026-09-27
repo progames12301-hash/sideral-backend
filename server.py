@@ -1,13 +1,19 @@
 from __future__ import annotations
-import json, os, subprocess, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 import server_legacy as legacy
 import stations_sideral
 
 ROOT = Path(__file__).resolve().parent
 NATIVE_PROFILE_RUNNER = ROOT / 'tools' / 'skewt' / 'ecmwf_profile.py'
 NATIVE_PROFILE_TIMEOUT = max(180, int(os.getenv('SKEWT_NATIVE_TIMEOUT', '420')))
+
+METBR_REPO = 'progames12301-hash/sideral-backend'
+METBR_RELEASES_API = f'https://api.github.com/repos/{METBR_REPO}/releases?per_page=20'
+METBR_RELEASE_PREFIX = 'metbr-wrf-4km-checkpoint-'
+METBR_CACHE_SECONDS = 60
+_metbr_release_cache = {'expires': 0.0, 'release': None}
 
 class Handler(legacy.Handler):
     def do_GET(self) -> None:
@@ -19,6 +25,8 @@ class Handler(legacy.Handler):
             return
         if parsed_path == '/api/redemet/radar': self._redemet_radar(parse_qs(parsed.query)); return
         if parsed_path == '/api/skewt/profile': self._skewt_profile(parse_qs(parsed.query)); return
+        if parsed_path == '/api/metbr/metadata': self._metbr_metadata(); return
+        if parsed_path == '/api/metbr/wrfout': self._metbr_wrfout(parse_qs(parsed.query)); return
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -49,6 +57,112 @@ class Handler(legacy.Handler):
             self.send_json(200,{'status':True,'message':payload.get('message',200),'provider':'REDEMET / DECEA','data':normalized})
         except Exception as exc:
             self.send_json(502,{'status':False,'provider':'REDEMET / DECEA','error':'Falha ao consultar a API oficial da REDEMET.','details':str(exc).replace(key,'[REDACTED]')[:500]})
+
+    def _metbr_release(self):
+        import time
+        now = time.time()
+        if _metbr_release_cache['release'] is not None and _metbr_release_cache['expires'] > now:
+            return _metbr_release_cache['release']
+        response = legacy.requests.get(
+            METBR_RELEASES_API,
+            headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'SideralMeteorologia/2.0 (Render METBR proxy)'},
+            timeout=20
+        )
+        response.raise_for_status()
+        releases = response.json()
+        candidates = [
+            r for r in releases if isinstance(r, dict)
+            and str(r.get('tag_name', '')).startswith(METBR_RELEASE_PREFIX)
+            and not r.get('draft')
+        ]
+        if not candidates:
+            raise RuntimeError('Nenhuma release METBR WRF 4 km encontrada.')
+        candidates.sort(key=lambda r: str(r.get('created_at') or r.get('published_at') or ''), reverse=True)
+        release = candidates[0]
+        _metbr_release_cache.update({'release': release, 'expires': now + METBR_CACHE_SECONDS})
+        return release
+
+    def _metbr_metadata(self):
+        try:
+            release = self._metbr_release()
+            assets = [
+                {
+                    'name': a.get('name'),
+                    'size': a.get('size', 0),
+                    'updated_at': a.get('updated_at'),
+                    'download_url': f'/api/metbr/wrfout?name={quote(str(a.get("name")))}'
+                }
+                for a in (release.get('assets') or [])
+                if re.match(r'^wrfout_d01_', str(a.get('name') or ''))
+            ]
+            assets.sort(key=lambda a: a['name'])
+            if not assets:
+                raise RuntimeError(f'Nenhum wrfout_d01 publicado na release {release.get("tag_name")}.')
+            self.send_json(200, {
+                'status': True,
+                'provider': 'METBR',
+                'model': 'WRF METBR',
+                'resolutionKm': 4,
+                'release': release.get('tag_name'),
+                'releaseId': release.get('id'),
+                'publishedAt': release.get('published_at'),
+                'frames': [
+                    {
+                        'time': self._metbr_time_from_name(a['name']),
+                        'forecastHour': i,
+                        'file': a['name'],
+                        'downloadUrl': a['download_url']
+                    }
+                    for i, a in enumerate(assets)
+                ]
+            })
+        except Exception as exc:
+            self.send_json(502, {'status': False, 'provider': 'METBR', 'error': 'Falha ao localizar os WRFOUT publicados pelo METBR.', 'details': str(exc)[:1000]})
+
+    @staticmethod
+    def _metbr_time_from_name(name):
+        match = re.match(r'^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[.:](\d{2})[.:](\d{2})$', name)
+        if not match:
+            return None
+        return f'{match.group(1)}T{match.group(2)}:{match.group(3)}:{match.group(4)}Z'
+
+    def _metbr_wrfout(self, query):
+        name = str(query.get('name', [''])[0]).strip()
+        if not re.match(r'^wrfout_d01_\d{4}-\d{2}-\d{2}_\d{2}[.:]\d{2}[.:]\d{2}$', name):
+            self.send_json(400, {'status': False, 'error': 'Nome de WRFOUT inválido.'})
+            return
+        try:
+            release = self._metbr_release()
+            asset = next((a for a in (release.get('assets') or []) if a.get('name') == name), None)
+            if not asset:
+                self.send_json(404, {'status': False, 'error': f'WRFOUT não encontrado na release METBR atual: {name}'})
+                return
+            download_url = asset.get('browser_download_url')
+            if not download_url:
+                raise RuntimeError('Asset METBR sem URL de download.')
+            response = legacy.requests.get(
+                download_url,
+                headers={'User-Agent': 'SideralMeteorologia/2.0 (Render METBR proxy)', 'Accept': 'application/octet-stream'},
+                timeout=120,
+                stream=True
+            )
+            response.raise_for_status()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Disposition', f'inline; filename="{name}"')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'public, max-age=120')
+            if response.headers.get('Content-Length'):
+                self.send_header('Content-Length', response.headers['Content-Length'])
+            self.end_headers()
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    self.wfile.write(chunk)
+        except Exception as exc:
+            try:
+                self.send_json(502, {'status': False, 'provider': 'METBR', 'error': 'Falha ao baixar WRFOUT pelo proxy Render.', 'details': str(exc)[:1000]})
+            except Exception:
+                pass
 
     def _parse_skewt_args(self, query):
         lat=float(query.get('lat',[''])[0]); lon=float(query.get('lon',[''])[0]); fh=int(query.get('forecast_hour',['0'])[0]); cycle=str(query.get('cycle',[''])[0]).zfill(2) if query.get('cycle',[''])[0] else None
