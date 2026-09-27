@@ -39,22 +39,14 @@ def _as_2d_reflectivity(value, name, expected_shape=None):
     if np.ma.isMaskedArray(a):
         a = a.filled(np.nan)
     a = np.asarray(a, dtype=np.float32)
-
-    # REFL_10CM em WRF pode vir como (Time, bottom_top, south_north, west_east),
-    # (bottom_top, south_north, west_east) ou diretamente como grade 2-D.
-    # Mantemos os dois últimos eixos como a grade horizontal e fazemos o máximo
-    # apenas nas dimensões extras (tempo/altura). Nenhum valor é calculado.
     if a.ndim < 2:
         return None
-
     if expected_shape is not None and tuple(a.shape[-2:]) != tuple(expected_shape):
         return None
-
     if a.ndim > 2:
         reduce_axes = tuple(range(a.ndim - 2))
         with np.errstate(all="ignore"):
             a = np.nanmax(a, axis=reduce_axes)
-
     if a.ndim != 2 or not np.isfinite(a).any():
         return None
     return np.asarray(a, dtype=np.float32)
@@ -66,12 +58,10 @@ def try_reflectivity_file(path, expected_shape=None):
             names, radar_names = describe_variables(ds)
             print(f"[METBR][DIAG] {path.name}: {len(names)} variaveis")
             print(f"[METBR][DIAG] {path.name}: candidatas de refletividade: {radar_names or 'nenhuma'}")
-
             ordered = [n for n in REFLECTIVITY_NAMES if n in ds.variables]
             for n in radar_names:
                 if n not in ordered:
                     ordered.append(n)
-
             for name in ordered:
                 var = ds.variables[name]
                 print(f"[METBR][DIAG] {path.name}:{name}: dimensoes={getattr(var, 'dimensions', ())} shape={getattr(var, 'shape', ())}")
@@ -79,10 +69,10 @@ def try_reflectivity_file(path, expected_shape=None):
                 if refl is None:
                     continue
                 print(f"[METBR] refletividade nativa encontrada: {path.name}:{name} shape={refl.shape}")
-                return refl, name
+                return refl, name, path.name
     except Exception as exc:
         print(f"[METBR][DIAG] falha lendo {path}: {exc}")
-    return None, None
+    return None, None, None
 
 
 def find_native_reflectivity(run_dir, expected_shape=None):
@@ -94,15 +84,12 @@ def find_native_reflectivity(run_dir, expected_shape=None):
             if p not in candidates and p.is_file():
                 others.append(p)
     candidates += sorted(set(others))
-
     if not candidates:
         raise RuntimeError(f"Nenhum NetCDF/WRFOUT encontrado em {run_dir}")
-
     for path in candidates:
-        refl, source = try_reflectivity_file(path, expected_shape)
+        refl, source, source_file = try_reflectivity_file(path, expected_shape)
         if refl is not None:
-            return refl, source, path.name
-
+            return refl, source, source_file
     raise RuntimeError(
         "Nenhuma variável de refletividade nativa foi encontrada. "
         "Os arquivos possuem candidatas, mas nenhuma tinha uma grade horizontal "
@@ -151,19 +138,18 @@ def main():
             refl, source_name, source_file = try_reflectivity_file(path, expected)
             if refl is None:
                 refl, source_name, source_file = find_native_reflectivity(args.run_dir, expected)
+            if source_name is None or source_file is None:
+                raise RuntimeError(f"Fonte nativa não identificada para {path.name}")
             source_descriptions.add(f"{source_file}:{source_name}")
-
             if refl.shape != expected:
                 raise RuntimeError(f"Grade inesperada em {path.name}: {refl.shape}, esperado {expected}")
             if nx is None:
                 nx, ny = x, y
             elif (nx, ny) != (x, y):
                 raise RuntimeError("Os WRFOUTs possuem grades diferentes")
-
             t = read_time(ds)
             if not init_time:
                 init_time = t
-
             frames.append({
                 "file": path.name,
                 "time": t,
@@ -185,7 +171,6 @@ def main():
         "nativeGrid": True,
         "initTime": init_time,
     }
-
     metadata = {
         "schemaVersion": "1.0",
         "model": "METBR WRF 4 km",
@@ -199,7 +184,6 @@ def main():
         "nativeGrid": True,
         "initTime": init_time,
     }
-
     (out / "metbr_wrf_4km.json").write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False), encoding="utf-8")
     (out / "metadata.json").write_text(json.dumps(metadata, separators=(",", ":"), allow_nan=False), encoding="utf-8")
     print(f"METBR JSON publicado: {len(frames)} frames, grade {nx}x{ny}")
