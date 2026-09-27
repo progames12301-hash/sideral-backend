@@ -1,0 +1,50 @@
+name: WRF Catch-up — rodada 2026-09-30
+
+on:
+  schedule:
+    # 00:20 UTC em 30/09/2026
+    - cron: '20 0 30 9 *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-wrf:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Iniciar todas as rodadas WRF do catch-up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run() {
+            local workflow="$1"
+            echo "[WRF-CATCHUP] iniciando $workflow"
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
+          }
+
+          # WRF regionais
+          run wrf-4km-next-day-auto.yml
+          run wrf-sudeste-icon-4km.yml
+          run wrf-sudeste-ecmwf-4km.yml
+
+          # WRF2 — diagnósticos severos
+          run wrf2-sudeste-gfs-7km.yml
+          run wrf2-sudeste-icon-7km.yml
+          run wrf2-sudeste-ecmwf-7km.yml
+
+          # Brasil 21 km
+          run wrf-brasil-12km.yml
+
+          # CIM
+          run cim-wrf-3km-operational.yml
+
+          # METBR; o workflow de publicação JSON roda depois que todos
+          # os checkpoints terminarem com sucesso.
+          run metbr-wrf-4km.yml
+
+          echo '[WRF-CATCHUP] todas as filas foram disparadas.'
