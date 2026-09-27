@@ -7,14 +7,8 @@ import numpy as np
 from netCDF4 import Dataset
 
 REFLECTIVITY_NAMES = (
-    "REFL_10CM",
-    "REFL_10CM_NATIVE",
-    "REFLECTIVITY_10CM",
-    "REFLECTIVITY",
-    "REFL",
-    "DBZ10",
-    "DBZ",
-    "ZH",
+    "REFL_10CM", "REFL_10CM_NATIVE", "REFLECTIVITY_10CM", "REFLECTIVITY",
+    "REFL", "DBZ10", "DBZ", "ZH",
 )
 
 
@@ -90,12 +84,7 @@ def find_native_reflectivity(run_dir, expected_shape=None):
         refl, source, source_file = try_reflectivity_file(path, expected_shape)
         if refl is not None:
             return refl, source, source_file
-    raise RuntimeError(
-        "Nenhuma variável de refletividade nativa foi encontrada. "
-        "Os arquivos possuem candidatas, mas nenhuma tinha uma grade horizontal "
-        "compatível com XLAT/XLONG. Veja [METBR][DIAG] dimensoes/shape. "
-        "Nenhuma aproximação dBZ será usada."
-    )
+    raise RuntimeError("Nenhuma variável de refletividade nativa foi encontrada. Nenhuma aproximação dBZ será usada.")
 
 
 def grid_shape(ds):
@@ -109,8 +98,22 @@ def grid_shape(ds):
     return int(shape[1]), int(shape[0])
 
 
-def clean_array(a):
-    return np.nan_to_num(a, nan=-9999.0, posinf=-9999.0, neginf=-9999.0).tolist()
+def clean_array(a, expected_size):
+    arr = np.asarray(a, dtype=np.float32)
+    flat = np.nan_to_num(arr.reshape(-1), nan=-9999.0, posinf=-9999.0, neginf=-9999.0)
+    if flat.size != expected_size:
+        raise RuntimeError(f"REFL_10CM incompleta: {flat.size} valores; esperados {expected_size}")
+    return flat.tolist()
+
+
+def validate_frames(frames, nx, ny):
+    expected = int(nx) * int(ny)
+    for frame in frames:
+        values = frame.get("reflectivityDbz")
+        actual = len(values) if isinstance(values, list) else 0
+        if actual != expected:
+            raise RuntimeError(f"Frame {frame.get('file', '?')} possui {actual} valores; esperados {expected} ({ny}x{nx})")
+    print(f"[METBR][VALID] {len(frames)} frames validados: {expected} valores/frame ({ny}x{nx})")
 
 
 def main():
@@ -125,7 +128,6 @@ def main():
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
-
     frames = []
     nx = ny = None
     init_time = ""
@@ -134,19 +136,28 @@ def main():
     for index, path in enumerate(files):
         with Dataset(path) as ds:
             x, y = grid_shape(ds)
-            expected = (y, x)
-            refl, source_name, source_file = try_reflectivity_file(path, expected)
+            expected_shape = (y, x)
+            expected_size = x * y
+            refl, source_name, source_file = try_reflectivity_file(path, expected_shape)
             if refl is None:
-                refl, source_name, source_file = find_native_reflectivity(args.run_dir, expected)
+                refl, source_name, source_file = find_native_reflectivity(args.run_dir, expected_shape)
             if source_name is None or source_file is None:
                 raise RuntimeError(f"Fonte nativa não identificada para {path.name}")
             source_descriptions.add(f"{source_file}:{source_name}")
-            if refl.shape != expected:
-                raise RuntimeError(f"Grade inesperada em {path.name}: {refl.shape}, esperado {expected}")
+            if refl.shape != expected_shape:
+                raise RuntimeError(f"Grade inesperada em {path.name}: {refl.shape}, esperado {expected_shape}")
             if nx is None:
                 nx, ny = x, y
             elif (nx, ny) != (x, y):
                 raise RuntimeError("Os WRFOUTs possuem grades diferentes")
+
+            print(f"[METBR][REFL] arquivo={path.name}")
+            print(f"[METBR][REFL] shape_original={getattr(ds.variables[source_name], 'shape', ())}")
+            print(f"[METBR][REFL] shape_horizontal={refl.shape[0]}x{refl.shape[1]}")
+            print(f"[METBR][REFL] valores={refl.size}")
+            if refl.size != expected_size:
+                raise RuntimeError(f"REFL_10CM incompleta: {refl.size} valores; esperados {expected_size} ({y}x{x})")
+
             t = read_time(ds)
             if not init_time:
                 init_time = t
@@ -154,39 +165,33 @@ def main():
                 "file": path.name,
                 "time": t,
                 "forecastHour": index,
-                "reflectivityDbz": clean_array(refl),
+                "reflectivityDbz": clean_array(refl, expected_size),
             })
 
+    validate_frames(frames, nx, ny)
     sources = sorted(source_descriptions)
     payload = {
-        "schemaVersion": "1.0",
-        "model": "METBR WRF 4 km",
-        "modelKey": "metbr_wrf",
-        "resolutionKm": 4,
-        "grid": {"nx": nx, "ny": ny},
-        "frames": frames,
-        "frameCount": len(frames),
-        "temporalResolutionMinutes": 60,
-        "reflectivitySource": sources,
-        "nativeGrid": True,
-        "initTime": init_time,
+        "schemaVersion": "1.0", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
+        "resolutionKm": 4, "grid": {"nx": nx, "ny": ny}, "frames": frames,
+        "frameCount": len(frames), "temporalResolutionMinutes": 60,
+        "reflectivitySource": sources, "nativeGrid": True, "initTime": init_time,
     }
     metadata = {
-        "schemaVersion": "1.0",
-        "model": "METBR WRF 4 km",
-        "modelKey": "metbr_wrf",
-        "resolutionKm": 4,
-        "grid": {"nx": nx, "ny": ny},
+        "schemaVersion": "1.0", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
+        "resolutionKm": 4, "grid": {"nx": nx, "ny": ny},
         "frames": [{"file": f["file"], "time": f["time"], "forecastHour": f["forecastHour"]} for f in frames],
-        "frameCount": len(frames),
-        "temporalResolutionMinutes": 60,
-        "reflectivitySource": sources,
-        "nativeGrid": True,
-        "initTime": init_time,
+        "frameCount": len(frames), "temporalResolutionMinutes": 60,
+        "reflectivitySource": sources, "nativeGrid": True, "initTime": init_time,
     }
-    (out / "metbr_wrf_4km.json").write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False), encoding="utf-8")
-    (out / "metadata.json").write_text(json.dumps(metadata, separators=(",", ":"), allow_nan=False), encoding="utf-8")
-    print(f"METBR JSON publicado: {len(frames)} frames, grade {nx}x{ny}")
+    json_path = out / "metbr_wrf_4km.json"
+    metadata_path = out / "metadata.json"
+    json_path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+    metadata_path.write_text(json.dumps(metadata, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+
+    # Validate the serialized JSON too, before publication.
+    serialized = json.loads(json_path.read_text(encoding="utf-8"))
+    validate_frames(serialized["frames"], nx, ny)
+    print(f"METBR JSON pronto: {len(frames)} frames, grade {nx}x{ny}")
     print(f"[METBR] fontes nativas usadas: {', '.join(sources)}")
 
 
