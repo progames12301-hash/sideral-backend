@@ -2,14 +2,6 @@
 set -euo pipefail
 
 # Compatibilidade com os adaptadores existentes de 7 km.
-# e_we              = 390,
-# e_sn              = 360,
-# e_we = 390,
-# e_sn = 360,
-# dx = 4000,
-# dy = 4000,
-# time_step = 24,
-
 ROOT="${GITHUB_WORKSPACE:-$PWD}"
 LEGACY="$ROOT/wrf/run_wrf_with_source_sudeste_legacy.sh"
 [[ -f "$LEGACY" ]] || { echo "Executor legado ausente: $LEGACY" >&2; exit 2; }
@@ -20,25 +12,28 @@ cp -f "$LEGACY" "$TMP"
 
 python3 - "$TMP" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 p = Path(sys.argv[1])
 s = p.read_text(encoding='utf-8')
-replacements = {
-    'e_we              = 390,': 'e_we              = 223,',
-    'e_sn              = 360,': 'e_sn              = 206,',
-    'e_we = 390,': 'e_we = 223,',
-    'e_sn = 360,': 'e_sn = 206,',
-    'dx = 4000,': 'dx = 7000,',
-    'dy = 4000,': 'dy = 7000,',
-    'time_step = 24,': 'time_step = 42,',
-    "map_proj = 'lambert',": "map_proj = 'mercator',",
-    'truelat1  = -15.0,': 'truelat1  = -19.50,',
-}
-for old, new in replacements.items():
-    if old not in s:
-        raise SystemExit(f'Padrao ausente no executor legado: {old}')
-    s = s.replace(old, new)
+
+# Uma substituição por variável. Não encadeia 390 -> 223 e depois tenta
+# substituir 223 novamente, que era a causa da falha observada.
+patterns = [
+    (r'(?m)^(\s*e_we\s*=\s*)\d+(\s*,\s*)$', r'\g<1>223\g<2>'),
+    (r'(?m)^(\s*e_sn\s*=\s*)\d+(\s*,\s*)$', r'\g<1>206\g<2>'),
+    (r'(?m)^(\s*dx\s*=\s*)\d+(\s*,\s*)$', r'\g<1>7000\g<2>'),
+    (r'(?m)^(\s*dy\s*=\s*)\d+(\s*,\s*)$', r'\g<1>7000\g<2>'),
+    (r'(?m)^(\s*time_step\s*=\s*)\d+(\s*,\s*)$', r'\g<1>42\g<2>'),
+    (r"(?m)^(\s*map_proj\s*=\s*)'[^']+'(\s*,\s*)$", r"\g<1>'mercator'\g<2>"),
+    (r'(?m)^(\s*truelat1\s*=\s*)[-+0-9.]+(\s*,\s*)$', r'\g<1>-19.50\g<2>'),
+]
+for pattern, replacement in patterns:
+    s, n = re.subn(pattern, replacement, s)
+    if n == 0:
+        raise SystemExit(f'Padrao ausente no executor legado: {pattern}')
+
 p.write_text(s, encoding='utf-8')
 PY
 
