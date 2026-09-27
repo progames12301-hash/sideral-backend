@@ -17,7 +17,7 @@
 <div class="field"><label>PREVISÃO</label><select id="fh"></select></div>
 <button class="primary" id="open">ABRIR</button>
 <button id="download" disabled>BAIXAR PNG</button>
-<div id="status" class="status">Verificando publicação...</div>
+<div id="status" class="status">Verificando PNG...</div>
 </header>
 <main class="frame">
 <section id="viewer" class="viewer"><div class="empty">Carregando...</div></section>
@@ -31,39 +31,29 @@
 <script>
 const RELEASE='https://github.com/progames12301-hash/sideral-backend/releases/download';
 const CAPITALS=[['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']];
-const CYCLES=['06','12','18'];
 const HOURS=Array.from({length:17},(_,i)=>i*3);
-const $=id=>document.getElementById(id);let current='';let publication=null;
+const $=id=>document.getElementById(id);let current='';
 for(const h of HOURS){let o=document.createElement('option');o.value=h;o.textContent='F'+String(h).padStart(3,'0');if(h===0)o.selected=true;$('fh').appendChild(o)}
 CAPITALS.forEach(c=>{let o=document.createElement('option');o.value=c[1];o.textContent=c[0];$('city').appendChild(o)});
 function setStatus(t,cls=''){ $('status').textContent=t;$('status').className='status '+cls }
-function asset(slug,cycle,fh){
-  const name=`${slug}-f${String(fh).padStart(3,'0')}.png`;
-  if(publication?.tag===`skewt-live-${cycle}` && Array.isArray(publication.assets) && !publication.assets.includes(name)) return null;
-  return `${RELEASE}/skewt-live-${cycle}/${name}`;
-}
-async function verifyPublication(cycle){
-  const url=`${RELEASE}/skewt-live-${cycle}/publication.json?t=${Date.now()}`;
-  const r=await fetch(url,{cache:'no-store'});
-  if(!r.ok) throw new Error(`publication.json ${r.status}`);
-  const data=await r.json();
-  if(data.tag!==`skewt-live-${cycle}` || data.asset_count!==459 || !Array.isArray(data.assets)) throw new Error('publicação incompleta');
-  publication=data;
-  return data;
-}
-async function load(){
+function asset(slug,cycle,fh){return `${RELEASE}/skewt-live-${cycle}/${slug}-f${String(fh).padStart(3,'0')}.png`}
+function load(){
   const slug=$('city').value,cycle=$('cycle').value,fh=Number($('fh').value),cap=CAPITALS.find(c=>c[1]===slug);
+  const url=asset(slug,cycle,fh)+'?t='+Date.now();
   $('busy').style.display='grid';$('viewer').innerHTML='';$('download').disabled=true;current='';
-  try{
-    await verifyPublication(cycle);
-    const base=asset(slug,cycle,fh);
-    if(!base) throw new Error('PNG ausente no índice público');
-    const url=base+'?t='+Date.now();
-    const im=new Image();im.alt=`Skew-T ${cap[0]} ${cycle}Z F${String(fh).padStart(3,'0')}`;
-    im.onload=()=>{$('busy').style.display='none';$('viewer').appendChild(im);current=url.split('?')[0];$('download').disabled=false;$('frame').textContent=`${cap[0]} • ${cycle}Z • F${String(fh).padStart(3,'0')}`;setStatus('PNG carregado.','ok')};
-    im.onerror=()=>{throw new Error('PNG não encontrado no release')};
-    im.src=url;
-  }catch(e){$('busy').style.display='none';$('viewer').innerHTML='<div class="empty">Este PNG não está publicado para esta capital/ciclo/frame.</div>';setStatus(`PNG não disponível: ${e.message}`,'err')}
+  const im=new Image();
+  im.alt=`Skew-T ${cap[0]} ${cycle}Z F${String(fh).padStart(3,'0')}`;
+  im.onload=()=>{
+    $('busy').style.display='none';$('viewer').appendChild(im);current=url.split('?')[0];$('download').disabled=false;
+    $('frame').textContent=`${cap[0]} • ${cycle}Z • F${String(fh).padStart(3,'0')}`;
+    setStatus('PNG carregado.','ok');
+  };
+  im.onerror=()=>{
+    $('busy').style.display='none';$('download').disabled=true;
+    $('viewer').innerHTML='<div class="empty">Este PNG não está publicado para esta capital/ciclo/frame.</div>';
+    setStatus('PNG não disponível.','err');
+  };
+  im.src=url;
 }
 $('open').onclick=load;$('city').onchange=load;$('cycle').onchange=load;$('fh').onchange=load;$('download').onclick=()=>{if(!current)return;let a=document.createElement('a');a.href=current;a.download='sideral-skewt.png';a.click()};
 load();
