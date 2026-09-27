@@ -1,0 +1,125 @@
+name: METBR WRF 4 KM - Publicar JSON após rodada completa
+
+on:
+  workflow_run:
+    workflows:
+      - "METBR WRF 4 KM - ICON"
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run ID do workflow METBR concluído"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-json:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout do extrator
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+
+      - name: Definir run ID e tag do release
+        id: meta
+        env:
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ID="${INPUT_RUN_ID:-$EVENT_RUN_ID}"
+          test -n "$RUN_ID"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=metbr-wrf-4km-checkpoint-$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Instalar dependências do extrator
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'xarray>=2024.1,<2027' 'netCDF4>=1.7,<2'
+
+      - name: Baixar todos os WRFOUT do release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf metbr_work
+          mkdir -p metbr_work/run
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'wrfout_d01_*' \
+            --dir metbr_work/run \
+            --clobber
+          count=$(find metbr_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)
+          echo "[METBR][PUBLISH] WRFOUT encontrados: $count"
+          test "$count" -gt 0
+
+      - name: Extrair JSON somente após todos os checkpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf metbr_publish
+          python wrf/metbr_extract_json.py \
+            --run-dir metbr_work/run \
+            --output-dir metbr_publish
+
+          test -s metbr_publish/metbr_wrf_4km.json
+          test -s metbr_publish/metadata.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('metbr_publish/metbr_wrf_4km.json')
+          data = json.loads(p.read_text(encoding='utf-8'))
+          nx = int(data['grid']['nx'])
+          ny = int(data['grid']['ny'])
+          expected = nx * ny
+          frames = data['frames']
+          assert frames, 'METBR sem frames'
+          for i, frame in enumerate(frames):
+              n = len(frame['reflectivityDbz'])
+              assert n == expected, f'frame {i}: {n} valores; esperado {expected} ({nx}x{ny})'
+          print(f'[METBR][VALID] {len(frames)} frames; {expected} valores/frame ({nx}x{ny})')
+          PY
+
+      - name: Publicar JSON na branch metbr-json-data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin metbr-json-data
+          rm -rf /tmp/metbr-json-publication
+          git worktree add --detach /tmp/metbr-json-publication origin/metbr-json-data
+          find /tmp/metbr-json-publication -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
+          cp -f metbr_publish/metadata.json /tmp/metbr-json-publication/metadata.json
+          cp -f metbr_publish/metbr_wrf_4km.json /tmp/metbr-json-publication/metbr_wrf_4km.json
+          cd /tmp/metbr-json-publication
+          git add metadata.json metbr_wrf_4km.json
+          git commit -m "publish: METBR WRF 4 km JSON $(date -u +%Y-%m-%dT%H:%M:%SZ)" || exit 0
+          git push origin HEAD:metbr-json-data
+          cd - >/dev/null
+          git worktree remove --force /tmp/metbr-json-publication
+
+      - name: Manter WRFOUT no Release como fallback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          echo "[METBR] Release mantido: $TAG"
+          echo "[METBR] JSON publicado em metbr-json-data; WRFOUT continua disponível no Release."
