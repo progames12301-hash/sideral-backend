@@ -1,0 +1,172 @@
+name: METBR Maestro - publicação automática
+
+on:
+  workflow_run:
+    workflows: ["METBR WRF 4 KM - ICON"]
+    types: [completed]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: metbr-maestro-publication
+  cancel-in-progress: false
+
+env:
+  TARGET_BRANCH: wrf-icon-data
+  METBR_WORKFLOW: metbr-wrf-4km.yml
+  GRID_X: 300
+  GRID_Y: 360
+
+jobs:
+  publish:
+    name: Detectar, validar e publicar a última rodada METBR
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout do controlador
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências NetCDF
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2'
+
+      - name: Instalar GitHub CLI
+        run: |
+          gh --version
+          gh auth status
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Descobrir a última execução METBR concluída
+        id: discover
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            RUN_ID="${{ github.event.workflow_run.id }}"
+          else
+            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$METBR_WORKFLOW" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          fi
+          test -n "$RUN_ID" && test "$RUN_ID" != "null"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "METBR run selecionado: $RUN_ID"
+
+      - name: Baixar assets da rodada completa
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.discover.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="metbr-wrf-4km-checkpoint-${RUN_ID}"
+          mkdir -p metbr_raw
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'wrfout_d01_*' --dir metbr_raw --clobber
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-latest-complete.txt' --dir metbr_raw --clobber
+          COUNT="$(find metbr_raw -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)"
+          echo "wrfout baixados: $COUNT"
+          test "$COUNT" -ge 3
+          grep -q 'status=complete' metbr_raw/metbr-latest-complete.txt
+
+      - name: Extrair rodada nativa para publicação
+        env:
+          RUN_ID: ${{ steps.discover.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_DATE="$(sed -n 's/^run_date=//p' metbr_raw/metbr-latest-complete.txt)"
+          RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_raw/metbr-latest-complete.txt)"
+          test "$RUN_DATE" != ""
+          test "$RUN_CYCLE" != ""
+          python wrf/extract_metbr_4km.py \
+            --run-dir metbr_raw \
+            --output-dir metbr_publish \
+            --run-date "$RUN_DATE" \
+            --run-cycle "$RUN_CYCLE"
+
+      - name: Validar produto antes de trocar a publicação
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('metbr_publish/metadata.json')
+          d = json.loads(p.read_text())
+          assert d['model'] == 'icon'
+          assert d['resolutionKm'] == 4
+          assert d['reflectivitySource'] == 'REFL_10CM_NATIVE'
+          assert d['nativeGrid'] is True
+          assert d['frameCount'] >= 3
+          assert d['grid']['nx'] == 300 and d['grid']['ny'] == 360
+          for f in d['frames']:
+              q = Path('metbr_publish') / f['file']
+              assert q.is_file() and q.stat().st_size > 0, q
+          print('Produto METBR validado:', d['runDate'], d['runCycle'], d['frameCount'], 'frames')
+          PY
+
+      - name: Comparar com a rodada já publicada
+        id: compare
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OLD=/tmp/old-metadata.json
+          NEW=metbr_publish/metadata.json
+          curl -fsSL --connect-timeout 15 --max-time 30 \
+            "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${TARGET_BRANCH}/metadata.json?maestro=${GITHUB_RUN_ID}" \
+            -o "$OLD" || echo '{}' > "$OLD"
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          old=json.loads(Path('/tmp/old-metadata.json').read_text())
+          new=json.loads(Path('metbr_publish/metadata.json').read_text())
+          old_key=(str(old.get('runDate','')),str(old.get('runCycle','')))
+          new_key=(str(new.get('runDate','')),str(new.get('runCycle','')))
+          print('publish=' + str(new_key > old_key).lower())
+          print('old=' + ' '.join(old_key))
+          print('new=' + ' '.join(new_key))
+          if new_key <= old_key:
+              print('Rodada METBR não é mais nova; publicação mantida.')
+          else:
+              print('Nova rodada METBR detectada.')
+          PY
+
+      - name: Publicar atomicamente na branch METBR
+        if: steps.compare.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf published-metbr
+          git clone --depth 1 --branch "$TARGET_BRANCH" "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" published-metbr
+          find published-metbr -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a metbr_publish/. published-metbr/
+          cd published-metbr
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m "METBR Maestro: nova rodada $(jq -r '.runDate + " " + .runCycle' metadata.json)"
+          git push origin HEAD:"$TARGET_BRANCH"
+
+      - name: Registrar status
+        if: always()
+        run: |
+          echo "METBR Maestro concluído. Rodada detectada: $(jq -r '.runDate + " " + .runCycle' metbr_publish/metadata.json 2>/dev/null || echo indisponível)"
