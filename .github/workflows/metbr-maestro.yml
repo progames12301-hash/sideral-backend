@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_BRANCH: wrf-icon-data
+  TARGET_BRANCH: metbr-json-data
   METBR_WORKFLOW: metbr-wrf-4km.yml
 
 jobs:
