@@ -3,6 +3,7 @@ name: Sideral WRF operational watchdog
 on:
   workflow_dispatch:
   schedule:
+    - cron: '0 5 * * *'
     - cron: '45 */3 * * *'
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - '.github/workflows/wrf-sudeste-gfs-4km.yml'
       - '.github/workflows/wrf-sudeste-icon-4km.yml'
       - '.github/workflows/wrf-sudeste-ecmwf-4km.yml'
+      - '.github/workflows/metbr-wrf-4km.yml'
 
 permissions:
   contents: read
@@ -64,7 +66,9 @@ jobs:
           repo = os.environ['REPOSITORY']
           now = dt.datetime.now(dt.timezone.utc)
 
+          # METBR vem primeiro: se estiver atrasado, e o primeiro produto recuperado.
           products = [
+              ('metbr-json-data', 4, 43, '.github/workflows/metbr-wrf-4km.yml'),
               ('wrf-data', 7, 41, '.github/workflows/wrf-4km-next-day-auto.yml'),
               ('wrf-icon-data', 7, 41, '.github/workflows/wrf-icon-4km-native.yml'),
               ('wrf-ecmwf-data', 7, 41, '.github/workflows/wrf-ecmwf-4km-native.yml'),
@@ -84,7 +88,7 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as response:
                   return json.load(response)
 
-          def check(branch, km, frames_expected, max_age_h=28):
+          def check(branch, km, frames_expected, max_age_h=24):
               try:
                   meta = fetch_meta(branch)
                   assert int(meta.get('resolutionKm')) == km
@@ -94,7 +98,7 @@ jobs:
                   frames = meta.get('frames') or []
                   assert len(frames) == frames_expected
                   hours = [int(f.get('forecastHour', -1)) for f in frames]
-                  assert hours == list(range(frames_expected))
+                  assert hours == list(range(frames_expected)), hours
                   generated = str(meta.get('generatedAt') or '')
                   assert generated, 'generatedAt ausente'
                   stamp = dt.datetime.fromisoformat(generated.replace('Z', '+00:00'))
