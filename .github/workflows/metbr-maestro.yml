@@ -1,11 +1,12 @@
-name: METBR Maestro - publicação automática
+name: METBR Maestro - bot diário de publicação
 
 on:
   workflow_run:
     workflows: ["METBR WRF 4 KM - ICON"]
     types: [completed]
   schedule:
-    - cron: '*/30 * * * *'
+    # Bot diário: roda depois da janela operacional do METBR.
+    - cron: '30 8 * * *'
   workflow_dispatch:
 
 permissions:
@@ -84,8 +85,6 @@ jobs:
           grep -q 'status=complete' metbr_raw/metbr-latest-complete.txt
 
       - name: Extrair rodada nativa para publicação
-        env:
-          RUN_ID: ${{ steps.discover.outputs.run_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -123,8 +122,6 @@ jobs:
       - name: Comparar com a rodada já publicada
         id: compare
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           OLD=/tmp/old-metadata.json
