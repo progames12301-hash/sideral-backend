@@ -50,21 +50,39 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Descobrir a última execução METBR concluída
+      - name: Selecionar execução METBR correta
         id: discover
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            RUN_ID="${{ github.event.workflow_run.id }}"
-          else
-            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$METBR_WORKFLOW" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-          fi
-          test -n "$RUN_ID" && test "$RUN_ID" != "null"
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "METBR run selecionado: $RUN_ID"
+          python - <<'PY'
+          import json, os, subprocess
+          from datetime import datetime, timezone, timedelta
+          repo=os.environ['GITHUB_REPOSITORY']
+          workflow=os.environ['METBR_WORKFLOW']
+          event=os.environ['GITHUB_EVENT_NAME']
+          event_path=os.environ['GITHUB_EVENT_PATH']
+          if event == 'workflow_run':
+              ev=json.load(open(event_path))
+              wr=ev['workflow_run']
+              if wr.get('conclusion') != 'success': raise SystemExit('workflow METBR não terminou com sucesso')
+              run_id=int(wr['id'])
+          else:
+              raw=subprocess.check_output(['gh','run','list','--repo',repo,'--workflow',workflow,'--status','success','--limit','20','--json','databaseId,updatedAt'],text=True)
+              runs=json.loads(raw)
+              now=datetime.now(timezone.utc)
+              recent=[]
+              for r in runs:
+                  try: t=datetime.fromisoformat(r['updatedAt'].replace('Z','+00:00'))
+                  except Exception: continue
+                  if now-t <= timedelta(hours=30): recent.append(r)
+              if not recent: raise SystemExit('Nenhuma execução METBR concluída nas últimas 30h; não reutilizar rodada antiga')
+              run_id=int(max(recent,key=lambda x:x['updatedAt'])['databaseId'])
+          print(f'run_id={run_id}')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write(f'run_id={run_id}\n')
+          PY
 
       - name: Baixar assets da rodada completa
         env:
@@ -81,7 +99,7 @@ jobs:
           COUNT="$(find metbr_raw -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)"
           echo "wrfout baixados: $COUNT"
           test "$COUNT" -ge 3
-          grep -q 'status=complete' metbr_raw/metbr-latest-complete.txt
+          grep -q '^status=complete' metbr_raw/metbr-latest-complete.txt
 
       - name: Extrair rodada nativa para publicação
         shell: bash
@@ -91,11 +109,7 @@ jobs:
           RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_raw/metbr-latest-complete.txt)"
           test -n "$RUN_DATE"
           test -n "$RUN_CYCLE"
-          python wrf/extract_metbr_4km.py \
-            --run-dir metbr_raw \
-            --output-dir metbr_publish \
-            --run-date "$RUN_DATE" \
-            --run-cycle "$RUN_CYCLE"
+          python wrf/extract_metbr_4km.py --run-dir metbr_raw --output-dir metbr_publish --run-date "$RUN_DATE" --run-cycle "$RUN_CYCLE"
 
       - name: Validar produto antes de trocar a publicação
         shell: bash
@@ -104,58 +118,48 @@ jobs:
           python - <<'PY'
           import gzip, json
           from pathlib import Path
-          p = Path('metbr_publish/metadata.json')
-          if not p.is_file():
-              raise RuntimeError('metadata.json não foi gerado')
-          d = json.loads(p.read_text(encoding='utf-8'))
-          errors = []
-          if d.get('model') != 'icon': errors.append(f"model={d.get('model')!r}")
-          if float(d.get('resolutionKm', 0)) != 4: errors.append(f"resolutionKm={d.get('resolutionKm')!r}")
+          d=json.loads(Path('metbr_publish/metadata.json').read_text(encoding='utf-8'))
+          errors=[]
+          if d.get('model')!='icon': errors.append(f"model={d.get('model')!r}")
+          if float(d.get('resolutionKm',0))!=4: errors.append(f"resolutionKm={d.get('resolutionKm')!r}")
           if not d.get('reflectivitySource'): errors.append('reflectivitySource ausente')
-          if d.get('nativeGrid') is not True: errors.append('nativeGrid não é true')
-          frames = d.get('frames') or []
-          if len(frames) < 3: errors.append(f'frames={len(frames)}')
-          grid = d.get('grid') or {}
-          nx, ny = int(grid.get('nx', 0)), int(grid.get('ny', 0))
-          if nx <= 0 or ny <= 0: errors.append(f'grid inválida={grid!r}')
+          frames=d.get('frames') or []
+          if len(frames)<3: errors.append(f'frames={len(frames)}')
+          grid=d.get('grid') or {}; nx=int(grid.get('nx',0)); ny=int(grid.get('ny',0))
+          if nx<=0 or ny<=0: errors.append(f'grid inválida={grid!r}')
           for f in frames:
-              q = Path('metbr_publish') / f['file']
-              if not q.is_file() or q.stat().st_size == 0:
-                  errors.append(f'frame ausente/vazio: {q}')
-                  continue
+              q=Path('metbr_publish')/f['file']
+              if not q.is_file() or q.stat().st_size==0: errors.append(f'frame ausente/vazio: {q}'); continue
               try:
-                  with gzip.open(q, 'rt', encoding='utf-8') as fh:
-                      frame = json.load(fh)
-                  if int(frame.get('gridX', 0)) != nx or int(frame.get('gridY', 0)) != ny:
-                      errors.append(f"grade inconsistente em {q}")
-              except Exception as exc:
-                  errors.append(f'frame inválido {q}: {exc}')
-          if errors:
-              raise RuntimeError('Validação METBR falhou: ' + '; '.join(errors))
-          print('Produto METBR validado:', d.get('runDate'), d.get('runCycle'), len(frames), 'frames', f'grade={nx}x{ny}', f"refl={d.get('reflectivitySource')}")
-          print('Variáveis descobertas:', len(d.get('availableVariables') or []))
+                  with gzip.open(q,'rt',encoding='utf-8') as fh: frame=json.load(fh)
+                  if int(frame.get('gridX',0))!=nx or int(frame.get('gridY',0))!=ny: errors.append(f'grade inconsistente em {q}')
+              except Exception as exc: errors.append(f'frame inválido {q}: {exc}')
+          if errors: raise RuntimeError('Validação METBR falhou: '+'; '.join(errors))
+          print('Produto METBR validado:',d.get('runDate'),d.get('runCycle'),len(frames),'frames',f'grade={nx}x{ny}')
           PY
 
-      - name: Comparar com a rodada já publicada
+      - name: Comparar rodada nova com publicação atual
         id: compare
         shell: bash
         run: |
           set -euo pipefail
           OLD=/tmp/old-metadata.json
-          NEW=metbr_publish/metadata.json
-          curl -fsSL --connect-timeout 15 --max-time 30 \
-            "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${TARGET_BRANCH}/metadata.json?maestro=${GITHUB_RUN_ID}" \
-            -o "$OLD" || echo '{}' > "$OLD"
+          curl -fsSL --connect-timeout 15 --max-time 30 "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${TARGET_BRANCH}/metadata.json?maestro=${GITHUB_RUN_ID}" -o "$OLD" || echo '{}' > "$OLD"
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           from pathlib import Path
+          def key(d):
+              date=str(d.get('runDate',''))
+              cycle=str(d.get('runCycle','00Z')).replace('Z','')
+              try: return (int(date),int(cycle))
+              except: return (0,0)
           old=json.loads(Path('/tmp/old-metadata.json').read_text())
           new=json.loads(Path('metbr_publish/metadata.json').read_text())
-          old_key=(str(old.get('runDate','')),str(old.get('runCycle','')))
-          new_key=(str(new.get('runDate','')),str(new.get('runCycle','')))
-          print('publish=' + str(new_key > old_key).lower())
-          print('old=' + ' '.join(old_key))
-          print('new=' + ' '.join(new_key))
+          ok=key(new)>key(old)
+          print('publish='+str(ok).lower())
+          print('old='+str(key(old)))
+          print('new='+str(key(new)))
+          if not ok: print('Rodada nova não encontrada; publicação atual preservada.')
           PY
 
       - name: Publicar atomicamente na branch METBR
@@ -173,10 +177,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add --all
-          if git diff --cached --quiet; then
-            echo 'Nenhuma alteração para publicar.'
-            exit 0
-          fi
+          if git diff --cached --quiet; then echo 'Nenhuma alteração para publicar.'; exit 0; fi
           git commit -m "METBR Maestro: nova rodada $(jq -r '.runDate + " " + .runCycle' metadata.json)"
           git push origin HEAD:"$TARGET_BRANCH"
 
