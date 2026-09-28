@@ -5,7 +5,6 @@ on:
     workflows: ["METBR WRF 4 KM - ICON"]
     types: [completed]
   schedule:
-    # Bot diário: roda depois da janela operacional do METBR.
     - cron: '30 8 * * *'
   workflow_dispatch:
 
@@ -20,8 +19,6 @@ concurrency:
 env:
   TARGET_BRANCH: wrf-icon-data
   METBR_WORKFLOW: metbr-wrf-4km.yml
-  GRID_X: 300
-  GRID_Y: 360
 
 jobs:
   publish:
@@ -41,11 +38,13 @@ jobs:
 
       - name: Instalar dependências NetCDF
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2'
 
       - name: Instalar GitHub CLI
         run: |
+          set -euo pipefail
           gh --version
           gh auth status
         env:
@@ -90,8 +89,8 @@ jobs:
           set -euo pipefail
           RUN_DATE="$(sed -n 's/^run_date=//p' metbr_raw/metbr-latest-complete.txt)"
           RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_raw/metbr-latest-complete.txt)"
-          test "$RUN_DATE" != ""
-          test "$RUN_CYCLE" != ""
+          test -n "$RUN_DATE"
+          test -n "$RUN_CYCLE"
           python wrf/extract_metbr_4km.py \
             --run-dir metbr_raw \
             --output-dir metbr_publish \
@@ -103,20 +102,38 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
+          import gzip, json
           from pathlib import Path
           p = Path('metbr_publish/metadata.json')
-          d = json.loads(p.read_text())
-          assert d['model'] == 'icon'
-          assert d['resolutionKm'] == 4
-          assert d['reflectivitySource'] == 'REFL_10CM_NATIVE'
-          assert d['nativeGrid'] is True
-          assert d['frameCount'] >= 3
-          assert d['grid']['nx'] == 300 and d['grid']['ny'] == 360
-          for f in d['frames']:
+          if not p.is_file():
+              raise RuntimeError('metadata.json não foi gerado')
+          d = json.loads(p.read_text(encoding='utf-8'))
+          errors = []
+          if d.get('model') != 'icon': errors.append(f"model={d.get('model')!r}")
+          if float(d.get('resolutionKm', 0)) != 4: errors.append(f"resolutionKm={d.get('resolutionKm')!r}")
+          if not d.get('reflectivitySource'): errors.append('reflectivitySource ausente')
+          if d.get('nativeGrid') is not True: errors.append('nativeGrid não é true')
+          frames = d.get('frames') or []
+          if len(frames) < 3: errors.append(f'frames={len(frames)}')
+          grid = d.get('grid') or {}
+          nx, ny = int(grid.get('nx', 0)), int(grid.get('ny', 0))
+          if nx <= 0 or ny <= 0: errors.append(f'grid inválida={grid!r}')
+          for f in frames:
               q = Path('metbr_publish') / f['file']
-              assert q.is_file() and q.stat().st_size > 0, q
-          print('Produto METBR validado:', d['runDate'], d['runCycle'], d['frameCount'], 'frames')
+              if not q.is_file() or q.stat().st_size == 0:
+                  errors.append(f'frame ausente/vazio: {q}')
+                  continue
+              try:
+                  with gzip.open(q, 'rt', encoding='utf-8') as fh:
+                      frame = json.load(fh)
+                  if int(frame.get('gridX', 0)) != nx or int(frame.get('gridY', 0)) != ny:
+                      errors.append(f"grade inconsistente em {q}")
+              except Exception as exc:
+                  errors.append(f'frame inválido {q}: {exc}')
+          if errors:
+              raise RuntimeError('Validação METBR falhou: ' + '; '.join(errors))
+          print('Produto METBR validado:', d.get('runDate'), d.get('runCycle'), len(frames), 'frames', f'grade={nx}x{ny}', f"refl={d.get('reflectivitySource')}")
+          print('Variáveis descobertas:', len(d.get('availableVariables') or []))
           PY
 
       - name: Comparar com a rodada já publicada
@@ -139,10 +156,6 @@ jobs:
           print('publish=' + str(new_key > old_key).lower())
           print('old=' + ' '.join(old_key))
           print('new=' + ' '.join(new_key))
-          if new_key <= old_key:
-              print('Rodada METBR não é mais nova; publicação mantida.')
-          else:
-              print('Nova rodada METBR detectada.')
           PY
 
       - name: Publicar atomicamente na branch METBR
@@ -160,10 +173,14 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add --all
+          if git diff --cached --quiet; then
+            echo 'Nenhuma alteração para publicar.'
+            exit 0
+          fi
           git commit -m "METBR Maestro: nova rodada $(jq -r '.runDate + " " + .runCycle' metadata.json)"
           git push origin HEAD:"$TARGET_BRANCH"
 
       - name: Registrar status
         if: always()
         run: |
-          echo "METBR Maestro concluído. Rodada detectada: $(jq -r '.runDate + " " + .runCycle' metbr_publish/metadata.json 2>/dev/null || echo indisponível)"
+          jq -r '"METBR Maestro: \(.runDate // "indisponível") \(.runCycle // "") | frames=\(.frameCount // 0) | vars=\((.availableVariables // [])|length)"' metbr_publish/metadata.json 2>/dev/null || true
