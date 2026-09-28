@@ -65,15 +65,12 @@ jobs:
           event=os.environ['GITHUB_EVENT_NAME']
           event_path=os.environ['GITHUB_EVENT_PATH']
           if event == 'workflow_run':
-              ev=json.load(open(event_path))
-              wr=ev['workflow_run']
+              ev=json.load(open(event_path)); wr=ev['workflow_run']
               if wr.get('conclusion') != 'success': raise SystemExit('workflow METBR não terminou com sucesso')
               run_id=int(wr['id'])
           else:
               raw=subprocess.check_output(['gh','run','list','--repo',repo,'--workflow',workflow,'--status','success','--limit','20','--json','databaseId,updatedAt'],text=True)
-              runs=json.loads(raw)
-              now=datetime.now(timezone.utc)
-              recent=[]
+              runs=json.loads(raw); now=datetime.now(timezone.utc); recent=[]
               for r in runs:
                   try: t=datetime.fromisoformat(r['updatedAt'].replace('Z','+00:00'))
                   except Exception: continue
@@ -107,8 +104,7 @@ jobs:
           set -euo pipefail
           RUN_DATE="$(sed -n 's/^run_date=//p' metbr_raw/metbr-latest-complete.txt)"
           RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_raw/metbr-latest-complete.txt)"
-          test -n "$RUN_DATE"
-          test -n "$RUN_CYCLE"
+          test -n "$RUN_DATE"; test -n "$RUN_CYCLE"
           python wrf/extract_metbr_4km.py --run-dir metbr_raw --output-dir metbr_publish --run-date "$RUN_DATE" --run-cycle "$RUN_CYCLE"
 
       - name: Validar produto antes de trocar a publicação
@@ -116,10 +112,9 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import gzip, json
+          import gzip,json
           from pathlib import Path
-          d=json.loads(Path('metbr_publish/metadata.json').read_text(encoding='utf-8'))
-          errors=[]
+          d=json.loads(Path('metbr_publish/metadata.json').read_text(encoding='utf-8')); errors=[]
           if d.get('model')!='icon': errors.append(f"model={d.get('model')!r}")
           if float(d.get('resolutionKm',0))!=4: errors.append(f"resolutionKm={d.get('resolutionKm')!r}")
           if not d.get('reflectivitySource'): errors.append('reflectivitySource ausente')
@@ -145,20 +140,20 @@ jobs:
           set -euo pipefail
           OLD=/tmp/old-metadata.json
           curl -fsSL --connect-timeout 15 --max-time 30 "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${TARGET_BRANCH}/metadata.json?maestro=${GITHUB_RUN_ID}" -o "$OLD" || echo '{}' > "$OLD"
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
+          python - <<'PY'
+          import json,os
           from pathlib import Path
           def key(d):
-              date=str(d.get('runDate',''))
-              cycle=str(d.get('runCycle','00Z')).replace('Z','')
+              date=str(d.get('runDate','')); cycle=str(d.get('runCycle','00Z')).replace('Z','')
               try: return (int(date),int(cycle))
               except: return (0,0)
-          old=json.loads(Path('/tmp/old-metadata.json').read_text())
-          new=json.loads(Path('metbr_publish/metadata.json').read_text())
+          old=json.loads(Path('/tmp/old-metadata.json').read_text()); new=json.loads(Path('metbr_publish/metadata.json').read_text())
           ok=key(new)>key(old)
-          print('publish='+str(ok).lower())
-          print('old='+str(key(old)))
-          print('new='+str(key(new)))
+          print('old='+str(key(old))); print('new='+str(key(new))); print('publish='+str(ok).lower())
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write(f"publish={'true' if ok else 'false'}\n")
+              f.write(f"old_date={key(old)[0]}\n")
+              f.write(f"new_date={key(new)[0]}\n")
           if not ok: print('Rodada nova não encontrada; publicação atual preservada.')
           PY
 
