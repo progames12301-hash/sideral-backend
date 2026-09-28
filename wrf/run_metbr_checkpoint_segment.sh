@@ -12,8 +12,8 @@ ROOT="${GITHUB_WORKSPACE:-$PWD}"
 INPUT="$ROOT/metbr_restart_input"
 mkdir -p "$INPUT"
 
-if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOUR % 3 != 0 || END_HOUR > 42 )); then
-  echo "Start/end precisam ser multiplos de 3 h entre F000 e F042" >&2
+if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOUR % 3 != 0 || END_HOUR > 48 )); then
+  echo "Start/end precisam ser multiplos de 3 h entre F000 e F048" >&2
   exit 1
 fi
 case "$COLD_START" in
@@ -29,14 +29,9 @@ for tool in grib_set grib_copy grib_count; do
   command -v "$tool" >/dev/null || { echo "ERRO: ecCodes/$tool indisponivel" >&2; exit 10; }
 done
 
-grib_set_check="$(grib_set -V 2>&1 | head -1)"
-echo "ecCodes OK: $grib_set_check"
+echo "ecCodes OK: $(grib_set -V 2>&1 | head -1)"
 
-# GitHub pode preservar o checkout sem o bit executável dos scripts.
-# Corrija a cadeia inteira antes de QUALQUER segmento, não apenas o F000.
-chmod +x wrf/run_metbr_checkpoint_segment.sh
-chmod +x wrf/run_metbr_icon_wrf.sh
-chmod +x wrf/run_wrf_restart_segment.sh
+chmod +x wrf/run_metbr_checkpoint_segment.sh wrf/run_metbr_icon_wrf.sh wrf/run_wrf_restart_segment.sh
 
 export WRF_TARGET_RESOLUTION_KM=4 WRF_DX_METERS=4000 WRF_DY_METERS=4000
 export WRF_E_WE=300 WRF_E_SN=360 WRF_HISTORY_INTERVAL_MINUTES=60
@@ -52,13 +47,13 @@ if [[ "$COLD_START" == "0" ]]; then
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-run.env' --dir . --clobber
   source metbr-run.env
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "metbr-restart-${START_HOUR}-*" --dir "$INPUT" --clobber
-  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-040-*' --dir "$INPUT" --clobber
+  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-boundary-048-*' --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'metbr-namelist.input' --dir "$INPUT" --clobber
   mkdir -p "$INPUT/normalized"; found=0
   for f in "$INPUT"/metbr-restart-${START_HOUR}-*; do [[ -f "$f" ]] || continue; cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed "s/^metbr-restart-${START_HOUR}-//")"; found=1; done
   (( found == 1 )) || { echo "Restart F${START_HOUR} ausente" >&2; exit 22; }
   boundary_found=0
-  for f in "$INPUT"/metbr-boundary-040-*; do [[ -f "$f" ]] || continue; cp -f "$f" "$INPUT/normalized/wrfbdy_d01"; boundary_found=1; break; done
+  for f in "$INPUT"/metbr-boundary-048-*; do [[ -f "$f" ]] || continue; cp -f "$f" "$INPUT/normalized/wrfbdy_d01"; boundary_found=1; break; done
   (( boundary_found == 1 )) || { echo "wrfbdy_d01 ausente no checkpoint" >&2; exit 23; }
   cp -f "$INPUT/metbr-namelist.input" "$INPUT/normalized/namelist.input"
   export WRF_RESTART_DIR="$INPUT/normalized"
@@ -79,7 +74,6 @@ PY
 fi
 
 export FORCE_RUN_DATE="${RUN_DATE:-}" FORCE_RUN_CYCLE="${RUN_CYCLE:-}"
-# Reforce a permissão imediatamente antes da execução também.
 chmod +x wrf/run_metbr_icon_wrf.sh wrf/run_wrf_restart_segment.sh
 bash wrf/run_metbr_icon_wrf.sh
 
@@ -94,10 +88,10 @@ if [[ "$COLD_START" == "1" ]]; then
   ((${#bdy_files[@]} > 0)) || { echo "Nenhum wrfbdy produzido no segmento F${START_HOUR}-F${END_HOUR}" >&2; exit 32; }
   for f in "${rst_files[@]}"; do cp -f "$f" "metbr-restart-${END_HOUR}-$(basename "$f")"; done
   for f in "${out_files[@]}"; do cp -f "$f" "metbr-wrfout-${SEGMENT_INDEX}-$(basename "$f")"; done
-  for f in "${bdy_files[@]}"; do cp -f "$f" "metbr-boundary-040-$(basename "$f")"; done
+  for f in "${bdy_files[@]}"; do cp -f "$f" "metbr-boundary-048-$(basename "$f")"; done
   test -f wrf_work/run/namelist.input || { echo "namelist.input ausente no F000" >&2; exit 33; }
   cp -f wrf_work/run/namelist.input metbr-namelist.input
-  gh release upload "$CHECKPOINT_TAG" metbr-run.env metbr-namelist.input metbr-boundary-040-* metbr-restart-${END_HOUR}-* metbr-wrfout-${SEGMENT_INDEX}-* --repo "$GITHUB_REPOSITORY" --clobber
+  gh release upload "$CHECKPOINT_TAG" metbr-run.env metbr-namelist.input metbr-boundary-048-* metbr-restart-${END_HOUR}-* metbr-wrfout-${SEGMENT_INDEX}-* --repo "$GITHUB_REPOSITORY" --clobber
 else
   OUTPUT_DIR="$ROOT/metbr_segment_output"
   test -d "$OUTPUT_DIR" || { echo "METBR output directory ausente: $OUTPUT_DIR" >&2; exit 40; }
