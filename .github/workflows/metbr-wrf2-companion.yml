@@ -1,0 +1,128 @@
+name: METBR WRF2 - publicar diagnosticos
+
+on:
+  workflow_run:
+    workflows: ["METBR WRF 4 KM - ÍCONE"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  REPO: ${{ github.repository }}
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout do branch WRF2
+        uses: actions/checkout@v4
+        with:
+          ref: wrf-runner
+          fetch-depth: 1
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir xarray netCDF4 numpy
+
+      - name: Identificar execução METBR
+        id: run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            echo "run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          else
+            ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            test -n "$ID"
+            echo "run_id=$ID" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Baixar WRFOUT completo do checkpoint METBR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          TAG="metbr-wrf-4km-checkpoint-${RUN_ID}"
+          mkdir -p metbr_raw
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'wrfout_d01_*' --dir metbr_raw --clobber
+          COUNT="$(find metbr_raw -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)"
+          echo "WRFOUT METBR: $COUNT"
+          test "$COUNT" -ge 3
+
+      - name: Criar run.env do WRF2 METBR
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIRST="$(find metbr_raw -maxdepth 1 -type f -name 'wrfout_d01_*' | sort | head -n1)"
+          NAME="$(basename "$FIRST")"
+          RUN_DATE="$(echo "$NAME" | sed -nE 's/.*wrfout_d01_([0-9]{4}-[0-9]{2}-[0-9]{2})_([0-9]{2}):.*/\1/p' | tr -d '-')"
+          RUN_CYCLE="$(echo "$NAME" | sed -nE 's/.*wrfout_d01_[0-9-]+_([0-9]{2}):.*/\1/p')"
+          test -n "$RUN_DATE"; test -n "$RUN_CYCLE"
+          printf 'RUN_DATE=%s\nRUN_CYCLE=%s\n' "$RUN_DATE" "$RUN_CYCLE" > metbr_run.env
+          cat metbr_run.env
+
+      - name: Extrair WRF2 na grade nativa METBR
+        env:
+          WRF_DX_METERS: "4000"
+          WRF_DY_METERS: "4000"
+        run: |
+          set -euo pipefail
+          python wrf/extract_wrf_severe.py \
+            --run-dir metbr_raw \
+            --run-env metbr_run.env \
+            --output-dir metbr_wrf2 \
+            --grid-x 299 --grid-y 359 \
+            --model icon \
+            --interval-hours 1 \
+            --expected-start 0 \
+            --expected-end 42
+          jq -e '.status == "complete" and .frameCount >= 3' metbr_wrf2/metadata.json
+
+      - name: Publicar WRF2 no branch METBR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf metbr_public
+          git clone --depth 1 --branch metbr-json-data "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" metbr_public
+          mkdir -p metbr_public/severe/icon
+          cp metbr_wrf2/severe/icon/*.json.gz metbr_public/severe/icon/
+          cp metbr_wrf2/diagnostics.json metbr_public/severe/icon/diagnostics.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('metbr_public')
+          meta_path=root/'metadata.json'
+          meta=json.loads(meta_path.read_text(encoding='utf-8'))
+          severe=json.loads((root/'severe/icon/metadata.json').read_text(encoding='utf-8'))
+          meta['wrf2SevereDiagnostics']=True
+          meta['wrf2SevereMetadata']='severe/icon/metadata.json'
+          meta['wrf2SevereFields']=sorted(k for k,v in severe.get('variables',{}).items() if v.get('status')=='available')
+          by_hour={int(f['forecastHour']):f['file'] for f in severe.get('frames',[])}
+          for frame in meta.get('frames',[]):
+              fh=int(frame.get('forecastHour',-1))
+              if fh in by_hour:
+                  frame['severeFile']=by_hour[fh]
+          meta['availableMapFields']=sorted(set(meta.get('availableMapFields') or []) | set(meta['wrf2SevereFields']))
+          meta_path.write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
+          PY
+          git -C metbr_public config user.name 'Sideral WRF Maestro'
+          git -C metbr_public config user.email 'sideralmeteorologia@gmail.com'
+          git -C metbr_public add severe/icon metadata.json
+          git -C metbr_public commit -m "METBR: publicar diagnosticos WRF2 na grade nativa" || true
+          git -C metbr_public push origin metbr-json-data
+
+      - name: Validar publicação
+        run: |
+          set -euo pipefail
+          jq -e '.wrf2SevereDiagnostics == true and (.wrf2SevereFields | length) > 0' metbr_public/metadata.json
+          echo 'METBR WRF2 publicado com diagnosticos severos.'
