@@ -11,8 +11,26 @@ REFLECTIVITY_NAMES = (
     "REFL", "DBZ10", "DBZ", "ZH",
 )
 
+# Campos de superfície/diagnóstico que fazem sentido diretamente no mapa 2-D.
+# Cada item é publicado somente se existir de fato no WRFOUT.
+METBR_SURFACE_FIELDS = {
+    "temperature2m": ("T2",),
+    "humidity2m": ("RH2", "RELHUM2"),
+    "pressureSurface": ("PSFC",),
+    "u10": ("U10",),
+    "v10": ("V10",),
+    "precipAccum": ("RAINNC", "RAINC"),
+    "pblHeight": ("PBLH",),
+    "cape": ("CAPE", "MCAPE", "MUCAPE"),
+    "cin": ("CIN", "MCIN", "MUCIN"),
+    "skinTemperature": ("TSK",),
+    "surfaceAlbedo": ("ALBEDO",),
+    "swdown": ("SWDOWN",),
+    "lwdown": ("GLW", "LWDNB"),
+}
 
-def _as_2d(value, expected_shape=None):
+
+def _to_2d(value, expected_shape=None):
     a = np.ma.asarray(value)
     if np.ma.isMaskedArray(a):
         a = a.filled(np.nan)
@@ -29,6 +47,10 @@ def _as_2d(value, expected_shape=None):
     return a.astype(np.float32)
 
 
+def _json_array(a):
+    return np.where(np.isfinite(a), a, -9999.0).astype(np.float32).tolist()
+
+
 def native_reflectivity(ds, expected_shape=None):
     names = list(ds.variables.keys())
     ordered = [n for n in REFLECTIVITY_NAMES if n in ds.variables]
@@ -38,7 +60,7 @@ def native_reflectivity(ds, expected_shape=None):
             ordered.append(n)
     for name in ordered:
         try:
-            refl = _as_2d(ds.variables[name][:], expected_shape)
+            refl = _to_2d(ds.variables[name][:], expected_shape)
         except Exception:
             continue
         if refl is not None:
@@ -95,6 +117,35 @@ def discover_variables(ds):
     return inventory
 
 
+def select_surface_fields(ds, expected_shape):
+    fields = {}
+    sources = {}
+    for public_name, candidates in METBR_SURFACE_FIELDS.items():
+        for candidate in candidates:
+            if candidate not in ds.variables:
+                continue
+            try:
+                arr = _to_2d(ds.variables[candidate][:], expected_shape)
+            except Exception as exc:
+                print(f"[METBR][FIELD] {candidate}: erro {exc}")
+                continue
+            if arr is not None:
+                fields[public_name] = arr
+                sources[public_name] = candidate
+                break
+
+    # Vento 10 m é muito mais útil no mapa como magnitude/direção.
+    if "u10" in fields and "v10" in fields:
+        u = fields["u10"]
+        v = fields["v10"]
+        fields["windSpeed10m"] = np.hypot(u, v)
+        # Direção meteorológica: de onde o vento vem, em graus.
+        fields["windDirection10m"] = (270.0 - np.degrees(np.arctan2(v, u))) % 360.0
+        sources["windSpeed10m"] = "U10+V10"
+        sources["windDirection10m"] = "U10+V10"
+    return fields, sources
+
+
 def read_time(ds):
     times = ds.variables.get("Times")
     if times is None:
@@ -127,6 +178,8 @@ def main():
     init_time = None
     grid_x = grid_y = None
     inventory = {}
+    published_fields = set()
+    field_sources = {}
 
     for index, fn in enumerate(files):
         with Dataset(fn) as ds:
@@ -156,6 +209,10 @@ def main():
             if init_time is None:
                 init_time = valid_time
 
+            surface_fields, surface_sources = select_surface_fields(ds, expected_shape)
+            published_fields.update(surface_fields.keys())
+            field_sources.update(surface_sources)
+
             arr = np.where(np.isfinite(refl), refl, -9999.0).astype(np.float32)
             target = frame_dir / f'f{index:03d}.json.gz'
             payload = {
@@ -169,6 +226,9 @@ def main():
                 'sourceVariable': source_name,
                 'sourceFile': source_file,
                 'availableVariables': sorted(inventory.keys()),
+                'availableMapFields': sorted(surface_fields.keys()),
+                'mapFieldSources': surface_sources,
+                'fields': {name: _json_array(values) for name, values in surface_fields.items()},
             }
             with gzip.open(target, 'wt', encoding='utf-8', compresslevel=6) as fh:
                 json.dump(payload, fh, separators=(',', ':'))
@@ -193,6 +253,7 @@ def main():
                 'nativeGrid': True,
                 'sourceVariable': source_name,
                 'sourceFile': source_file,
+                'availableMapFields': sorted(surface_fields.keys()),
                 'reflectivityStats': stats,
             })
 
@@ -212,11 +273,14 @@ def main():
         'frameCount': len(frames),
         'temporalResolutionMinutes': 60,
         'availableVariables': sorted(inventory.keys()),
+        'availableMapFields': sorted(published_fields),
+        'mapFieldSources': field_sources,
         'variablesFile': 'variables.json',
         'frames': frames,
     }
     (out / 'metadata.json').write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding='utf-8')
     print(f'METBR 4 km validado: {args.run_date} {cycle}, {len(frames)} frames, {grid_x}x{grid_y}')
+    print('[METBR][MAP FIELDS] ' + ', '.join(sorted(published_fields)))
 
 
 if __name__ == '__main__':
