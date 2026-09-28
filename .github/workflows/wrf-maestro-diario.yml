@@ -1,0 +1,114 @@
+name: WRF Maestro - garantia diaria
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 08:20 UTC = 05:20 BRT. Atua como fiscal/fallback depois das janelas normais.
+    - cron: '20 8 * * *'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: sideral-wrf-maestro-diario
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+
+jobs:
+  maestro:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Preparar GitHub CLI
+        run: gh --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Fiscalizar METBR primeiro
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TODAY="$(date -u +%Y%m%d)"
+          BRANCH="metbr-json-data"
+          URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/metadata.json?maestro=${GITHUB_RUN_ID}"
+          healthy=false
+          if curl -fsSL --connect-timeout 10 --max-time 30 "$URL" -o /tmp/metbr.json; then
+            python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/metbr.json',encoding='utf-8'))
+          today='${TODAY}'
+          ok=(str(d.get('runDate',''))==today and int(d.get('frameCount',0))>=3 and len(d.get('availableMapFields') or [])>0)
+          print('METBR metadata:', d.get('runDate'), d.get('runCycle'), 'frames=', d.get('frameCount'), 'mapFields=', len(d.get('availableMapFields') or []), 'healthy=', ok)
+          raise SystemExit(0 if ok else 1)
+          PY
+            healthy=true
+          fi
+
+          in_progress=false
+          runs="$(gh run list --repo "$REPO" --workflow metbr-wrf-4km.yml --limit 10 --json status,conclusion,createdAt,databaseId)"
+          if echo "$runs" | jq -e '.[] | select(.status == "queued" or .status == "in_progress")' >/dev/null; then
+            in_progress=true
+          fi
+
+          if [[ "$healthy" == true ]]; then
+            echo 'METBR já está atualizado hoje.'
+          elif [[ "$in_progress" == true ]]; then
+            echo 'METBR está em execução; não criar execução concorrente.'
+          else
+            echo 'METBR atrasado/inválido: disparando prioridade 1.'
+            gh workflow run metbr-wrf-4km.yml --repo "$REPO"
+          fi
+
+      - name: Fiscalizar todos os WRF
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TODAY="$(date -u +%Y%m%d)"
+          python3 - <<'PY'
+          import json, subprocess, urllib.request
+
+          repo='${{ github.repository }}'
+          today='${TODAY}'
+          products=[
+            ('wrf-4km-next-day-auto.yml','wrf-data'),
+            ('wrf-icon-4km-native.yml','wrf-icon-data'),
+            ('wrf-ecmwf-4km-native.yml','wrf-ecmwf-data'),
+            ('wrf-sudeste-gfs-4km.yml','wrf-sudeste-gfs-data'),
+            ('wrf-sudeste-icon-4km.yml','wrf-sudeste-icon-data'),
+            ('wrf-sudeste-ecmwf-4km.yml','wrf-sudeste-ecmwf-data'),
+          ]
+
+          for workflow, branch in products:
+              url=f'https://raw.githubusercontent.com/{repo}/{branch}/metadata.json?maestro={today}'
+              healthy=False
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as r:
+                      d=json.load(r)
+                  severe=bool(d.get('wrf2SevereDiagnostics'))
+                  frames=int(d.get('frameCount',0))
+                  healthy=(str(d.get('runDate',''))==today and frames>=1 and severe)
+                  print(f'{workflow}: runDate={d.get("runDate")} cycle={d.get("runCycle")} frames={frames} WRF2={severe} healthy={healthy}')
+              except Exception as exc:
+                  print(f'{workflow}: metadata indisponível: {exc}')
+
+              runs=json.loads(subprocess.check_output(['gh','run','list','--repo',repo,'--workflow',workflow,'--limit','10','--json','status,conclusion,createdAt,databaseId'],text=True))
+              running=any(x.get('status') in {'queued','in_progress'} for x in runs)
+              if healthy:
+                  continue
+              if running:
+                  print('  -> já existe execução em andamento; aguardando.')
+                  continue
+              print('  -> produto atrasado/incompleto: disparando workflow.')
+              subprocess.run(['gh','workflow','run',workflow,'--repo',repo],check=True)
+          PY
+
+      - name: Resumo
+        run: |
+          echo 'WRF Maestro concluído: METBR foi fiscalizado primeiro; os seis WRF regionais foram verificados e disparados apenas quando ausentes, atrasados ou sem WRF2.'
