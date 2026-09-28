@@ -2,7 +2,7 @@ name: Sideral Skew-T SHARPpy — 27 Capitais
 
 on:
   schedule:
-    # GitHub cron é UTC. Estes horários executam os ciclos ECMWF 06Z, 12Z e 18Z.
+    # GitHub cron é UTC. Executa os ciclos ECMWF 06Z, 12Z e 18Z.
     - cron: '45 13 * * *' # 06Z
     - cron: '45 19 * * *' # 12Z
     - cron: '45 1 * * *'  # 18Z
@@ -12,10 +12,7 @@ on:
         description: 'Ciclo ECMWF IFS'
         required: true
         type: choice
-        options:
-          - '06'
-          - '12'
-          - '18'
+        options: ['06','12','18']
 
 permissions:
   contents: write
@@ -24,16 +21,17 @@ concurrency:
   group: sideral-skewt-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || github.event.schedule }}
   cancel-in-progress: false
 
+env:
+  QT_QPA_PLATFORM: offscreen
+  MPLBACKEND: Agg
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: ${{ github.workspace }}
+  GH_REPO: ${{ github.repository }}
+
 jobs:
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    env:
-      QT_QPA_PLATFORM: offscreen
-      MPLBACKEND: Agg
-      PYTHONUNBUFFERED: '1'
-      PYTHONPATH: ${{ github.workspace }}
-      GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +39,7 @@ jobs:
       - name: Selecionar ciclo
         shell: bash
         run: |
+          set -euo pipefail
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             cycle="${{ inputs.cycle }}"
           else
@@ -48,11 +47,12 @@ jobs:
               '45 13 * * *') cycle='06' ;;
               '45 19 * * *') cycle='12' ;;
               '45 1 * * *')  cycle='18' ;;
-              *) echo 'Cron desconhecido'; exit 1 ;;
+              *) echo "Cron desconhecido: ${{ github.event.schedule }}"; exit 1 ;;
             esac
           fi
+          case "$cycle" in 06|12|18) ;; *) echo "Ciclo inválido: $cycle"; exit 1;; esac
           echo "CYCLE=$cycle" >> "$GITHUB_ENV"
-          echo "Ciclo selecionado: $cycle UTC"
+          echo "Ciclo selecionado: ${cycle}Z"
 
       - name: Sistema gráfico Qt
         run: |
@@ -82,10 +82,9 @@ jobs:
 
       - name: Gerar 27 capitais × F000–F048
         run: |
+          set -euo pipefail
           rm -rf build/skewt-capitals
-          python tools/skewt/generate_capitals_sharppy.py \
-            --cycle "$CYCLE" \
-            --out build/skewt-capitals
+          python tools/skewt/generate_capitals_sharppy.py --cycle "$CYCLE" --out build/skewt-capitals
 
       - name: Validar 27 capitais × 17 PNGs
         shell: bash
@@ -94,59 +93,34 @@ jobs:
           count=$(find build/skewt-capitals -type f -name '*.png' | wc -l)
           echo "PNG encontrados: $count"
           test "$count" -eq 459
-
-          capitals=(
-            rio-branco maceio macapa manaus salvador fortaleza brasilia vitoria goiania
-            sao-luis cuiaba campo-grande belo-horizonte belem joao-pessoa curitiba recife
-            teresina rio-de-janeiro natal porto-alegre porto-velho boa-vista florianopolis
-            sao-paulo aracaju palmas
-          )
-
+          capitals=(rio-branco maceio macapa manaus salvador fortaleza brasilia vitoria goiania sao-luis cuiaba campo-grande belo-horizonte belem joao-pessoa curitiba recife teresina rio-de-janeiro natal porto-alegre porto-velho boa-vista florianopolis sao-paulo aracaju palmas)
           for city in "${capitals[@]}"; do
             dir="build/skewt-capitals/$city"
             test -d "$dir" || { echo "Diretório ausente: $dir"; exit 1; }
             city_count=$(find "$dir" -maxdepth 1 -type f -name '*.png' | wc -l)
             echo "$city: $city_count PNG"
-            test "$city_count" -eq 17 || { echo "Quantidade inválida para $city"; exit 1; }
+            test "$city_count" -eq 17
             for fh in 000 003 006 009 012 015 018 021 024 027 030 033 036 039 042 045 048; do
               file="$dir/$city-f$fh.png"
               test -s "$file" || { echo "PNG ausente/vazio: $file"; exit 1; }
               size=$(stat -c '%s' "$file")
-              if (( size < 10000 )); then
-                echo "PNG suspeito: $file ($size bytes)"
-                exit 1
-              fi
+              (( size >= 10000 )) || { echo "PNG suspeito: $file ($size bytes)"; exit 1; }
             done
           done
-
           test -s build/skewt-capitals/manifest.json
 
       - name: Construir índice público dos assets
         shell: bash
         run: |
-          tag="skewt-live-${CYCLE}"
+          set -euo pipefail
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-          import os
-          root = Path('build/skewt-capitals')
-          tag = f"skewt-live-{os.environ['CYCLE']}"
-          assets = sorted(p.name for p in root.glob('*/*.png'))
-          if len(assets) != 459:
-              raise SystemExit(f'Índice público: esperados 459 PNG, encontrados {len(assets)}')
-          publication = {
-              'schema': 'sideral-skewt-publication-v1',
-              'repository': os.environ['GH_REPO'],
-              'tag': tag,
-              'asset_count': len(assets),
-              'cities': 27,
-              'frames_per_city': 17,
-              'cycles': ['06', '12', '18'],
-              'download_base': f'https://github.com/{os.environ["GH_REPO"]}/releases/download/{tag}/',
-              'assets': assets,
-          }
-          (root / 'publication.json').write_text(json.dumps(publication, ensure_ascii=False, indent=2), encoding='utf-8')
-          print(f'publication.json: {len(assets)} assets indexados')
+          root=Path('build/skewt-capitals'); cycle=os.environ['CYCLE']; tag=f'skewt-live-{cycle}'
+          assets=sorted(p.name for p in root.glob('*/*.png'))
+          if len(assets)!=459: raise SystemExit(f'Esperados 459 PNG, encontrados {len(assets)}')
+          publication={'schema':'sideral-skewt-publication-v1','repository':os.environ['GH_REPO'],'tag':tag,'asset_count':459,'cities':27,'frames_per_city':17,'cycles':['06','12','18'],'download_base':f'https://github.com/{os.environ["GH_REPO"]}/releases/download/{tag}/','assets':assets}
+          (root/'publication.json').write_text(json.dumps(publication,ensure_ascii=False,indent=2),encoding='utf-8')
           PY
           test -s build/skewt-capitals/publication.json
 
@@ -155,18 +129,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           tag="skewt-live-${CYCLE}"
           gh release delete "$tag" --repo "$GH_REPO" --yes --cleanup-tag || true
-          files=()
-          while IFS= read -r -d '' file; do files+=("$file"); done < <(find build/skewt-capitals -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
+          mapfile -d '' files < <(find build/skewt-capitals -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
           test "${#files[@]}" -eq 459
-          gh release create "$tag" \
-            --repo "$GH_REPO" \
-            --title "Sideral Skew-T ECMWF ${CYCLE}Z — 27 capitais" \
-            --notes "PNG pré-renderizado diretamente pelo SHARPpy. Fonte: ECMWF IFS 0.25° via Open-Meteo Single Runs. Forecast F000–F048 em passos de 3h. São publicados 459 PNGs: 27 capitais × 17 frames. publication.json contém o índice determinístico dos assets para o HTML." \
-            "${files[@]}" \
-            build/skewt-capitals/manifest.json \
-            build/skewt-capitals/publication.json
+          gh release create "$tag" --repo "$GH_REPO" --title "Sideral Skew-T ECMWF ${CYCLE}Z — 27 capitais" --notes "PNG pré-renderizado pelo SHARPpy. ECMWF IFS 0.25°. F000–F048 em passos de 3h. 459 PNGs: 27 capitais × 17 frames." "${files[@]}" build/skewt-capitals/manifest.json build/skewt-capitals/publication.json
 
       - name: Verificar release publicado
         shell: bash
@@ -176,10 +144,10 @@ jobs:
           set -euo pipefail
           tag="skewt-live-${CYCLE}"
           gh release view "$tag" --repo "$GH_REPO" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'
-          test "$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '.assets|map(.name)|map(select(.=="publication.json"))|length')" -eq 1
           png_count=$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')
           echo "PNG no release: $png_count"
           test "$png_count" -eq 459
+          test "$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '.assets|map(.name)|map(select(.=="publication.json"))|length')" -eq 1
 
       - name: Artefato de diagnóstico
         uses: actions/upload-artifact@v4
