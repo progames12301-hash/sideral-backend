@@ -2,12 +2,16 @@ name: METBR WRF2 - publicar diagnosticos
 
 on:
   workflow_run:
-    workflows: ["METBR WRF 4 KM - ÍCONE"]
+    workflows: ["METBR WRF 4 KM - ICON"]
     types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: metbr-publication
+  cancel-in-progress: false
 
 env:
   REPO: ${{ github.repository }}
@@ -84,6 +88,36 @@ jobs:
             --expected-start 0 \
             --expected-end 42
           jq -e '.status == "complete" and .frameCount >= 3' metbr_wrf2/metadata.json
+
+          # Estes são os diagnósticos solicitados para o METBR WRF2.
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          required = {
+              "stp", "scp", "srh01", "srh03",
+              "bulkShear06", "effectiveBulkShear",
+              "lclHeight", "cin", "sbcape", "mlcape", "mucapeWrf2",
+              "pwat", "thetaE850", "thetaEAdvection",
+              "wind850", "wind500", "vorticity500", "omega700",
+              "mslp", "thickness", "dewpoint2m",
+              "kIndex", "totalTotals",
+          }
+          meta = json.loads(Path("metbr_wrf2/metadata.json").read_text(encoding="utf-8"))
+          variables = meta.get("variables") or {}
+          missing = sorted(
+              name for name in required
+              if not isinstance(variables.get(name), dict)
+              or variables[name].get("status") != "available"
+          )
+          if missing:
+              raise SystemExit(
+                  "METBR WRF2: diagnósticos solicitados ausentes: "
+                  + ", ".join(missing)
+              )
+          print("METBR WRF2: todos os diagnósticos solicitados estão disponíveis.")
+          print("Variáveis:", ", ".join(sorted(required)))
+          PY
 
       - name: Publicar WRF2 no branch METBR
         shell: bash
