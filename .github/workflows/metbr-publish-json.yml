@@ -1,10 +1,8 @@
-name: METBR WRF 4 KM - Publicar JSON após rodada completa
+name: METBR WRF 4 KM - Publicar JSON após rodada completa (manual)
 
+# Publicador legado mantido apenas para execução manual. O fluxo automático
+# é controlado pelo METBR Maestro + METBR WRF2 companion.
 on:
-  workflow_run:
-    workflows:
-      - "METBR WRF 4 KM - ICON"
-    types: [completed]
   workflow_dispatch:
     inputs:
       run_id:
