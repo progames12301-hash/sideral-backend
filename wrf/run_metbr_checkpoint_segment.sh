@@ -85,11 +85,12 @@ req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':
 with urllib.request.urlopen(req,timeout=30) as r: m=json.load(r)
 if str(m.get('model','')).lower()!='icon': raise SystemExit('metadata nao e ICON')
 run_date=str(m['runDate']).replace('-','')
-run_cycle='00'
+run_cycle=str(m.get('runCycle','')).replace('Z','').zfill(2)
+if run_cycle not in {'00','06','12','18'}: raise SystemExit(f'runCycle ICON invalido: {m.get("runCycle")!r}')
 with open('metbr-run.env','w') as f: f.write(f'RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n')
 PY
   source metbr-run.env
-  gh release create "$CHECKPOINT_TAG" --target wrf-runner --prerelease --latest=false --notes "METBR WRF 4 KM ICON checkpoint $GITHUB_RUN_ID" || true
+  gh release create "$CHECKPOINT_TAG" --target wrf-runner --prerelease --latest=false --notes "METBR WRF 4 KM ICON checkpoint $GITHUB_RUN_ID ${RUN_DATE} ${RUN_CYCLE}Z" || true
 fi
 
 export RUN_DATE RUN_CYCLE
