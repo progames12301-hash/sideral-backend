@@ -362,7 +362,7 @@ jobs:
           print('Produto METBR validado:',d.get('runDate'),d.get('runCycle'),len(frames),f'grade={nx}x{ny}',f'index={index.stat().st_size} bytes')
           PY
 
-      - name: Publicar sempre a rodada METBR mais recente
+      - name: Publicar a rodada METBR
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
