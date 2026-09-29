@@ -128,7 +128,7 @@ jobs:
           rm -rf metbr_publish
           python wrf/extract_metbr_4km.py --run-dir metbr_raw --output-dir metbr_publish --run-date "$RUN_DATE" --run-cycle "$RUN_CYCLE"
 
-      - name: Garantir metbr_wrf_4km.json
+      - name: Criar índice pequeno metbr_wrf_4km.json
         shell: bash
         run: |
           set -euo pipefail
@@ -136,11 +136,26 @@ jobs:
           test -s metbr_publish/variables.json
           test -d metbr_publish/icon
           python - <<'PY'
-          import json,gzip
+          import json
           from pathlib import Path
-          root=Path('metbr_publish'); meta=json.loads((root/'metadata.json').read_text(encoding='utf-8'))
-          frames=meta.get('frames') or []
-          if not frames: raise SystemExit('metadata.json sem frames')
+          root=Path('metbr_publish')
+          meta=json.loads((root/'metadata.json').read_text(encoding='utf-8'))
+          frames=[]
+          for f in meta.get('frames') or []:
+              rel=f.get('file')
+              if not rel: raise SystemExit('frame sem file')
+              src=root/rel
+              if not src.is_file() or src.stat().st_size==0: raise SystemExit(f'frame ausente: {src}')
+              frames.append({
+                  'index':f.get('index'),
+                  'forecastHour':f.get('forecastHour'),
+                  'validTime':f.get('validTime'),
+                  'file':rel,
+                  'gridX':f.get('gridX'),
+                  'gridY':f.get('gridY'),
+                  'sourceVariable':f.get('sourceVariable','REFL_10CM'),
+                  'reflectivityStats':f.get('reflectivityStats',{})
+              })
           payload={
               'schema':'sideral-wrf-reflectivity-v2',
               'model':meta.get('model','icon'),
@@ -152,17 +167,15 @@ jobs:
               'reflectivitySource':meta.get('reflectivitySource','REFL_10CM'),
               'nativeGrid':meta.get('nativeGrid',True),
               'grid':meta.get('grid'),
-              'frames':[]
+              'frames':frames
           }
-          for f in frames:
-              src=root/f['file']
-              if not src.is_file() or src.stat().st_size==0: raise SystemExit(f'frame ausente: {src}')
-              with gzip.open(src,'rt',encoding='utf-8') as fh: data=json.load(fh)
-              payload['frames'].append({'index':f.get('index'), 'forecastHour':f.get('forecastHour'), 'validTime':f.get('validTime'), 'gridX':f.get('gridX'), 'gridY':f.get('gridY'), 'sourceVariable':f.get('sourceVariable','REFL_10CM'), 'reflectivityStats':f.get('reflectivityStats',{}), 'data':data})
-          out=root/'metbr_wrf_4km.json'; out.write_text(json.dumps(payload,separators=(',',':'),ensure_ascii=False),encoding='utf-8')
-          print(f'Gerado {out} com {len(payload["frames"])} frames, {out.stat().st_size} bytes')
+          out=root/'metbr_wrf_4km.json'
+          out.write_text(json.dumps(payload,separators=(',',':'),ensure_ascii=False),encoding='utf-8')
+          print(f'Índice gerado: {out.stat().st_size} bytes; {len(frames)} frames')
           PY
           test -s metbr_publish/metbr_wrf_4km.json
+          SIZE="$(stat -c%s metbr_publish/metbr_wrf_4km.json)"
+          test "$SIZE" -lt 100000000
 
       - name: Validar produto antes de publicar
         shell: bash
@@ -179,7 +192,9 @@ jobs:
           if len(frames)<3: errors.append(f'frames={len(frames)}')
           grid=d.get('grid') or {}; nx=int(grid.get('nx',0)); ny=int(grid.get('ny',0))
           if nx<=0 or ny<=0: errors.append(f'grid inválida={grid!r}')
-          if not Path('metbr_publish/metbr_wrf_4km.json').is_file(): errors.append('metbr_wrf_4km.json ausente')
+          index=Path('metbr_publish/metbr_wrf_4km.json')
+          if not index.is_file() or index.stat().st_size==0: errors.append('metbr_wrf_4km.json ausente')
+          if index.is_file() and index.stat().st_size>=100000000: errors.append('metbr_wrf_4km.json excede 100 MB')
           for f in frames:
               q=Path('metbr_publish')/f['file']
               if not q.is_file() or q.stat().st_size==0: errors.append(f'frame ausente/vazio: {q}'); continue
@@ -188,7 +203,7 @@ jobs:
                   if int(frame.get('gridX',0))!=nx or int(frame.get('gridY',0))!=ny: errors.append(f'grade inconsistente em {q}')
               except Exception as exc: errors.append(f'frame inválido {q}: {exc}')
           if errors: raise RuntimeError('Validação METBR falhou: '+'; '.join(errors))
-          print('Produto METBR validado:',d.get('runDate'),d.get('runCycle'),len(frames),f'grade={nx}x{ny}')
+          print('Produto METBR validado:',d.get('runDate'),d.get('runCycle'),len(frames),f'grade={nx}x{ny}',f'index={index.stat().st_size} bytes')
           PY
 
       - name: Publicar sempre a rodada METBR mais recente
@@ -206,8 +221,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add --all
-          if git diff --cached --quiet; then echo 'A rodada mais recente já possui os mesmos arquivos; publicação sem alterações.'; exit 0; fi
-          git commit -m "METBR Maestro: publicar rodada mais recente com JSON WRF 4KM"
+          git commit -m "METBR Maestro: publicar rodada mais recente com frames compactados" || true
           git push origin HEAD:"$TARGET_BRANCH"
 
       - name: Registrar status
