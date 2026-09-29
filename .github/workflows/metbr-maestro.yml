@@ -22,7 +22,7 @@ env:
 
 jobs:
   publish:
-    name: Detectar, validar e publicar a última rodada METBR
+    name: Detectar, validar e publicar a rodada METBR
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
     steps:
@@ -369,8 +369,67 @@ jobs:
           set -euo pipefail
           rm -rf published-metbr
           git clone --depth 1 --branch "$TARGET_BRANCH" "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" published-metbr
-          find published-metbr -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+
+          # Não apagar os diagnósticos WRF2 já publicados.
+          if [[ -d published-metbr/severe ]]; then
+            cp -a published-metbr/severe /tmp/metbr-severe-preserve
+          else
+            rm -rf /tmp/metbr-severe-preserve
+          fi
+
+          find published-metbr -mindepth 1 -maxdepth 1 ! -name .git ! -name severe -exec rm -rf {} +
           cp -a metbr_publish/. published-metbr/
+          if [[ -d /tmp/metbr-severe-preserve ]]; then
+            rm -rf published-metbr/severe
+            cp -a /tmp/metbr-severe-preserve published-metbr/severe
+          fi
+
+          # Reanexar WRF2 somente quando a pasta severe pertence à mesma rodada.
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("published-metbr")
+          meta_path = root / "metadata.json"
+          severe_path = root / "severe" / "icon" / "metadata.json"
+          meta = json.loads(meta_path.read_text(encoding="utf-8"))
+          meta.pop("wrf2SevereDiagnostics", None)
+          meta.pop("wrf2SevereMetadata", None)
+          meta.pop("wrf2SevereFields", None)
+
+          if severe_path.is_file():
+              severe = json.loads(severe_path.read_text(encoding="utf-8"))
+              same_run = (
+                  str(severe.get("runDate", "")) == str(meta.get("runDate", ""))
+                  and str(severe.get("runCycle", "")).rstrip("Z") == str(meta.get("runCycle", "")).rstrip("Z")
+              )
+              fields = sorted(
+                  k for k, v in (severe.get("variables") or {}).items()
+                  if isinstance(v, dict) and v.get("status") == "available"
+              )
+              if same_run and fields:
+                  meta["wrf2SevereDiagnostics"] = True
+                  meta["wrf2SevereMetadata"] = "severe/icon/metadata.json"
+                  meta["wrf2SevereFields"] = fields
+                  by_hour = {
+                      int(f["forecastHour"]): f["file"]
+                      for f in (severe.get("frames") or [])
+                      if "forecastHour" in f and f.get("file")
+                  }
+                  for frame in meta.get("frames") or []:
+                      fh = int(frame.get("forecastHour", -1))
+                      if fh in by_hour:
+                          frame["severeFile"] = by_hour[fh]
+                  meta["availableMapFields"] = sorted(
+                      set(meta.get("availableMapFields") or []) | set(fields)
+                  )
+
+          meta_path.write_text(
+              json.dumps(meta, ensure_ascii=False, indent=2),
+              encoding="utf-8"
+          )
+          PY
+
           test -s published-metbr/metbr_wrf_4km.json
           cd published-metbr
           git config user.name 'github-actions[bot]'
