@@ -5,7 +5,8 @@ on:
     workflows: ["METBR WRF 4 KM - ICON"]
     types: [completed]
   schedule:
-    - cron: '30 8 * * *'
+    # fallback diário após a janela máxima do WRF METBR
+    - cron: '30 12 * * *'
   workflow_dispatch:
 
 permissions:
