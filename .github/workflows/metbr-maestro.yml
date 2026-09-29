@@ -205,6 +205,23 @@ jobs:
           root = Path('metbr_publish')
           meta = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
           frames = []
+          skipped = []
+
+          def flatten(values):
+              out = []
+              def walk(x):
+                  if isinstance(x, list):
+                      for item in x:
+                          walk(item)
+                  else:
+                      out.append(x)
+              walk(values)
+              return out
+
+          grid = meta.get('grid') or {}
+          meta_nx = int(grid.get('nx') or 0)
+          meta_ny = int(grid.get('ny') or 0)
+          expected_meta = meta_nx * meta_ny
 
           for f in meta.get('frames') or []:
               rel = f.get('file')
@@ -223,16 +240,37 @@ jobs:
               if not isinstance(values, list):
                   values = data.get('reflectivity')
               if not isinstance(values, list):
-                  raise SystemExit(f'reflectivityDbz ausente ou inválido: {src}')
+                  values = None
 
-              gx = int(f.get('gridX') or data.get('gridX') or 0)
-              gy = int(f.get('gridY') or data.get('gridY') or 0)
+              gx = int(f.get('gridX') or data.get('gridX') or meta_nx or 0)
+              gy = int(f.get('gridY') or data.get('gridY') or meta_ny or 0)
               expected = gx * gy
-              if expected <= 0 or len(values) != expected:
-                  raise SystemExit(
-                      f'grade/refletividade inconsistente em {src}: '
-                      f'{len(values)} valores para {gx}x{gy}'
+
+              flat = flatten(values) if isinstance(values, list) else []
+              valid = expected > 0 and len(flat) == expected
+
+              if not valid:
+                  is_f000 = (
+                      int(f.get('index') or -1) == 0
+                      or int(f.get('forecastHour') or -1) == 0
+                      or Path(rel).name == 'f000.json.gz'
                   )
+
+                  if is_f000 and expected > 0:
+                      # F000 é mantido como frame inicial, mas sem inventar
+                      # refletividade: toda a grade recebe o valor de no-data.
+                      flat = [-9999.0] * expected
+                      print(
+                          f'[METBR] F000 sem grade dBZ válida em {src.name}: '
+                          f'{len(flatten(values)) if isinstance(values,list) else 0} valores; '
+                          f'mantendo frame inicial como no-data ({gx}x{gy})'
+                      )
+                  else:
+                      skipped.append(
+                          f'{src}: {len(flat)} valores para {gx}x{gy}'
+                      )
+                      print(f'[METBR] pulando frame inválido: {src} ({len(flat)} valores para {gx}x{gy})')
+                      continue
 
               frames.append({
                   'file': rel,
@@ -241,8 +279,21 @@ jobs:
                   'validTime': f.get('validTime') or data.get('validTime'),
                   'gridX': gx,
                   'gridY': gy,
-                  'reflectivityDbz': values
+                  'reflectivityDbz': flat
               })
+
+          if expected_meta > 0:
+              print(f'[METBR] grade declarada: {meta_nx}x{meta_ny}')
+          print(f'[METBR] frames publicados no JSON compacto: {len(frames)}')
+          if skipped:
+              print('[METBR] frames ignorados por saída inválida:')
+              for item in skipped:
+                  print(f'  - {item}')
+
+          if len(frames) < 3:
+              raise SystemExit(
+                  f'Poucos frames válidos para publicar: {len(frames)}'
+              )
 
           payload = {
               'schemaVersion': '1.1',
@@ -262,15 +313,18 @@ jobs:
 
           out = root / 'metbr_wrf_4km.json'
           out.write_text(
-              json.dumps(payload, separators=(',', ':'), ensure_ascii=False, allow_nan=False),
+              json.dumps(
+                  payload,
+                  separators=(',', ':'),
+                  ensure_ascii=False,
+                  allow_nan=False
+              ),
               encoding='utf-8'
           )
 
           size_mb = out.stat().st_size / (1024 * 1024)
-          print(f'JSON METBR completo: {len(frames)} frames; {size_mb:.2f} MiB')
+          print(f'JSON METBR compacto: {len(frames)} frames; {size_mb:.2f} MiB')
 
-          # O arquivo continua sendo um único JSON com reflectivityDbz por frame,
-          # mas não carrega os demais campos meteorológicos, evitando >100 MB.
           if out.stat().st_size >= 100_000_000:
               raise SystemExit(
                   f'metbr_wrf_4km.json ainda excede o limite do GitHub: {size_mb:.2f} MiB'
