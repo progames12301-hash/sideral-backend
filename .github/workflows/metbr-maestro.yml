@@ -128,54 +128,91 @@ jobs:
           rm -rf metbr_publish
           python wrf/extract_metbr_4km.py --run-dir metbr_raw --output-dir metbr_publish --run-date "$RUN_DATE" --run-cycle "$RUN_CYCLE"
 
-      - name: Criar índice pequeno metbr_wrf_4km.json
+      - name: Criar JSON compacto completo para o HTML METBR
         shell: bash
         run: |
           set -euo pipefail
           test -s metbr_publish/metadata.json
-          test -s metbr_publish/variables.json
           test -d metbr_publish/icon
           python - <<'PY'
-          import json
+          import gzip, json
           from pathlib import Path
-          root=Path('metbr_publish')
-          meta=json.loads((root/'metadata.json').read_text(encoding='utf-8'))
-          frames=[]
+
+          root = Path('metbr_publish')
+          meta = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+          frames = []
+
           for f in meta.get('frames') or []:
-              rel=f.get('file')
-              if not rel: raise SystemExit('frame sem file')
-              src=root/rel
-              if not src.is_file() or src.stat().st_size==0: raise SystemExit(f'frame ausente: {src}')
+              rel = f.get('file')
+              if not rel:
+                  raise SystemExit('frame sem file')
+              src = root / rel
+              if not src.is_file() or src.stat().st_size == 0:
+                  raise SystemExit(f'frame ausente: {src}')
+
+              with gzip.open(src, 'rt', encoding='utf-8') as fh:
+                  data = json.load(fh)
+
+              values = data.get('reflectivityDbz')
+              if not isinstance(values, list):
+                  values = (data.get('fields') or {}).get('reflectivity')
+              if not isinstance(values, list):
+                  values = data.get('reflectivity')
+              if not isinstance(values, list):
+                  raise SystemExit(f'reflectivityDbz ausente ou inválido: {src}')
+
+              gx = int(f.get('gridX') or data.get('gridX') or 0)
+              gy = int(f.get('gridY') or data.get('gridY') or 0)
+              expected = gx * gy
+              if expected <= 0 or len(values) != expected:
+                  raise SystemExit(
+                      f'grade/refletividade inconsistente em {src}: '
+                      f'{len(values)} valores para {gx}x{gy}'
+                  )
+
               frames.append({
-                  'index':f.get('index'),
-                  'forecastHour':f.get('forecastHour'),
-                  'validTime':f.get('validTime'),
-                  'file':rel,
-                  'gridX':f.get('gridX'),
-                  'gridY':f.get('gridY'),
-                  'sourceVariable':f.get('sourceVariable','REFL_10CM'),
-                  'reflectivityStats':f.get('reflectivityStats',{})
+                  'file': rel,
+                  'index': f.get('index'),
+                  'forecastHour': f.get('forecastHour'),
+                  'validTime': f.get('validTime') or data.get('validTime'),
+                  'gridX': gx,
+                  'gridY': gy,
+                  'reflectivityDbz': values
               })
-          payload={
-              'schema':'sideral-wrf-reflectivity-v2',
-              'model':meta.get('model','icon'),
-              'resolutionKm':meta.get('resolutionKm',4),
-              'runDate':meta.get('runDate'),
-              'runCycle':meta.get('runCycle'),
-              'initTime':meta.get('initTime'),
-              'generatedAt':meta.get('generatedAt'),
-              'reflectivitySource':meta.get('reflectivitySource','REFL_10CM'),
-              'nativeGrid':meta.get('nativeGrid',True),
-              'grid':meta.get('grid'),
-              'frames':frames
+
+          payload = {
+              'schemaVersion': '1.1',
+              'model': 'METBR WRF 4 km',
+              'modelKey': 'metbr_wrf',
+              'resolutionKm': 4,
+              'grid': meta.get('grid'),
+              'runDate': meta.get('runDate'),
+              'runCycle': meta.get('runCycle'),
+              'initTime': meta.get('initTime'),
+              'reflectivitySource': meta.get('reflectivitySource', 'REFL_10CM'),
+              'nativeGrid': True,
+              'frameCount': len(frames),
+              'temporalResolutionMinutes': 60,
+              'frames': frames
           }
-          out=root/'metbr_wrf_4km.json'
-          out.write_text(json.dumps(payload,separators=(',',':'),ensure_ascii=False),encoding='utf-8')
-          print(f'Índice gerado: {out.stat().st_size} bytes; {len(frames)} frames')
+
+          out = root / 'metbr_wrf_4km.json'
+          out.write_text(
+              json.dumps(payload, separators=(',', ':'), ensure_ascii=False, allow_nan=False),
+              encoding='utf-8'
+          )
+
+          size_mb = out.stat().st_size / (1024 * 1024)
+          print(f'JSON METBR completo: {len(frames)} frames; {size_mb:.2f} MiB')
+
+          # O arquivo continua sendo um único JSON com reflectivityDbz por frame,
+          # mas não carrega os demais campos meteorológicos, evitando >100 MB.
+          if out.stat().st_size >= 100_000_000:
+              raise SystemExit(
+                  f'metbr_wrf_4km.json ainda excede o limite do GitHub: {size_mb:.2f} MiB'
+              )
           PY
           test -s metbr_publish/metbr_wrf_4km.json
-          SIZE="$(stat -c%s metbr_publish/metbr_wrf_4km.json)"
-          test "$SIZE" -lt 100000000
 
       - name: Validar produto antes de publicar
         shell: bash
