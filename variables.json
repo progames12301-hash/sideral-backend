@@ -1,0 +1,3897 @@
+{
+  "Times": {
+    "name": "Times",
+    "dimensions": [
+      "Time",
+      "DateStrLen"
+    ],
+    "shape": [
+      1,
+      19
+    ]
+  },
+  "XLAT": {
+    "name": "XLAT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "degree_north",
+    "description": "LATITUDE, SOUTH IS NEGATIVE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -34.55965805053711,
+    "max": -21.53107452392578
+  },
+  "XLONG": {
+    "name": "XLONG",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "degree_east",
+    "description": "LONGITUDE, WEST IS NEGATIVE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -59.95672607421875,
+    "max": -46.943267822265625
+  },
+  "LU_INDEX": {
+    "name": "LU_INDEX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "LAND USE CATEGORY",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 1.0,
+    "max": 17.0
+  },
+  "ZNU": {
+    "name": "ZNU",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "",
+    "description": "eta values on half (mass) levels",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": 0.002371057868003845,
+    "max": 0.9969073534011841
+  },
+  "ZNW": {
+    "name": "ZNW",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag"
+    ],
+    "shape": [
+      1,
+      45
+    ],
+    "units": "",
+    "description": "eta values on full (w) levels",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 1.0
+  },
+  "ZS": {
+    "name": "ZS",
+    "dimensions": [
+      "Time",
+      "soil_layers_stag"
+    ],
+    "shape": [
+      1,
+      4
+    ],
+    "units": "m",
+    "description": "DEPTHS OF CENTERS OF SOIL LAYERS",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.05000000074505806,
+    "max": 1.5
+  },
+  "DZS": {
+    "name": "DZS",
+    "dimensions": [
+      "Time",
+      "soil_layers_stag"
+    ],
+    "shape": [
+      1,
+      4
+    ],
+    "units": "m",
+    "description": "THICKNESSES OF SOIL LAYERS",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.10000000149011612,
+    "max": 1.0
+  },
+  "VAR_SSO": {
+    "name": "VAR_SSO",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m2",
+    "description": "variance of subgrid-scale orography",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "U": {
+    "name": "U",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east_stag"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      300
+    ],
+    "units": "m s-1",
+    "description": "x-wind component",
+    "MemoryOrder": "XYZ",
+    "stagger": "X",
+    "min": -22.563125610351562,
+    "max": 62.28129196166992
+  },
+  "V": {
+    "name": "V",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north_stag",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      360,
+      299
+    ],
+    "units": "m s-1",
+    "description": "y-wind component",
+    "MemoryOrder": "XYZ",
+    "stagger": "Y",
+    "min": -18.158172607421875,
+    "max": 29.59733772277832
+  },
+  "W": {
+    "name": "W",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      45,
+      359,
+      299
+    ],
+    "units": "m s-1",
+    "description": "z-wind component",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": -0.12230128049850464,
+    "max": 0.14827728271484375
+  },
+  "PH": {
+    "name": "PH",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      45,
+      359,
+      299
+    ],
+    "units": "m2 s-2",
+    "description": "perturbation geopotential",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": -29.2275390625,
+    "max": 9148.65625
+  },
+  "PHB": {
+    "name": "PHB",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      45,
+      359,
+      299
+    ],
+    "units": "m2 s-2",
+    "description": "base-state geopotential",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 195220.546875
+  },
+  "T": {
+    "name": "T",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "perturbation potential temperature theta-t0",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": -15.03485107421875,
+    "max": 194.7103271484375
+  },
+  "THM": {
+    "name": "THM",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "either 1) pert moist pot temp=(1+Rv/Rd Qv)*(theta)-T0, or 2) pert dry pot temp=t",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": -12.632415771484375,
+    "max": 194.71343994140625
+  },
+  "HFX_FORCE": {
+    "name": "HFX_FORCE",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "W m-2",
+    "description": "SCM ideal surface sensible heat flux",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LH_FORCE": {
+    "name": "LH_FORCE",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "W m-2",
+    "description": "SCM ideal surface latent heat flux",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "TSK_FORCE": {
+    "name": "TSK_FORCE",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "W m-2",
+    "description": "SCM ideal surface skin temperature",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "HFX_FORCE_TEND": {
+    "name": "HFX_FORCE_TEND",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "W m-2 s-1",
+    "description": "SCM ideal surface sensible heat flux tendency",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LH_FORCE_TEND": {
+    "name": "LH_FORCE_TEND",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "W m-2 s-1",
+    "description": "SCM ideal surface latent heat flux tendency",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "TSK_FORCE_TEND": {
+    "name": "TSK_FORCE_TEND",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "W m-2 s-1",
+    "description": "SCM ideal surface skin temperature tendency",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "MU": {
+    "name": "MU",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "perturbation dry air mass in column",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -264.984375,
+    "max": 2237.5078125
+  },
+  "MUB": {
+    "name": "MUB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "base state dry air mass in column",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 78493.8671875,
+    "max": 95000.0
+  },
+  "NEST_POS": {
+    "name": "NEST_POS",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "-",
+    "description": "-",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "P": {
+    "name": "P",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "perturbation pressure",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": -57.8203125,
+    "max": 2393.515625
+  },
+  "PB": {
+    "name": "PB",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "BASE STATE PRESSURE",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 5225.25048828125,
+    "max": 99706.203125
+  },
+  "FNM": {
+    "name": "FNM",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "",
+    "description": "upper weight for vertical stretching",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.5215590596199036
+  },
+  "FNP": {
+    "name": "FNP",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "",
+    "description": "lower weight for vertical stretching",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.5597452521324158
+  },
+  "RDNW": {
+    "name": "RDNW",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "",
+    "description": "inverse d(eta) values between full (w) levels",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": -210.8763427734375,
+    "max": -20.250965118408203
+  },
+  "RDN": {
+    "name": "RDN",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "",
+    "description": "inverse d(eta) values between half (mass) levels",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": -201.78375244140625,
+    "max": 0.0
+  },
+  "DNW": {
+    "name": "DNW",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "",
+    "description": "d(eta) values between full (w) levels",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": -0.049380362033843994,
+    "max": -0.00474211573600769
+  },
+  "DN": {
+    "name": "DN",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "",
+    "description": "d(eta) values between half (mass) levels",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": -0.049043551087379456,
+    "max": 0.0
+  },
+  "CFN": {
+    "name": "CFN",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "extrapolation constant",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 1.4784409999847412,
+    "max": 1.4784409999847412
+  },
+  "CFN1": {
+    "name": "CFN1",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "extrapolation constant",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": -0.4784409701824188,
+    "max": -0.4784409701824188
+  },
+  "THIS_IS_AN_IDEAL_RUN": {
+    "name": "THIS_IS_AN_IDEAL_RUN",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "-",
+    "description": "T/F flag: this is an ARW ideal simulation",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "P_HYD": {
+    "name": "P_HYD",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "hydrostatic pressure",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 5225.2373046875,
+    "max": 102099.71875
+  },
+  "Q2": {
+    "name": "Q2",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "kg kg-1",
+    "description": "QV at 2 M",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.006147725973278284,
+    "max": 0.01910322904586792
+  },
+  "T2": {
+    "name": "T2",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "TEMP at 2 M",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 285.691650390625,
+    "max": 307.58184814453125
+  },
+  "TH2": {
+    "name": "TH2",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "POT TEMP at 2 M",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 284.806396484375,
+    "max": 308.4844665527344
+  },
+  "PSFC": {
+    "name": "PSFC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "SFC PRESSURE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 85352.546875,
+    "max": 102402.4921875
+  },
+  "U10": {
+    "name": "U10",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m s-1",
+    "description": "U at 10 M",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -11.542689323425293,
+    "max": 1.2745283842086792
+  },
+  "V10": {
+    "name": "V10",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m s-1",
+    "description": "V at 10 M",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -4.583614826202393,
+    "max": 5.058988094329834
+  },
+  "RDX": {
+    "name": "RDX",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "m-1",
+    "description": "INVERSE X GRID LENGTH",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0002500000118743628,
+    "max": 0.0002500000118743628
+  },
+  "RDY": {
+    "name": "RDY",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "m-1",
+    "description": "INVERSE Y GRID LENGTH",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0002500000118743628,
+    "max": 0.0002500000118743628
+  },
+  "AREA2D": {
+    "name": "AREA2D",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m2",
+    "description": "Horizontal grid cell area, using dx, dy, and map factors",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 16000000.0,
+    "max": 16000000.0
+  },
+  "DX2D": {
+    "name": "DX2D",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m",
+    "description": "Horizontal grid distance: sqrt(area2d)",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 4000.0,
+    "max": 4000.0
+  },
+  "RESM": {
+    "name": "RESM",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "TIME WEIGHT CONSTANT FOR SMALL STEPS",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ZETATOP": {
+    "name": "ZETATOP",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "ZETA AT MODEL TOP",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "CF1": {
+    "name": "CF1",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "2nd order extrapolation constant",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 1.8286585807800293,
+    "max": 1.8286585807800293
+  },
+  "CF2": {
+    "name": "CF2",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "2nd order extrapolation constant",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": -1.135213851928711,
+    "max": -1.135213851928711
+  },
+  "CF3": {
+    "name": "CF3",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "2nd order extrapolation constant",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.30655530095100403,
+    "max": 0.30655530095100403
+  },
+  "ITIMESTEP": {
+    "name": "ITIMESTEP",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "XTIME": {
+    "name": "XTIME",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "minutes since 2026-09-28 00:00:00",
+    "description": "minutes since 2026-09-28 00:00:00",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QVAPOR": {
+    "name": "QVAPOR",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "kg kg-1",
+    "description": "Water vapor mixing ratio",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 2.5189592633978464e-06,
+    "max": 0.018973885104060173
+  },
+  "QCLOUD": {
+    "name": "QCLOUD",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "kg kg-1",
+    "description": "Cloud water mixing ratio",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QRAIN": {
+    "name": "QRAIN",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "kg kg-1",
+    "description": "Rain water mixing ratio",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QICE": {
+    "name": "QICE",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "kg kg-1",
+    "description": "Ice mixing ratio",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QSNOW": {
+    "name": "QSNOW",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "kg kg-1",
+    "description": "Snow mixing ratio",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QGRAUP": {
+    "name": "QGRAUP",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "kg kg-1",
+    "description": "Graupel mixing ratio",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QNICE": {
+    "name": "QNICE",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "  kg-1",
+    "description": "Ice Number concentration",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QNRAIN": {
+    "name": "QNRAIN",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "  kg(-1)",
+    "description": "Rain Number concentration",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SHDMAX": {
+    "name": "SHDMAX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "ANNUAL MAX VEG FRACTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 89.9948959350586
+  },
+  "SHDMIN": {
+    "name": "SHDMIN",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "ANNUAL MIN VEG FRACTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 88.58566284179688
+  },
+  "SNOALB": {
+    "name": "SNOALB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "ANNUAL MAX SNOW ALBEDO IN FRACTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.07999999821186066,
+    "max": 0.8299999833106995
+  },
+  "PCT_PFT": {
+    "name": "PCT_PFT",
+    "dimensions": [
+      "Time",
+      "pft_fraction_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      17,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "PFT PERCENTAGE BY CATEGORY",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "TSLB": {
+    "name": "TSLB",
+    "dimensions": [
+      "Time",
+      "soil_layers_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      4,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "SOIL TEMPERATURE",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": 284.3743896484375,
+    "max": 308.7280578613281
+  },
+  "SMOIS": {
+    "name": "SMOIS",
+    "dimensions": [
+      "Time",
+      "soil_layers_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      4,
+      359,
+      299
+    ],
+    "units": "m3 m-3",
+    "description": "SOIL MOISTURE",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": 0.03650391474366188,
+    "max": 1.0
+  },
+  "SH2O": {
+    "name": "SH2O",
+    "dimensions": [
+      "Time",
+      "soil_layers_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      4,
+      359,
+      299
+    ],
+    "units": "m3 m-3",
+    "description": "SOIL LIQUID WATER",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": 0.03650391474366188,
+    "max": 1.0
+  },
+  "SMCREL": {
+    "name": "SMCREL",
+    "dimensions": [
+      "Time",
+      "soil_layers_stag",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      4,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "RELATIVE SOIL MOISTURE",
+    "MemoryOrder": "XYZ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SEAICE": {
+    "name": "SEAICE",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "SEA ICE FLAG",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "XICEM": {
+    "name": "XICEM",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "SEA ICE FLAG (PREVIOUS STEP)",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SFROFF": {
+    "name": "SFROFF",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "SURFACE RUNOFF",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "UDROFF": {
+    "name": "UDROFF",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "UNDERGROUND RUNOFF",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "IVGTYP": {
+    "name": "IVGTYP",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "DOMINANT VEGETATION CATEGORY",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 1.0,
+    "max": 17.0
+  },
+  "ISLTYP": {
+    "name": "ISLTYP",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "DOMINANT SOIL CATEGORY",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 1.0,
+    "max": 14.0
+  },
+  "VEGFRA": {
+    "name": "VEGFRA",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "VEGETATION FRACTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 88.97265625
+  },
+  "GRDFLX": {
+    "name": "GRDFLX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "GROUND HEAT FLUX",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACGRDFLX": {
+    "name": "ACGRDFLX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED GROUND HEAT FLUX",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSNOM": {
+    "name": "ACSNOM",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "kg m-2",
+    "description": "ACCUMULATED MELTED SNOW",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SNOW": {
+    "name": "SNOW",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "kg m-2",
+    "description": "SNOW WATER EQUIVALENT",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SNOWH": {
+    "name": "SNOWH",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m",
+    "description": "PHYSICAL SNOW DEPTH",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "CANWAT": {
+    "name": "CANWAT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "kg m-2",
+    "description": "CANOPY WATER",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SSTSK": {
+    "name": "SSTSK",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "SKIN SEA SURFACE TEMPERATURE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "COSZEN": {
+    "name": "COSZEN",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "dimensionless",
+    "description": "COS of SOLAR ZENITH ANGLE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LAI": {
+    "name": "LAI",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m-2/m-2",
+    "description": "LEAF AREA INDEX",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 5.840555667877197
+  },
+  "DTAUX3D": {
+    "name": "DTAUX3D",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "m s-1",
+    "description": "LOCAL U GWDO STRESS",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "DTAUY3D": {
+    "name": "DTAUY3D",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "m s-1",
+    "description": "LOCAL V GWDO STRESS",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "DUSFCG": {
+    "name": "DUSFCG",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "Pa m s-1",
+    "description": "COLUMN-INTEGRATED U GWDO STRESS",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "DVSFCG": {
+    "name": "DVSFCG",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "Pa m s-1",
+    "description": "COLUMN-INTEGRATED V GWDO STRESS",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "VAR": {
+    "name": "VAR",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC VARIANCE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 378.6918029785156
+  },
+  "CON": {
+    "name": "CON",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC CONVEXITY",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 19.101102828979492
+  },
+  "OA1": {
+    "name": "OA1",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -0.5992785692214966,
+    "max": 0.5483256578445435
+  },
+  "OA2": {
+    "name": "OA2",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -0.9875427484512329,
+    "max": 0.43385979533195496
+  },
+  "OA3": {
+    "name": "OA3",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -0.4064902067184448,
+    "max": 0.33155298233032227
+  },
+  "OA4": {
+    "name": "OA4",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -0.3062626123428345,
+    "max": 0.551231324672699
+  },
+  "OL1": {
+    "name": "OL1",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.4318656027317047
+  },
+  "OL2": {
+    "name": "OL2",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.5351241827011108
+  },
+  "OL3": {
+    "name": "OL3",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.316644549369812
+  },
+  "OL4": {
+    "name": "OL4",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "OROGRAPHIC DIRECTION ASYMMETRY FUNCTION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.4234675168991089
+  },
+  "MAPFAC_M": {
+    "name": "MAPFAC_M",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "Map scale factor on mass grid",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.996193528175354,
+    "max": 1.0069841146469116
+  },
+  "MAPFAC_U": {
+    "name": "MAPFAC_U",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east_stag"
+    ],
+    "shape": [
+      1,
+      359,
+      300
+    ],
+    "units": "",
+    "description": "Map scale factor on u-grid",
+    "MemoryOrder": "XY ",
+    "stagger": "X",
+    "min": 0.996193528175354,
+    "max": 1.0069862604141235
+  },
+  "MAPFAC_V": {
+    "name": "MAPFAC_V",
+    "dimensions": [
+      "Time",
+      "south_north_stag",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      360,
+      299
+    ],
+    "units": "",
+    "description": "Map scale factor on v-grid",
+    "MemoryOrder": "XY ",
+    "stagger": "Y",
+    "min": 0.996193528175354,
+    "max": 1.0070291757583618
+  },
+  "MAPFAC_MX": {
+    "name": "MAPFAC_MX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "Map scale factor on mass grid, x direction",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.996193528175354,
+    "max": 1.0069841146469116
+  },
+  "MAPFAC_MY": {
+    "name": "MAPFAC_MY",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "Map scale factor on mass grid, y direction",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.996193528175354,
+    "max": 1.0069841146469116
+  },
+  "MAPFAC_UX": {
+    "name": "MAPFAC_UX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east_stag"
+    ],
+    "shape": [
+      1,
+      359,
+      300
+    ],
+    "units": "",
+    "description": "Map scale factor on u-grid, x direction",
+    "MemoryOrder": "XY ",
+    "stagger": "X",
+    "min": 0.996193528175354,
+    "max": 1.0069862604141235
+  },
+  "MAPFAC_UY": {
+    "name": "MAPFAC_UY",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east_stag"
+    ],
+    "shape": [
+      1,
+      359,
+      300
+    ],
+    "units": "",
+    "description": "Map scale factor on u-grid, y direction",
+    "MemoryOrder": "XY ",
+    "stagger": "X",
+    "min": 0.996193528175354,
+    "max": 1.0069862604141235
+  },
+  "MAPFAC_VX": {
+    "name": "MAPFAC_VX",
+    "dimensions": [
+      "Time",
+      "south_north_stag",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      360,
+      299
+    ],
+    "units": "",
+    "description": "Map scale factor on v-grid, x direction",
+    "MemoryOrder": "XY ",
+    "stagger": "Y",
+    "min": 0.996193528175354,
+    "max": 1.0070291757583618
+  },
+  "MF_VX_INV": {
+    "name": "MF_VX_INV",
+    "dimensions": [
+      "Time",
+      "south_north_stag",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      360,
+      299
+    ],
+    "units": "",
+    "description": "Inverse map scale factor on v-grid, x direction",
+    "MemoryOrder": "XY ",
+    "stagger": "Y",
+    "min": 0.9930198788642883,
+    "max": 1.0038210153579712
+  },
+  "MAPFAC_VY": {
+    "name": "MAPFAC_VY",
+    "dimensions": [
+      "Time",
+      "south_north_stag",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      360,
+      299
+    ],
+    "units": "",
+    "description": "Map scale factor on v-grid, y direction",
+    "MemoryOrder": "XY ",
+    "stagger": "Y",
+    "min": 0.996193528175354,
+    "max": 1.0070291757583618
+  },
+  "F": {
+    "name": "F",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "s-1",
+    "description": "Coriolis sine latitude term",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -8.272977720480412e-05,
+    "max": -5.352412335923873e-05
+  },
+  "E": {
+    "name": "E",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "s-1",
+    "description": "Coriolis cosine latitude term",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0001201044797198847,
+    "max": 0.00013566308189183474
+  },
+  "SINALPHA": {
+    "name": "SINALPHA",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "Local sine of map rotation",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -0.05703368037939072,
+    "max": 0.057003267109394073
+  },
+  "COSALPHA": {
+    "name": "COSALPHA",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "Local cosine of map rotation",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.9983722567558289,
+    "max": 1.0
+  },
+  "HGT": {
+    "name": "HGT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m",
+    "description": "Terrain Height",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 1506.7247314453125
+  },
+  "TSK": {
+    "name": "TSK",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "SURFACE SKIN TEMPERATURE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 283.7022705078125,
+    "max": 308.519775390625
+  },
+  "P_TOP": {
+    "name": "P_TOP",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "Pa",
+    "description": "PRESSURE TOP OF THE MODEL",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 5000.0,
+    "max": 5000.0
+  },
+  "T00": {
+    "name": "T00",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "K",
+    "description": "BASE STATE TEMPERATURE",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 290.0,
+    "max": 290.0
+  },
+  "P00": {
+    "name": "P00",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "Pa",
+    "description": "BASE STATE PRESURE",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 100000.0,
+    "max": 100000.0
+  },
+  "TLP": {
+    "name": "TLP",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "BASE STATE LAPSE RATE",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 50.0,
+    "max": 50.0
+  },
+  "TISO": {
+    "name": "TISO",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "K",
+    "description": "TEMP AT WHICH THE BASE T TURNS CONST",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 200.0,
+    "max": 200.0
+  },
+  "TLP_STRAT": {
+    "name": "TLP_STRAT",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "K",
+    "description": "BASE STATE LAPSE RATE (DT/D(LN(P)) IN STRATOSPHERE",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": -11.0,
+    "max": -11.0
+  },
+  "P_STRAT": {
+    "name": "P_STRAT",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "Pa",
+    "description": "BASE STATE PRESSURE AT BOTTOM OF STRATOSPHERE",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "MAX_MSFTX": {
+    "name": "MAX_MSFTX",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "Max map factor in domain",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "MAX_MSFTY": {
+    "name": "MAX_MSFTY",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "",
+    "description": "Max map factor in domain",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "RAINC": {
+    "name": "RAINC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "ACCUMULATED TOTAL CUMULUS PRECIPITATION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "RAINSH": {
+    "name": "RAINSH",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "ACCUMULATED SHALLOW CUMULUS PRECIPITATION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "RAINNC": {
+    "name": "RAINNC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "ACCUMULATED TOTAL GRID SCALE PRECIPITATION",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SNOWNC": {
+    "name": "SNOWNC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "ACCUMULATED TOTAL GRID SCALE SNOW AND ICE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "GRAUPELNC": {
+    "name": "GRAUPELNC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "ACCUMULATED TOTAL GRID SCALE GRAUPEL",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "HAILNC": {
+    "name": "HAILNC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "mm",
+    "description": "ACCUMULATED TOTAL GRID SCALE HAIL",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "REFL_10CM": {
+    "name": "REFL_10CM",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "dBZ",
+    "description": "Radar reflectivity (lamda = 10 cm)",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "CLDFRA": {
+    "name": "CLDFRA",
+    "dimensions": [
+      "Time",
+      "bottom_top",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      44,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "CLOUD FRACTION",
+    "MemoryOrder": "XYZ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWDOWN": {
+    "name": "SWDOWN",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "DOWNWARD SHORT WAVE FLUX AT GROUND SURFACE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "GLW": {
+    "name": "GLW",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "DOWNWARD LONG WAVE FLUX AT GROUND SURFACE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWNORM": {
+    "name": "SWNORM",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "NORMAL SHORT WAVE FLUX AT GROUND SURFACE (SLOPE-DEPENDENT)",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWUPT": {
+    "name": "ACSWUPT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWUPTC": {
+    "name": "ACSWUPTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING CLEAR SKY SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWDNT": {
+    "name": "ACSWDNT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWDNTC": {
+    "name": "ACSWDNTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING CLEAR SKY SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWUPB": {
+    "name": "ACSWUPB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWUPBC": {
+    "name": "ACSWUPBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING CLEAR SKY SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWDNB": {
+    "name": "ACSWDNB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACSWDNBC": {
+    "name": "ACSWDNBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING CLEAR SKY SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWUPT": {
+    "name": "ACLWUPT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWUPTC": {
+    "name": "ACLWUPTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING CLEAR SKY LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWDNT": {
+    "name": "ACLWDNT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWDNTC": {
+    "name": "ACLWDNTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING CLEAR SKY LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWUPB": {
+    "name": "ACLWUPB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWUPBC": {
+    "name": "ACLWUPBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWELLING CLEAR SKY LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWDNB": {
+    "name": "ACLWDNB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLWDNBC": {
+    "name": "ACLWDNBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED DOWNWELLING CLEAR SKY LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWUPT": {
+    "name": "SWUPT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWUPTC": {
+    "name": "SWUPTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING CLEAR SKY SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWDNT": {
+    "name": "SWDNT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWDNTC": {
+    "name": "SWDNTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING CLEAR SKY SHORTWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWUPB": {
+    "name": "SWUPB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWUPBC": {
+    "name": "SWUPBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING CLEAR SKY SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWDNB": {
+    "name": "SWDNB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SWDNBC": {
+    "name": "SWDNBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING CLEAR SKY SHORTWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWUPT": {
+    "name": "LWUPT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWUPTC": {
+    "name": "LWUPTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING CLEAR SKY LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWDNT": {
+    "name": "LWDNT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWDNTC": {
+    "name": "LWDNTC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING CLEAR SKY LONGWAVE FLUX AT TOP",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWUPB": {
+    "name": "LWUPB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWUPBC": {
+    "name": "LWUPBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS UPWELLING CLEAR SKY LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWDNB": {
+    "name": "LWDNB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LWDNBC": {
+    "name": "LWDNBC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "INSTANTANEOUS DOWNWELLING CLEAR SKY LONGWAVE FLUX AT BOTTOM",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "OLR": {
+    "name": "OLR",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "TOA OUTGOING LONG WAVE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "XLAT_U": {
+    "name": "XLAT_U",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east_stag"
+    ],
+    "shape": [
+      1,
+      359,
+      300
+    ],
+    "units": "degree_north",
+    "description": "LATITUDE, SOUTH IS NEGATIVE",
+    "MemoryOrder": "XY ",
+    "stagger": "X",
+    "min": -34.55965805053711,
+    "max": -21.530181884765625
+  },
+  "XLONG_U": {
+    "name": "XLONG_U",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east_stag"
+    ],
+    "shape": [
+      1,
+      359,
+      300
+    ],
+    "units": "degree_east",
+    "description": "LONGITUDE, WEST IS NEGATIVE",
+    "MemoryOrder": "XY ",
+    "stagger": "X",
+    "min": -59.978515625,
+    "max": -46.9215087890625
+  },
+  "XLAT_V": {
+    "name": "XLAT_V",
+    "dimensions": [
+      "Time",
+      "south_north_stag",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      360,
+      299
+    ],
+    "units": "degree_north",
+    "description": "LATITUDE, SOUTH IS NEGATIVE",
+    "MemoryOrder": "XY ",
+    "stagger": "Y",
+    "min": -34.577659606933594,
+    "max": -21.513229370117188
+  },
+  "XLONG_V": {
+    "name": "XLONG_V",
+    "dimensions": [
+      "Time",
+      "south_north_stag",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      360,
+      299
+    ],
+    "units": "degree_east",
+    "description": "LONGITUDE, WEST IS NEGATIVE",
+    "MemoryOrder": "XY ",
+    "stagger": "Y",
+    "min": -59.95794677734375,
+    "max": -46.942047119140625
+  },
+  "ALBEDO": {
+    "name": "ALBEDO",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "-",
+    "description": "ALBEDO",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.07999999821186066,
+    "max": 0.23000000417232513
+  },
+  "CLAT": {
+    "name": "CLAT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "degree_north",
+    "description": "COMPUTATIONAL GRID LATITUDE, SOUTH IS NEGATIVE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": -34.55965805053711,
+    "max": -21.53107452392578
+  },
+  "ALBBCK": {
+    "name": "ALBBCK",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "BACKGROUND ALBEDO",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.07999999821186066,
+    "max": 0.23000000417232513
+  },
+  "EMISS": {
+    "name": "EMISS",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "SURFACE EMISSIVITY",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.8799999952316284,
+    "max": 0.9800000190734863
+  },
+  "NOAHRES": {
+    "name": "NOAHRES",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m{-2}",
+    "description": "RESIDUAL OF THE NOAH SURFACE ENERGY BUDGET",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "TMN": {
+    "name": "TMN",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "SOIL TEMPERATURE AT LOWER BOUNDARY",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 284.2600402832031,
+    "max": 299.0834655761719
+  },
+  "XLAND": {
+    "name": "XLAND",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "LAND MASK (1 FOR LAND, 2 FOR WATER)",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 1.0,
+    "max": 2.0
+  },
+  "UST": {
+    "name": "UST",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m s-1",
+    "description": "U* IN SIMILARITY THEORY",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 9.999999747378752e-05,
+    "max": 9.999999747378752e-05
+  },
+  "PBLH": {
+    "name": "PBLH",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "m",
+    "description": "PBL HEIGHT",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "HFX": {
+    "name": "HFX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "UPWARD HEAT FLUX AT THE SURFACE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "QFX": {
+    "name": "QFX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "kg m-2 s-1",
+    "description": "UPWARD MOISTURE FLUX AT THE SURFACE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LH": {
+    "name": "LH",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "W m-2",
+    "description": "LATENT HEAT FLUX AT THE SURFACE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACHFX": {
+    "name": "ACHFX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWARD HEAT FLUX AT THE SURFACE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ACLHF": {
+    "name": "ACLHF",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "J m-2",
+    "description": "ACCUMULATED UPWARD LATENT HEAT FLUX AT THE SURFACE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SNOWC": {
+    "name": "SNOWC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "FLAG INDICATING SNOW COVERAGE (1 FOR SNOW COVER)",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SR": {
+    "name": "SR",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "-",
+    "description": "fraction of frozen precipitation",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "SAVE_TOPO_FROM_REAL": {
+    "name": "SAVE_TOPO_FROM_REAL",
+    "dimensions": [
+      "Time"
+    ],
+    "shape": [
+      1
+    ],
+    "units": "flag",
+    "description": "1=original topo from real/0=topo modified by WRF",
+    "MemoryOrder": "0  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "REFD_MAX": {
+    "name": "REFD_MAX",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "dbZ",
+    "description": "MAX DERIVED RADAR REFL",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ISEEDARR_SPPT": {
+    "name": "ISEEDARR_SPPT",
+    "dimensions": [
+      "Time",
+      "seed_dim_stag"
+    ],
+    "shape": [
+      1,
+      33
+    ],
+    "units": "",
+    "description": "Array to hold seed for restart, SPPT",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ISEEDARR_SKEBS": {
+    "name": "ISEEDARR_SKEBS",
+    "dimensions": [
+      "Time",
+      "seed_dim_stag"
+    ],
+    "shape": [
+      1,
+      33
+    ],
+    "units": "",
+    "description": "Array to hold seed for restart, SKEBS",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ISEEDARR_RAND_PERTURB": {
+    "name": "ISEEDARR_RAND_PERTURB",
+    "dimensions": [
+      "Time",
+      "seed_dim_stag"
+    ],
+    "shape": [
+      1,
+      33
+    ],
+    "units": "",
+    "description": "Array to hold seed for restart, RAND_PERT",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ISEEDARRAY_SPP_CONV": {
+    "name": "ISEEDARRAY_SPP_CONV",
+    "dimensions": [
+      "Time",
+      "seed_dim_stag"
+    ],
+    "shape": [
+      1,
+      33
+    ],
+    "units": "",
+    "description": "Array to hold seed for restart, RAND_PERT2",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ISEEDARRAY_SPP_PBL": {
+    "name": "ISEEDARRAY_SPP_PBL",
+    "dimensions": [
+      "Time",
+      "seed_dim_stag"
+    ],
+    "shape": [
+      1,
+      33
+    ],
+    "units": "",
+    "description": "Array to hold seed for restart, RAND_PERT3",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "ISEEDARRAY_SPP_LSM": {
+    "name": "ISEEDARRAY_SPP_LSM",
+    "dimensions": [
+      "Time",
+      "seed_dim_stag"
+    ],
+    "shape": [
+      1,
+      33
+    ],
+    "units": "",
+    "description": "Array to hold seed for restart, RAND_PERT4",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "C1H": {
+    "name": "C1H",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "Dimensionless",
+    "description": "half levels, c1h = d bf / d eta, using znw",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": -0.0,
+    "max": 1.677581787109375
+  },
+  "C2H": {
+    "name": "C2H",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "Pa",
+    "description": "half levels, c2h = (1-c1h)*(p0-pt)",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": -64370.26953125,
+    "max": 95000.0
+  },
+  "C1F": {
+    "name": "C1F",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag"
+    ],
+    "shape": [
+      1,
+      45
+    ],
+    "units": "Dimensionless",
+    "description": "full levels, c1f = d bf / d eta, using znu",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 1.6750471591949463
+  },
+  "C2F": {
+    "name": "C2F",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag"
+    ],
+    "shape": [
+      1,
+      45
+    ],
+    "units": "Pa",
+    "description": "full levels, c2f = (1-c1f)*(p0-pt)",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": -64129.48046875,
+    "max": 95000.0
+  },
+  "C3H": {
+    "name": "C3H",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "Dimensionless",
+    "description": "half levels, c3h = bh",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.9968656897544861
+  },
+  "C4H": {
+    "name": "C4H",
+    "dimensions": [
+      "Time",
+      "bottom_top"
+    ],
+    "shape": [
+      1,
+      44
+    ],
+    "units": "Pa",
+    "description": "half levels, c4h = (eta-bh)*(p0-pt), using znu",
+    "MemoryOrder": "Z  ",
+    "stagger": "",
+    "min": 3.9580464363098145,
+    "max": 26740.123046875
+  },
+  "C3F": {
+    "name": "C3F",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag"
+    ],
+    "shape": [
+      1,
+      45
+    ],
+    "units": "Dimensionless",
+    "description": "full levels, c3f = bf",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 1.0
+  },
+  "C4F": {
+    "name": "C4F",
+    "dimensions": [
+      "Time",
+      "bottom_top_stag"
+    ],
+    "shape": [
+      1,
+      45
+    ],
+    "units": "Pa",
+    "description": "full levels, c4f = (eta-bf)*(p0-pt), using znw",
+    "MemoryOrder": "Z  ",
+    "stagger": "Z",
+    "min": 0.0,
+    "max": 26782.75
+  },
+  "PCB": {
+    "name": "PCB",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "base state dry air mass in column",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "PC": {
+    "name": "PC",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "Pa",
+    "description": "perturbation dry air mass in column",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  },
+  "LANDMASK": {
+    "name": "LANDMASK",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "LAND MASK (1 FOR LAND, 0 FOR WATER)",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 1.0
+  },
+  "LAKEMASK": {
+    "name": "LAKEMASK",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "",
+    "description": "LAKE MASK (1 FOR LAKE, 0 FOR NON-LAKE)",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 1.0
+  },
+  "SST": {
+    "name": "SST",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "SEA SURFACE TEMPERATURE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 283.7022705078125,
+    "max": 308.519775390625
+  },
+  "SST_INPUT": {
+    "name": "SST_INPUT",
+    "dimensions": [
+      "Time",
+      "south_north",
+      "west_east"
+    ],
+    "shape": [
+      1,
+      359,
+      299
+    ],
+    "units": "K",
+    "description": "SEA SURFACE TEMPERATURE FROM WRFLOWINPUT FILE",
+    "MemoryOrder": "XY ",
+    "stagger": "",
+    "min": 0.0,
+    "max": 0.0
+  }
+}
