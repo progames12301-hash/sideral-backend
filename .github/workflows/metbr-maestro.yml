@@ -50,7 +50,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Selecionar a rodada METBR mais recente
+      - name: Definir a rodada do evento ou recuperar a última completa
         id: discover
         shell: bash
         env:
@@ -60,45 +60,109 @@ jobs:
           rm -rf discover_tmp
           mkdir -p discover_tmp
           python - <<'PY'
-          import json, os, subprocess, re
+          import json, os, re, subprocess
           from pathlib import Path
-          repo=os.environ['GITHUB_REPOSITORY']; event=os.environ['GITHUB_EVENT_NAME']; event_path=os.environ['GITHUB_EVENT_PATH']
-          def run(cmd): return subprocess.check_output(cmd,text=True).strip()
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          event = os.environ['GITHUB_EVENT_NAME']
+          event_path = os.environ['GITHUB_EVENT_PATH']
+
+          def run(cmd):
+              return subprocess.check_output(cmd, text=True).strip()
+
           def parse_complete(path):
-              vals={}
+              vals = {}
               for line in Path(path).read_text(encoding='utf-8').splitlines():
                   if '=' in line:
-                      k,v=line.split('=',1); vals[k.strip()]=v.strip()
-              date=re.sub(r'[^0-9]','',vals.get('run_date','')); cycle=re.sub(r'[^0-9]','',vals.get('run_cycle',''))
-              if len(date)!=8 or cycle not in {'00','06','12','18'} or vals.get('status')!='complete': return None
-              return int(date),int(cycle),date,cycle
-          candidates=[]
-          if event=='workflow_run':
-              ev=json.load(open(event_path)); wr=ev['workflow_run']
-              if wr.get('conclusion')=='success': candidates.append((int(wr['id']),f"metbr-wrf-4km-checkpoint-{wr['id']}"))
-          raw=run(['gh','release','list','--repo',repo,'--limit','50','--json','tagName,createdAt'])
-          for r in json.loads(raw):
-              tag=r.get('tagName','')
-              if re.fullmatch(r'metbr-wrf-4km-checkpoint-\d+',tag):
-                  item=(int(tag.rsplit('-',1)[1]),tag)
-                  if item not in candidates: candidates.append(item)
-          best=None
-          for rid,tag in candidates:
-              dest=Path('discover_tmp')/str(rid); dest.mkdir(parents=True,exist_ok=True)
-              try:
-                  subprocess.run(['gh','release','download',tag,'--repo',repo,'--pattern','metbr-latest-complete.txt','--dir',str(dest),'--clobber'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-                  p=dest/'metbr-latest-complete.txt'
-                  if not p.is_file(): continue
-                  parsed=parse_complete(p)
-                  if parsed is None: continue
-                  date,cycle,ds,cs=parsed; candidate=(date,cycle,rid,tag)
-                  if best is None or candidate[:3]>best[:3]: best=candidate
-              except Exception: continue
-          if best is None: raise SystemExit('Nenhuma rodada METBR completa encontrada nos releases')
-          date,cycle,run_id,tag=best
-          print(f'RODADA MAIS RECENTE: {date:08d} {cycle:02d}Z | run_id={run_id} | tag={tag}')
-          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
-              f.write(f'run_id={run_id}\nrun_date={date:08d}\nrun_cycle={cycle:02d}\n')
+                      k, v = line.split('=', 1)
+                      vals[k.strip()] = v.strip()
+              date = re.sub(r'[^0-9]', '', vals.get('run_date', ''))
+              cycle = re.sub(r'[^0-9]', '', vals.get('run_cycle', ''))
+              if len(date) != 8 or cycle not in {'00', '06', '12', '18'}:
+                  return None
+              if vals.get('status') != 'complete':
+                  return None
+              return int(date), int(cycle), date, cycle
+
+          # No disparo do WRF, não procurar outra rodada e não comparar
+          # com data/ciclo anteriormente publicados: usa exatamente o run
+          # que acionou este workflow.
+          if event == 'workflow_run':
+              ev = json.load(open(event_path, encoding='utf-8'))
+              wr = ev['workflow_run']
+              if wr.get('conclusion') != 'success':
+                  raise SystemExit(
+                      f"workflow_run não foi concluído com sucesso: {wr.get('conclusion')}"
+                  )
+              run_id = int(wr['id'])
+              tag = f"metbr-wrf-4km-checkpoint-{run_id}"
+              dest = Path('discover_tmp') / str(run_id)
+              dest.mkdir(parents=True, exist_ok=True)
+              subprocess.run([
+                  'gh', 'release', 'download', tag, '--repo', repo,
+                  '--pattern', 'metbr-latest-complete.txt',
+                  '--dir', str(dest), '--clobber'
+              ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              p = dest / 'metbr-latest-complete.txt'
+              if not p.is_file():
+                  raise SystemExit(f'asset metbr-latest-complete.txt ausente no run {run_id}')
+              parsed = parse_complete(p)
+              if parsed is None:
+                  raise SystemExit(
+                      f'rodada do evento {run_id} não está marcada como complete'
+                  )
+              date, cycle, ds, cs = parsed
+              print(f'RODADA DO EVENTO: {date:08d} {cycle:02d}Z | run_id={run_id} | tag={tag}')
+          else:
+              # Recuperação por schedule/manual: aqui sim descobrimos a
+              # última rodada completa disponível, sem qualquer comparação
+              # old/new e sem bloquear por igualdade de data/ciclo.
+              candidates = []
+              raw = run([
+                  'gh', 'release', 'list', '--repo', repo, '--limit', '50',
+                  '--json', 'tagName,createdAt'
+              ])
+              for r in json.loads(raw):
+                  tag = r.get('tagName', '')
+                  if re.fullmatch(r'metbr-wrf-4km-checkpoint-\d+', tag):
+                      candidates.append((int(tag.rsplit('-', 1)[1]), tag))
+
+              best = None
+              for rid, tag in candidates:
+                  dest = Path('discover_tmp') / str(rid)
+                  dest.mkdir(parents=True, exist_ok=True)
+                  try:
+                      subprocess.run([
+                          'gh', 'release', 'download', tag, '--repo', repo,
+                          '--pattern', 'metbr-latest-complete.txt',
+                          '--dir', str(dest), '--clobber'
+                      ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                      p = dest / 'metbr-latest-complete.txt'
+                      if not p.is_file():
+                          continue
+                      parsed = parse_complete(p)
+                      if parsed is None:
+                          continue
+                      date, cycle, ds, cs = parsed
+                      candidate = (date, cycle, rid, tag)
+                      if best is None or candidate[:3] > best[:3]:
+                          best = candidate
+                  except Exception:
+                      continue
+
+              if best is None:
+                  raise SystemExit('Nenhuma rodada METBR completa encontrada nos releases')
+
+              date, cycle, run_id, tag = best
+              print(
+                  f'RECUPERAÇÃO: {date:08d} {cycle:02d}Z | '
+                  f'run_id={run_id} | tag={tag}'
+              )
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+              f.write(f'run_id={run_id}\n')
+              f.write(f'run_date={date:08d}\n')
+              f.write(f'run_cycle={cycle:02d}\n')
           PY
 
       - name: Baixar assets da rodada completa
