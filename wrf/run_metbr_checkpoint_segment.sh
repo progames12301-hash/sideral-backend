@@ -12,8 +12,8 @@ ROOT="${GITHUB_WORKSPACE:-$PWD}"
 INPUT="$ROOT/metbr_restart_input"
 mkdir -p "$INPUT"
 
-if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOUR % 3 != 0 || END_HOUR > 42 )); then
-  echo "Start/end precisam ser multiplos de 3 h entre F000 e F042" >&2
+if (( START_HOUR < 0 || END_HOUR <= START_HOUR || START_HOUR % 3 != 0 || END_HOUR % 3 != 0 || END_HOUR > 48 )); then
+  echo "Start/end precisam ser multiplos de 3 h entre F000 e F048" >&2
   exit 1
 fi
 case "$COLD_START" in
@@ -114,10 +114,10 @@ publish_outputs() {
   done
   printf '%s\n' "METBR WRF 4 KM ICON" "run_id=$GITHUB_RUN_ID" "run_date=$RUN_DATE" "run_cycle=${RUN_CYCLE}Z" "segment=F${START_HOUR}-F${END_HOUR}" "published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "metbr-publication-F${END_HOUR}.txt"
   gh release upload "$CHECKPOINT_TAG" "metbr-publication-F${END_HOUR}.txt" --repo "$GITHUB_REPOSITORY" --clobber
-  if (( END_HOUR == 42 )); then
-    printf '%s\n' "METBR WRF 4 KM ICON - RODADA COMPLETA" "run_id=$GITHUB_RUN_ID" "run_date=$RUN_DATE" "run_cycle=${RUN_CYCLE}Z" "final_forecast=F042" "status=complete" "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > metbr-latest-complete.txt
+  if (( END_HOUR == 48 )); then
+    printf '%s\n' "METBR WRF 4 KM ICON - RODADA COMPLETA" "run_id=$GITHUB_RUN_ID" "run_date=$RUN_DATE" "run_cycle=${RUN_CYCLE}Z" "final_forecast=F048" "status=complete" "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > metbr-latest-complete.txt
     gh release upload "$CHECKPOINT_TAG" metbr-latest-complete.txt --repo "$GITHUB_REPOSITORY" --clobber
-    echo "RODADA COMPLETA PUBLICADA: F042"
+    echo "RODADA COMPLETA PUBLICADA: F048"
   fi
 }
 
