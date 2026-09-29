@@ -62,68 +62,43 @@ jobs:
           python - <<'PY'
           import json, os, subprocess, re
           from pathlib import Path
-
-          repo=os.environ['GITHUB_REPOSITORY']
-          event=os.environ['GITHUB_EVENT_NAME']
-          event_path=os.environ['GITHUB_EVENT_PATH']
-
-          def run(cmd):
-              return subprocess.check_output(cmd,text=True).strip()
-
+          repo=os.environ['GITHUB_REPOSITORY']; event=os.environ['GITHUB_EVENT_NAME']; event_path=os.environ['GITHUB_EVENT_PATH']
+          def run(cmd): return subprocess.check_output(cmd,text=True).strip()
           def parse_complete(path):
               vals={}
               for line in Path(path).read_text(encoding='utf-8').splitlines():
                   if '=' in line:
                       k,v=line.split('=',1); vals[k.strip()]=v.strip()
-              date=re.sub(r'[^0-9]','',vals.get('run_date',''))
-              cycle=re.sub(r'[^0-9]','',vals.get('run_cycle',''))
-              if len(date)!=8 or cycle not in {'00','06','12','18'} or vals.get('status')!='complete':
-                  return None
-              return (int(date),int(cycle),date,cycle)
-
+              date=re.sub(r'[^0-9]','',vals.get('run_date','')); cycle=re.sub(r'[^0-9]','',vals.get('run_cycle',''))
+              if len(date)!=8 or cycle not in {'00','06','12','18'} or vals.get('status')!='complete': return None
+              return int(date),int(cycle),date,cycle
           candidates=[]
-          if event == 'workflow_run':
+          if event=='workflow_run':
               ev=json.load(open(event_path)); wr=ev['workflow_run']
-              if wr.get('conclusion') == 'success':
-                  candidates.append((int(wr['id']), f"metbr-wrf-4km-checkpoint-{wr['id']}"))
-
+              if wr.get('conclusion')=='success': candidates.append((int(wr['id']),f"metbr-wrf-4km-checkpoint-{wr['id']}"))
           raw=run(['gh','release','list','--repo',repo,'--limit','50','--json','tagName,createdAt'])
           for r in json.loads(raw):
               tag=r.get('tagName','')
               if re.fullmatch(r'metbr-wrf-4km-checkpoint-\d+',tag):
-                  rid=int(tag.rsplit('-',1)[1])
-                  item=(rid,tag)
-                  if item not in candidates:
-                      candidates.append(item)
-
+                  item=(int(tag.rsplit('-',1)[1]),tag)
+                  if item not in candidates: candidates.append(item)
           best=None
           for rid,tag in candidates:
-              dest=Path('discover_tmp')/str(rid)
-              dest.mkdir(parents=True,exist_ok=True)
+              dest=Path('discover_tmp')/str(rid); dest.mkdir(parents=True,exist_ok=True)
               try:
                   subprocess.run(['gh','release','download',tag,'--repo',repo,'--pattern','metbr-latest-complete.txt','--dir',str(dest),'--clobber'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                   p=dest/'metbr-latest-complete.txt'
-                  if not p.is_file():
-                      continue
+                  if not p.is_file(): continue
                   parsed=parse_complete(p)
-                  if parsed is None:
-                      continue
-                  date,cycle,ds,cs=parsed
-                  candidate=(date,cycle,rid,tag)
-                  if best is None or candidate[:3] > best[:3]:
-                      best=candidate
-              except Exception:
-                  continue
-
-          if best is None:
-              raise SystemExit('Nenhuma rodada METBR completa encontrada nos releases')
-
+                  if parsed is None: continue
+                  date,cycle,ds,cs=parsed; candidate=(date,cycle,rid,tag)
+                  if best is None or candidate[:3]>best[:3]: best=candidate
+              except Exception: continue
+          if best is None: raise SystemExit('Nenhuma rodada METBR completa encontrada nos releases')
           date,cycle,run_id,tag=best
           print(f'RODADA MAIS RECENTE: {date:08d} {cycle:02d}Z | run_id={run_id} | tag={tag}')
           with open(os.environ['GITHUB_OUTPUT'],'a') as f:
-              f.write(f'run_id={run_id}\n')
-              f.write(f'run_date={date:08d}\n')
-              f.write(f'run_cycle={cycle:02d}\n')
+              f.write(f'run_id={run_id}\nrun_date={date:08d}\nrun_cycle={cycle:02d}\n')
           PY
 
       - name: Baixar assets da rodada completa
@@ -150,7 +125,44 @@ jobs:
           RUN_DATE="$(sed -n 's/^run_date=//p' metbr_raw/metbr-latest-complete.txt)"
           RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_raw/metbr-latest-complete.txt)"
           test -n "$RUN_DATE"; test -n "$RUN_CYCLE"
+          rm -rf metbr_publish
           python wrf/extract_metbr_4km.py --run-dir metbr_raw --output-dir metbr_publish --run-date "$RUN_DATE" --run-cycle "$RUN_CYCLE"
+
+      - name: Garantir metbr_wrf_4km.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s metbr_publish/metadata.json
+          test -s metbr_publish/variables.json
+          test -d metbr_publish/icon
+          python - <<'PY'
+          import json,gzip
+          from pathlib import Path
+          root=Path('metbr_publish'); meta=json.loads((root/'metadata.json').read_text(encoding='utf-8'))
+          frames=meta.get('frames') or []
+          if not frames: raise SystemExit('metadata.json sem frames')
+          payload={
+              'schema':'sideral-wrf-reflectivity-v2',
+              'model':meta.get('model','icon'),
+              'resolutionKm':meta.get('resolutionKm',4),
+              'runDate':meta.get('runDate'),
+              'runCycle':meta.get('runCycle'),
+              'initTime':meta.get('initTime'),
+              'generatedAt':meta.get('generatedAt'),
+              'reflectivitySource':meta.get('reflectivitySource','REFL_10CM'),
+              'nativeGrid':meta.get('nativeGrid',True),
+              'grid':meta.get('grid'),
+              'frames':[]
+          }
+          for f in frames:
+              src=root/f['file']
+              if not src.is_file() or src.stat().st_size==0: raise SystemExit(f'frame ausente: {src}')
+              with gzip.open(src,'rt',encoding='utf-8') as fh: data=json.load(fh)
+              payload['frames'].append({'index':f.get('index'), 'forecastHour':f.get('forecastHour'), 'validTime':f.get('validTime'), 'gridX':f.get('gridX'), 'gridY':f.get('gridY'), 'sourceVariable':f.get('sourceVariable','REFL_10CM'), 'reflectivityStats':f.get('reflectivityStats',{}), 'data':data})
+          out=root/'metbr_wrf_4km.json'; out.write_text(json.dumps(payload,separators=(',',':'),ensure_ascii=False),encoding='utf-8')
+          print(f'Gerado {out} com {len(payload["frames"])} frames, {out.stat().st_size} bytes')
+          PY
+          test -s metbr_publish/metbr_wrf_4km.json
 
       - name: Validar produto antes de publicar
         shell: bash
@@ -167,20 +179,16 @@ jobs:
           if len(frames)<3: errors.append(f'frames={len(frames)}')
           grid=d.get('grid') or {}; nx=int(grid.get('nx',0)); ny=int(grid.get('ny',0))
           if nx<=0 or ny<=0: errors.append(f'grid inválida={grid!r}')
+          if not Path('metbr_publish/metbr_wrf_4km.json').is_file(): errors.append('metbr_wrf_4km.json ausente')
           for f in frames:
               q=Path('metbr_publish')/f['file']
-              if not q.is_file() or q.stat().st_size==0:
-                  errors.append(f'frame ausente/vazio: {q}')
-                  continue
+              if not q.is_file() or q.stat().st_size==0: errors.append(f'frame ausente/vazio: {q}'); continue
               try:
                   with gzip.open(q,'rt',encoding='utf-8') as fh: frame=json.load(fh)
-                  if int(frame.get('gridX',0))!=nx or int(frame.get('gridY',0))!=ny:
-                      errors.append(f'grade inconsistente em {q}')
-              except Exception as exc:
-                  errors.append(f'frame inválido {q}: {exc}')
-          if errors:
-              raise RuntimeError('Validação METBR falhou: '+'; '.join(errors))
-          print('Produto METBR validado:',d.get('runDate'),d.get('runCycle'),len(frames),'frames',f'grade={nx}x{ny}')
+                  if int(frame.get('gridX',0))!=nx or int(frame.get('gridY',0))!=ny: errors.append(f'grade inconsistente em {q}')
+              except Exception as exc: errors.append(f'frame inválido {q}: {exc}')
+          if errors: raise RuntimeError('Validação METBR falhou: '+'; '.join(errors))
+          print('Produto METBR validado:',d.get('runDate'),d.get('runCycle'),len(frames),f'grade={nx}x{ny}')
           PY
 
       - name: Publicar sempre a rodada METBR mais recente
@@ -193,18 +201,16 @@ jobs:
           git clone --depth 1 --branch "$TARGET_BRANCH" "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" published-metbr
           find published-metbr -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a metbr_publish/. published-metbr/
+          test -s published-metbr/metbr_wrf_4km.json
           cd published-metbr
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add --all
-          if git diff --cached --quiet; then
-            echo 'A rodada mais recente já possui os mesmos arquivos; publicação sem alterações.'
-            exit 0
-          fi
-          git commit -m "METBR Maestro: rodada mais recente $(jq -r '.runDate + " " + .runCycle' metadata.json)"
+          if git diff --cached --quiet; then echo 'A rodada mais recente já possui os mesmos arquivos; publicação sem alterações.'; exit 0; fi
+          git commit -m "METBR Maestro: publicar rodada mais recente com JSON WRF 4KM"
           git push origin HEAD:"$TARGET_BRANCH"
 
       - name: Registrar status
         if: always()
         run: |
-          jq -r '"METBR Maestro: \(.runDate // "indisponível") \(.runCycle // "") | frames=\(.frameCount // 0) | vars=\((.availableVariables // [])|length)"' metbr_publish/metadata.json 2>/dev/null || true
+          jq -r '"METBR Maestro: \(.runDate // "indisponível") \(.runCycle // "") | frames=\(.frameCount // 0)"' metbr_publish/metadata.json 2>/dev/null || true
