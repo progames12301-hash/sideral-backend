@@ -203,3 +203,208 @@ jobs:
       - name: Run F045-F048
         env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
         run: bash wrf/run_metbr_checkpoint_segment.sh 45 48 15 0
+
+
+  publish_json:
+    name: METBR — gerar e publicar JSON automaticamente
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    needs: seg15
+    permissions:
+      contents: write
+    concurrency:
+      group: metbr-maestro-publication
+      cancel-in-progress: false
+    steps:
+      - name: Checkout dos extratores
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2'
+
+      - name: Baixar WRFOUT da própria rodada
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="metbr-wrf-4km-checkpoint-${GITHUB_RUN_ID}"
+          rm -rf metbr_raw
+          mkdir -p metbr_raw
+          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}"             --pattern 'wrfout_d01_*'             --dir metbr_raw             --clobber
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}"             --pattern 'metbr-latest-complete.txt'             --dir metbr_raw             --clobber
+          COUNT="$(find metbr_raw -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)"
+          echo "WRFOUT METBR para JSON: ${COUNT}"
+          test "${COUNT}" -ge 3
+          grep -q '^status=complete' metbr_raw/metbr-latest-complete.txt
+
+      - name: Extrair METBR
+        run: |
+          set -euo pipefail
+          RUN_DATE="$(sed -n 's/^run_date=//p' metbr_raw/metbr-latest-complete.txt)"
+          RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_raw/metbr-latest-complete.txt)"
+          test -n "${RUN_DATE}"
+          test -n "${RUN_CYCLE}"
+          rm -rf metbr_publish
+          python wrf/extract_metbr_4km.py             --run-dir metbr_raw             --output-dir metbr_publish             --run-date "${RUN_DATE}"             --run-cycle "${RUN_CYCLE}"
+          test -s metbr_publish/metadata.json
+          test -d metbr_publish/icon
+
+      - name: Montar JSON completo para o Sideral
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip
+          import json
+          from pathlib import Path
+
+          root = Path("metbr_publish")
+          meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
+          grid = meta.get("grid") or {}
+          nx = int(grid.get("nx") or 0)
+          ny = int(grid.get("ny") or 0)
+          expected = nx * ny
+          frames = []
+          skipped = []
+
+          def flatten(values):
+              out = []
+              stack = [values]
+              while stack:
+                  value = stack.pop()
+                  if isinstance(value, list):
+                      stack.extend(reversed(value))
+                  else:
+                      out.append(value)
+              return out
+
+          def usable_dbz(values):
+              if not isinstance(values, list):
+                  return None
+              flat = flatten(values)
+              if len(flat) != expected:
+                  return None
+              clean = []
+              valid = 0
+              for value in flat:
+                  try:
+                      number = float(value)
+                  except (TypeError, ValueError):
+                      number = float("nan")
+                  if number == -9999 or not (number == number):
+                      clean.append(-9999.0)
+                  else:
+                      clean.append(number)
+                      valid += 1
+              # Um frame sem nenhum pixel dBZ físico não entra no JSON exibido.
+              if valid == 0:
+                  return None
+              return clean
+
+          for meta_frame in meta.get("frames") or []:
+              rel = meta_frame.get("file")
+              if not rel:
+                  continue
+              src = root / rel
+              if not src.is_file():
+                  raise SystemExit(f"Frame ausente: {src}")
+              with gzip.open(src, "rt", encoding="utf-8") as fh:
+                  data = json.load(fh)
+
+              values = data.get("reflectivityDbz")
+              if not isinstance(values, list):
+                  values = (data.get("fields") or {}).get("reflectivity")
+              dbz = usable_dbz(values)
+
+              if dbz is None:
+                  # F000 pode permanecer no arquivo bruto, mas não será
+                  # inserido na sequência de frames exibidos pelo HTML.
+                  skipped.append(rel)
+                  continue
+
+              frames.append({
+                  "file": rel,
+                  "index": len(frames),
+                  "forecastHour": meta_frame.get("forecastHour"),
+                  "validTime": meta_frame.get("validTime")
+                      or meta_frame.get("time")
+                      or data.get("validTime"),
+                  "gridX": nx,
+                  "gridY": ny,
+                  "reflectivityDbz": dbz
+              })
+
+          if len(frames) < 3:
+              raise SystemExit(f"Poucos frames METBR com dBZ: {len(frames)}")
+
+          payload = {
+              "schemaVersion": "1.1",
+              "model": "METBR WRF 4 km",
+              "modelKey": "metbr_wrf",
+              "resolutionKm": 4,
+              "grid": {"nx": nx, "ny": ny},
+              "runDate": meta.get("runDate"),
+              "runCycle": meta.get("runCycle"),
+              "initTime": meta.get("initTime"),
+              "reflectivitySource": meta.get("reflectivitySource", "REFL_10CM"),
+              "nativeGrid": True,
+              "frameCount": len(frames),
+              "temporalResolutionMinutes": 60,
+              "frames": frames
+          }
+
+          out = root / "metbr_wrf_4km.json"
+          out.write_text(
+              json.dumps(payload, separators=(",", ":"), ensure_ascii=False, allow_nan=False),
+              encoding="utf-8"
+          )
+
+          size_mb = out.stat().st_size / (1024 * 1024)
+          print(f"METBR JSON: {len(frames)} frames válidos; {size_mb:.2f} MiB")
+          print(f"Frames ignorados por ausência de dBZ: {len(skipped)}")
+          if out.stat().st_size >= 100_000_000:
+              raise SystemExit(f"METBR JSON excede 100 MB: {size_mb:.2f} MiB")
+          PY
+
+      - name: Publicar JSON na branch metbr-json-data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf metbr_public
+          git clone --depth 1 --branch metbr-json-data             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"             metbr_public
+
+          # O Maestro/WRF2 usa a mesma branch. Preservar severe impede
+          # que a publicação do JSON apague os diagnósticos.
+          if [[ -d metbr_public/severe ]]; then
+            cp -a metbr_public/severe /tmp/metbr-severe-preserve
+          else
+            rm -rf /tmp/metbr-severe-preserve
+          fi
+
+          find metbr_public -mindepth 1 -maxdepth 1 ! -name .git ! -name severe -exec rm -rf {} +
+          cp -a metbr_publish/metbr_wrf_4km.json metbr_public/metbr_wrf_4km.json
+          cp -a metbr_publish/metadata.json metbr_public/metadata.json
+          cp -a metbr_publish/variables.json metbr_public/variables.json
+
+          if [[ -d /tmp/metbr-severe-preserve ]]; then
+            cp -a /tmp/metbr-severe-preserve metbr_public/severe
+          fi
+
+          cd metbr_public
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m "METBR WRF 4 km: gerar JSON automaticamente" || true
+          git push origin HEAD:metbr-json-data
