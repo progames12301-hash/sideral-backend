@@ -50,7 +50,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Selecionar execução METBR correta
+      - name: Selecionar a rodada METBR mais recente
         id: discover
         shell: bash
         env:
@@ -62,7 +62,6 @@ jobs:
           python - <<'PY'
           import json, os, subprocess, re
           from pathlib import Path
-          from datetime import datetime, timezone, timedelta
 
           repo=os.environ['GITHUB_REPOSITORY']
           event=os.environ['GITHUB_EVENT_NAME']
@@ -83,22 +82,19 @@ jobs:
               return (int(date),int(cycle),date,cycle)
 
           candidates=[]
-          # O gatilho workflow_run deve ser usado quando a execução que acabou de
-          # terminar possui um release completo. Caso contrário, procuramos entre
-          # os releases recentes e escolhemos pela data/ciclo da rodada, não pela
-          # data do commit ou pelo updatedAt do workflow.
           if event == 'workflow_run':
               ev=json.load(open(event_path)); wr=ev['workflow_run']
               if wr.get('conclusion') == 'success':
                   candidates.append((int(wr['id']), f"metbr-wrf-4km-checkpoint-{wr['id']}"))
 
-          raw=run(['gh','release','list','--repo',repo,'--limit','30','--json','tagName,createdAt'])
+          raw=run(['gh','release','list','--repo',repo,'--limit','50','--json','tagName,createdAt'])
           for r in json.loads(raw):
               tag=r.get('tagName','')
               if re.fullmatch(r'metbr-wrf-4km-checkpoint-\d+',tag):
                   rid=int(tag.rsplit('-',1)[1])
                   item=(rid,tag)
-                  if item not in candidates: candidates.append(item)
+                  if item not in candidates:
+                      candidates.append(item)
 
           best=None
           for rid,tag in candidates:
@@ -107,20 +103,23 @@ jobs:
               try:
                   subprocess.run(['gh','release','download',tag,'--repo',repo,'--pattern','metbr-latest-complete.txt','--dir',str(dest),'--clobber'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                   p=dest/'metbr-latest-complete.txt'
-                  if not p.is_file(): continue
+                  if not p.is_file():
+                      continue
                   parsed=parse_complete(p)
-                  if parsed is None: continue
+                  if parsed is None:
+                      continue
                   date,cycle,ds,cs=parsed
                   candidate=(date,cycle,rid,tag)
-                  if best is None or candidate[:3] > best[:3]: best=candidate
+                  if best is None or candidate[:3] > best[:3]:
+                      best=candidate
               except Exception:
                   continue
 
           if best is None:
-              raise SystemExit('Nenhuma rodada METBR completa encontrada nos releases recentes')
+              raise SystemExit('Nenhuma rodada METBR completa encontrada nos releases')
 
           date,cycle,run_id,tag=best
-          print(f'rodada selecionada: {date:08d} {cycle:02d}Z | run_id={run_id} | tag={tag}')
+          print(f'RODADA MAIS RECENTE: {date:08d} {cycle:02d}Z | run_id={run_id} | tag={tag}')
           with open(os.environ['GITHUB_OUTPUT'],'a') as f:
               f.write(f'run_id={run_id}\n')
               f.write(f'run_date={date:08d}\n')
@@ -153,7 +152,7 @@ jobs:
           test -n "$RUN_DATE"; test -n "$RUN_CYCLE"
           python wrf/extract_metbr_4km.py --run-dir metbr_raw --output-dir metbr_publish --run-date "$RUN_DATE" --run-cycle "$RUN_CYCLE"
 
-      - name: Validar produto antes de trocar a publicação
+      - name: Validar produto antes de publicar
         shell: bash
         run: |
           set -euo pipefail
@@ -170,41 +169,21 @@ jobs:
           if nx<=0 or ny<=0: errors.append(f'grid inválida={grid!r}')
           for f in frames:
               q=Path('metbr_publish')/f['file']
-              if not q.is_file() or q.stat().st_size==0: errors.append(f'frame ausente/vazio: {q}'); continue
+              if not q.is_file() or q.stat().st_size==0:
+                  errors.append(f'frame ausente/vazio: {q}')
+                  continue
               try:
                   with gzip.open(q,'rt',encoding='utf-8') as fh: frame=json.load(fh)
-                  if int(frame.get('gridX',0))!=nx or int(frame.get('gridY',0))!=ny: errors.append(f'grade inconsistente em {q}')
-              except Exception as exc: errors.append(f'frame inválido {q}: {exc}')
-          if errors: raise RuntimeError('Validação METBR falhou: '+'; '.join(errors))
+                  if int(frame.get('gridX',0))!=nx or int(frame.get('gridY',0))!=ny:
+                      errors.append(f'grade inconsistente em {q}')
+              except Exception as exc:
+                  errors.append(f'frame inválido {q}: {exc}')
+          if errors:
+              raise RuntimeError('Validação METBR falhou: '+'; '.join(errors))
           print('Produto METBR validado:',d.get('runDate'),d.get('runCycle'),len(frames),'frames',f'grade={nx}x{ny}')
           PY
 
-      - name: Comparar rodada nova com publicação atual
-        id: compare
-        shell: bash
-        run: |
-          set -euo pipefail
-          OLD=/tmp/old-metadata.json
-          curl -fsSL --connect-timeout 15 --max-time 30 "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${TARGET_BRANCH}/metadata.json?maestro=${GITHUB_RUN_ID}" -o "$OLD" || echo '{}' > "$OLD"
-          python - <<'PY'
-          import json,os
-          from pathlib import Path
-          def key(d):
-              date=str(d.get('runDate','')); cycle=str(d.get('runCycle','00Z')).replace('Z','')
-              try: return (int(date),int(cycle))
-              except: return (0,0)
-          old=json.loads(Path('/tmp/old-metadata.json').read_text()); new=json.loads(Path('metbr_publish/metadata.json').read_text())
-          ok=key(new)>key(old)
-          print('old='+str(key(old))); print('new='+str(key(new))); print('publish='+str(ok).lower())
-          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
-              f.write(f"publish={'true' if ok else 'false'}\n")
-              f.write(f"old_date={key(old)[0]}\n")
-              f.write(f"new_date={key(new)[0]}\n")
-          if not ok: print('Rodada nova não encontrada; publicação atual preservada.')
-          PY
-
-      - name: Publicar atomicamente na branch METBR
-        if: steps.compare.outputs.publish == 'true'
+      - name: Publicar sempre a rodada METBR mais recente
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -218,8 +197,11 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add --all
-          if git diff --cached --quiet; then echo 'Nenhuma alteração para publicar.'; exit 0; fi
-          git commit -m "METBR Maestro: nova rodada $(jq -r '.runDate + " " + .runCycle' metadata.json)"
+          if git diff --cached --quiet; then
+            echo 'A rodada mais recente já possui os mesmos arquivos; publicação sem alterações.'
+            exit 0
+          fi
+          git commit -m "METBR Maestro: rodada mais recente $(jq -r '.runDate + " " + .runCycle' metadata.json)"
           git push origin HEAD:"$TARGET_BRANCH"
 
       - name: Registrar status
