@@ -52,7 +52,12 @@ class Handler(legacy.Handler):
         return super().do_GET()
 
     def _redemet_radar(self, query):
-        key = str(getattr(legacy, 'REDEMET_API_KEY', '') or os.environ.get('REDEMET_API_KEY', '')).strip()
+        # A chave pode ter sido atualizada no Render depois do import de server_legacy.
+        # Leia o ambiente a cada requisição para não depender do valor capturado no startup.
+        key = str(
+            os.environ.get('REDEMET_API_KEY', '')
+            or getattr(legacy, 'REDEMET_API_KEY', '')
+        ).strip()
         if not key:
             return send_json(self, 503, {
                 'status': False,
@@ -65,6 +70,7 @@ class Handler(legacy.Handler):
         if product not in allowed:
             return send_json(self, 400, {
                 'status': False,
+                'provider': 'REDEMET / DECEA',
                 'error': 'Produto REDEMET inválido.'
             })
 
@@ -73,6 +79,7 @@ class Handler(legacy.Handler):
         except (TypeError, ValueError):
             return send_json(self, 400, {
                 'status': False,
+                'provider': 'REDEMET / DECEA',
                 'error': 'Quantidade de quadros inválida.'
             })
 
@@ -82,67 +89,81 @@ class Handler(legacy.Handler):
             if value:
                 params[name] = value
 
-        try:
-            response = legacy.requests.get(
-                f"{legacy.REDEMET_API_URL.rstrip('/')}/produtos/radar/{product}",
-                params=params,
-                headers={
-                    'X-Api-Key': key,
-                    'User-Agent': 'SideralMeteorologia/1.0 (Render radar proxy)',
-                    'Accept': 'application/json',
-                },
-                timeout=35,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            if not isinstance(payload, dict) or payload.get('status') is not True:
-                message = payload.get('message') if isinstance(payload, dict) else 'Resposta inválida da REDEMET'
-                raise RuntimeError(str(message))
+        upstream = f"{legacy.REDEMET_API_URL.rstrip('/')}/produtos/radar/{product}"
+        last_error = None
 
-            data = payload.get('data')
-            if isinstance(data, dict):
-                radar = data.get('radar')
-                if radar is None:
-                    radar = data.get('data') if isinstance(data.get('data'), list) else []
-                normalized = dict(data)
-                normalized['radar'] = radar if isinstance(radar, list) else []
-            elif isinstance(data, list):
-                normalized = {'radar': data}
-            else:
-                normalized = {'radar': []}
+        # A documentação oficial usa api_key na query string. Fazemos essa forma
+        # primeiro e tentamos também X-Api-Key para compatibilidade com gateways.
+        for headers in (
+            {
+                'User-Agent': 'SideralMeteorologia/1.0',
+                'Accept': 'application/json',
+            },
+            {
+                'X-Api-Key': key,
+                'User-Agent': 'SideralMeteorologia/1.0',
+                'Accept': 'application/json',
+            },
+        ):
+            try:
+                response = legacy.requests.get(
+                    upstream,
+                    params=params,
+                    headers=headers,
+                    timeout=35,
+                )
+                response.raise_for_status()
+                payload = response.json()
 
-            frames = normalized.get('radar') or []
-            if not isinstance(frames, list) or not frames:
-                cached = legacy.redemet_cached_radar_payload(product)
-                if cached:
-                    return send_json(self, 200, cached)
-                return send_json(self, 502, {
-                    'status': False,
+                if not isinstance(payload, dict):
+                    raise RuntimeError('A REDEMET retornou JSON inválido.')
+
+                # Não exigir formato rígido demais: a API oficial documenta data.radar,
+                # mas instalações/versões podem variar sem alterar os registros.
+                status_value = payload.get('status')
+                if status_value not in (True, 1, 'true', '1'):
+                    message = payload.get('message') or payload.get('error') or 'Resposta sem status=True'
+                    raise RuntimeError(str(message))
+
+                data = payload.get('data')
+                if isinstance(data, dict):
+                    radar = data.get('radar')
+                    if radar is None and isinstance(data.get('data'), list):
+                        radar = data.get('data')
+                    normalized = dict(data)
+                    normalized['radar'] = radar if isinstance(radar, list) else []
+                elif isinstance(data, list):
+                    normalized = {'radar': data}
+                else:
+                    normalized = {'radar': []}
+
+                frames = normalized.get('radar') or []
+                if not isinstance(frames, list) or not frames:
+                    raise RuntimeError('A REDEMET respondeu sem quadros de radar.')
+
+                normalized['product'] = product
+                normalized['provider'] = 'REDEMET / DECEA'
+                normalized['source'] = upstream
+                return send_json(self, 200, {
+                    'status': True,
+                    'message': payload.get('message', 200),
                     'provider': 'REDEMET / DECEA',
-                    'error': 'A REDEMET respondeu sem quadros de radar.',
                     'data': normalized,
                 })
+            except Exception as exc:
+                last_error = exc
 
-            normalized['product'] = product
-            normalized['provider'] = 'REDEMET / DECEA'
-            normalized['source'] = f"{legacy.REDEMET_API_URL.rstrip('/')}/produtos/radar/{product}"
-            return send_json(self, 200, {
-                'status': True,
-                'message': payload.get('message', 200),
-                'provider': 'REDEMET / DECEA',
-                'data': normalized,
-            })
-        except Exception as exc:
-            cached = legacy.redemet_cached_radar_payload(product)
-            if cached:
-                return send_json(self, 200, cached)
-            safe = str(exc).replace(key, '[REDACTED]')
-            return send_json(self, 502, {
-                'status': False,
-                'provider': 'REDEMET / DECEA',
-                'error': 'Falha ao consultar a API oficial da REDEMET.',
-                'details': safe[:500],
-            })
+        cached = legacy.redemet_cached_radar_payload(product)
+        if cached:
+            return send_json(self, 200, cached)
+
+        safe = str(last_error or 'erro desconhecido').replace(key, '[REDACTED]')
+        return send_json(self, 502, {
+            'status': False,
+            'provider': 'REDEMET / DECEA',
+            'error': 'Falha ao consultar a API oficial da REDEMET.',
+            'details': safe[:500],
+        })
 
     def do_POST(self):
         return super().do_POST()
