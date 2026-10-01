@@ -21,7 +21,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F000-F003
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 0 3 0 1
 
   seg01:
@@ -33,7 +37,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F003-F006
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 3 6 1 0
 
   seg02:
@@ -45,7 +53,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F006-F009
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 6 9 2 0
 
   seg03:
@@ -57,7 +69,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F009-F012
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 9 12 3 0
 
   seg04:
@@ -69,7 +85,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F012-F015
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 12 15 4 0
 
   seg05:
@@ -81,7 +101,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F015-F018
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 15 18 5 0
 
   seg06:
@@ -93,7 +117,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F018-F021
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 18 21 6 0
 
   seg07:
@@ -105,7 +133,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F021-F024
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 21 24 7 0
 
   seg08:
@@ -117,7 +149,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F024-F027
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 24 27 8 0
 
   seg09:
@@ -129,7 +165,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F027-F030
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 27 30 9 0
 
   seg10:
@@ -141,7 +181,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F030-F033
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 30 33 10 0
 
   seg11:
@@ -153,7 +197,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F033-F036
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 33 36 11 0
 
   seg12:
@@ -165,7 +213,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F036-F039
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 36 39 12 0
 
   seg13:
@@ -177,7 +229,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F039-F042
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 39 42 13 0
 
   seg14:
@@ -189,7 +245,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F042-F045
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 42 45 14 0
 
   seg15:
@@ -201,7 +261,11 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: wrf-runner, fetch-depth: 1}
       - name: Run F045-F048
-        env: {GH_TOKEN: ${{ github.token }}, CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}}
+        env:
+
+          GH_TOKEN: ${{ github.token }}
+
+          CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 45 48 15 0
 
 
