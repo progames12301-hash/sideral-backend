@@ -40,15 +40,19 @@ jobs:
           python -m pip install numpy pillow requests
 
       - name: Validar credencial REDEMET
+        id: check-api-key
         run: |
           set -euo pipefail
           if [ -z "${REDEMET_API_KEY:-}" ]; then
             echo "REDEMET_API_KEY não configurada nos Secrets do GitHub." >&2
             echo "A API oficial de radar da REDEMET exige autenticação." >&2
-            exit 20
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "available=true" >> "$GITHUB_OUTPUT"
 
       - name: Gerar PNGs polares oficiais
+        if: ${{ steps.check-api-key.outputs.available == 'true' }}
         run: |
           set -euxo pipefail
           rm -rf radar-cache
@@ -67,6 +71,7 @@ jobs:
           PY
 
       - name: Publicar no ramo radar-pixels
+        if: ${{ steps.check-api-key.outputs.available == 'true' }}
         run: |
           set -euxo pipefail
           git config user.name "sideral-radar-bot"
@@ -89,6 +94,7 @@ jobs:
           git push --force origin HEAD:radar-pixels
 
       - name: Conferir manifesto público
+        if: ${{ steps.check-api-key.outputs.available == 'true' }}
         run: |
           set -euxo pipefail
           URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/radar-pixels/manifest.json?run=${GITHUB_RUN_ID}"
@@ -109,3 +115,10 @@ jobs:
             sleep 5
           done
           exit 41
+
+      - name: Aviso de credencial ausente
+        if: ${{ steps.check-api-key.outputs.available == 'false' }}
+        run: |
+          echo "⚠️  REDEMET_API_KEY não está configurada nos Secrets do repositório."
+          echo "Para ativar o cache de pixels do radar, configure o secret REDEMET_API_KEY."
+          echo "Documentação: https://github.com/progames12301-hash/sideral-backend/wiki"
