@@ -2,6 +2,9 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('MPLBACKEND', 'Agg')
 
+import sitecustomize
+sitecustomize.enable_qt_compat()
+
 from datetime import timedelta
 from pathlib import Path
 from numbers import Real
