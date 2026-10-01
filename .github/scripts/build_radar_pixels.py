@@ -159,16 +159,46 @@ def main() -> int:
     session = requests.Session()
     session.headers.update({"User-Agent": "Sideral-radar-cache/1.0"})
     endpoint = args.api.rstrip("/") + "/api/redemet/radar"
-    try:
-        response = session.get(endpoint, params={"product": PRODUCT, "anima": MAX_FRAMES}, timeout=35)
+
+    def fetch_payload():
+        response = session.get(
+            endpoint,
+            params={"product": PRODUCT, "anima": MAX_FRAMES},
+            timeout=35,
+        )
         response.raise_for_status()
         payload = response.json()
-        raw_frames = payload.get("data", {}).get("radar", [])
-        if not isinstance(raw_frames, list):
-            raise RuntimeError("API returned no radar frames")
-    except Exception as error:
-        print(f"Radar API unavailable: {error}")
-        return 2
+        frames = payload.get("data", {}).get("radar", [])
+        if not isinstance(frames, list) or not frames:
+            raise RuntimeError("Render API returned no radar frames")
+        return payload
+
+    try:
+        payload = fetch_payload()
+        raw_frames = payload["data"]["radar"]
+        print("REDEMET: usando proxy Render")
+    except Exception as render_error:
+        key = os.getenv("REDEMET_API_KEY", "").strip()
+        if not key:
+            print(f"Radar API unavailable and REDEMET_API_KEY is not configured: {render_error}")
+            return 2
+        try:
+            official = "https://api-redemet.decea.mil.br/produtos/radar/" + PRODUCT
+            response = session.get(
+                official,
+                params={"api_key": key, "anima": MAX_FRAMES},
+                headers={"X-Api-Key": key, "Accept": "application/json"},
+                timeout=35,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw_frames = payload.get("data", {}).get("radar", [])
+            if not isinstance(raw_frames, list) or not raw_frames:
+                raise RuntimeError("REDEMET oficial retornou zero quadros")
+            print(f"REDEMET: proxy Render falhou; usando API oficial diretamente ({type(render_error).__name__})")
+        except Exception as official_error:
+            print(f"Radar API unavailable: Render={render_error}; official={official_error}")
+            return 2
 
     generated = dt.datetime.now(dt.timezone.utc)
     manifest_frames: list[dict[str, Any]] = []
