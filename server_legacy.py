@@ -2405,7 +2405,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         def sc_catalog(radar_id: str, config: dict[str, Any]) -> dict[str, Any] | None:
             product_code = config.get("velocityProduct") if is_velocity else config.get("reflectivityProduct", config.get("product", "0"))
-            response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getUltimasImagens", params={"prod": product_code, "radar": config["code"], "data": ""}, headers=INMET_HEADERS, timeout=18, verify=False)
+            response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getUltimasImagens", params={"prod": product_code, "radar": config["code"], "data": ""}, headers=INMET_HEADERS, timeout=18)
             response.raise_for_status(); names = response.json()
             safe = [str(name) for name in names if re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", str(name))]
             if not safe: return None
@@ -2462,7 +2462,7 @@ class Handler(SimpleHTTPRequestHandler):
                 radar_id = query.get("radar", [""])[0]; filename = query.get("file", [""])[0]; requested = str(query.get("product", ["reflectivity"])[0]).strip().lower(); is_velocity = requested in {"ppi_v", "ppi-v", "velocity", "doppler", "velocidade"}; config = REGIONAL_SC_RADARS.get(radar_id)
                 if not config or not re.fullmatch(r"\d{14,16}[A-Za-z0-9_.-]+\.png", filename): raise ValueError("Imagem SC inválida")
                 product_code = config.get("velocityProduct") if is_velocity else config.get("reflectivityProduct", config.get("product", "0"))
-                response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getImagem", params={"prod": product_code, "radar": config["code"], "file": filename}, headers=INMET_HEADERS, timeout=25, verify=False)
+                response = requests.get(f"{REGIONAL_SC_RADAR_URL}/getImagem", params={"prod": product_code, "radar": config["code"], "file": filename}, headers=INMET_HEADERS, timeout=25)
             elif provider == "rs":
                 frame = int(query.get("frame", ["0"])[0])
                 if frame not in range(1, 25): raise ValueError("Quadro RS inválido")
