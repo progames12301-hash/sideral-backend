@@ -1946,6 +1946,66 @@ def _wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour:
 
 
 
+REDEMET_RADAR_CACHE_MANIFEST = "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/radar-pixels/manifest.json"
+REDEMET_RADAR_CACHE_MAX_AGE = 15 * 60
+
+def redemet_cached_radar_payload(product: str) -> dict[str, Any] | None:
+    """Return the fresh GitHub cache when the live REDEMET API is unavailable."""
+    if str(product).lower().strip() != "03km":
+        return None
+    try:
+        response = requests.get(
+            REDEMET_RADAR_CACHE_MANIFEST,
+            headers={"User-Agent": "SideralMeteorologia/1.0 (radar-cache)"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        manifest = response.json()
+        generated = manifest.get("generated_at")
+        if not generated:
+            return None
+        stamp = dt.datetime.fromisoformat(str(generated).replace("Z", "+00:00"))
+        age = (dt.datetime.now(dt.timezone.utc) - stamp.astimezone(dt.timezone.utc)).total_seconds()
+        ttl = max(
+            60,
+            min(
+                REDEMET_RADAR_CACHE_MAX_AGE,
+                int(manifest.get("ttl_seconds", REDEMET_RADAR_CACHE_MAX_AGE)),
+            ),
+        )
+        if age < 0 or age > ttl:
+            return None
+        radar = []
+        for frame in manifest.get("frames") or []:
+            items = []
+            for item in frame.get("items") or []:
+                bounds = item.get("bounds") or []
+                center = item.get("radar") or {}
+                if len(bounds) != 4 or "longitude" not in center or "latitude" not in center:
+                    continue
+                rows = dict(item)
+                rows["path"] = item.get("sourcePath") or item.get("url")
+                rows["data"] = item.get("date")
+                rows["lon_min"], rows["lat_min"], rows["lon_max"], rows["lat_max"] = bounds
+                rows["lon_center"] = center["longitude"]
+                rows["lat_center"] = center["latitude"]
+                items.append(rows)
+            if items:
+                radar.append(items)
+        if not radar:
+            return None
+        return {
+            "status": True,
+            "message": "GitHub radar cache",
+            "data": {"radar": radar},
+            "provider": "REDEMET / DECEA",
+            "cache": True,
+            "cacheGeneratedAt": generated,
+            "ageSeconds": int(age),
+        }
+    except (requests.RequestException, ValueError, TypeError, KeyError):
+        return None
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(BASE_DIR), **kwargs)
@@ -3349,6 +3409,12 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(payload, dict) or payload.get("status") is not True: raise ValueError("Resposta REDEMET invalida.")
             self.send_json(200, payload)
         except (requests.RequestException, ValueError, json.JSONDecodeError):
+            if path.startswith("/produtos/radar/"):
+                product = path.rsplit("/", 1)[-1]
+                cached = redemet_cached_radar_payload(product)
+                if cached:
+                    self.send_json(200, cached)
+                    return
             self.send_json(502, {"error": f"Falha ao consultar {provider}."})
 
     def fetch_redemet_json(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
