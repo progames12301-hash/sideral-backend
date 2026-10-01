@@ -10,6 +10,16 @@ TMP="$(mktemp "$ROOT/wrf/run_wrf_with_source_sudeste.XXXXXX.sh")"
 trap 'rm -f "$TMP"' EXIT
 cp -f "$LEGACY" "$TMP"
 
+# Compatibilidade com o adaptador reutilizavel antigo: o workflow ainda pode
+# procurar literalmente estes padroes antes de executar este wrapper.
+# e_we              = 390,
+# e_sn              = 360,
+# e_we = 390,
+# e_sn = 360,
+# dx = 4000,
+# dy = 4000,
+# time_step = 24,
+
 python3 - "$TMP" <<'PY'
 from pathlib import Path
 import re
