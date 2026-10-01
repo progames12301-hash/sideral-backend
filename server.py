@@ -13,6 +13,15 @@ def cors(h):
     h.send_header('Access-Control-Allow-Headers', 'Content-Type, Accept, Range, Origin')
     h.send_header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type')
 
+def send_binary(h, status, payload, content_type='application/octet-stream'):
+    h.send_response(status)
+    h.send_header('Content-Type', content_type)
+    cors(h)
+    h.send_header('Cache-Control', 'public, max-age=60')
+    h.send_header('Content-Length', str(len(payload)))
+    h.end_headers()
+    h.wfile.write(payload)
+
 def send_json(h, status, payload):
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     h.send_response(status)
@@ -44,12 +53,45 @@ class Handler(legacy.Handler):
         # Do not expose the REDEMET credential to the browser.
         if p.path == '/api/redemet/radar':
             return self._redemet_radar(parse_qs(p.query))
+        if p.path == '/api/redemet/image':
+            return self._redemet_image(parse_qs(p.query))
         if p.path in {'/api/estacoes/sideral', '/api/stations/sideral'}:
             try:
                 return stations_sideral.handle(self)
             except Exception as e:
                 return send_json(self, 502, {'status': False, 'error': str(e)[:500]})
         return super().do_GET()
+
+    def _redemet_image(self, query):
+        raw_url = str(query.get('url', [''])[0]).strip()
+        parsed = urlparse(raw_url)
+        if parsed.scheme != 'https' or parsed.hostname != 'estatico-redemet.decea.mil.br' or not parsed.path.startswith('/radar/'):
+            return send_json(self, 400, {
+                'status': False,
+                'provider': 'REDEMET / DECEA',
+                'error': 'URL de imagem REDEMET inválida.'
+            })
+        try:
+            response = legacy.requests.get(
+                raw_url,
+                headers={
+                    'User-Agent': 'SideralMeteorologia/1.0 (REDEMET image proxy)',
+                    'Accept': 'image/png,image/jpeg,*/*',
+                },
+                timeout=35,
+            )
+            response.raise_for_status()
+            content_type = response.headers.get('Content-Type', 'image/png').split(';', 1)[0].strip().lower()
+            if content_type not in ('image/png', 'image/jpeg', 'image/webp'):
+                content_type = 'image/png'
+            return send_binary(self, 200, response.content, content_type)
+        except Exception as exc:
+            return send_json(self, 502, {
+                'status': False,
+                'provider': 'REDEMET / DECEA',
+                'error': 'Não foi possível obter a imagem oficial da REDEMET.',
+                'details': str(exc)[:500],
+            })
 
     def _redemet_radar(self, query):
         # A chave pode ter sido atualizada no Render depois do import de server_legacy.
