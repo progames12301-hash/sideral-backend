@@ -1,10 +1,8 @@
-"""Opt-in runtime compatibility for Qt/PyQt used by SHARPpy.
+"""Optional Qt/PyQt compatibility for SHARPpy.
 
-Do not import PyQt5 during normal Python startup. Render's HTTP service and
-most repository scripts do not need Qt, while Qt is a native stack that should
-only be loaded by the Skew-T rendering jobs that explicitly opt in.
+PyQt5 is a native stack and must not be imported during normal Python startup.
+Call enable_qt_compat() explicitly from the SHARPpy rendering process.
 """
-import os
 from numbers import Real
 
 
@@ -14,9 +12,12 @@ def _qt_int(value):
     return value
 
 
-if str(os.environ.get("SIDERAL_QT_COMPAT", "")).strip().lower() in {"1", "true", "yes", "on"}:
+def enable_qt_compat():
     try:
         from PyQt5 import QtCore
+
+        if getattr(QtCore, "_SIDERAL_COMPAT_ENABLED", False):
+            return
 
         _QRect = QtCore.QRect
         _QSize = QtCore.QSize
@@ -34,6 +35,13 @@ if str(os.environ.get("SIDERAL_QT_COMPAT", "")).strip().lower() in {"1", "true",
         QtCore.QRect = _compat_qrect
         QtCore.QSize = _compat_qsize
         QtCore.QPoint = _compat_qpoint
+        QtCore._SIDERAL_COMPAT_ENABLED = True
     except Exception:
-        # Compatibility must never block unrelated Python processes.
+        # Compatibility must never prevent unrelated Python processes.
         pass
+
+
+# Kept for CI jobs that explicitly opt in before importing SHARPpy.
+import os
+if str(os.environ.get("SIDERAL_QT_COMPAT", "")).strip().lower() in {"1", "true", "yes", "on"}:
+    enable_qt_compat()
