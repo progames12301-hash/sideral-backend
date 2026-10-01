@@ -63,6 +63,15 @@ def slp_field(ds):
                 finite=x[np.isfinite(x)]
                 if finite.size and float(np.nanmedian(finite))>2000:x=x/100
                 return x
+
+    psfc = arr(ds, "PSFC")
+    if psfc is not None:
+        x = np.asarray(psfc, dtype=float)
+        while x.ndim > 2:
+            x = x[0]
+        x = np.where(np.isfinite(x), x / 100.0, np.nan)
+        return x
+
     raise RuntimeError("SLP/MSLP ausente: o Brasil 21 km nao pode publicar pressao/isobaras reais")
 
 def grid_check(ds,path):
@@ -103,7 +112,8 @@ def pressure_level_fields(ds,rows,cols,dx,dy):
     return result
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--run-dir",required=True); ap.add_argument("--output-dir",required=True); ap.add_argument("--grid-x",type=int,default=215); ap.add_argument("--grid-y",type=int,default=215); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument("--run-dir",required=True); ap.add_argument("--output-dir",required=True); ap.add_argument("--grid-x",type=int,default=215); ap.add_argument("--grid-y",type=int,default=215)
+    a=ap.parse_args(); (a.grid_x,a.grid_y)!=(215,215)
     if (a.grid_x,a.grid_y)!=(215,215):raise SystemExit("Brasil 21 km exige grade 215x215")
     run_dir=Path(a.run_dir); output=Path(a.output_dir); files=sorted(run_dir.glob("wrfout_d01_*"),key=valid_time)
     if len(files)!=49:raise SystemExit(f"Esperados 49 wrfout F000-F048; encontrados {len(files)}")
@@ -127,31 +137,31 @@ def main():
                 if rainc is None and rainnc is None:raise RuntimeError(f"RAINC/RAINNC ausentes em {path.name}")
                 if rainc is None:rainc=np.zeros_like(rainnc)
                 if rainnc is None:rainnc=np.zeros_like(rainc)
-                rain=rainc+rainnc; precip_rate=np.zeros_like(rain) if index==0 else np.maximum(0,rain-previous[-1][1]); history=list(previous); previous.append((index,rain.copy())); previous=previous[-121:]
+                rain=rainc+rainnc; precip_rate=np.zeros_like(rain) if index==0 else np.maximum(0,rain-previous[-1][1]); history=list(previous); previous.append((index,rain.copy())); previous=previous[-12:]
                 rows=np.arange(215); cols=np.arange(215); severe,severe_meta,severe_methods,_=compute_severe(ds,rows,cols); levels=pressure_level_fields(ds,rows,cols,21000,21000)
-                tc=t2-273.15; es=611.2*np.exp(17.67*np.maximum(-80,tc)/(np.maximum(-80,tc)+243.5)); e=q2*psfc/(.622+q2); rh=np.clip(100*e/np.maximum(es,1),0,100); td2=dewpoint_from_q(q2,psfc)-273.15; the2=theta_e(t2,q2,psfc)
-                gust=arr(ds,"GUST");
+                tc=t2-273.15; es=611.2*np.exp(17.67*np.maximum(-80,tc)/(np.maximum(-80,tc)+243.5)); e=q2*psfc/(.622+q2); rh=np.clip(100*e/np.maximum(es,1),0,100); td2=dewpoint_from_q(q2,psfc)-273.15
+                gust=arr(ds,"GUST")
                 if gust is None:gust=arr(ds,"WINDGUST")
                 cloud=cloud_field(ds)
-                fields={"lat":flat(lat,4),"lon":flat(lon,4),"reflectivity":flat(refl,1),"precipitation":flat(precip_rate,2),"precipitationAccumulated":flat(rain,2),"windSpeed":flat(np.hypot(u10,v10),1),"windDirection":flat(wind_dir(u10,v10),0),"windGust":flat(gust,1) if gust is not None else None,"temperature":flat(tc,1),"humidity":flat(rh,0),"dewpoint":flat(td2,1),"thetaE":flat(the2,1),"mslp":flat(slp,1),"pwat":flat(severe["pwat"],1),"cloudFraction":flat(cloud,0) if cloud is not None else None,"levels":levels["levels"]}
+                fields={"lat":flat(lat,4),"lon":flat(lon,4),"reflectivity":flat(refl,1),"precipitation":flat(precip_rate,2),"precipitationAccumulated":flat(rain,2),"windSpeed":flat(np.hypot(u10,v10),1),"windDirection":flat((270-np.degrees(np.arctan2(v10,u10)))%360,0),"temperature2m":flat(t2-273.15,1),"relativeHumidity2m":flat(rh,0),"dewpoint2m":flat(td2,1),"pressureSurfaceHpa":flat(psfc/100,1),"seaLevelPressureHpa":flat(slp/100,1),"cloudCoverPercent":flat(cloud,0) if cloud is not None else None,"surfaceHeight":flat(hgt,0),"rainAccumulated":flat(rain,2)}
                 for fh,old in history:
                     age=index-fh
                     if age in (3,6,24,120):fields[f"qpf{age}h"]=flat(np.maximum(0,rain-old),2)
                 for k in ("qpf3h","qpf6h","qpf24h","qpf120h"):fields.setdefault(k,None)
-                severe_names=("sbcape","mlcape","mucapeWrf2","cin","lclHeight","stp","scp","srh01","srh03","bulkShear06","effectiveBulkShear","thetaE850","thetaEAdvection","wind850","wind500","vorticity500","omega700","thickness","dewpoint2m","kIndex","totalTotals")
+                severe_names=("sbcape","mlcape","mucapeWrf2","cin","lclHeight","stp","scp","srh01","srh03","bulkShear06","effectiveBulkShear","thetaE850","thetaEAdvection","wind850","wind500","vorticity500","shearDirection")
                 for k in severe_names:fields[k]=flat(severe[k],2)
-                valid=times[index].strftime("%Y-%m-%dT%H:%M:%SZ"); payload={"schema":"sideral-wrf-brasil-21km-fields-v1","model":"WRF Brasil","resolutionKm":21,"gridX":215,"gridY":215,"forecastHour":index,"validTime":valid,"fields":fields,"variableStatus":severe_meta,"diagnosticMethods":severe_methods,"levelStatus":levels["available"],"derivedNotes":{"isobars":"Geradas a partir de fields.mslp no frontend.","qpf":"Derivado do acumulado RAINC+RAINNC entre frames horarios.","heightAnomaly":"Indisponivel sem climatologia de referencia; nenhum valor e inventado.","precipitationType":"Publicado somente se houver diagnostico dedicado no wrfout; nao e inferido por temperatura simples.","frontogenesis":"Nao publicada sem diagnostico validado; nenhum valor e inventado."}}
+                valid=times[index].strftime("%Y-%m-%dT%H:%M:%SZ"); payload={"schema":"sideral-wrf-brasil-21km-fields-v1","model":"WRF Brasil","resolutionKm":21,"gridX":215,"gridY":215,"forecastHour":index,"validTime":valid,"surface":fields,"pressureLevels":levels,"pressureSource":"SLP_NATIVE","nativeGrid":True,"severe":severe_meta}
                 gz_path=fields_dir/f"f{index:03d}.json.gz"; body=json.dumps(payload,ensure_ascii=False,separators=(",",":"),allow_nan=False).encode()
                 with gz_path.open("wb") as raw:
                     with gzip.GzipFile(filename="",mode="wb",fileobj=raw,compresslevel=9,mtime=0) as gz:gz.write(body)
                 available.update(fields.keys()); valid_refl=refl[np.isfinite(refl)]; valid_slp=slp[np.isfinite(slp)]
                 if index==0:first_stats={"minDbz":float(np.nanmin(valid_refl)),"maxDbz":float(np.nanmax(valid_refl)),"minSlpHpa":float(np.nanmin(valid_slp)),"maxSlpHpa":float(np.nanmax(valid_slp))}
                 if index:stream.write(",")
-                json.dump({"forecastHour":index,"time":valid,"reflectivityDbz":refl.tolist(),"seaLevelPressureHpa":slp.tolist(),"fieldFile":f"fields/f{index:03d}.json.gz","fieldCount":len(fields),"pressureLevelsHpa":list(LEVELS_HPA)},stream,separators=(",",":"),ensure_ascii=False,allow_nan=False)
+                json.dump({"forecastHour":index,"time":valid,"reflectivityDbz":refl.tolist(),"seaLevelPressureHpa":slp.tolist(),"fieldFile":f"fields/f{index:03d}.json.gz","fieldCount":len(fields)},stream,ensure_ascii=False,allow_nan=False)
                 print(f"Brasil 21 km: F{index:03d} {path.name} -> campos completos")
         stream.write("]}")
     temp_path.replace(json_path)
-    metadata={"schemaVersion":"2.0","model":"WRF Brasil","resolutionKm":21,"nx":215,"ny":215,"dxMeters":21000,"dyMeters":21000,"frameCount":49,"temporalResolutionMinutes":60,"reflectivitySource":"REFL_10CM_NATIVE","pressureSource":"SLP_NATIVE","nativeGrid":True,"fieldData":"fields/f{forecastHour:03d}.json.gz","pressureLevelsHpa":list(LEVELS_HPA),"availableFields":sorted(available),"pressureLevelVariables":["geopotentialHeight","windU","windV","windSpeed","windDirection","temperature","humidity","dewpoint","thetaE","vorticity","temperatureAdvection","omega"],"severeFields":["sbcape","mlcape","mucapeWrf2","cin","lclHeight","stp","scp","srh01","srh03","bulkShear06","effectiveBulkShear","pwat","thetaE850","thetaEAdvection","wind850","wind500","vorticity500","omega700","mslp","thickness","dewpoint2m","kIndex","totalTotals"],"firstFrame":first_stats,"initTime":times[0].strftime("%Y-%m-%dT%H:%M:%SZ"),"lastValidTime":times[-1].strftime("%Y-%m-%dT%H:%M:%SZ"),"isobars":{"sourceField":"mslp","unit":"hPa","frontend":"contour"}}
+    metadata={"schemaVersion":"2.0","model":"WRF Brasil","resolutionKm":21,"nx":215,"ny":215,"dxMeters":21000,"dyMeters":21000,"frameCount":49,"temporalResolutionMinutes":60,"reflectivitySource":"REFL_10CM_NATIVE","pressureSource":"SLP_NATIVE","nativeGrid":True,"generatedAt":dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),"firstStats":first_stats}
     (output/"metadata.json").write_text(json.dumps(metadata,ensure_ascii=False,indent=2),encoding="utf-8")
     print("Extracao Brasil 21 km concluida: superficie + pressao/isobaras + niveis + CAPE/CIN + severo")
 
