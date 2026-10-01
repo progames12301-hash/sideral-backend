@@ -113,6 +113,9 @@ class Handler(legacy.Handler):
 
             frames = normalized.get('radar') or []
             if not isinstance(frames, list) or not frames:
+                cached = legacy.redemet_cached_radar_payload(product)
+                if cached:
+                    return send_json(self, 200, cached)
                 return send_json(self, 502, {
                     'status': False,
                     'provider': 'REDEMET / DECEA',
