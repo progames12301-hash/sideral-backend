@@ -22,6 +22,7 @@ def _radar_origins():
     return ','.join((
         'https://sideralmeteorologiabrasil.web.app',
         'https://sideral-meteorologia.pages.dev',
+        'https://sideralmeteorologia.progames12301.workers.dev',
     ))
 
 
