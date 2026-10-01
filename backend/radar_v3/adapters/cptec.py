@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import unicodedata
+import logging
 from urllib.parse import urlparse
 import requests
 import numpy as np
@@ -16,6 +17,7 @@ from PIL import Image
 
 BASE='https://sigma2.cptec.inpe.br/radar'
 RADAR_DATA='https://s0.cptec.inpe.br/webdsa/json_dsa/dados_radar.json'
+LOG=logging.getLogger('BRASIL-SCOPE-V3.CPTEC')
 
 
 def get(url, limit=16*1024*1024):
@@ -113,12 +115,14 @@ class Adapter:
                         label=html.unescape(str(subproduct.get('nome',''))).upper()
                         info=html.unescape(str(subproduct.get('informacao',''))).upper()
                         code=subproduct.get('codigo')
-                        if not code or subproduct.get('statusSubprod') not in (None,'A'): continue
+                        status=str(subproduct.get('statusSubprod') or '').strip().upper()
+                        if not code or status not in ('', 'A'): continue
                         product='reflectivity' if label.startswith('CAPPI') else ('velocity' if 'VENTO' in label or ('VENTO' in info and label.startswith('PPI')) else None)
                         if product and product not in radar['codes']:
                             radar['codes'][product]=str(code);radar['advertisedProducts'].append(product)
                 self.catalog=sorted(grouped.values(),key=lambda r:(r['id']!='cptec-chapeco',r['name']));self.expires=time.time()+3600
-            except (requests.RequestException,ValueError):
+            except (requests.RequestException,ValueError) as exc:
+                LOG.warning('[CPTEC] catálogo indisponível: %s: %s', type(exc).__name__, exc)
                 self.expires=time.time()+60
             return self.catalog
 
@@ -163,7 +167,8 @@ class Adapter:
                     frame['stale']=age>48*3600;frame['ageSeconds']=int(age)
                     result.append(frame)
                 if result and product not in record['products']: record['products'].append(product)
-            except (requests.RequestException,ValueError,KeyError,OSError):
+            except (requests.RequestException,ValueError,KeyError,OSError,TypeError) as exc:
+                LOG.warning('[CPTEC] frames indisponíveis para %s/%s: %s: %s', radar, product, type(exc).__name__, exc)
                 result=entry[1] if entry else []
             by_id={frame['frameId']:frame for frame in result}
             for path in self.cache.glob('*.json'):
