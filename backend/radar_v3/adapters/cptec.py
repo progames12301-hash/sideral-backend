@@ -18,12 +18,19 @@ BASE='https://sigma2.cptec.inpe.br/radar'
 RADAR_DATA='https://s0.cptec.inpe.br/webdsa/json_dsa/dados_radar.json'
 
 
-def get(url, limit=8*1024*1024):
+def get(url, limit=16*1024*1024):
     parsed=urlparse(url)
     if parsed.scheme!='https' or not (parsed.hostname or '').endswith('.cptec.inpe.br'):
         raise ValueError('Fonte CPTEC inválida')
-    with requests.get(url,timeout=(5,15),stream=True,allow_redirects=False) as response:
+    headers={
+        'User-Agent':'SideralMeteorologia/1.0 (CPTEC backend proxy)',
+        'Accept':'application/json,text/plain,image/png,image/jpeg,*/*',
+    }
+    with requests.get(url,headers=headers,timeout=(10,30),stream=True,allow_redirects=True) as response:
         response.raise_for_status()
+        final=urlparse(response.url)
+        if final.scheme!='https' or not (final.hostname or '').endswith('.cptec.inpe.br'):
+            raise ValueError('Redirecionamento CPTEC inválido')
         result=bytearray()
         for chunk in response.iter_content(65536):
             result.extend(chunk)
@@ -33,13 +40,31 @@ def get(url, limit=8*1024*1024):
 
 def radars_in_menu(item):
     if isinstance(item,list):
-        for value in item: yield from radars_in_menu(value)
+        for value in item:
+            yield from radars_in_menu(value)
     elif isinstance(item,dict):
         products=item.get('subprodutos')
-        if isinstance(products,list) and item.get('nome') and any(isinstance(p,dict) and p.get('tipo')=='radar' for p in products):
-            yield item
+        if isinstance(products,list) and item.get('nome'):
+            has_radar_metadata=any(
+                isinstance(p,dict) and p.get('tipo')=='radar'
+                for p in products
+            )
+            has_radar_names=any(
+                isinstance(p,dict) and (
+                    str(p.get('nome','')).strip().upper().startswith('CAPPI')
+                    or 'VENTO' in str(p.get('nome','')).upper()
+                    or (
+                        str(p.get('nome','')).strip().upper().startswith('PPI')
+                        and 'VENTO' in str(p.get('informacao','')).upper()
+                    )
+                )
+                for p in products
+            )
+            if has_radar_metadata or has_radar_names:
+                yield item
         for value in item.values():
-            if isinstance(value,(dict,list)): yield from radars_in_menu(value)
+            if isinstance(value,(dict,list)):
+                yield from radars_in_menu(value)
 
 
 def reproject_png(png, pgw):
@@ -105,12 +130,23 @@ class Adapter:
             if entry and time.time()<entry[0]: return entry[1]
             result=[]
             try:
-                rows=self.radar_data().get(record['codes'][product],[])
+                radar_payload=self.radar_data()
+                rows=radar_payload.get(record['codes'][product],[])
+                if not isinstance(rows,list):
+                    rows=[]
                 for row in list(reversed(rows))[:12]:
-                    stamp=dt.datetime.fromisoformat(row['fileDate']+'T'+row['fileTime']).replace(tzinfo=dt.timezone.utc)
+                    raw_date=str(row.get('fileDate') or '').strip()
+                    raw_time=str(row.get('fileTime') or '').strip()
+                    stamp_text=f"{raw_date}T{raw_time}".replace(' ', 'T')
+                    stamp=dt.datetime.fromisoformat(stamp_text).replace(tzinfo=dt.timezone.utc)
                     age=max(0,(dt.datetime.now(dt.timezone.utc)-stamp).total_seconds())
-                    url=row['url']
-                    if not url.endswith('.png'): continue
+                    url=str(row.get('url') or '').strip()
+                    if not url:
+                        continue
+                    if url.startswith('/'):
+                        url=BASE.rstrip('/')+url
+                    if not re.search(r'\\.png(?:$|\\?)',url,re.IGNORECASE):
+                        continue
                     key=hashlib.sha256(f'cptec|{radar}|{stamp.isoformat()}|{product}|mercator-v2'.encode()).hexdigest()
                     meta_path=self.cache/(key+'.json');image_path=self.cache/(key+'.png')
                     if not meta_path.exists() or not image_path.exists():
