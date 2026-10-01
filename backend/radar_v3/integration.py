@@ -1,5 +1,8 @@
 """Mount the isolated stdlib API into the existing Sideral HTTP server."""
 import os
+import logging
+import subprocess
+import sys
 import threading
 import time
 from .server import Store, handler_for
@@ -7,6 +10,7 @@ from .server import Store, handler_for
 _handler=None
 _lock=threading.Lock()
 _raw_thread=None
+LOG=logging.getLogger('BRASIL-SCOPE-V3')
 
 
 def _radar_origins():
@@ -15,37 +19,46 @@ def _radar_origins():
     if configured:
         return configured
     return ','.join((
-        'https://sideralmeteorologiabrasil.web.app',
-        'https://sideral-meteorologia.pages.dev',
-    ))
+        'https://sideralmetdef _cptec_raw_worker(root):
+    """Materialize CPTEC polar volumes in an isolated child process.
 
-
-def _cptec_raw_worker(root):
-    """Keep the public CPTEC volumetric polar feed materialized for V5.
-
-    The worker is intentionally conservative: the adapter only converts files
-    that expose native elevation + azimuth + range coordinates. Invalid or
-    Cartesian-only NetCDF files are left untouched and never become fake gates.
+    netCDF4/HDF5 are native libraries. A SIGSEGV in that conversion path must
+    never terminate the Render HTTP process; the child can fail independently
+    and the next scheduled pass will retry.
     """
     interval=max(120,int(os.environ.get('RADAR_V3_CPTEC_RAW_INTERVAL','600')))
     limit=max(1,min(96,int(os.environ.get('RADAR_V3_CPTEC_RAW_FILES','24'))))
+    timeout=max(60,int(os.environ.get('RADAR_V3_CPTEC_RAW_TIMEOUT','540')))
     while True:
         try:
-            from .adapters.cptec_raw import ensure_recent
-            ensure_recent(root,limit)
-        except Exception:
-            # A temporary CPTEC/FTP failure must not take the Sideral HTTP server down.
+            completed=subprocess.run(
+                [sys.executable,'-m','backend.radar_v3.cptec_raw_worker',str(root),str(limit)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                errors='replace',
+                timeout=timeout,
+                check=False,
+            )
+            if completed.returncode != 0:
+                LOG.warning('[CPTEC-RAW] processo filho terminou com código %s%s',
+                            completed.returncode,
+                            (' · '+completed.stdout[-1500:].strip()) if completed.stdout else '')
+        except subprocess.TimeoutExpired:
+            LOG.warning('[CPTEC-RAW] processo filho excedeu %ss e foi encerrado', timeout)
+        except Exception as exc:
+            LOG.warning('[CPTEC-RAW] falha ao iniciar/conduzir worker: %s', exc)
+        time.sleep(interval)
+not take the Sideral HTTP server down.
             pass
         time.sleep(interval)
 
 
 def _start_cptec_raw_worker(root):
     global _raw_thread
-    # O conversor NetCDF/ODIM usa netCDF4/HDF5 nativos. No Render, uma falha
-    # dessas bibliotecas pode encerrar o processo inteiro com exit 139 (SIGSEGV).
-    # O caminho raster CPTEC continua independente; o modo polar bruto só deve
-    # ser ligado explicitamente por RADAR_V3_CPTEC_RAW=1 após validação do ambiente.
-    if str(os.environ.get('RADAR_V3_CPTEC_RAW','0')).lower() in ('0','false','no','off'):
+    # O worker agora roda em processo filho. Assim o CPTEC polar continua
+    # disponível sem permitir que um SIGSEGV de netCDF4/HDF5 derrube o HTTP.
+    if str(os.environ.get('RADAR_V3_CPTEC_RAW','1')).lower() in ('0','false','no','off'):
         return
     if _raw_thread and _raw_thread.is_alive():
         return
