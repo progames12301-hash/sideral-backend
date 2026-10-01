@@ -41,6 +41,24 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy scipy requests eccodes ecmwf-opendata
 
+      - name: Ajustar runner ECMWF para Open Data resiliente
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('wrf/ecmwf_ifs_runner.py')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace('if run.hour not in (0, 12):', 'if run.hour not in (0, 6, 12, 18):')
+          text = text.replace('client = Client(source="ecmwf", model="ifs", resol="0p25", preserve_request_order=False, infer_stream_keyword=False)', 'client = Client(source="aws", model="ifs", resol="0p25", preserve_request_order=False, infer_stream_keyword=False)')
+          old = '''    client.retrieve(**request)\n'''
+          new = '''    last_error = None\n    for attempt in range(3):\n        try:\n            client.retrieve(**request)\n            return\n        except Exception as exc:\n            last_error = exc\n            if attempt < 2:\n                import time\n                time.sleep(5 * (attempt + 1))\n    raise RuntimeError(f"Falha ao baixar ECMWF IFS {run:%Y-%m-%d %HZ} apos 3 tentativas: {last_error}") from last_error\n'''
+          if old not in text:
+              raise SystemExit('Padrao de retrieve nao encontrado no runner ECMWF')
+          text = text.replace(old, new, 1)
+          p.write_text(text, encoding='utf-8')
+          print('Runner ECMWF ajustado: fonte AWS, ciclos 00/06/12/18 e retry 3x.')
+          PY
+
       - name: Limitar leitura do GRIB ao dominio da America do Sul
         run: |
           set -euxo pipefail
@@ -102,7 +120,7 @@ jobs:
           from pathlib import Path
           meta = json.loads(Path('ecmwf_publish/metadata.json').read_text(encoding='utf-8'))
           assert meta['model'] == 'ecmwf-ifs', meta
-          assert meta['runCycle'].startswith(('00Z','12Z')), meta
+          assert meta['runCycle'].startswith(('00Z','06Z','12Z','18Z')), meta
           assert meta['frameCount'] == 40, meta
           assert meta['forecastHours'][0] == 3 and meta['forecastHours'][-1] == 120, meta
           assert meta['temporalResolutionMinutes'] == 180, meta
