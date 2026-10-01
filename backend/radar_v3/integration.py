@@ -41,7 +41,11 @@ def _cptec_raw_worker(root):
 
 def _start_cptec_raw_worker(root):
     global _raw_thread
-    if str(os.environ.get('RADAR_V3_CPTEC_RAW','1')).lower() in ('0','false','no','off'):
+    # O conversor NetCDF/ODIM usa netCDF4/HDF5 nativos. No Render, uma falha
+    # dessas bibliotecas pode encerrar o processo inteiro com exit 139 (SIGSEGV).
+    # O caminho raster CPTEC continua independente; o modo polar bruto só deve
+    # ser ligado explicitamente por RADAR_V3_CPTEC_RAW=1 após validação do ambiente.
+    if str(os.environ.get('RADAR_V3_CPTEC_RAW','0')).lower() in ('0','false','no','off'):
         return
     if _raw_thread and _raw_thread.is_alive():
         return
