@@ -76,7 +76,7 @@ def _start_cptec_raw_worker(root):
     global _raw_thread
     # O worker roda em processo filho. Assim o CPTEC polar continua disponível
     # sem permitir que um SIGSEGV de netCDF4/HDF5 derrube o HTTP.
-    if str(os.environ.get('RADAR_V3_CPTEC_RAW', '1')).lower() in (
+    if str(os.environ.get('RADAR_V3_CPTEC_RAW', '0')).lower() in (
         '0', 'false', 'no', 'off'
     ):
         return
