@@ -16,8 +16,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-icon-data:
+    name: Verificar disponibilidade de dados ICON
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      data_available: ${{ steps.check.outputs.available }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verificar dados ICON
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import urllib.request
+          from datetime import datetime, timezone, timedelta
+          
+          # Procura a rodada ICON mais recente
+          now = datetime.now(timezone.utc)
+          base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
+          
+          found = False
+          for offset in range(0, 48, 6):
+              run = base - timedelta(hours=offset)
+              date_str = run.strftime('%Y%m%d')
+              cycle_str = run.strftime('%H')
+              url = f'https://opendata.dwd.de/weather/nwp/icon/grib/{cycle_str}/t_2m/icon_global_icosahedral_single-level_{date_str}{cycle_str}_042_T_2M.grib2.bz2'
+              
+              try:
+                  req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Sideral-Check'})
+                  with urllib.request.urlopen(req, timeout=15) as response:
+                      if response.status in (200, 206):
+                          print(f'ICON encontrado: {date_str} {cycle_str}Z')
+                          found = True
+                          break
+              except Exception as e:
+                  continue
+          
+          if found:
+              print('available=true')
+          else:
+              print('Nenhuma rodada ICON disponível no momento', file=__import__('sys').stderr)
+              print('available=false')
+          PY
+          echo "available=$found" >> "$GITHUB_OUTPUT"
+
   wrf:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    name: WRF Sudeste ICON 7km
+    needs: check-icon-data
+    if: ${{ needs.check-icon-data.outputs.data_available == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: icon
@@ -26,3 +78,13 @@ jobs:
       publish_branch: wrf-sudeste-icon-data
       run_script: run_icon_wrf_sudeste.sh
     secrets: inherit
+
+  notify-unavailable:
+    name: Notificar dados indisponíveis
+    needs: check-icon-data
+    if: ${{ needs.check-icon-data.outputs.data_available == 'false' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          echo "⚠️  Dados ICON não disponíveis no momento"
+          echo "A rodada será retentada automaticamente pela agenda"
