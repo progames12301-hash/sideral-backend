@@ -55,7 +55,7 @@ WRF_MODEL_OUTPUTS = {
 GFS_DATA_DIR = BASE_DIR / "wrf_system" / "data" / "gfs"
 GFS_WSL_DATA_DIR = Path(r"\wsl.localhost\Ubuntu-22.04\home\bryan\sideral_wrf\data\gfs")
 GFS_DATA_DIRS = [GFS_DATA_DIR, GFS_WSL_DATA_DIR]
-DEFAULT_HOST = os.environ.get("HOST", "127.0.0.1")
+DEFAULT_HOST = os.environ.get("HOST", "0.0.0.0" if os.environ.get("RENDER", "").lower() == "true" else "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT", "8766"))
 MODELS_API = ModelApi()
 
