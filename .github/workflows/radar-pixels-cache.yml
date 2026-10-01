@@ -5,9 +5,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - ".github/scripts/build_radar_pixels.py"
-      - ".github/workflows/radar-pixels-cache.yml"
   schedule:
     - cron: "*/10 * * * *"
 
