@@ -149,6 +149,8 @@ def build_variables(prof, lat, lon, label, run_dt, fh, levels):
 
 def render_with_sharppy(prof, out_dir: Path, meta: dict):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import sitecustomize
+    sitecustomize.enable_qt_compat()
     from PySide2.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout, QLabel
     from sharppy.sharptab.prof_collection import ProfCollection
     from sharppy.viz.skew import plotSkewT
