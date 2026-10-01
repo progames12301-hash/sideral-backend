@@ -145,7 +145,7 @@ class Adapter:
                         continue
                     if url.startswith('/'):
                         url=BASE.rstrip('/')+url
-                    if not re.search(r'\\.png(?:$|\\?)',url,re.IGNORECASE):
+                    if not re.search(r'\.png(?:$|\?)',url,re.IGNORECASE):
                         continue
                     key=hashlib.sha256(f'cptec|{radar}|{stamp.isoformat()}|{product}|mercator-v2'.encode()).hexdigest()
                     meta_path=self.cache/(key+'.json');image_path=self.cache/(key+'.png')
