@@ -130,6 +130,9 @@ class Handler(legacy.Handler):
                 'data': normalized,
             })
         except Exception as exc:
+            cached = legacy.redemet_cached_radar_payload(product)
+            if cached:
+                return send_json(self, 200, cached)
             safe = str(exc).replace(key, '[REDACTED]')
             return send_json(self, 502, {
                 'status': False,
