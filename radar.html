@@ -36,88 +36,23 @@
 <script>
 'use strict';
 const BACKEND='https://sideral-backend.onrender.com';
+const API=(path,params={})=>{const u=new URL(path,BACKEND);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v));return u.href};
 const map=L.map('map',{zoomControl:false,preferCanvas:true}).setView([-15.8,-47.9],4);
-const base={
- rua:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),
- escuro:L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'© OpenStreetMap © CARTO'}),
- satelite:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'© Esri'}),
- terreno:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenTopoMap'})
-};
+const base={rua:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),escuro:L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'© OpenStreetMap © CARTO'}),satelite:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'© Esri'}),terreno:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenTopoMap'})};
 base.escuro.addTo(map);
-const radarLayer=L.layerGroup().addTo(map);
-let frames=[],frameIndex=0,playing=false,timer=null,overlayBounds=[];
-const $=id=>document.getElementById(id);
-function setStatus(t){$('status').textContent=t}
-function product(){return $('product').value}
-function source(){return $('source').value}
-function variable(){return $('variable').value}
+const radarLayer=L.layerGroup().addTo(map);let frames=[],frameIndex=0,playing=false,timer=null,overlayBounds=[];const $=id=>document.getElementById(id);
+function setStatus(t){$('status').textContent=t}function product(){return $('product').value}function source(){return $('source').value}function variable(){return $('variable').value}
 function clearRadar(){radarLayer.clearLayers();overlayBounds=[];frames=[];$('scrub').max=0;$('scrub').value=0}
-function getBounds(x){
- const a=Number(x.lat_min),b=Number(x.lon_min),c=Number(x.lat_max),d=Number(x.lon_max);
- if([a,b,c,d].some(Number.isNaN)) return null;
- return [[a,b],[c,d]];
-}
-function imageUrl(item){
- const u=item.path||item.url||item.image||item.src;
- if(!u)return null;
- if(/^https?:\/\//i.test(u)) return BACKEND+'/api/redemet/image?url='+encodeURIComponent(u);
- return BACKEND+'/api/redemet/image?path='+encodeURIComponent(u);
-}
+function getBounds(x){const a=Number(x.lat_min),b=Number(x.lon_min),c=Number(x.lat_max),d=Number(x.lon_max);if([a,b,c,d].some(Number.isNaN))return null;return [[a,b],[c,d]]}
+function imageUrl(item){const u=item.path||item.url||item.image||item.src;if(!u)return null;return API('/api/redemet/image',/^https?:\/\//i.test(u)?{url:u}:{path:u})}
 function frameTime(item){return item.date||item.datetime||item.time||item.timestamp||''}
-function makeOverlay(item,opacity=0){
- const bounds=getBounds(item); const url=imageUrl(item); if(!bounds||!url)return null;
- const ov=L.imageOverlay(url,bounds,{opacity,interactive:true,crossOrigin:true});
- ov.__bounds=bounds; ov.__item=item; return ov;
-}
-function fitAll(){
- if(!overlayBounds.length)return;
- const b=L.latLngBounds([]); overlayBounds.forEach(x=>b.extend(x)); if(b.isValid())map.fitBounds(b,{padding:[35,35],maxZoom:8});
-}
-async function load(){
- if(source()!=='redeMet')return;
- $('loading').classList.add('show');$('empty').classList.add('hidden');setStatus('Consultando backend Sideral…');
- clearRadar();
- try{
-   const r=await fetch(BACKEND+'/api/redemet/radar?product='+encodeURIComponent(product())+'&anima=15',{cache:'no-store',headers:{Accept:'application/json'}});
-   const text=await r.text();
-   let j; try{j=JSON.parse(text)}catch(e){throw new Error('Backend devolveu HTML em vez de JSON ('+r.status+').')}
-   if(!r.ok||!j.status)throw new Error(j.error||'REDEMET indisponível');
-   let rows=[];const data=j.data&&j.data.radar;
-   if(Array.isArray(data))data.forEach(x=>Array.isArray(x)?rows.push(...x):rows.push(x));
-   else if(data&&typeof data==='object')rows=[data];
-   rows=rows.filter(x=>getBounds(x)&&imageUrl(x));
-   rows.sort((a,b)=>String(frameTime(a)).localeCompare(String(frameTime(b))));
-   frames=rows;frameIndex=Math.max(0,frames.length-1);
-   if(!frames.length)throw new Error('REDEMET retornou 0 imagens utilizáveis.');
-   await showFrame(frameIndex,true);
-   setStatus(frames.length+' quadro(s) recebidos · REDEMET / DECEA');
- }catch(e){console.error(e);setStatus(e.message);$('empty').classList.remove('hidden')}
- finally{$('loading').classList.remove('show')}
-}
-async function showFrame(i,fit){
- if(!frames.length)return;frameIndex=Math.max(0,Math.min(i,frames.length-1));clearVisible();overlayBounds=[];
- const item=frames[frameIndex],ov=makeOverlay(item,0);
- if(!ov)return;
- radarLayer.addLayer(ov);overlayBounds.push(ov.__bounds);
- ov.once('load',()=>{ov.setOpacity(1);if(fit)fitAll()});
- ov.once('error',()=>setStatus('Falha ao carregar imagem REDEMET via proxy.'));
- $('scrub').value=frameIndex;$('clock').textContent=frameTime(item)||'--';$('utc').textContent=(frameTime(item)||'--')+' UTC';
- $('badgeMeta').textContent=product()+' · '+variable()+' · '+(frameTime(item)||'sem horário');
- if(fit)setTimeout(fitAll,500);
-}
-function clearVisible(){radarLayer.clearLayers()}
+function makeOverlay(item,opacity=0){const bounds=getBounds(item),url=imageUrl(item);if(!bounds||!url)return null;const ov=L.imageOverlay(url,bounds,{opacity,interactive:true,crossOrigin:'anonymous'});ov.__bounds=bounds;ov.__item=item;return ov}
+function fitAll(){if(!overlayBounds.length)return;const b=L.latLngBounds([]);overlayBounds.forEach(x=>b.extend(x));if(b.isValid())map.fitBounds(b,{padding:[35,35],maxZoom:8})}
+async function load(){if(source()!=='redeMet')return;$('loading').classList.add('show');$('empty').classList.add('hidden');setStatus('Consultando backend Sideral…');clearRadar();try{const r=await fetch(API('/api/redemet/radar',{product:product(),anima:15}),{cache:'no-store',headers:{Accept:'application/json'}});const text=await r.text();let j;try{j=JSON.parse(text)}catch(e){throw new Error('Backend devolveu HTML em vez de JSON ('+r.status+').')}if(!r.ok||!j.status)throw new Error(j.error||'REDEMET indisponível');let rows=[];const data=j.data&&j.data.radar;if(Array.isArray(data))data.forEach(x=>Array.isArray(x)?rows.push(...x):rows.push(x));else if(data&&typeof data==='object')rows=[data];rows=rows.filter(x=>getBounds(x)&&imageUrl(x));rows.sort((a,b)=>String(frameTime(a)).localeCompare(String(frameTime(b))));frames=rows;frameIndex=Math.max(0,frames.length-1);if(!frames.length)throw new Error('REDEMET retornou 0 imagens utilizáveis.');$('scrub').max=Math.max(0,frames.length-1);setStatus(frames.length+' imagens reais carregadas pelo Render.');showFrame(frameIndex,true)}catch(e){console.error(e);$('empty').classList.remove('hidden');setStatus('Erro: '+e.message)}finally{$('loading').classList.remove('show')}}
+function showFrame(i,fit=false){if(!frames.length)return;frameIndex=Math.max(0,Math.min(i,frames.length-1));const item=frames[frameIndex];radarLayer.clearLayers();overlayBounds=[];const ov=makeOverlay(item,0);if(!ov)return;radarLayer.addLayer(ov);overlayBounds.push(ov.__bounds);ov.once('load',()=>{ov.setOpacity(1);if(fit)fitAll()});ov.once('error',()=>setStatus('Falha ao carregar imagem REDEMET via proxy.'));$('scrub').value=frameIndex;$('clock').textContent=frameTime(item)||'--';$('utc').textContent=(frameTime(item)||'--')+' UTC';$('badgeMeta').textContent=product()+' · '+variable()+' · '+(frameTime(item)||'sem horário');if(fit)setTimeout(fitAll,500)}
 function next(n){if(!frames.length)return;showFrame((frameIndex+n+frames.length)%frames.length,false)}
-$('fit').onclick=fitAll;$('plus').onclick=()=>map.zoomIn();$('minus').onclick=()=>map.zoomOut();$('live').onclick=load;
-$('product').onchange=load;$('source').onchange=load;
-$('scrub').oninput=e=>showFrame(Number(e.target.value),false);
-$('prev').onclick=()=>next(-1);$('next').onclick=()=>next(1);
-$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'❚❚':'▶';clearInterval(timer);if(playing)timer=setInterval(()=>next(1),1200)};
-$('superres').onchange=()=>{setStatus($('superres').checked?'SuperRes 4× visual ativo':'SuperRes desligado')};
-$('cursor').onchange=()=>{};
-$('borders').onchange=e=>{if(e.target.checked)loadBorders();else{if(window.borderLayer)map.removeLayer(window.borderLayer)}};
-$('rings').onchange=e=>{if(e.target.checked)drawRings();else if(window.ringLayer)map.removeLayer(window.ringLayer)};
-map.on('mousemove',e=>{if(!$('cursor').checked)return;const r=$('read');r.style.left=(e.containerPoint.x+18)+'px';r.style.top=(e.containerPoint.y+18)+'px';r.innerHTML='<b>Lat</b> '+e.latlng.lat.toFixed(4)+'<br><b>Lon</b> '+e.latlng.lng.toFixed(4)+'<br><span style="color:#8d98a2">Valor exato depende da legenda da imagem.</span>';r.classList.add('show')});
-map.on('mouseout',()=> $('read').classList.remove('show'));
+$('fit').onclick=fitAll;$('plus').onclick=()=>map.zoomIn();$('minus').onclick=()=>map.zoomOut();$('live').onclick=load;$('product').onchange=load;$('source').onchange=load;$('scrub').oninput=e=>showFrame(Number(e.target.value),false);$('prev').onclick=()=>next(-1);$('next').onclick=()=>next(1);$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'❚❚':'▶';clearInterval(timer);if(playing)timer=setInterval(()=>next(1),1200)};$('superres').onchange=()=>setStatus($('superres').checked?'SuperRes 4× visual ativo':'SuperRes desligado');$('cursor').onchange=()=>{};$('borders').onchange=e=>{if(e.target.checked)loadBorders();else{if(window.borderLayer)map.removeLayer(window.borderLayer)}};$('rings').onchange=e=>{if(e.target.checked)drawRings();else if(window.ringLayer)map.removeLayer(window.ringLayer)};
+map.on('mousemove',e=>{if(!$('cursor').checked)return;const r=$('read');r.style.left=(e.containerPoint.x+18)+'px';r.style.top=(e.containerPoint.y+18)+'px';r.innerHTML='<b>Lat</b> '+e.latlng.lat.toFixed(4)+'<br><b>Lon</b> '+e.latlng.lng.toFixed(4)+'<br><span style="color:#8d98a2">Valor exato depende da legenda da imagem.</span>';r.classList.add('show')});map.on('mouseout',()=>$('read').classList.remove('show'));
 function drawRings(){if(window.ringLayer)map.removeLayer(window.ringLayer);window.ringLayer=L.layerGroup().addTo(map);const center=map.getCenter();[50,100,150,200,250].forEach(km=>L.circle(center,{radius:km*1000,color:'#fff',weight:1,opacity:.25,fill:false}).addTo(window.ringLayer))}
 function loadBorders(){if(window.borderLayer)map.removeLayer(window.borderLayer);window.borderLayer=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',{opacity:.55,attribution:''}).addTo(map)}
 loadBorders();load();
