@@ -12,7 +12,7 @@ MPI_PROCS="${WRF_MPI_PROCS:-8}"
 HIST="${WRF_HISTORY_INTERVAL_MINUTES:-60}"
 SEG_H=$((END_H-START_H))
 
-(( START_H > 0 && END_H > START_H && START_H % 3 == 0 && END_H % 3 == 0 && END_H <= 42 )) || { echo "Restart invalido: F${START_H}-F${END_H}" >&2; exit 2; }
+(( START_H > 0 && END_H > START_H && START_H % 3 == 0 && END_H % 3 == 0 && END_H <= 48 )) || { echo "Restart invalido: F${START_H}-F${END_H}" >&2; exit 2; }
 test -d "$RESTART_DIR" || { echo "Restart directory missing: $RESTART_DIR" >&2; exit 3; }
 
 mapfile -t RST < <(find "$RESTART_DIR" -maxdepth 1 -type f -name 'wrfrst_d01_*' -size +0c -print | sort)
@@ -81,14 +81,14 @@ docker run --rm --entrypoint /bin/bash \
   -v "$WORK/run:/run" -v "$WORK/ensure_metbr_wrf_runtime.sh:/ensure_metbr_wrf_runtime.sh:ro" \
   "$IMAGE" -lc 'set -e; /bin/bash /ensure_metbr_wrf_runtime.sh /run'
 
-WRF_TABLES=(VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL URBPARM.TBL RRTMG_LW_DATA RRTMG_SW_DATA ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_lon.formatted aerosol_plev.formatted CAM_ABS_DATA)
+WRF_TABLES=(VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL URBPARM.TBL RRTMG_LW_DATA RRTMG_SW_DATA ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_plev.formatted)
 for name in "${WRF_TABLES[@]}"; do
   test -s "$WORK/run/$name" || {
-    docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" "$IMAGE" -lc "set -e; src=\$(find / -type f -name '$name' -not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' -print -quit 2>/dev/null || true); test -n \"\$src\" || { echo 'Missing WRF runtime table: $name' >&2; exit 1; }; echo \"Using WRF table $name from \$src\"; cp -f \"\$src\" /run/$name"
+    docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" "$IMAGE" -lc "set -e; src=\$(find / -type f -name '$name' -not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' -print -quit 2>/dev/null || true); [[ -n \"\$src\" ]] || { echo 'Missing mandatory WRF runtime table: $name' >&2; exit 11; }; cp -f \"\$src\" /run/$name" 
   }
 done
 
-for name in VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL RRTMG_LW_DATA RRTMG_SW_DATA ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_lon.formatted aerosol_plev.formatted CAM_ABS_DATA CAMtr_volume_mixing_ratio; do
+for name in VEGPARM.TBL LANDUSE.TBL GENPARM.TBL SOILPARM.TBL MPTABLE.TBL RRTMG_LW_DATA RRTMG_SW_DATA ozone.formatted ozone_lat.formatted ozone_plev.formatted aerosol.formatted aerosol_lat.formatted aerosol_plev.formatted; do
   test -s "$WORK/run/$name" || { echo "Missing mandatory WRF runtime table: $name" >&2; exit 12; }
 done
 
@@ -103,9 +103,9 @@ docker run --rm --entrypoint /bin/bash \
   set -u; cd /run; rst="$(cat .expected_restart)"
   echo "Starting METBR WRF restart; MPI=${WRF_MPI_PROCS:-8}; dt=20 s; restart=$rst"
   mpirun --allow-run-as-root --oversubscribe --mca orte_base_help_aggregate 0 \
-    -np "${WRF_MPI_PROCS:-8}" "'"$WRFEXE"'" > /run/rsl.out.restart 2>&1
+    -np "${WRF_MPI_PROCS:-8}" '"'$WRFEXE"'" > /run/rsl.out.restart 2>&1
   rc=$?; echo "WRF_MPI_EXIT_CODE=$rc" >> /run/rsl.out.restart; exit "$rc"
-'
+  '
 STATUS=$?
 set -e
 cp -f "$WORK/run/rsl.out.restart" "$OUTPUT/" 2>/dev/null || true
