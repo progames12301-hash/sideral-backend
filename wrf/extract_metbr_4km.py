@@ -159,30 +159,42 @@ def main():
     files = sorted(run_dir.glob('wrfout_d01_*'))
     if not files: raise SystemExit('Nenhum wrfout_d01 encontrado')
 
-    frames=[]; init_time=None; grid_x=grid_y=None; inventory={}; published_fields=set(); field_sources={}
+    frames=[]; init_time=None; grid_x=grid_y=None; inventory={}; published_fields=set(); field_sources={}; expected_shape_global=None
     for index, fn in enumerate(files):
-        with Dataset(fn) as ds:
-            if not inventory:
-                inventory=discover_variables(ds); (out/'variables.json').write_text(json.dumps(inventory,indent=2,ensure_ascii=False),encoding='utf-8')
-                print(f"[METBR][DISCOVERY] {len(inventory)} variáveis encontradas")
-            lat=ds.variables.get('XLAT'); lon=ds.variables.get('XLONG'); expected_shape=None
-            if lat is not None and lon is not None:
-                expected_shape=tuple(np.asarray(lat[:]).shape[-2:])
-                if expected_shape != tuple(np.asarray(lon[:]).shape[-2:]): raise RuntimeError(f'XLAT/XLONG com grades diferentes em {fn.name}')
-            refl,source_name=native_reflectivity(ds,expected_shape); source_file=fn.name
-            if refl is None and expected_shape is not None: refl,source_name,source_file=find_reflectivity_in_run(run_dir,expected_shape)
-            if refl is None: raise RuntimeError(f'Nenhuma variável de refletividade nativa encontrada para {fn.name}; nenhuma aproximação dBZ será usada')
-            grid_y,grid_x=map(int,refl.shape); valid_time=read_time(ds); init_time=init_time or valid_time
-            surface_fields,surface_sources=select_surface_fields(ds,expected_shape); published_fields.update(surface_fields); field_sources.update(surface_sources)
-            arr=np.where(np.isfinite(refl),refl,-9999.0).astype(np.float32)
-            target=frame_dir/f'f{index:03d}.json.gz'
-            payload={'forecastHour':index,'validTime':valid_time,'gridX':grid_x,'gridY':grid_y,'reflectivityDbz':arr.tolist(),'reflectivitySource':source_name,'nativeGrid':True,'sourceVariable':source_name,'sourceFile':source_file,'availableVariables':sorted(inventory.keys()),'availableMapFields':sorted(surface_fields.keys()),'mapFieldSources':surface_sources,'fields':{name:_json_array(values) for name,values in surface_fields.items()}}
-            with gzip.open(target,'wt',encoding='utf-8',compresslevel=6) as fh: json.dump(payload,fh,separators=(',',':'))
-            finite=arr[arr>-9000]
-            stats={'maxDbz':round(float(np.max(finite)),2) if finite.size else None,'p99Dbz':round(float(np.percentile(finite,99)),2) if finite.size else None,'positivePixels':int(np.count_nonzero(finite>0)) if finite.size else 0,'fractionAbove5Dbz':round(float(np.mean(finite>5)),6) if finite.size else 0.0,'fractionAbove40Dbz':round(float(np.mean(finite>40)),6) if finite.size else 0.0}
-            frames.append({'index':index,'forecastHour':index,'validTime':valid_time,'file':f'icon/f{index:03d}.json.gz','gridX':grid_x,'gridY':grid_y,'source':'METBR WRF 4 KM ICON','reflectivitySource':source_name,'nativeGrid':True,'sourceVariable':source_name,'sourceFile':source_file,'availableMapFields':sorted(surface_fields.keys()),'reflectivityStats':stats})
+        try:
+            with Dataset(fn) as ds:
+                if not inventory:
+                    inventory=discover_variables(ds); (out/'variables.json').write_text(json.dumps(inventory,indent=2,ensure_ascii=False),encoding='utf-8')
+                    print(f"[METBR][DISCOVERY] {len(inventory)} variáveis encontradas")
+                lat=ds.variables.get('XLAT'); lon=ds.variables.get('XLONG'); expected_shape=None
+                if lat is not None and lon is not None:
+                    lat_shape = tuple(np.asarray(lat[:]).shape[-2:])
+                    lon_shape = tuple(np.asarray(lon[:]).shape[-2:])
+                    if lat_shape != lon_shape:
+                        print(f"[METBR][WARN] XLAT/XLONG mismatch em {fn.name}: XLAT={lat_shape} vs XLONG={lon_shape}, pulando validação de grade")
+                    else:
+                        expected_shape = lat_shape
+                        if expected_shape_global is None:
+                            expected_shape_global = expected_shape
+                        elif expected_shape != expected_shape_global:
+                            print(f"[METBR][WARN] Grade inconsistente em {fn.name}: esperada {expected_shape_global}, obtida {expected_shape}")
+                            expected_shape = expected_shape_global
+                refl,source_name=native_reflectivity(ds,expected_shape); source_file=fn.name
+                if refl is None and expected_shape is not None: refl,source_name,source_file=find_reflectivity_in_run(run_dir,expected_shape)
+                if refl is None: raise RuntimeError(f'Nenhuma variável de refletividade nativa encontrada para {fn.name}; nenhuma aproximação dBZ será usada')
+                grid_y,grid_x=map(int,refl.shape); valid_time=read_time(ds); init_time=init_time or valid_time
+                surface_fields,surface_sources=select_surface_fields(ds,expected_shape); published_fields.update(surface_fields); field_sources.update(surface_sources)
+                arr=np.where(np.isfinite(refl),refl,-9999.0).astype(np.float32)
+                target=frame_dir/f'f{index:03d}.json.gz'
+                payload={'forecastHour':index,'validTime':valid_time,'gridX':grid_x,'gridY':grid_y,'reflectivityDbz':arr.tolist(),'reflectivitySource':source_name,'nativeGrid':True,'sourceVariable':source_name,'sourceFile':source_file,'availableVariables':sorted(inventory.keys()),'availableMapFields':sorted(surface_fields.keys()),'mapFieldSources':surface_sources,'fields':{name:_json_array(values) for name,values in surface_fields.items()}}
+                with gzip.open(target,'wt',encoding='utf-8',compresslevel=6) as fh: json.dump(payload,fh,separators=(',',':'))
+                finite=arr[arr>-9000]
+                stats={'maxDbz':round(float(np.max(finite)),2) if finite.size else None,'p99Dbz':round(float(np.percentile(finite,99)),2) if finite.size else None,'positivePixels':int(np.count_nonzero(finite))}
+                frames.append({'index':index,'forecastHour':index,'validTime':valid_time,'file':f'icon/f{index:03d}.json.gz','gridX':grid_x,'gridY':grid_y,'source':'METBR WRF 4 KM ICON','reflectivitySource':source_name,'reflectivityStats':stats})
+        except Exception as exc:
+            print(f"[METBR][ERROR] Erro ao processar {fn.name}: {exc}"); raise
     generated=datetime.now(timezone.utc).isoformat().replace('+00:00','Z'); cycle=args.run_cycle if args.run_cycle.endswith('Z') else args.run_cycle+'Z'
-    metadata={'schema':'sideral-wrf-metadata-v2','model':'icon','resolutionKm':4,'runDate':args.run_date,'runCycle':cycle,'initTime':init_time,'generatedAt':generated,'reflectivitySource':frames[0]['reflectivitySource'],'nativeGrid':True,'grid':{'nx':grid_x,'ny':grid_y},'frameCount':len(frames),'temporalResolutionMinutes':60,'availableVariables':sorted(inventory.keys()),'availableMapFields':sorted(published_fields),'mapFieldSources':field_sources,'variablesFile':'variables.json','frames':frames}
+    metadata={'schema':'sideral-wrf-metadata-v2','model':'icon','resolutionKm':4,'runDate':args.run_date,'runCycle':cycle,'initTime':init_time,'generatedAt':generated,'reflectivitySource':frames[0]['reflectivitySource'] if frames else 'UNKNOWN','nativeGrid':True,'grid':{'nx':grid_x,'ny':grid_y},'frameCount':len(frames),'temporalResolutionMinutes':60,'availableVariables':sorted(inventory.keys()),'availableMapFields':sorted(published_fields),'mapFieldSources':field_sources,'variablesFile':'variables.json','frames':frames}
     (out/'metadata.json').write_text(json.dumps(metadata,indent=2,ensure_ascii=False),encoding='utf-8')
     print(f'METBR 4 km validado: {args.run_date} {cycle}, {len(frames)} frames, {grid_x}x{grid_y}'); print('[METBR][MAP FIELDS] '+', '.join(sorted(published_fields)))
 
