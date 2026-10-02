@@ -1,0 +1,53 @@
+name: SIDERAL RADAR - RAW DATA RUNNER
+
+on:
+  workflow_dispatch:
+    inputs:
+      files_per_source:
+        description: "Quantidade de arquivos mais recentes por fonte"
+        required: false
+        default: "2"
+  schedule:
+    - cron: "*/15 * * * *"
+
+concurrency:
+  group: sideral-radar-raw
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  collect-raw-radar:
+    name: Baixar dados brutos de radar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Baixar dados brutos
+        env:
+          FILES_PER_SOURCE: ${{ inputs.files_per_source || '2' }}
+        run: |
+          python scripts/radar_raw_runner.py \
+            --output radar_raw \
+            --count "$FILES_PER_SOURCE"
+
+      - name: Mostrar manifesto
+        if: always()
+        run: |
+          if [ -f radar_raw/manifest.json ]; then
+            cat radar_raw/manifest.json
+          fi
+
+      - name: Publicar dados brutos como artefato
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sideral-radar-raw-${{ github.run_id }}
+          path: radar_raw/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
