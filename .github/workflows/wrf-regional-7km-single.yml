@@ -42,7 +42,7 @@ env:
   WRF_START_HOUR: '0'
   WRF_END_HOUR: '42'
   WRF_PUBLISH_MAX_HOUR: '40'
-  WRF_TIME_STEP: '42'
+  WRF_TIME_STEP: '30'
 
 jobs:
   wrf:
@@ -230,7 +230,7 @@ jobs:
               pairs += [
                   (' dx = 4000,', ' dx = 7000,'),
                   (' dy = 4000,', ' dy = 7000,'),
-                  (' time_step = 18,', ' time_step = 42,'),
+                  (' time_step = 18,', ' time_step = 30,'),
               ]
               for old, new in pairs:
                   if old not in text:
@@ -246,7 +246,7 @@ jobs:
                   (' e_sn = 360,', ' e_sn = 206,'),
                   (' dx = 4000,', ' dx = 7000,'),
                   (' dy = 4000,', ' dy = 7000,'),
-                  (' time_step = 24,', ' time_step = 42,'),
+                  (' time_step = 24,', ' time_step = 30,'),
               ])
 
           print('Executor regional preparado:', model, domain, '7 km, F000-F042 integrado, saida horaria')
@@ -265,7 +265,7 @@ jobs:
           WRF_RUN_HOURS: '42'
           WRF_DX_METERS: '7000'
           WRF_DY_METERS: '7000'
-          WRF_TIME_STEP: '42'
+          WRF_TIME_STEP: '30'
         shell: bash
         run: |
           set -euxo pipefail
