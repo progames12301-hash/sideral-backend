@@ -66,16 +66,15 @@ jobs:
           repo = os.environ['REPOSITORY']
           now = dt.datetime.now(dt.timezone.utc)
 
-          # METBR vem primeiro: se estiver atrasado, e o primeiro produto recuperado.
           products = [
-              ('metbr-json-data', 4, 43, '.github/workflows/metbr-wrf-4km.yml'),
-              ('wrf-data', 7, 41, '.github/workflows/wrf-4km-next-day-auto.yml'),
-              ('wrf-icon-data', 7, 41, '.github/workflows/wrf-icon-4km-native.yml'),
-              ('wrf-ecmwf-data', 7, 41, '.github/workflows/wrf-ecmwf-4km-native.yml'),
-              ('wrf-sudeste-gfs-data', 7, 41, '.github/workflows/wrf-sudeste-gfs-4km.yml'),
-              ('wrf-sudeste-icon-data', 7, 41, '.github/workflows/wrf-sudeste-icon-4km.yml'),
-              ('wrf-sudeste-ecmwf-data', 7, 41, '.github/workflows/wrf-sudeste-ecmwf-4km.yml'),
-              ('wrf-brasil-12km-data', 13, 49, '.github/workflows/wrf-brasil-12km.yml'),
+              ('metbr-json-data', 4, 43, '.github/workflows/metbr-wrf-4km.yml', 36),
+              ('wrf-data', 7, 41, '.github/workflows/wrf-4km-next-day-auto.yml', 24),
+              ('wrf-icon-data', 7, 41, '.github/workflows/wrf-icon-4km-native.yml', 24),
+              ('wrf-ecmwf-data', 7, 41, '.github/workflows/wrf-ecmwf-4km-native.yml', 24),
+              ('wrf-sudeste-gfs-data', 7, 41, '.github/workflows/wrf-sudeste-gfs-4km.yml', 24),
+              ('wrf-sudeste-icon-data', 7, 41, '.github/workflows/wrf-sudeste-icon-4km.yml', 24),
+              ('wrf-sudeste-ecmwf-data', 7, 41, '.github/workflows/wrf-sudeste-ecmwf-4km.yml', 24),
+              ('wrf-brasil-12km-data', 13, 49, '.github/workflows/wrf-brasil-12km.yml', 24),
           ]
           cim = [
               ('cim-wrf-3km-icon-data', 8, 41),
@@ -86,9 +85,13 @@ jobs:
               url = f'https://raw.githubusercontent.com/{repo}/{branch}/metadata.json?watch={int(now.timestamp())}'
               req = urllib.request.Request(url, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Sideral-WRF-watchdog'})
               with urllib.request.urlopen(req, timeout=30) as response:
-                  return json.load(response)
+                  data = json.load(response)
+                  if not isinstance(data, dict):
+                      raise TypeError(f'{branch}: metadata.json nao e um objeto JSON')
+                  return data
 
           def check(branch, km, frames_expected, max_age_h=24):
+              meta = None
               try:
                   meta = fetch_meta(branch)
                   assert int(meta.get('resolutionKm')) == km
@@ -106,11 +109,14 @@ jobs:
                   assert age <= max_age_h, f'stale {age:.1f}h'
                   return True, 'ok'
               except Exception as exc:
-                  return False, repr(exc)
+                  detail = repr(exc)
+                  if meta is not None:
+                      detail += f"; keys={sorted(meta.keys())[:12]}"
+                  return False, detail
 
           needed = []
-          for branch, km, count, workflow in products:
-              ok, why = check(branch, km, count)
+          for branch, km, count, workflow, max_age_h in products:
+              ok, why = check(branch, km, count, max_age_h)
               print(('OK' if ok else 'RECOVER'), branch, why)
               if not ok:
                   needed.append((workflow, f'{branch}: {why}'))
