@@ -117,7 +117,9 @@ jobs:
                           date = m.group(1).replace('-', '')
                           cycle = m.group(2)
                           parsed = (int(date), int(cycle), date, cycle)
-                          break              if parsed is None:                  return None
+                          break
+              if parsed is None:
+                  return None
 
               date, cycle, ds, cs = parsed
 
