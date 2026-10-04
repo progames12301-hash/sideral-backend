@@ -1,0 +1,891 @@
+{
+  "schema": "sideral-wrf-metadata-v1",
+  "model": "gfs",
+  "resolutionKm": 7,
+  "runDate": "20261003",
+  "runCycle": "12Z",
+  "initTime": "2026-10-03T12:00:00Z",
+  "generatedAt": "2026-10-04T00:13:16.852164Z",
+  "reflectivitySource": "REFL_10CM_NATIVE",
+  "wrf2SevereDiagnostics": true,
+  "wrf2SeverePathTemplate": "severe/{model}/f{forecastHour:03d}.json.gz",
+  "wrf2SevereFields": [
+    "stp",
+    "scp",
+    "srh01",
+    "srh03",
+    "bulkShear06",
+    "effectiveBulkShear",
+    "lclHeight",
+    "cin",
+    "sbcape",
+    "mlcape",
+    "mucapeWrf2",
+    "pwat",
+    "thetaE850",
+    "thetaEAdvection",
+    "wind850",
+    "wind500",
+    "vorticity500",
+    "omega700",
+    "mslp",
+    "thickness",
+    "dewpoint2m",
+    "kIndex",
+    "totalTotals"
+  ],
+  "wrf2DiagnosticMethods": {
+    "stp": {
+      "classification": "derived",
+      "method": "fixed-layer STP",
+      "components": [
+        "MLCAPE",
+        "surface LCL height",
+        "cyclonic SRH 0-1 km",
+        "bulk shear 0-6 km",
+        "MLCIN"
+      ],
+      "rule": "Only calculated where CAPE, LCL, SRH, shear and CIN components are finite."
+    },
+    "scp": {
+      "classification": "derived",
+      "method": "SCP",
+      "components": [
+        "MUCAPE",
+        "cyclonic SRH 0-3 km",
+        "effective bulk shear proxy"
+      ],
+      "rule": "Only calculated where MUCAPE, SRH 0-3 km and shear are finite."
+    },
+    "srh01": "Bunkers cyclonic motion; 250 m hodograph; 0-1 km AGL",
+    "srh03": "Bunkers cyclonic motion; 250 m hodograph; 0-3 km AGL",
+    "bulkShear06": "10 m to 6 km AGL vector difference",
+    "effectiveBulkShear": "derived 0-6 km bulk-shear proxy; never native",
+    "lclHeight": "Bolton surface parcel",
+    "pwat": "vertical integral QVAPOR dp/g",
+    "thetaE850": "Bolton theta-e at 850 hPa",
+    "thetaEAdvection": "-V.grad(theta-e) at 850 hPa",
+    "wind850": "interpolated wind magnitude at 850 hPa",
+    "wind500": "interpolated wind magnitude at 500 hPa",
+    "vorticity500": "dvdx-dudy at 500 hPa",
+    "omega700": "-rho*g*w at 700 hPa",
+    "mslp": "hypsometric reduction from PSFC/T2/HGT",
+    "thickness": "Z500 minus extrapolated Z1000",
+    "dewpoint2m": "dewpoint from Q2/PSFC",
+    "kIndex": "T850-T500+Td850-(T700-Td700)",
+    "totalTotals": "T850+Td850-2*T500",
+    "cape": {
+      "sbcape": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "mlcape": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "mucapeWrf2": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "cin": {
+        "classification": "derived",
+        "nativeSource": null
+      }
+    }
+  },
+  "frameCount": 41,
+  "temporalResolutionMinutes": 60,
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 0,
+      "validTime": "2026-10-03T12:00:00Z",
+      "file": "gfs/f000.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 0.0,
+        "p99Dbz": 0.0,
+        "fractionAbove5Dbz": 0.0,
+        "fractionAbove40Dbz": 0.0,
+        "positivePixels": 0
+      },
+      "soundingFile": "soundings/gfs/f000.json.gz",
+      "severeFile": "severe/gfs/f000.json.gz"
+    },
+    {
+      "index": 1,
+      "forecastHour": 1,
+      "validTime": "2026-10-03T13:00:00Z",
+      "file": "gfs/f001.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 52.9,
+        "p99Dbz": 39.2,
+        "fractionAbove5Dbz": 0.13437,
+        "fractionAbove40Dbz": 0.0085,
+        "positivePixels": 7664
+      },
+      "soundingFile": "soundings/gfs/f001.json.gz",
+      "severeFile": "severe/gfs/f001.json.gz"
+    },
+    {
+      "index": 2,
+      "forecastHour": 2,
+      "validTime": "2026-10-03T14:00:00Z",
+      "file": "gfs/f002.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 49.4,
+        "p99Dbz": 39.7,
+        "fractionAbove5Dbz": 0.2281,
+        "fractionAbove40Dbz": 0.00901,
+        "positivePixels": 11790
+      },
+      "soundingFile": "soundings/gfs/f002.json.gz",
+      "severeFile": "severe/gfs/f002.json.gz"
+    },
+    {
+      "index": 3,
+      "forecastHour": 3,
+      "validTime": "2026-10-03T15:00:00Z",
+      "file": "gfs/f003.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 49.6,
+        "p99Dbz": 37.7,
+        "fractionAbove5Dbz": 0.25096,
+        "fractionAbove40Dbz": 0.00321,
+        "positivePixels": 13407
+      },
+      "soundingFile": "soundings/gfs/f003.json.gz",
+      "severeFile": "severe/gfs/f003.json.gz"
+    },
+    {
+      "index": 4,
+      "forecastHour": 4,
+      "validTime": "2026-10-03T16:00:00Z",
+      "file": "gfs/f004.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 55.7,
+        "p99Dbz": 38.3,
+        "fractionAbove5Dbz": 0.28273,
+        "fractionAbove40Dbz": 0.00494,
+        "positivePixels": 15179
+      },
+      "soundingFile": "soundings/gfs/f004.json.gz",
+      "severeFile": "severe/gfs/f004.json.gz"
+    },
+    {
+      "index": 5,
+      "forecastHour": 5,
+      "validTime": "2026-10-03T17:00:00Z",
+      "file": "gfs/f005.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 63.3,
+        "p99Dbz": 39.7,
+        "fractionAbove5Dbz": 0.31556,
+        "fractionAbove40Dbz": 0.00945,
+        "positivePixels": 17218
+      },
+      "soundingFile": "soundings/gfs/f005.json.gz",
+      "severeFile": "severe/gfs/f005.json.gz"
+    },
+    {
+      "index": 6,
+      "forecastHour": 6,
+      "validTime": "2026-10-03T18:00:00Z",
+      "file": "gfs/f006.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 64.5,
+        "p99Dbz": 42.7,
+        "fractionAbove5Dbz": 0.33575,
+        "fractionAbove40Dbz": 0.01514,
+        "positivePixels": 18595
+      },
+      "soundingFile": "soundings/gfs/f006.json.gz",
+      "severeFile": "severe/gfs/f006.json.gz"
+    },
+    {
+      "index": 7,
+      "forecastHour": 7,
+      "validTime": "2026-10-03T19:00:00Z",
+      "file": "gfs/f007.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 63.1,
+        "p99Dbz": 43.9,
+        "fractionAbove5Dbz": 0.3399,
+        "fractionAbove40Dbz": 0.01817,
+        "positivePixels": 18646
+      },
+      "soundingFile": "soundings/gfs/f007.json.gz",
+      "severeFile": "severe/gfs/f007.json.gz"
+    },
+    {
+      "index": 8,
+      "forecastHour": 8,
+      "validTime": "2026-10-03T20:00:00Z",
+      "file": "gfs/f008.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 64.3,
+        "p99Dbz": 44.6,
+        "fractionAbove5Dbz": 0.31846,
+        "fractionAbove40Dbz": 0.01984,
+        "positivePixels": 17313
+      },
+      "soundingFile": "soundings/gfs/f008.json.gz",
+      "severeFile": "severe/gfs/f008.json.gz"
+    },
+    {
+      "index": 9,
+      "forecastHour": 9,
+      "validTime": "2026-10-03T21:00:00Z",
+      "file": "gfs/f009.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 65.1,
+        "p99Dbz": 43.1,
+        "fractionAbove5Dbz": 0.3056,
+        "fractionAbove40Dbz": 0.01652,
+        "positivePixels": 16726
+      },
+      "soundingFile": "soundings/gfs/f009.json.gz",
+      "severeFile": "severe/gfs/f009.json.gz"
+    },
+    {
+      "index": 10,
+      "forecastHour": 10,
+      "validTime": "2026-10-03T22:00:00Z",
+      "file": "gfs/f010.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 61.4,
+        "p99Dbz": 41.7,
+        "fractionAbove5Dbz": 0.30628,
+        "fractionAbove40Dbz": 0.01406,
+        "positivePixels": 16461
+      },
+      "soundingFile": "soundings/gfs/f010.json.gz",
+      "severeFile": "severe/gfs/f010.json.gz"
+    },
+    {
+      "index": 11,
+      "forecastHour": 11,
+      "validTime": "2026-10-03T23:00:00Z",
+      "file": "gfs/f011.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 62.7,
+        "p99Dbz": 41.5,
+        "fractionAbove5Dbz": 0.30288,
+        "fractionAbove40Dbz": 0.01279,
+        "positivePixels": 16162
+      },
+      "soundingFile": "soundings/gfs/f011.json.gz",
+      "severeFile": "severe/gfs/f011.json.gz"
+    },
+    {
+      "index": 12,
+      "forecastHour": 12,
+      "validTime": "2026-10-04T00:00:00Z",
+      "file": "gfs/f012.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 61.3,
+        "p99Dbz": 39.8,
+        "fractionAbove5Dbz": 0.27932,
+        "fractionAbove40Dbz": 0.00969,
+        "positivePixels": 15343
+      },
+      "soundingFile": "soundings/gfs/f012.json.gz",
+      "severeFile": "severe/gfs/f012.json.gz"
+    },
+    {
+      "index": 13,
+      "forecastHour": 13,
+      "validTime": "2026-10-04T01:00:00Z",
+      "file": "gfs/f013.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 64.0,
+        "p99Dbz": 40.3,
+        "fractionAbove5Dbz": 0.26427,
+        "fractionAbove40Dbz": 0.0105,
+        "positivePixels": 14717
+      },
+      "soundingFile": "soundings/gfs/f013.json.gz",
+      "severeFile": "severe/gfs/f013.json.gz"
+    },
+    {
+      "index": 14,
+      "forecastHour": 14,
+      "validTime": "2026-10-04T02:00:00Z",
+      "file": "gfs/f014.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 65.4,
+        "p99Dbz": 40.5,
+        "fractionAbove5Dbz": 0.24441,
+        "fractionAbove40Dbz": 0.01077,
+        "positivePixels": 13804
+      },
+      "soundingFile": "soundings/gfs/f014.json.gz",
+      "severeFile": "severe/gfs/f014.json.gz"
+    },
+    {
+      "index": 15,
+      "forecastHour": 15,
+      "validTime": "2026-10-04T03:00:00Z",
+      "file": "gfs/f015.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 61.6,
+        "p99Dbz": 39.9,
+        "fractionAbove5Dbz": 0.22586,
+        "fractionAbove40Dbz": 0.00991,
+        "positivePixels": 12900
+      },
+      "soundingFile": "soundings/gfs/f015.json.gz",
+      "severeFile": "severe/gfs/f015.json.gz"
+    },
+    {
+      "index": 16,
+      "forecastHour": 16,
+      "validTime": "2026-10-04T04:00:00Z",
+      "file": "gfs/f016.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 62.2,
+        "p99Dbz": 39.9,
+        "fractionAbove5Dbz": 0.21962,
+        "fractionAbove40Dbz": 0.00982,
+        "positivePixels": 12683
+      },
+      "soundingFile": "soundings/gfs/f016.json.gz",
+      "severeFile": "severe/gfs/f016.json.gz"
+    },
+    {
+      "index": 17,
+      "forecastHour": 17,
+      "validTime": "2026-10-04T05:00:00Z",
+      "file": "gfs/f017.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 63.5,
+        "p99Dbz": 40.8,
+        "fractionAbove5Dbz": 0.22186,
+        "fractionAbove40Dbz": 0.01114,
+        "positivePixels": 12788
+      },
+      "soundingFile": "soundings/gfs/f017.json.gz",
+      "severeFile": "severe/gfs/f017.json.gz"
+    },
+    {
+      "index": 18,
+      "forecastHour": 18,
+      "validTime": "2026-10-04T06:00:00Z",
+      "file": "gfs/f018.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 61.5,
+        "p99Dbz": 40.4,
+        "fractionAbove5Dbz": 0.22013,
+        "fractionAbove40Dbz": 0.01101,
+        "positivePixels": 12730
+      },
+      "soundingFile": "soundings/gfs/f018.json.gz",
+      "severeFile": "severe/gfs/f018.json.gz"
+    },
+    {
+      "index": 19,
+      "forecastHour": 19,
+      "validTime": "2026-10-04T07:00:00Z",
+      "file": "gfs/f019.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 63.2,
+        "p99Dbz": 42.3,
+        "fractionAbove5Dbz": 0.20839,
+        "fractionAbove40Dbz": 0.01428,
+        "positivePixels": 11881
+      },
+      "soundingFile": "soundings/gfs/f019.json.gz",
+      "severeFile": "severe/gfs/f019.json.gz"
+    },
+    {
+      "index": 20,
+      "forecastHour": 20,
+      "validTime": "2026-10-04T08:00:00Z",
+      "file": "gfs/f020.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 61.2,
+        "p99Dbz": 42.0,
+        "fractionAbove5Dbz": 0.19218,
+        "fractionAbove40Dbz": 0.01371,
+        "positivePixels": 11065
+      },
+      "soundingFile": "soundings/gfs/f020.json.gz",
+      "severeFile": "severe/gfs/f020.json.gz"
+    },
+    {
+      "index": 21,
+      "forecastHour": 21,
+      "validTime": "2026-10-04T09:00:00Z",
+      "file": "gfs/f021.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 62.6,
+        "p99Dbz": 42.8,
+        "fractionAbove5Dbz": 0.18642,
+        "fractionAbove40Dbz": 0.01406,
+        "positivePixels": 10580
+      },
+      "soundingFile": "soundings/gfs/f021.json.gz",
+      "severeFile": "severe/gfs/f021.json.gz"
+    },
+    {
+      "index": 22,
+      "forecastHour": 22,
+      "validTime": "2026-10-04T10:00:00Z",
+      "file": "gfs/f022.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 63.2,
+        "p99Dbz": 44.7,
+        "fractionAbove5Dbz": 0.17387,
+        "fractionAbove40Dbz": 0.01628,
+        "positivePixels": 9820
+      },
+      "soundingFile": "soundings/gfs/f022.json.gz",
+      "severeFile": "severe/gfs/f022.json.gz"
+    },
+    {
+      "index": 23,
+      "forecastHour": 23,
+      "validTime": "2026-10-04T11:00:00Z",
+      "file": "gfs/f023.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 64.2,
+        "p99Dbz": 45.6,
+        "fractionAbove5Dbz": 0.16339,
+        "fractionAbove40Dbz": 0.01795,
+        "positivePixels": 9334
+      },
+      "soundingFile": "soundings/gfs/f023.json.gz",
+      "severeFile": "severe/gfs/f023.json.gz"
+    },
+    {
+      "index": 24,
+      "forecastHour": 24,
+      "validTime": "2026-10-04T12:00:00Z",
+      "file": "gfs/f024.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 61.6,
+        "p99Dbz": 45.7,
+        "fractionAbove5Dbz": 0.15113,
+        "fractionAbove40Dbz": 0.01861,
+        "positivePixels": 8953
+      },
+      "soundingFile": "soundings/gfs/f024.json.gz",
+      "severeFile": "severe/gfs/f024.json.gz"
+    },
+    {
+      "index": 25,
+      "forecastHour": 25,
+      "validTime": "2026-10-04T13:00:00Z",
+      "file": "gfs/f025.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 63.6,
+        "p99Dbz": 47.7,
+        "fractionAbove5Dbz": 0.1405,
+        "fractionAbove40Dbz": 0.02079,
+        "positivePixels": 8416
+      },
+      "soundingFile": "soundings/gfs/f025.json.gz",
+      "severeFile": "severe/gfs/f025.json.gz"
+    },
+    {
+      "index": 26,
+      "forecastHour": 26,
+      "validTime": "2026-10-04T14:00:00Z",
+      "file": "gfs/f026.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 69.4,
+        "p99Dbz": 46.4,
+        "fractionAbove5Dbz": 0.13281,
+        "fractionAbove40Dbz": 0.02087,
+        "positivePixels": 7699
+      },
+      "soundingFile": "soundings/gfs/f026.json.gz",
+      "severeFile": "severe/gfs/f026.json.gz"
+    },
+    {
+      "index": 27,
+      "forecastHour": 27,
+      "validTime": "2026-10-04T15:00:00Z",
+      "file": "gfs/f027.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 68.4,
+        "p99Dbz": 45.1,
+        "fractionAbove5Dbz": 0.15485,
+        "fractionAbove40Dbz": 0.02101,
+        "positivePixels": 8887
+      },
+      "soundingFile": "soundings/gfs/f027.json.gz",
+      "severeFile": "severe/gfs/f027.json.gz"
+    },
+    {
+      "index": 28,
+      "forecastHour": 28,
+      "validTime": "2026-10-04T16:00:00Z",
+      "file": "gfs/f028.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 70.6,
+        "p99Dbz": 47.3,
+        "fractionAbove5Dbz": 0.19866,
+        "fractionAbove40Dbz": 0.0269,
+        "positivePixels": 11080
+      },
+      "soundingFile": "soundings/gfs/f028.json.gz",
+      "severeFile": "severe/gfs/f028.json.gz"
+    },
+    {
+      "index": 29,
+      "forecastHour": 29,
+      "validTime": "2026-10-04T17:00:00Z",
+      "file": "gfs/f029.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 69.9,
+        "p99Dbz": 49.3,
+        "fractionAbove5Dbz": 0.23094,
+        "fractionAbove40Dbz": 0.02738,
+        "positivePixels": 12787
+      },
+      "soundingFile": "soundings/gfs/f029.json.gz",
+      "severeFile": "severe/gfs/f029.json.gz"
+    },
+    {
+      "index": 30,
+      "forecastHour": 30,
+      "validTime": "2026-10-04T18:00:00Z",
+      "file": "gfs/f030.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 68.1,
+        "p99Dbz": 50.6,
+        "fractionAbove5Dbz": 0.2561,
+        "fractionAbove40Dbz": 0.03083,
+        "positivePixels": 14094
+      },
+      "soundingFile": "soundings/gfs/f030.json.gz",
+      "severeFile": "severe/gfs/f030.json.gz"
+    },
+    {
+      "index": 31,
+      "forecastHour": 31,
+      "validTime": "2026-10-04T19:00:00Z",
+      "file": "gfs/f031.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 69.7,
+        "p99Dbz": 49.5,
+        "fractionAbove5Dbz": 0.26295,
+        "fractionAbove40Dbz": 0.02835,
+        "positivePixels": 14543
+      },
+      "soundingFile": "soundings/gfs/f031.json.gz",
+      "severeFile": "severe/gfs/f031.json.gz"
+    },
+    {
+      "index": 32,
+      "forecastHour": 32,
+      "validTime": "2026-10-04T20:00:00Z",
+      "file": "gfs/f032.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 69.1,
+        "p99Dbz": 49.7,
+        "fractionAbove5Dbz": 0.25476,
+        "fractionAbove40Dbz": 0.02929,
+        "positivePixels": 14115
+      },
+      "soundingFile": "soundings/gfs/f032.json.gz",
+      "severeFile": "severe/gfs/f032.json.gz"
+    },
+    {
+      "index": 33,
+      "forecastHour": 33,
+      "validTime": "2026-10-04T21:00:00Z",
+      "file": "gfs/f033.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 70.0,
+        "p99Dbz": 48.5,
+        "fractionAbove5Dbz": 0.23955,
+        "fractionAbove40Dbz": 0.02788,
+        "positivePixels": 13181
+      },
+      "soundingFile": "soundings/gfs/f033.json.gz",
+      "severeFile": "severe/gfs/f033.json.gz"
+    },
+    {
+      "index": 34,
+      "forecastHour": 34,
+      "validTime": "2026-10-04T22:00:00Z",
+      "file": "gfs/f034.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 69.6,
+        "p99Dbz": 48.5,
+        "fractionAbove5Dbz": 0.21272,
+        "fractionAbove40Dbz": 0.02654,
+        "positivePixels": 11902
+      },
+      "soundingFile": "soundings/gfs/f034.json.gz",
+      "severeFile": "severe/gfs/f034.json.gz"
+    },
+    {
+      "index": 35,
+      "forecastHour": 35,
+      "validTime": "2026-10-04T23:00:00Z",
+      "file": "gfs/f035.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 68.2,
+        "p99Dbz": 47.5,
+        "fractionAbove5Dbz": 0.20264,
+        "fractionAbove40Dbz": 0.02479,
+        "positivePixels": 12109
+      },
+      "soundingFile": "soundings/gfs/f035.json.gz",
+      "severeFile": "severe/gfs/f035.json.gz"
+    },
+    {
+      "index": 36,
+      "forecastHour": 36,
+      "validTime": "2026-10-05T00:00:00Z",
+      "file": "gfs/f036.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 65.4,
+        "p99Dbz": 46.8,
+        "fractionAbove5Dbz": 0.21863,
+        "fractionAbove40Dbz": 0.02402,
+        "positivePixels": 12557
+      },
+      "soundingFile": "soundings/gfs/f036.json.gz",
+      "severeFile": "severe/gfs/f036.json.gz"
+    },
+    {
+      "index": 37,
+      "forecastHour": 37,
+      "validTime": "2026-10-05T01:00:00Z",
+      "file": "gfs/f037.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 67.3,
+        "p99Dbz": 46.6,
+        "fractionAbove5Dbz": 0.21901,
+        "fractionAbove40Dbz": 0.0243,
+        "positivePixels": 12949
+      },
+      "soundingFile": "soundings/gfs/f037.json.gz",
+      "severeFile": "severe/gfs/f037.json.gz"
+    },
+    {
+      "index": 38,
+      "forecastHour": 38,
+      "validTime": "2026-10-05T02:00:00Z",
+      "file": "gfs/f038.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 65.2,
+        "p99Dbz": 46.8,
+        "fractionAbove5Dbz": 0.21299,
+        "fractionAbove40Dbz": 0.02338,
+        "positivePixels": 12785
+      },
+      "soundingFile": "soundings/gfs/f038.json.gz",
+      "severeFile": "severe/gfs/f038.json.gz"
+    },
+    {
+      "index": 39,
+      "forecastHour": 39,
+      "validTime": "2026-10-05T03:00:00Z",
+      "file": "gfs/f039.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 65.4,
+        "p99Dbz": 45.8,
+        "fractionAbove5Dbz": 0.20349,
+        "fractionAbove40Dbz": 0.02377,
+        "positivePixels": 12530
+      },
+      "soundingFile": "soundings/gfs/f039.json.gz",
+      "severeFile": "severe/gfs/f039.json.gz"
+    },
+    {
+      "index": 40,
+      "forecastHour": 40,
+      "validTime": "2026-10-05T04:00:00Z",
+      "file": "gfs/f040.json.gz",
+      "gridX": 222,
+      "gridY": 205,
+      "source": "WRF 7 km GFS (REFL_10CM nativo)",
+      "reflectivitySource": "REFL_10CM_NATIVE",
+      "reflectivityStats": {
+        "maxDbz": 65.7,
+        "p99Dbz": 46.0,
+        "fractionAbove5Dbz": 0.19497,
+        "fractionAbove40Dbz": 0.02085,
+        "positivePixels": 12235
+      },
+      "soundingFile": "soundings/gfs/f040.json.gz",
+      "severeFile": "severe/gfs/f040.json.gz"
+    }
+  ],
+  "forecastHourStart": 0,
+  "forecastHourEnd": 40,
+  "horizonHours": 40,
+  "nativeGrid": true,
+  "singleRunner": true,
+  "integratedThroughHour": 42,
+  "domain": "sudeste",
+  "status": "complete",
+  "scope": "forecast_40_hours_hourly",
+  "archiveIndex": "runs.json",
+  "archiveRetentionHours": 96,
+  "archivedRunCount": 1
+}
