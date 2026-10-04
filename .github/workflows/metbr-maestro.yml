@@ -95,7 +95,7 @@ jobs:
                   'gh', 'release', 'download', tag, '--repo', repo,
                   '--pattern', 'metbr-run.env',
                   '--dir', str(dest), '--clobber'
-              ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              ], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
               run_env = dest / 'metbr-run.env'
               parsed = parse_run_env(run_env) if run_env.is_file() else None
@@ -117,8 +117,7 @@ jobs:
                           date = m.group(1).replace('-', '')
                           cycle = m.group(2)
                           parsed = (int(date), int(cycle), date, cycle)
-                          break              if parsed is None:
-                  return None
+                          break              if parsed is None:                  return None
 
               date, cycle, ds, cs = parsed
 
@@ -237,8 +236,7 @@ jobs:
                   m = re.search(r'wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[:.](\d{2})[:.](\d{2})', f.name)
                   if not m:
                       continue                  valid = datetime.strptime(
-                      m.group(1).replace('-','') + m.group(2)+m.group(3)+m.group(4),
-                      '%Y%m%d%H%M%S'
+                      m.group(1).replace('-','') + m.group(2)+m.group(3)+m.group(4),                      '%Y%m%d%H%M%S'
                   ).replace(tzinfo=timezone.utc)
                   max_fh = max(max_fh, int(round((valid-init).total_seconds()/3600)))
           print(f'Maestro: horizonte detectado F{max_fh:03d}')
@@ -357,8 +355,7 @@ jobs:
               raise SystemExit(
                   f'Poucos frames válidos para publicar: {len(frames)}'              )
 
-          payload = {
-              'schemaVersion': '1.1',
+          payload = {              'schemaVersion': '1.1',
               'model': 'METBR WRF 4 km',
               'modelKey': 'metbr_wrf',
               'resolutionKm': 4,
