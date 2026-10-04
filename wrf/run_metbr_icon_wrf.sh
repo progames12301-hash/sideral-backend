@@ -12,7 +12,7 @@ export WRF_REFLECTIVITY_SOURCE=REFL_10CM_NATIVE WRF_NATIVE_GRID=true
 export WRF_MPI_PROCS="${WRF_MPI_PROCS:-8}"
 export WRF_TIME_STEP="${WRF_TIME_STEP:-20}"
 
-(( WRF_END_HOUR > WRF_START_HOUR && WRF_START_HOUR % 3 == 0 && WRF_END_HOUR % 3 == 0 && WRF_END_HOUR <= 48 )) || { echo "METBR segmento invalido: inicio/fim precisam ser multiplos de 3 h entre F000 e F048" >&2; exit 2; }
+(( WRF_END_HOUR > WRF_START_HOUR && WRF_START_HOUR % 3 == 0 && WRF_END_HOUR % 3 == 0 && WRF_END_HOUR <= 42 )) || { echo "METBR segmento invalido: inicio/fim precisam ser multiplos de 3 h entre F000 e F042" >&2; exit 2; }
 
 if (( WRF_START_HOUR > 0 )); then
   : "${WRF_RESTART_DIR:?WRF_RESTART_DIR required for restart}"
@@ -20,11 +20,11 @@ if (( WRF_START_HOUR > 0 )); then
 fi
 
 # F000-F003 is only the first compute segment. The boundary file must cover
-# the complete F000-F048 forecast because all later restart segments reuse it.
+# the complete F000-F042 forecast because all later restart segments reuse it.
 export WRF_SIM_END_HOUR="$WRF_END_HOUR"
-export WRF_BOUNDARY_END_HOUR=48
-export WRF_END_HOUR=48
-export WRF_RUN_HOURS=48
+export WRF_BOUNDARY_END_HOUR=42
+export WRF_END_HOUR=42
+export WRF_RUN_HOURS=42
 
 python3 "$ROOT/wrf/prepare_restart_segment.py" --start-hour "$WRF_START_HOUR" --end-hour "$WRF_SIM_END_HOUR" --root "$ROOT"
 
@@ -42,11 +42,11 @@ SOURCE_RUN_8="$ROOT/wrf/.metbr_run_wrf_with_source.8mpi"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_ORIG"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_8"
 
-# The legacy ICON fetcher must see F048 so it downloads all forcing needed by
+# The legacy ICON fetcher must see F042 so it downloads all forcing needed by
 # real.exe. WRF itself still runs only the requested first segment (normally
 # F000-F003). The WRF helper is patched only in this temporary copy.
 sed -i -E 's/(WRF_SEGMENT_HOURS=\$\(\(WRF_END_HOUR-WRF_START_HOUR\)\))/WRF_SEGMENT_HOURS=$((WRF_SIM_END_HOUR-WRF_START_HOUR))/g' "$SOURCE_RUN_8"
-# Build WPS/metgrid forcing through F048, but keep the actual WRF namelist at
+# Build WPS/metgrid forcing through F042, but keep the actual WRF namelist at
 # the segment end. The temporary boundary namelist is applied only to real.exe.
 sed -i 's/--max-hour "\$WRF_END_HOUR"/--max-hour "\$WRF_BOUNDARY_END_HOUR"/' "$SOURCE_RUN_8"
 sed -i '/^    echo "=== REAL.EXE ==="/i\    cp namelist.input namelist.segment.input\n    python3 - <<'\''PYBOUNDARY'\''\nimport datetime as dt, os, re\np="namelist.input"\ns=open(p).read()\nbase=dt.datetime.strptime(os.environ["RUN_DATE"]+os.environ["RUN_CYCLE"], "%Y%m%d%H")\nend=base+dt.timedelta(hours=int(os.environ["WRF_BOUNDARY_END_HOUR"]))\ndef put(k,v):\n    global s\n    s=re.sub(rf"(?m)^\\s*{re.escape(k)}\\s*=.*$", f" {k} = {v},", s)\nfor k,v in (("run_days",0),("run_hours",int(os.environ["WRF_BOUNDARY_END_HOUR"])),("run_minutes",0),("run_seconds",0),("end_year",end.year),("end_month",end.month),("end_day",end.day),("end_hour",end.hour)):\n    put(k,v)\nopen(p,"w").write(s)\nPYBOUNDARY' "$SOURCE_RUN_8"
