@@ -55,7 +55,7 @@ jobs:
         id: discover
         shell: bash
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           rm -rf discover_tmp
@@ -117,8 +117,7 @@ jobs:
                           date = m.group(1).replace('-', '')
                           cycle = m.group(2)
                           parsed = (int(date), int(cycle), date, cycle)
-                          break
-              if parsed is None:
+                          break              if parsed is None:
                   return None
 
               date, cycle, ds, cs = parsed
@@ -200,12 +199,12 @@ jobs:
 
       - name: Baixar assets da rodada METBR
         env:
-          GH_TOKEN: \${{ github.token }}
-          RUN_ID: \${{ steps.discover.outputs.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.discover.outputs.run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="metbr-wrf-4km-checkpoint-\${RUN_ID}"
+          TAG="metbr-wrf-4km-checkpoint-${RUN_ID}"
           rm -rf metbr_raw
           mkdir -p metbr_raw
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
@@ -237,8 +236,7 @@ jobs:
               for f in files:
                   m = re.search(r'wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[:.](\d{2})[:.](\d{2})', f.name)
                   if not m:
-                      continue
-                  valid = datetime.strptime(
+                      continue                  valid = datetime.strptime(
                       m.group(1).replace('-','') + m.group(2)+m.group(3)+m.group(4),
                       '%Y%m%d%H%M%S'
                   ).replace(tzinfo=timezone.utc)
@@ -357,8 +355,7 @@ jobs:
 
           if len(frames) < 3:
               raise SystemExit(
-                  f'Poucos frames válidos para publicar: {len(frames)}'
-              )
+                  f'Poucos frames válidos para publicar: {len(frames)}'              )
 
           payload = {
               'schemaVersion': '1.1',
