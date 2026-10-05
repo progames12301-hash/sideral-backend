@@ -103,7 +103,7 @@ docker run --rm --entrypoint /bin/bash \
   set -u; cd /run; rst="$(cat .expected_restart)"
   echo "Starting METBR WRF restart; MPI=${WRF_MPI_PROCS:-8}; dt=20 s; restart=$rst"
   mpirun --allow-run-as-root --oversubscribe --mca orte_base_help_aggregate 0 \
-    -np "${WRF_MPI_PROCS:-8}" '"'$WRFEXE"'" > /run/rsl.out.restart 2>&1
+    -np "${WRF_MPI_PROCS:-8}" "$WRFEXE" > /run/rsl.out.restart 2>&1
   rc=$?; echo "WRF_MPI_EXIT_CODE=$rc" >> /run/rsl.out.restart; exit "$rc"
   '
 STATUS=$?
