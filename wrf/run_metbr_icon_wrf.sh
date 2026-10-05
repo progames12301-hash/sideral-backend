@@ -42,26 +42,95 @@ SOURCE_RUN_8="$ROOT/wrf/.metbr_run_wrf_with_source.8mpi"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_ORIG"
 cp -f "$SOURCE_RUN" "$SOURCE_RUN_8"
 
-# The legacy ICON fetcher must see F042 so it downloads all forcing needed by
-# real.exe. WRF itself still runs only the requested first segment (normally
-# F000-F003). The WRF helper is patched only in this temporary copy.
-sed -i -E 's/(WRF_SEGMENT_HOURS=\$\(\(WRF_END_HOUR-WRF_START_HOUR\)\))/WRF_SEGMENT_HOURS=$((WRF_SIM_END_HOUR-WRF_START_HOUR))/g' "$SOURCE_RUN_8"
-# Build WPS/metgrid forcing through F042, but keep the actual WRF namelist at
-# the segment end. The temporary boundary namelist is applied only to real.exe.
-sed -i 's/--max-hour "\$WRF_END_HOUR"/--max-hour "\$WRF_BOUNDARY_END_HOUR"/' "$SOURCE_RUN_8"
-sed -i '/^    echo "=== REAL.EXE ==="/i\    cp namelist.input namelist.segment.input\n    python3 - <<'\''PYBOUNDARY'\''\nimport datetime as dt, os, re\np="namelist.input"\ns=open(p).read()\nbase=dt.datetime.strptime(os.environ["RUN_DATE"]+os.environ["RUN_CYCLE"], "%Y%m%d%H")\nend=base+dt.timedelta(hours=int(os.environ["WRF_BOUNDARY_END_HOUR"]))\ndef put(k,v):\n    global s\n    s=re.sub(rf"(?m)^\\s*{re.escape(k)}\\s*=.*$", f" {k} = {v},", s)\nfor k,v in (("run_days",0),("run_hours",int(os.environ["WRF_BOUNDARY_END_HOUR"])),("run_minutes",0),("run_seconds",0),("end_year",end.year),("end_month",end.month),("end_day",end.day),("end_hour",end.hour)):\n    put(k,v)\nopen(p,"w").write(s)\nPYBOUNDARY' "$SOURCE_RUN_8"
-sed -i '/^    test -f wrfinput_d01$/a\    if test -f namelist.segment.input; then cp -f namelist.segment.input namelist.input; fi' "$SOURCE_RUN_8"
-sed -i -E 's/(mpirun[^\n]*-np[[:space:]]+)4([^0-9]|$)/\18\2/g; s/(mpirun[^\n]*--np[=[:space:]]*)4([^0-9]|$)/\18\2/g' "$SOURCE_RUN_8"
+# Patch the temporary source runner without nested sed quoting. The previous
+# implementation injected a Python heredoc through sed and produced an
+# unterminated single quote inside docker's /bin/bash -c command.
+python3 - "$SOURCE_RUN_8" <<'PY_PATCH'
+from pathlib import Path
+import sys
+
+p = Path(sys.argv[1])
+s = p.read_text()
+
+s = s.replace(
+    'WRF_SEGMENT_HOURS=$((WRF_END_HOUR-WRF_START_HOUR))',
+    'WRF_SEGMENT_HOURS=$((WRF_SIM_END_HOUR-WRF_START_HOUR))',
+    1,
+)
+s = s.replace(
+    '--max-hour "$WRF_END_HOUR"',
+    '--max-hour "$WRF_BOUNDARY_END_HOUR"',
+    1,
+)
+
+marker = '    echo "=== REAL.EXE ==="\n'
+patch = '''    cp namelist.input namelist.segment.input
+    python3 - <<'PYBOUNDARY'
+import datetime as dt
+import os
+import re
+
+p = "namelist.input"
+s = open(p, encoding="utf-8").read()
+base = dt.datetime.strptime(os.environ["RUN_DATE"] + os.environ["RUN_CYCLE"], "%Y%m%d%H")
+end = base + dt.timedelta(hours=int(os.environ["WRF_BOUNDARY_END_HOUR"]))
+
+def put(key, value):
+    global s
+    s = re.sub(rf"(?m)^\\s*{re.escape(key)}\\s*=.*$", f" {key} = {value},", s)
+
+for key, value in (
+    ("run_days", 0),
+    ("run_hours", int(os.environ["WRF_BOUNDARY_END_HOUR"])),
+    ("run_minutes", 0),
+    ("run_seconds", 0),
+    ("end_year", end.year),
+    ("end_month", end.month),
+    ("end_day", end.day),
+    ("end_hour", end.hour),
+):
+    put(key, value)
+
+open(p, "w", encoding="utf-8").write(s)
+PYBOUNDARY
+'''
+if marker not in s:
+    raise SystemExit('marcador REAL.EXE nao encontrado no run_wrf_with_source.sh')
+s = s.replace(marker, patch + marker, 1)
+
+marker2 = '    test -f wrfinput_d01\n'
+patch2 = '    test -f wrfinput_d01\n    if test -f namelist.segment.input; then cp -f namelist.segment.input namelist.input; fi\n'
+if marker2 not in s:
+    raise SystemExit('marcador wrfinput_d01 nao encontrado no run_wrf_with_source.sh')
+s = s.replace(marker2, patch2, 1)
+
+old = 'LOCAL_USER_ID="$HOST_UID" \\\n'
+new = 'LOCAL_USER_ID="$HOST_UID" -e RUN_DATE="$RUN_DATE" -e RUN_CYCLE="$RUN_CYCLE" -e WRF_BOUNDARY_END_HOUR="$WRF_BOUNDARY_END_HOUR" -e WRF_SIM_END_HOUR="$WRF_SIM_END_HOUR" \\\n'
+if old not in s:
+    raise SystemExit('linha LOCAL_USER_ID nao encontrada no run_wrf_with_source.sh')
+s = s.replace(old, new, 1)
+
+p.write_text(s)
+PY_PATCH
 
 RUNTIME_HELPER="$ROOT/wrf/ensure_metbr_wrf_runtime.sh"
 RUNTIME_HELPER_IN_WORK="$ROOT/wrf_work/.metbr_ensure_runtime.sh"
 mkdir -p "$ROOT/wrf_work"
 cp -f "$RUNTIME_HELPER" "$RUNTIME_HELPER_IN_WORK"
 chmod +x "$RUNTIME_HELPER_IN_WORK"
-sed -i "/^[[:space:]]*cd \/work[[:space:]]*$/a\\    /bin/bash /work/.metbr_ensure_runtime.sh /work/run" "$SOURCE_RUN_8"
-# Pass the horizon variables into the container so the boundary-generation
-# patch can calculate the correct end date even across month/year rollover.
-sed -i 's/-e LOCAL_USER_ID="\$HOST_UID" \\/-e LOCAL_USER_ID="\$HOST_UID" -e RUN_DATE="\$RUN_DATE" -e RUN_CYCLE="\$RUN_CYCLE" -e WRF_BOUNDARY_END_HOUR="\$WRF_BOUNDARY_END_HOUR" -e WRF_SIM_END_HOUR="\$WRF_SIM_END_HOUR" \\/' "$SOURCE_RUN_8"
+python3 - "$SOURCE_RUN_8" <<'PY_RUNTIME'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+needle = '    cd /work\n'
+insert = '    cd /work\n    /bin/bash /work/.metbr_ensure_runtime.sh /work/run\n'
+if needle not in s:
+    raise SystemExit('marcador cd /work nao encontrado no run_wrf_with_source.sh')
+s = s.replace(needle, insert, 1)
+p.write_text(s)
+PY_RUNTIME
+
 chmod +x "$SOURCE_RUN_8"
 
 restore_source_run(){
