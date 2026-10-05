@@ -99,7 +99,7 @@ touch "$WORK/run/rsl.out.restart"
 set +e
 docker run --rm --entrypoint /bin/bash \
   -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
-  -e WRF_MPI_PROCS="$MPI_PROCS" -v "$WORK/run:/run" "$IMAGE" -lc '
+  -e WRF_MPI_PROCS="$MPI_PROCS" -e WRFEXE="$WRFEXE" -v "$WORK/run:/run" "$IMAGE" -lc '
   set -u; cd /run; rst="$(cat .expected_restart)"
   echo "Starting METBR WRF restart; MPI=${WRF_MPI_PROCS:-8}; dt=20 s; restart=$rst"
   mpirun --allow-run-as-root --oversubscribe --mca orte_base_help_aggregate 0 \
