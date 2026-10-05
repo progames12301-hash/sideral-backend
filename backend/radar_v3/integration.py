@@ -75,9 +75,9 @@ def _cptec_raw_worker(root):
 
 def _start_cptec_raw_worker(root):
     global _raw_thread
-    # O worker roda em processo filho. Assim o CPTEC polar continua disponível
-    # sem permitir que um SIGSEGV de netCDF4/HDF5 derrube o HTTP.
-    if str(os.environ.get('RADAR_V3_CPTEC_RAW', '0')).lower() in (
+    # CPTEC polar is enabled by default. It remains isolated in a child
+    # process so native netCDF4/HDF5 failures cannot kill the HTTP server.
+    if str(os.environ.get('RADAR_V3_CPTEC_RAW', '1')).lower() in (
         '0', 'false', 'no', 'off'
     ):
         return
@@ -96,9 +96,6 @@ def dispatch(request):
     global _handler
     with _lock:
         if _handler is None:
-            # Keep the radar API usable by both the existing Firebase frontend
-            # and the current Cloudflare Pages deployment. A deployment can
-            # override this list with RADAR_V3_ORIGINS without changing code.
             os.environ.setdefault('RADAR_V3_ORIGINS', _radar_origins())
             root = os.environ.get('RADAR_V3_INPUT', 'radar_v3_data')
             store = Store(
@@ -117,8 +114,6 @@ def dispatch(request):
                     daemon=True,
                 ).start()
 
-    # Reuse parsed request/streams; do NOT construct a second socket handler or
-    # close the original connection. V3 headers remain independent of legacy CORS.
     mounted = object.__new__(_handler)
     mounted.__dict__.update(request.__dict__)
     if request.command == 'OPTIONS':
