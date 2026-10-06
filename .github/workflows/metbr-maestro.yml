@@ -35,6 +35,7 @@ jobs:
       - name: Definir run ID e tag do release
         id: meta
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_RUN_ID: ${{ inputs.run_id }}
         shell: bash
