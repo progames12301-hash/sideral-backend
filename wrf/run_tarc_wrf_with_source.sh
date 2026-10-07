@@ -190,7 +190,7 @@ cat > "$WORK/namelist.input" <<EOF
 /
 EOF
 
-docker run --rm -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -v "$WORK:/work" "$IMAGE" /bin/bash -lc '
+docker run --rm --entrypoint /bin/bash -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -v "$WORK:/work" "$IMAGE" -lc '
 set -euo pipefail
 cd /work
 LETTERS=(AAA AAB AAC AAD AAE AAF AAG AAH AAI AAJ AAK AAL AAM AAN AAO AAP AAQ AAR AAS AAT AAU AAV AAW AAX AAY AAZ)
