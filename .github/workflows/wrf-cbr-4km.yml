@@ -84,6 +84,7 @@ jobs:
   seg01:
     name: CBR ICON F003-F006
     runs-on: ubuntu-22.04
+    needs: seg00
     
     timeout-minutes: 355
     steps:
