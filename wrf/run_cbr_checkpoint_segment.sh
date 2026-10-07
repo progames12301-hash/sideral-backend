@@ -89,14 +89,14 @@ PY
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
   bash wrf/run_cbr_icon_wrf.sh
 
-  test -s cbr_cbr_wrf_work/run/wrfinput_d01
-  test -s cbr_cbr_wrf_work/run/wrfbdy_d01
+  test -s cbr_wrf_work/run/wrfinput_d01
+  test -s cbr_wrf_work/run/wrfbdy_d01
   test -n "$(find cbr_wrf_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)"
   test -n "$(find cbr_wrf_work/run -maxdepth 1 -type f -name 'wrfrst_d01_*' -size +0c -print -quit)"
 
-  for f in cbr_cbr_wrf_work/run/wrfrst_d01_*; do cp -f "$f" "cbr-restart-$END_HOUR-$(basename "$f")"; done
-  for f in cbr_cbr_wrf_work/run/wrfout_d01_*; do cp -f "$f" "cbr-wrfout-$SEGMENT_INDEX-$(basename "$f")"; done
-  for f in cbr_cbr_wrf_work/run/wrfbdy_d01; do cp -f "$f" "cbr-boundary-4km-$(basename "$f")"; done
+  for f in cbr_wrf_work/run/wrfrst_d01_*; do cp -f "$f" "cbr-restart-$END_HOUR-$(basename "$f")"; done
+  for f in cbr_wrf_work/run/wrfout_d01_*; do cp -f "$f" "cbr-wrfout-$SEGMENT_INDEX-$(basename "$f")"; done
+  for f in cbr_wrf_work/run/wrfbdy_d01; do cp -f "$f" "cbr-boundary-4km-$(basename "$f")"; done
   cp -f cbr_wrf_work/run/namelist.input cbr-namelist.input
 
   gh release upload "$CHECKPOINT_TAG"     cbr-run.env cbr-namelist.input cbr-boundary-4km-*     cbr-restart-$END_HOUR-* cbr-wrfout-$SEGMENT_INDEX-*     --repo "$GITHUB_REPOSITORY" --clobber
