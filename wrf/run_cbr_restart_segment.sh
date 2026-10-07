@@ -11,7 +11,7 @@ OUTPUT="$ROOT/cbr_segment_output"
 MPI_PROCS="$WRF_MPI_PROCS"
 HIST="$WRF_HISTORY_INTERVAL_MINUTES"
 
-(( START_H > 0 && END_H > START_H && START_H % 3 == 0 && END_H % 3 == 0 && END_H <= 48 )) || {
+(( START_H > 0 && END_H > START_H && START_H % 3 == 0 && END_H % 3 == 0 && END_H <= 42 )) || {
   echo "Restart CBR invalido: F$START_H-F$END_H" >&2
   exit 2
 }
@@ -67,8 +67,8 @@ EXPECTED_RST="$(cat "$WORK/run/.expected_restart")"
 test -s "$WORK/run/$EXPECTED_RST" || { echo "Restart exato nao encontrado: $EXPECTED_RST" >&2; exit 8; }
 find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -delete
 
-RUNTIME_HELPER_URL="https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-runner/wrf/ensure_metbr_wrf_runtime.sh"
-curl -fL --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 600 -o "$WORK/ensure_runtime.sh" "$RUNTIME_HELPER_URL"
+RUNTIME_HELPER_URL="https://raw.githubusercontent.com/progames12301-hash/sideral-backend/cbr-wrf-4km/wrf/ensure_cbr_wrf_runtime.sh"
+curl --fail --location --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 600 -o "$WORK/ensure_runtime.sh" "$RUNTIME_HELPER_URL"
 chmod +x "$WORK/ensure_runtime.sh"
 docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" -v "$WORK/ensure_runtime.sh:/ensure_runtime.sh:ro" "$IMAGE" -lc 'set -e; /bin/bash /ensure_runtime.sh /run'
 
@@ -84,7 +84,7 @@ docker run --rm --entrypoint /bin/bash   -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALL
     set -u
     cd /run
     rst="$(cat .expected_restart)"
-    echo "WRF CBR restart F$START_H-F$END_H; MPI=$WRF_MPI_PROCS; restart=$rst"
+    echo "WRF CBR 4 KM restart F$START_H-F$END_H; MPI=$WRF_MPI_PROCS; restart=$rst"
     mpirun --allow-run-as-root --oversubscribe --mca orte_base_help_aggregate 0       -np "$WRF_MPI_PROCS" "$WRFEXE" > /run/rsl.out.restart 2>&1
     rc=$?
     echo "WRF_MPI_EXIT_CODE=$rc" >> /run/rsl.out.restart
