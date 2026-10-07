@@ -1,0 +1,108 @@
+name: REDEMET Radar Scope
+
+on:
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "Produto REDEMET"
+        required: false
+        default: "03km"
+        type: choice
+        options:
+          - 03km
+          - 05km
+          - 07km
+          - 10km
+          - maxcappi
+      frames:
+        description: "Quantidade de quadros"
+        required: false
+        default: "1"
+        type: string
+      azimuth_step:
+        description: "Passo angular dos gates em graus"
+        required: false
+        default: "0.35"
+        type: string
+      gate_pixels:
+        description: "Comprimento radial de cada gate em pixels"
+        required: false
+        default: "7"
+        type: string
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-redemet-radar-scope
+  cancel-in-progress: true
+
+env:
+  SIDERAL_RENDER_API: https://sideral-backend.onrender.com
+
+jobs:
+  build-and-publish:
+    name: Gerar gates polares REDEMET
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout do backend
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pillow requests
+
+      - name: Gerar Radar Scope a partir do Render
+        env:
+          PRODUCT: \${{ inputs.product || '03km' }}
+          FRAMES: \${{ inputs.frames || '1' }}
+          AZIMUTH_STEP: \${{ inputs.azimuth_step || '0.35' }}
+          GATE_PIXELS: \${{ inputs.gate_pixels || '7' }}
+        run: |
+          set -euo pipefail
+          rm -rf redemet-radar-scope
+          python scripts/redemet_radar_scope.py \
+            --api "$SIDERAL_RENDER_API" \
+            --product "$PRODUCT" \
+            --frames "$FRAMES" \
+            --azimuth-step "$AZIMUTH_STEP" \
+            --gate-pixels "$GATE_PIXELS" \
+            --output redemet-radar-scope
+          test -s redemet-radar-scope/manifest.json
+          test -n "$(find redemet-radar-scope -type f -name '*.png' -size +0c -print -quit)"
+
+      - name: Publicar na branch redemet-radar-scope
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "sideral-redemet-radar-scope-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/redemet-radar-scope-publish
+          git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" /tmp/redemet-radar-scope-publish
+          cd /tmp/redemet-radar-scope-publish
+          git checkout --orphan redemet-radar-scope-next
+          git rm -rf . >/dev/null 2>&1 || true
+          git clean -fdx
+          cp -a "$GITHUB_WORKSPACE/redemet-radar-scope/." .
+          cat > README.md <<'EOF'
+          # Sideral REDEMET Radar Scope
+
+          Overlay transparente com gates polares desenhados a partir dos PNGs
+          oficiais recebidos pelo backend Render da Sideral.
+          EOF
+          git add .
+          git commit -m "Atualiza REDEMET Radar Scope"
+          git push --force origin HEAD:redemet-radar-scope
