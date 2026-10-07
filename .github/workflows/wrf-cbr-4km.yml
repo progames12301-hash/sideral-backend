@@ -1,0 +1,912 @@
+name: WRF CBR 4 KM - ICON
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '25 7 * * *'
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  CBR_CHECKPOINT_PREFIX: cbr-wrf-4km-checkpoint
+  WRF_MPI_PROCS: 8
+  WRF_TARGET_RESOLUTION_KM: 4
+  WRF_DX_METERS: 4000
+  WRF_DY_METERS: 4000
+  WRF_E_WE: 401
+  WRF_E_SN: 501
+  WRF_TIME_STEP: 20
+  WRF_HISTORY_INTERVAL_MINUTES: 60
+  WRF_REF_LAT: -10.5
+  WRF_REF_LON: -40.0
+  WRF_STAND_LON: -40.0
+
+jobs:
+  seg00:
+    name: CBR ICON F000-F003
+    runs-on: ubuntu-22.04
+    
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F000-F003
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 0 3 0 1
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg00
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg01:
+    name: CBR ICON F003-F006
+    runs-on: ubuntu-22.04
+    
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F003-F006
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 3 6 1 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg01
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg02:
+    name: CBR ICON F006-F009
+    runs-on: ubuntu-22.04
+    needs: seg01
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F006-F009
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 6 9 2 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg02
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg03:
+    name: CBR ICON F009-F012
+    runs-on: ubuntu-22.04
+    needs: seg02
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F009-F012
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 9 12 3 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg03
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg04:
+    name: CBR ICON F012-F015
+    runs-on: ubuntu-22.04
+    needs: seg03
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F012-F015
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 12 15 4 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg04
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg05:
+    name: CBR ICON F015-F018
+    runs-on: ubuntu-22.04
+    needs: seg04
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F015-F018
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 15 18 5 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg05
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg06:
+    name: CBR ICON F018-F021
+    runs-on: ubuntu-22.04
+    needs: seg05
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F018-F021
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 18 21 6 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg06
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg07:
+    name: CBR ICON F021-F024
+    runs-on: ubuntu-22.04
+    needs: seg06
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F021-F024
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 21 24 7 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg07
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg08:
+    name: CBR ICON F024-F027
+    runs-on: ubuntu-22.04
+    needs: seg07
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F024-F027
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 24 27 8 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg08
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg09:
+    name: CBR ICON F027-F030
+    runs-on: ubuntu-22.04
+    needs: seg08
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F027-F030
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 27 30 9 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg09
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg10:
+    name: CBR ICON F030-F033
+    runs-on: ubuntu-22.04
+    needs: seg09
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F030-F033
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 30 33 10 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg10
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg11:
+    name: CBR ICON F033-F036
+    runs-on: ubuntu-22.04
+    needs: seg10
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F033-F036
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 33 36 11 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg11
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg12:
+    name: CBR ICON F036-F039
+    runs-on: ubuntu-22.04
+    needs: seg11
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F036-F039
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 36 39 12 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg12
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg13:
+    name: CBR ICON F039-F042
+    runs-on: ubuntu-22.04
+    needs: seg12
+    timeout-minutes: 355
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Executar CBR F039-F042
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          bash wrf/run_cbr_checkpoint_segment.sh 39 42 13 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbr-diagnostics-seg13
+          path: |
+            cbr_diagnostics/
+            cbr_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  complete:
+    name: CBR 4 KM F000-F042 completo e JSON
+    runs-on: ubuntu-22.04
+    needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07, seg08, seg09, seg10, seg11, seg12, seg13]
+    timeout-minutes: 90
+    steps:
+      - name: Checkout CBR
+        uses: actions/checkout@v4
+        with:
+          ref: cbr-wrf-4km
+          fetch-depth: 1
+      - name: Pré-validar CBR antes de downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cbr_checkpoint_segment.sh
+            wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_wrf_with_source.sh
+            wrf/run_cbr_restart_segment.sh
+          )
+          for f in "${scripts[@]}"; do
+            test -f "$f"
+            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            bash -n "$f"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 - <<'PY'
+import json
+from pathlib import Path
+m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+assert m['model']=='WRF CBR 4 KM'
+assert m['resolutionKm']==4
+assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+assert m['forecast']['hours']==42
+print('CBR preflight: catálogo/grade OK')
+PY
+      - name: Baixar WRFOUT completo
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          rm -rf cbr_raw_wrfout cbr_all_wrfout cbr_json cbr_products
+          mkdir -p cbr_raw_wrfout cbr_all_wrfout
+          gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'cbr-wrfout-*' --dir cbr_raw_wrfout --clobber
+          for f in cbr_raw_wrfout/cbr-wrfout-*; do
+            [[ -f "$f" ]] || continue
+            n="$(basename "$f" | sed -E 's/^cbr-wrfout-[0-9]+-//; s/_([0-9]{2})[.]([0-9]{2})[.]([0-9]{2})$/_\1:\2:\3/')"
+            mv -f "$f" "cbr_all_wrfout/$n"
+          done
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'cbr-run.env' --dir . --clobber
+          test -s cbr-run.env
+          count="$(find cbr_all_wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)"
+          test "$count" -gt 0
+          echo "WRFOUT CBR baixados: $count"
+
+      - name: Gerar JSON CBR
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -q 'numpy>=1.24,<3' 'netCDF4>=1.6,<2'
+          python3 wrf/cbr_extract_json.py --run-dir cbr_all_wrfout --output-dir cbr_json --expected-start 0 --expected-end 42
+          test -s cbr_json/metadata.json
+          test "$(find cbr_json/frames -type f -name 'f*.json.gz' | wc -l)" -ge 40
+
+      - name: Validar JSON CBR
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, gzip, pathlib
+          meta=json.loads(pathlib.Path('cbr_json/metadata.json').read_text())
+          assert meta['model']=='WRF CBR 4 KM'
+          assert meta['modelKey']=='cbr_wrf_4km'
+          assert meta['resolutionKm']==4
+          assert meta['grid']=={'nx':401,'ny':501}
+          assert not meta['missingForecastHours'], meta['missingForecastHours']
+          assert meta['frameCount']==43, meta['frameCount']
+          with gzip.open('cbr_json/frames/f000.json.gz','rt',encoding='utf-8') as fh:
+              f=json.load(fh)
+          assert f['nativeReflectivity']=='REFL_10CM'
+          assert f['grid']=={'nx':401,'ny':501}
+          print('CBR JSON válido: 43 frames, 401x501')
+          PY
+
+      - name: Publicar JSON no branch cbr-json-data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf cbr_json_data_checkout
+          git clone --depth 1 --branch cbr-json-data "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" cbr_json_data_checkout
+          rm -rf cbr_json_data_checkout/frames
+          mkdir -p cbr_json_data_checkout/frames
+          cp -f cbr_json/metadata.json cbr_json_data_checkout/metadata.json
+          cp -f cbr_json/frames/*.json.gz cbr_json_data_checkout/frames/
+          cp -f wrf/cbr_variable_catalog.json cbr_json_data_checkout/variable_catalog.json
+          cd cbr_json_data_checkout
+          git config user.name "sideral-cbr-bot"
+          git config user.email "sideralmeteorologia@gmail.com"
+          git add metadata.json variable_catalog.json frames/
+          git diff --cached --quiet && exit 0
+          git commit -m "CBR: publicar WRF 4 KM ICON"
+          git push origin cbr-json-data
+
+      - name: Publicar produtos compactos no Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          tar -czf cbr-products-4km.tar.gz -C cbr_json .
+          test -s cbr-products-4km.tar.gz
+          gh release upload "$CHECKPOINT_TAG" cbr-products-4km.tar.gz wrf/cbr_variable_catalog.json --repo "$GITHUB_REPOSITORY" --clobber
+          echo "CBR 4 KM: rodada completa publicada.";
