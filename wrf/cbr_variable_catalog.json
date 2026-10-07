@@ -1,0 +1,184 @@
+{
+  "model": "WRF CBR 4 KM",
+  "modelKey": "cbr_wrf_4km",
+  "region": "Nordeste do Brasil",
+  "domain": {
+    "e_we": 401,
+    "e_sn": 501,
+    "dx_m": 4000,
+    "dy_m": 4000,
+    "approx_longitude": [
+      "-50.1",
+      "-29.9"
+    ],
+    "approx_latitude": [
+      "-21.2",
+      "0.9"
+    ],
+    "requested_core_box": [
+      "-48W..-32W",
+      "-19S..-2S"
+    ],
+    "projection": "Lambert"
+  },
+  "forecast": {
+    "hours": 42,
+    "output_interval_minutes": 60,
+    "input_model": "ICON"
+  },
+  "native_or_compact_products": [
+    [
+      "REFL_10CM",
+      "native",
+      "refletividade nativa 3D"
+    ],
+    [
+      "reflectivity_native_dbz",
+      "derived_from_native",
+      "camada inferior da REFL_10CM"
+    ],
+    [
+      "reflectivity_composite_dbz",
+      "derived_from_native",
+      "maximo vertical da REFL_10CM"
+    ],
+    [
+      "U10",
+      "native",
+      "componente zonal do vento a 10 m"
+    ],
+    [
+      "V10",
+      "native",
+      "componente meridional do vento a 10 m"
+    ],
+    [
+      "wind10_ms",
+      "derived",
+      "velocidade do vento a 10 m"
+    ],
+    [
+      "wind10_dir_deg",
+      "derived",
+      "direcao meteorologica"
+    ],
+    [
+      "T2",
+      "native",
+      "temperatura a 2 m"
+    ],
+    [
+      "td2_c",
+      "derived",
+      "ponto de orvalho a 2 m"
+    ],
+    [
+      "rh2_pct",
+      "derived",
+      "umidade relativa a 2 m"
+    ],
+    [
+      "Q2",
+      "native",
+      "razao de mistura a 2 m"
+    ],
+    [
+      "PSFC",
+      "native",
+      "pressao na superficie"
+    ],
+    [
+      "SLP",
+      "native",
+      "pressao ao nivel do mar"
+    ],
+    [
+      "RAINC",
+      "native",
+      "precipitacao convectiva acumulada"
+    ],
+    [
+      "RAINNC",
+      "native",
+      "precipitacao de grade acumulada"
+    ],
+    [
+      "RAINSH",
+      "native",
+      "precipitacao convectiva rasa"
+    ],
+    [
+      "rain_total_mm",
+      "derived",
+      "RAINC + RAINNC"
+    ],
+    [
+      "SNOWNC",
+      "native",
+      "neve acumulada quando presente"
+    ],
+    [
+      "GRAUPELNC",
+      "native",
+      "graupel acumulado quando presente"
+    ],
+    [
+      "HAILNC",
+      "native",
+      "granizo acumulado quando presente"
+    ],
+    [
+      "CLDFRA",
+      "native",
+      "fracao de nuvem"
+    ],
+    [
+      "XLAT",
+      "native",
+      "latitude"
+    ],
+    [
+      "XLONG",
+      "native",
+      "longitude"
+    ]
+  ],
+  "severe_diagnostics": [
+    "CAPE",
+    "MUCAPE",
+    "MLCAPE",
+    "CIN",
+    "MUCIN",
+    "MLCIN",
+    "LCL",
+    "LFC",
+    "Lifted Index",
+    "Showalter Index",
+    "Total Totals",
+    "K Index",
+    "SRH 0-1 km",
+    "SRH 0-3 km",
+    "Shear 0-1 km",
+    "Shear 0-3 km",
+    "Shear 0-6 km",
+    "Bulk Wind Difference",
+    "Updraft Helicity",
+    "vorticidade",
+    "divergencia",
+    "convergencia",
+    "omega",
+    "theta",
+    "theta-e",
+    "PWAT",
+    "temperatura 850/700/500/200 hPa",
+    "umidade relativa 850/700/500/200 hPa",
+    "vento U/V 850/700/500/200 hPa",
+    "geopotencial 850/700/500/200 hPa"
+  ],
+  "rules": [
+    "ICON only for atmospheric initialization",
+    "native REFL_10CM; no dBZ approximation",
+    "GFS only for land/soil support through WPS",
+    "native WRF grid retained"
+  ]
+}
