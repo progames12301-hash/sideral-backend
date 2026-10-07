@@ -66,10 +66,10 @@ jobs:
 
       - name: Gerar Radar Scope a partir do Render
         env:
-          PRODUCT: \${{ inputs.product || '03km' }}
-          FRAMES: \${{ inputs.frames || '1' }}
-          AZIMUTH_STEP: \${{ inputs.azimuth_step || '0.35' }}
-          GATE_PIXELS: \${{ inputs.gate_pixels || '7' }}
+          PRODUCT: ${{ inputs.product || '03km' }}
+          FRAMES: ${{ inputs.frames || '1' }}
+          AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.35' }}
+          GATE_PIXELS: ${{ inputs.gate_pixels || '7' }}
         run: |
           set -euo pipefail
           rm -rf redemet-radar-scope
@@ -85,7 +85,7 @@ jobs:
 
       - name: Publicar na branch redemet-radar-scope
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name "sideral-redemet-radar-scope-bot"
