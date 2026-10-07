@@ -17,7 +17,7 @@ set -euo pipefail
 : "${WRF_REF_LON:=-40.0}"
 : "${WRF_STAND_LON:=-40.0}"
 
-IMAGE="dtcenter/wps_wrf:latest"
+IMAGE="dtcenter/wps_wrf@sha256:418e36889e469a1038bf343986116a056f7a4744be4306091ef3d7e44881be63"
 ROOT="$GITHUB_WORKSPACE"
 WORK="$ROOT/cbr_wrf_work"
 DIAG="$ROOT/cbr_diagnostics"
@@ -209,6 +209,8 @@ cat > "$WORK/namelist.input" <<EOF
 EOF
 
 chmod -R a+rwX "$WORK"
+cp -f "$ROOT/wrf/ensure_cbr_wrf_runtime.sh" "$WORK/ensure_cbr_wrf_runtime.sh"
+chmod +x "$WORK/ensure_cbr_wrf_runtime.sh"
 
 docker run --rm --entrypoint /bin/bash -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -v "$WORK:/work" "$IMAGE" -lc '
 set -euo pipefail
@@ -262,6 +264,8 @@ mkdir -p run
 cp -a /comsoftware/wrf/WRF-4.3/run/. run/
 cp namelist.input run/namelist.input
 cp met_em.d01.*.nc run/
+echo "=== WRF RUNTIME SUPPORT ==="
+/bin/bash /work/ensure_cbr_wrf_runtime.sh /work/run
 cd run
 
 echo "=== REAL.EXE ==="
@@ -269,7 +273,7 @@ mpirun --allow-run-as-root --oversubscribe --bind-to none -np "${WRF_MPI_PROCS:-
 test -s wrfinput_d01
 test -s wrfbdy_d01
 
-echo "=== WRF CBR 3 KM / REFL_10CM NATIVO ==="
+echo "=== WRF CBR 4 KM / REFL_10CM NATIVO ==="
 mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
 grep -q "SUCCESS COMPLETE WRF" rsl.error.0000 || { tail -260 rsl.error.0000 || true; exit 51; }
 ls -lh wrfout_d01_* wrfrst_d01_* wrfbdy_d01 | tee /work/tarc-files.txt
