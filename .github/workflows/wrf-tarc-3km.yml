@@ -48,7 +48,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F000-F006
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,7 +86,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F006-F012
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,7 +124,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F012-F018
         env:
           GH_TOKEN: ${{ github.token }}
@@ -162,7 +162,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F018-F024
         env:
           GH_TOKEN: ${{ github.token }}
@@ -200,7 +200,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F024-F030
         env:
           GH_TOKEN: ${{ github.token }}
@@ -238,7 +238,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F030-F036
         env:
           GH_TOKEN: ${{ github.token }}
@@ -276,7 +276,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F036-F042
         env:
           GH_TOKEN: ${{ github.token }}
@@ -314,7 +314,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Executar F042-F048
         env:
           GH_TOKEN: ${{ github.token }}
@@ -352,7 +352,7 @@ jobs:
             test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
             bash -n "$f"
           done
-          shellcheck -s bash "${scripts[@]}"
+          shellcheck -S error -s bash "${scripts[@]}"
       - name: Baixar WRFOUT da rodada completa
         env:
           GH_TOKEN: ${{ github.token }}
