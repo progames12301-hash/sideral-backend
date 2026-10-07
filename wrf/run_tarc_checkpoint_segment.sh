@@ -53,8 +53,21 @@ if [[ "$COLD_START" == "0" ]]; then
     [[ -f "$f" ]] || continue
     cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed -E "s/^tarc-restart-$START_HOUR-//; s/_([0-9]{2})[.]([0-9]{2})[.]([0-9]{2})$/_\1:\2:\3/")"
   done
-  cp -f "$INPUT"/tarc-boundary-3km-* "$INPUT/normalized/wrfbdy_d01"
   cp -f "$INPUT/tarc-namelist.input" "$INPUT/normalized/namelist.input"
+
+  # The previous checkpoint boundary ends at START_HOUR, so build a fresh
+  # ICON LBC covering START_HOUR..END_HOUR before restarting WRF.
+  export RUN_DATE RUN_CYCLE
+  export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
+  export WRF_TARGET_RESOLUTION_KM=3 WRF_DX_METERS=3000 WRF_DY_METERS=3000
+  export WRF_E_WE=361 WRF_E_SN=445
+  export WRF_HISTORY_INTERVAL_MINUTES=60 WRF_TIME_STEP=18 WRF_MPI_PROCS=4
+  export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
+  export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
+  echo "TARC: preparando LBC ICON F$START_HOUR-F$END_HOUR"
+  bash wrf/run_tarc_icon_wrf.sh
+  test -s "$ROOT/wrf_work/run/wrfbdy_d01" || { echo "LBC TARC ausente para F$START_HOUR-F$END_HOUR" >&2; exit 27; }
+  cp -f "$ROOT/wrf_work/run/wrfbdy_d01" "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/namelist.input"
   export WRF_RESTART_DIR="$INPUT/normalized"
