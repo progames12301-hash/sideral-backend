@@ -1,0 +1,224 @@
+name: WRF TARC 3 KM - ICON
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 7 * * *'
+
+permissions:
+  contents: write
+
+env:
+  TARC_CHECKPOINT_PREFIX: tarc-wrf-3km-checkpoint
+  WRF_MPI_PROCS: 4
+  WRF_TARGET_RESOLUTION_KM: 3
+  WRF_DX_METERS: 3000
+  WRF_DY_METERS: 3000
+  WRF_E_WE: 361
+  WRF_E_SN: 445
+  WRF_TIME_STEP: 18
+  WRF_HISTORY_INTERVAL_MINUTES: 60
+  WRF_REF_LAT: -28.0
+  WRF_REF_LON: -53.5
+  WRF_STAND_LON: -53.5
+
+  seg00:
+    name: TARC ICON F000-F006
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F000-F006
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 0 6 0 1
+
+  seg01:
+    name: TARC ICON F006-F012
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    needs: seg00
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F006-F012
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 6 12 1 0
+
+  seg02:
+    name: TARC ICON F012-F018
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    needs: seg01
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F012-F018
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 12 18 2 0
+
+  seg03:
+    name: TARC ICON F018-F024
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    needs: seg02
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F018-F024
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 18 24 3 0
+
+  seg04:
+    name: TARC ICON F024-F030
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    needs: seg03
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F024-F030
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 24 30 4 0
+
+  seg05:
+    name: TARC ICON F030-F036
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    needs: seg04
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F030-F036
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 30 36 5 0
+
+  seg06:
+    name: TARC ICON F036-F042
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    needs: seg05
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F036-F042
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 36 42 6 0
+
+  seg07:
+    name: TARC ICON F042-F048
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+    needs: seg06
+    steps:
+      - name: Checkout TARC
+        uses: actions/checkout@v4
+        with:
+          ref: tarc-wrf-3km-main
+          fetch-depth: 1
+      - name: Executar F042-F048
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+          RUN_DATE: ''
+          RUN_CYCLE: ''
+          FORCE_RUN_DATE: ''
+          FORCE_RUN_CYCLE: ''
+        run: |
+          chmod +x wrf/run_tarc_checkpoint_segment.sh
+          bash wrf/run_tarc_checkpoint_segment.sh 42 48 7 0
+
+  # Mantém um job final visível para saber que toda a cadeia de 48 h terminou.
+  complete:
+    name: TARC 3 KM F000-F048 completo
+    runs-on: ubuntu-22.04
+    needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07]
+    steps:
+      - name: Resumo
+        env:
+          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
+        run: |
+          echo "WRF TARC 3 KM concluído."
+          echo "Checkpoint: $CHECKPOINT_TAG"
+          echo "Domínio: 361 x 445; DX=DY=3000 m"
+          echo "Previsão: 48 h; saída horária"
+          echo "Refletividade: REFL_10CM nativa + composta"
+          echo "Vento: U10/V10 + velocidade/direção para barbelas"
+          echo "Produtos: temperatura, umidade, pressão, precipitação, hidrometeoros e diagnósticos 2D"
