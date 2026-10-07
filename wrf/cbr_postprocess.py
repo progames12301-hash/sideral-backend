@@ -125,7 +125,7 @@ def main():
         "resolutionKm": 4,
         "nativeReflectivity": "REFL_10CM",
         "projection": "WRF Lambert",
-        "domain": {"e_we": 361, "e_sn": 445, "approxLon": [-59.0, -48.0], "approxLat": [-34.0, -22.0]},
+        "domain": {"e_we": 401, "e_sn": 501, "approxLon": [-50.1, -29.9], "approxLat": [-21.2, 0.9]},
         "frames": index,
         "products": {
             "reflectivity_native_dbz": "native REFL_10CM, lowest model level",
