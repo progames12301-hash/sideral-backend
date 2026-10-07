@@ -121,7 +121,7 @@ def main():
 
     manifest = out / "metadata.json"
     manifest.write_text(json.dumps({
-        "model": "WRF CBR 3 KM",
+        "model": "WRF CBR 4 KM",
         "resolutionKm": 4,
         "nativeReflectivity": "REFL_10CM",
         "projection": "WRF Lambert",
