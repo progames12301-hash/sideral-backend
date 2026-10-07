@@ -16,12 +16,15 @@ set -euo pipefail
 : "${WRF_REF_LAT:=-10.5}"
 : "${WRF_REF_LON:=-40.0}"
 : "${WRF_STAND_LON:=-40.0}"
+: "${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
 
 IMAGE="dtcenter/wps_wrf@sha256:418e36889e469a1038bf343986116a056f7a4744be4306091ef3d7e44881be63"
 ROOT="$GITHUB_WORKSPACE"
 WORK="$ROOT/cbr_wrf_work"
 DIAG="$ROOT/cbr_diagnostics"
 HOST_UID="$(id -u)"
+BOUNDARY_END_HOUR="${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
+(( BOUNDARY_END_HOUR >= WRF_END_HOUR && BOUNDARY_END_HOUR % 3 == 0 && BOUNDARY_END_HOUR <= 42 )) || { echo "Horizonte LBC CBR invalido: F$BOUNDARY_END_HOUR (segmento termina em F$WRF_END_HOUR)" >&2; exit 9; }
 
 mkdir -p "$WORK" "$DIAG"
 
@@ -35,7 +38,7 @@ trap copy_diag EXIT
 rm -rf "$WORK/source" "$WORK/soil" "$WORK/run" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 mkdir -p "$WORK/source" "$WORK/soil" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 
-echo "CBR 4 KM: $WRF_START_HOUR -> $WRF_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
+echo "CBR 4 KM: F$WRF_START_HOUR-F$WRF_END_HOUR; LBC ate F$BOUNDARY_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
 
 find "$SOURCE_DIR" -maxdepth 1 -type f -name '*.grib2' -print | sort > "$DIAG/source-files.txt"
 test -s "$DIAG/source-files.txt"
@@ -43,10 +46,11 @@ while IFS= read -r f; do cp -f "$f" "$WORK/source/"; done < "$DIAG/source-files.
 cp -f "$SOURCE_VTABLE" "$WORK/Vtable.source"
 cp -f "$ROOT/wrf/Vtable.GFS_SOIL" "$WORK/Vtable.soil"
 
-python3 "$ROOT/wrf/fetch_gfs_land_support.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --max-hour "$WRF_END_HOUR" --output-dir "$WORK/soil"
+python3 "$ROOT/wrf/fetch_gfs_land_support.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --max-hour "$BOUNDARY_END_HOUR" --output-dir "$WORK/soil"
 
 START_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_START_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
 END_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_END_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
+BOUNDARY_END_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$BOUNDARY_END_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
 START_COMPACT="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_START_HOUR hours" +%Y%m%d%H)"
 END_COMPACT="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_END_HOUR hours" +%Y%m%d%H)"
 START_Y="$(echo "$START_COMPACT" | cut -c1-4)"
@@ -76,7 +80,7 @@ cat > "$WORK/namelist.wps" <<EOF
  wrf_core='ARW',
  max_dom=1,
  start_date='$START_ISO',
- end_date='$END_ISO',
+ end_date='$BOUNDARY_END_ISO',
  interval_seconds=10800,
  io_form_geogrid=2,
 /
@@ -272,6 +276,12 @@ echo "=== REAL.EXE ==="
 mpirun --allow-run-as-root --oversubscribe --bind-to none -np "${WRF_MPI_PROCS:-8}" /comsoftware/wrf/WRF-4.3/main/real.exe || { STATUS=$?; tail -240 rsl.error.0000 || true; exit "$STATUS"; }
 test -s wrfinput_d01
 test -s wrfbdy_d01
+
+if [[ "${WRF_BOUNDARY_ONLY:-0}" == "1" ]]; then
+  echo "=== CBR: LBC do segmento preparada; WRF forecast sera executado no restart ==="
+  ls -lh wrfbdy_d01
+  exit 0
+fi
 
 echo "=== WRF CBR 4 KM / REFL_10CM NATIVO ==="
 mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
