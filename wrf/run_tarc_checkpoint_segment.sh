@@ -46,7 +46,6 @@ if [[ "$COLD_START" == "0" ]]; then
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'tarc-run.env' --dir . --clobber
   source tarc-run.env
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "tarc-restart-$START_HOUR-*" --dir "$INPUT" --clobber
-  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'tarc-boundary-3km-*' --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'tarc-namelist.input' --dir "$INPUT" --clobber
   mkdir -p "$INPUT/normalized"
   for f in "$INPUT"/tarc-restart-"$START_HOUR"-*; do
