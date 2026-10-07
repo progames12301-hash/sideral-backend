@@ -206,8 +206,8 @@ def main():
         if fh < args.expected_start or fh > args.expected_end:
             continue
         payload = frame_payload(path)
-        payload["model"] = "WRF CBR 3 KM"
-        payload["modelKey"] = "cbr_wrf_3km"
+        payload["model"] = "WRF CBR 4 KM"
+        payload["modelKey"] = "cbr_wrf_4km"
         payload["resolutionKm"] = 3
         payload["forecastHour"] = fh
         payload["nativeReflectivity"] = "REFL_10CM"
@@ -233,14 +233,14 @@ def main():
 
     metadata = {
         "schemaVersion": "sideral-cbr-wrf-3km-v1",
-        "model": "WRF CBR 3 KM",
-        "modelKey": "cbr_wrf_3km",
+        "model": "WRF CBR 4 KM",
+        "modelKey": "cbr_wrf_4km",
         "sourceModel": "ICON",
         "resolutionKm": 4,
         "forecastHours": [args.expected_start, args.expected_end],
         "temporalResolutionMinutes": 60,
         "initTime": init.isoformat().replace("+00:00", "Z"),
-        "grid": first_grid or {"nx": 361, "ny": 445},
+        "grid": first_grid or {"nx": 401, "ny": 501},
         "domain": {"west": -50.0, "east": -30.0, "south": -21.0, "north": 1.0},
         "projection": "Lambert Conformal",
         "nativeReflectivity": "REFL_10CM",
