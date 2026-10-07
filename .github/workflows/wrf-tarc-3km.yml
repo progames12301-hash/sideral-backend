@@ -30,7 +30,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F000-F006
         env:
@@ -53,7 +53,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F006-F012
         env:
@@ -76,7 +76,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F012-F018
         env:
@@ -99,7 +99,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F018-F024
         env:
@@ -122,7 +122,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F024-F030
         env:
@@ -145,7 +145,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F030-F036
         env:
@@ -168,7 +168,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F036-F042
         env:
@@ -191,7 +191,7 @@ env:
       - name: Checkout TARC
         uses: actions/checkout@v4
         with:
-          ref: tarc-wrf-3km
+          ref: tarc-wrf-3km-main
           fetch-depth: 1
       - name: Executar F042-F048
         env:
