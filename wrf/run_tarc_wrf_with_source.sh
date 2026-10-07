@@ -257,12 +257,12 @@ cp met_em.d01.*.nc run/
 cd run
 
 echo "=== REAL.EXE ==="
-mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe || { STATUS=$?; tail -240 rsl.error.0000 || true; exit "$STATUS"; }
+mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe || { STATUS=$?; tail -240 rsl.error.0000 || true; exit "$STATUS"; }
 test -s wrfinput_d01
 test -s wrfbdy_d01
 
 echo "=== WRF TARC 3 KM / REFL_10CM NATIVO ==="
-mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
+mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
 grep -q "SUCCESS COMPLETE WRF" rsl.error.0000 || { tail -260 rsl.error.0000 || true; exit 51; }
 ls -lh wrfout_d01_* wrfrst_d01_* wrfbdy_d01 | tee /work/tarc-files.txt
 '
