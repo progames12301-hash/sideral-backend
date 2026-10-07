@@ -34,6 +34,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F000-F006
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,6 +71,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F006-F012
         env:
           GH_TOKEN: ${{ github.token }}
@@ -80,6 +108,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F012-F018
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,6 +145,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F018-F024
         env:
           GH_TOKEN: ${{ github.token }}
@@ -126,6 +182,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F024-F030
         env:
           GH_TOKEN: ${{ github.token }}
@@ -149,6 +219,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F030-F036
         env:
           GH_TOKEN: ${{ github.token }}
@@ -172,6 +256,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F036-F042
         env:
           GH_TOKEN: ${{ github.token }}
@@ -195,6 +293,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Executar F042-F048
         env:
           GH_TOKEN: ${{ github.token }}
@@ -218,6 +330,20 @@ jobs:
         with:
           ref: tarc-wrf-3km
           fetch-depth: 1
+      - name: Validar scripts Bash TARC antes da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v bash >/dev/null
+          command -v shellcheck >/dev/null || { echo "shellcheck nao encontrado no runner" >&2; exit 2; }
+          mapfile -t scripts < <(find wrf -type f -name '*.sh' -print | sort)
+          test "${#scripts[@]}" -gt 0
+          for script in "${scripts[@]}"; do
+            echo "Validando $script"
+            test -x "$script"
+            bash -n "$script"
+            shellcheck -s bash "$script"
+          done
       - name: Baixar WRFOUT da rodada completa
         env:
           GH_TOKEN: ${{ github.token }}

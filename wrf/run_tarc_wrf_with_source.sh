@@ -43,7 +43,14 @@ END_D="$(echo "$END_COMPACT" | cut -c7-8)"
 END_H="$(echo "$END_COMPACT" | cut -c9-10)"
 SEG_H=$((WRF_END_HOUR-WRF_START_HOUR))
 
-curl -fL --retry 3 --connect-timeout 20 --max-time 900 -o "$WORK/geog.tar.gz" https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
+curl --fail --location --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 900 -o "$WORK/geog.tar.gz" https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
+test -s "$WORK/geog.tar.gz"
+GEOG_SIZE="$(stat -c %s "$WORK/geog.tar.gz")"
+(( GEOG_SIZE >= 1000000 )) || { echo "geog_low_res_mandatory.tar.gz pequeno demais: $GEOG_SIZE bytes" >&2; exit 30; }
+if head -c 4096 "$WORK/geog.tar.gz" | LC_ALL=C grep -Eiq "<html|<!doctype"; then
+  echo "geog_low_res_mandatory.tar.gz parece HTML" >&2
+  exit 30
+fi
 tar -xzf "$WORK/geog.tar.gz" -C "$WORK/geog_extract"
 TOPO_INDEX="$(find "$WORK/geog_extract" -type f -path '*/topo_gmted2010_5m/index' -print -quit)"
 test -n "$TOPO_INDEX"
@@ -208,7 +215,7 @@ ln -sf /work/Vtable.source Vtable
 /comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1
 /comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-source.stdout 2>&1
 
-sed -i -E "s/^[[:space:]]*prefix[[:space:]]*=.*/ prefix = '\''SOIL''',/" namelist.wps
+sed -i -E "s/^[[:space:]]*prefix[[:space:]]*=.*/ prefix = 'SOIL',/" namelist.wps
 IDX=0
 rm -f GRIBFILE.* Vtable
 while IFS= read -r FILE; do

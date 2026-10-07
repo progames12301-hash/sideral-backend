@@ -68,7 +68,18 @@ test -s "$WORK/run/$EXPECTED_RST" || { echo "Restart exato nao encontrado: $EXPE
 find "$WORK/run" -maxdepth 1 -type f -name 'wrfrst_d01_*' ! -name "$EXPECTED_RST" -delete
 
 RUNTIME_HELPER_URL="https://raw.githubusercontent.com/progames12301-hash/sideral-backend/wrf-runner/wrf/ensure_metbr_wrf_runtime.sh"
-curl -fL --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 600 -o "$WORK/ensure_runtime.sh" "$RUNTIME_HELPER_URL"
+curl --fail --location --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 600 -o "$WORK/ensure_runtime.sh" "$RUNTIME_HELPER_URL"
+test -s "$WORK/ensure_runtime.sh"
+RUNTIME_SIZE="$(stat -c %s "$WORK/ensure_runtime.sh")"
+(( RUNTIME_SIZE >= 200 )) || { echo "ensure_metbr_wrf_runtime.sh pequeno demais: $RUNTIME_SIZE bytes" >&2; exit 11; }
+if head -c 4096 "$WORK/ensure_runtime.sh" | LC_ALL=C grep -Eiq "<html|<!doctype"; then
+  echo "ensure_metbr_wrf_runtime.sh parece HTML" >&2
+  exit 11
+fi
+grep -q "^#!/usr/bin/env bash$" "$WORK/ensure_runtime.sh" || {
+  echo "ensure_metbr_wrf_runtime.sh sem shebang bash valido" >&2
+  exit 11
+}
 chmod +x "$WORK/ensure_runtime.sh"
 docker run --rm --entrypoint /bin/bash -v "$WORK/run:/run" -v "$WORK/ensure_runtime.sh:/ensure_runtime.sh:ro" "$IMAGE" -lc 'set -e; /bin/bash /ensure_runtime.sh /run'
 
