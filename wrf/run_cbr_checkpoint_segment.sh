@@ -45,15 +45,30 @@ if [[ "$COLD_START" == "0" ]]; then
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'cbr-run.env' --dir . --clobber
   source cbr-run.env
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "cbr-restart-$START_HOUR-*" --dir "$INPUT" --clobber
-  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'cbr-boundary-4km-*' --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'cbr-namelist.input' --dir "$INPUT" --clobber
   mkdir -p "$INPUT/normalized"
   for f in "$INPUT"/cbr-restart-"$START_HOUR"-*; do
     [[ -f "$f" ]] || continue
     cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed -E "s/^cbr-restart-$START_HOUR-//; s/_([0-9]{2})[.]([0-9]{2})[.]([0-9]{2})$/_\1:\2:\3/")"
   done
-  cp -f "$INPUT"/cbr-boundary-4km-* "$INPUT/normalized/wrfbdy_d01"
   cp -f "$INPUT/cbr-namelist.input" "$INPUT/normalized/namelist.input"
+
+  # Rebuild the lateral boundary conditions for the exact restart interval.
+  export RUN_DATE RUN_CYCLE
+  export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
+  export WRF_TARGET_RESOLUTION_KM=4
+  export WRF_DX_METERS=4000 WRF_DY_METERS=4000
+  export WRF_E_WE=401 WRF_E_SN=501
+  export WRF_HISTORY_INTERVAL_MINUTES=60
+  export WRF_TIME_STEP=20
+  export WRF_MPI_PROCS=8
+  export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
+  export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
+  echo "CBR: preparando LBC ICON F$START_HOUR-F$END_HOUR"
+  bash wrf/run_cbr_icon_wrf.sh
+  test -s "$ROOT/cbr_wrf_work/run/wrfbdy_d01" || { echo "LBC CBR ausente para F$START_HOUR-F$END_HOUR" >&2; exit 27; }
+  cp -f "$ROOT/cbr_wrf_work/run/wrfbdy_d01" "$INPUT/normalized/wrfbdy_d01"
+
   test -s "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/namelist.input"
   export WRF_RESTART_DIR="$INPUT/normalized"
