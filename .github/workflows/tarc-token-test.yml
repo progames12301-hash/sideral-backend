@@ -1,0 +1,13 @@
+name: TARC token test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo ok
