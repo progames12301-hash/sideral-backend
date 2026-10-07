@@ -8,12 +8,15 @@ set -euo pipefail
 : "$WRF_END_HOUR"
 : "$SOURCE_DIR"
 : "$SOURCE_VTABLE"
+: "${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
 
 IMAGE="dtcenter/wps_wrf:latest"
 ROOT="$GITHUB_WORKSPACE"
 WORK="$ROOT/wrf_work"
 DIAG="$ROOT/tarc_diagnostics"
 HOST_UID="$(id -u)"
+BOUNDARY_END_HOUR="${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
+(( BOUNDARY_END_HOUR >= WRF_END_HOUR && BOUNDARY_END_HOUR % 3 == 0 && BOUNDARY_END_HOUR <= 48 )) || { echo "Horizonte LBC TARC invalido: F$BOUNDARY_END_HOUR (segmento termina em F$WRF_END_HOUR)" >&2; exit 9; }
 
 mkdir -p "$WORK" "$DIAG"
 
@@ -27,7 +30,7 @@ trap copy_diag EXIT
 rm -rf "$WORK/source" "$WORK/soil" "$WORK/run" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 mkdir -p "$WORK/source" "$WORK/soil" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 
-echo "TARC 3 KM: $WRF_START_HOUR -> $WRF_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
+echo "TARC 3 KM: F$WRF_START_HOUR-F$WRF_END_HOUR; LBC ate F$BOUNDARY_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
 
 find "$SOURCE_DIR" -maxdepth 1 -type f -name '*.grib2' -print | sort > "$DIAG/source-files.txt"
 test -s "$DIAG/source-files.txt"
@@ -35,10 +38,11 @@ while IFS= read -r f; do cp -f "$f" "$WORK/source/"; done < "$DIAG/source-files.
 cp -f "$SOURCE_VTABLE" "$WORK/Vtable.source"
 cp -f "$ROOT/wrf/Vtable.GFS_SOIL" "$WORK/Vtable.soil"
 
-python3 "$ROOT/wrf/fetch_gfs_land_support.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --max-hour "$WRF_END_HOUR" --output-dir "$WORK/soil"
+python3 "$ROOT/wrf/fetch_gfs_land_support.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --max-hour "$BOUNDARY_END_HOUR" --output-dir "$WORK/soil"
 
 START_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_START_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
 END_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_END_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
+BOUNDARY_END_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$BOUNDARY_END_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
 START_COMPACT="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_START_HOUR hours" +%Y%m%d%H)"
 END_COMPACT="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_END_HOUR hours" +%Y%m%d%H)"
 START_Y="$(echo "$START_COMPACT" | cut -c1-4)"
@@ -68,7 +72,7 @@ cat > "$WORK/namelist.wps" <<EOF
  wrf_core='ARW',
  max_dom=1,
  start_date='$START_ISO',
- end_date='$END_ISO',
+ end_date='$BOUNDARY_END_ISO',
  interval_seconds=10800,
  io_form_geogrid=2,
 /
