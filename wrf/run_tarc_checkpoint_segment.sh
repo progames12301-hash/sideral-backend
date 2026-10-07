@@ -50,7 +50,7 @@ if [[ "$COLD_START" == "0" ]]; then
   mkdir -p "$INPUT/normalized"
   for f in "$INPUT"/tarc-restart-"$START_HOUR"-*; do
     [[ -f "$f" ]] || continue
-    cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed "s/^tarc-restart-$START_HOUR-//")"
+    cp -f "$f" "$INPUT/normalized/$(basename "$f" | sed -E "s/^tarc-restart-$START_HOUR-//; s/_([0-9]{2})[.]([0-9]{2})[.]([0-9]{2})$/_\1:\2:\3/")"
   done
   cp -f "$INPUT"/tarc-boundary-3km-* "$INPUT/normalized/wrfbdy_d01"
   cp -f "$INPUT/tarc-namelist.input" "$INPUT/normalized/namelist.input"
@@ -61,7 +61,11 @@ if [[ "$COLD_START" == "0" ]]; then
 
   OUTPUT_DIR="$ROOT/tarc_segment_output"
   test -d "$OUTPUT_DIR"
-  gh release upload "$CHECKPOINT_TAG"     "$OUTPUT_DIR"/wrfout_d01_*     "$OUTPUT_DIR"/wrfrst_d01_*     --repo "$GITHUB_REPOSITORY" --clobber
+  UPLOAD_DIR="$ROOT/tarc_upload_$SEGMENT_INDEX"
+  rm -rf "$UPLOAD_DIR"; mkdir -p "$UPLOAD_DIR"
+  for f in "$OUTPUT_DIR"/wrfrst_d01_*; do cp -f "$f" "$UPLOAD_DIR/tarc-restart-$END_HOUR-$(basename "$f")"; done
+  for f in "$OUTPUT_DIR"/wrfout_d01_*; do cp -f "$f" "$UPLOAD_DIR/tarc-wrfout-$SEGMENT_INDEX-$(basename "$f")"; done
+  gh release upload "$CHECKPOINT_TAG" "$UPLOAD_DIR"/* --repo "$GITHUB_REPOSITORY" --clobber
 else
   python3 - <<'PY'
 import json, os, urllib.request
