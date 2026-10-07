@@ -232,7 +232,7 @@ def main():
     first_grid = frames[0]["grid"] if frames else None
 
     metadata = {
-        "schemaVersion": "sideral-cbr-wrf-3km-v1",
+        "schemaVersion": "sideral-cbr-wrf-4km-v1",
         "model": "WRF CBR 4 KM",
         "modelKey": "cbr_wrf_4km",
         "sourceModel": "ICON",
