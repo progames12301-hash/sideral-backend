@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 env:
   TARC_CHECKPOINT_PREFIX: tarc-wrf-3km-checkpoint
@@ -22,6 +23,7 @@ env:
   WRF_REF_LON: -53.5
   WRF_STAND_LON: -53.5
 
+jobs:
   seg00:
     name: TARC ICON F000-F006
     runs-on: ubuntu-22.04
@@ -43,12 +45,11 @@ env:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 0 6 0 1
-
   seg01:
     name: TARC ICON F006-F012
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
     needs: seg00
+    timeout-minutes: 355
     steps:
       - name: Checkout TARC
         uses: actions/checkout@v4
@@ -66,12 +67,11 @@ env:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 6 12 1 0
-
   seg02:
     name: TARC ICON F012-F018
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
     needs: seg01
+    timeout-minutes: 355
     steps:
       - name: Checkout TARC
         uses: actions/checkout@v4
@@ -89,12 +89,11 @@ env:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 12 18 2 0
-
   seg03:
     name: TARC ICON F018-F024
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
     needs: seg02
+    timeout-minutes: 355
     steps:
       - name: Checkout TARC
         uses: actions/checkout@v4
@@ -112,12 +111,11 @@ env:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 18 24 3 0
-
   seg04:
     name: TARC ICON F024-F030
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
     needs: seg03
+    timeout-minutes: 355
     steps:
       - name: Checkout TARC
         uses: actions/checkout@v4
@@ -135,12 +133,11 @@ env:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 24 30 4 0
-
   seg05:
     name: TARC ICON F030-F036
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
     needs: seg04
+    timeout-minutes: 355
     steps:
       - name: Checkout TARC
         uses: actions/checkout@v4
@@ -158,12 +155,11 @@ env:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 30 36 5 0
-
   seg06:
     name: TARC ICON F036-F042
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
     needs: seg05
+    timeout-minutes: 355
     steps:
       - name: Checkout TARC
         uses: actions/checkout@v4
@@ -181,12 +177,11 @@ env:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 36 42 6 0
-
   seg07:
     name: TARC ICON F042-F048
     runs-on: ubuntu-22.04
-    timeout-minutes: 355
     needs: seg06
+    timeout-minutes: 355
     steps:
       - name: Checkout TARC
         uses: actions/checkout@v4
@@ -205,7 +200,6 @@ env:
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 42 48 7 0
 
-  # Mantém um job final visível para saber que toda a cadeia de 48 h terminou.
   complete:
     name: TARC 3 KM F000-F048 completo
     runs-on: ubuntu-22.04
