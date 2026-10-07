@@ -11,11 +11,19 @@ set -euo pipefail
 
 IMAGE="dtcenter/wps_wrf:latest"
 ROOT="$GITHUB_WORKSPACE"
-WORK="$ROOT/tarc_wrf_work"
+WORK="$ROOT/wrf_work"
 DIAG="$ROOT/tarc_diagnostics"
 HOST_UID="$(id -u)"
 
 mkdir -p "$WORK" "$DIAG"
+
+copy_diag() {
+  sudo chown -R "$HOST_UID" "$WORK" 2>/dev/null || true
+  for f in "$WORK"/*.stdout "$WORK"/geogrid.log* "$WORK"/ungrib.log "$WORK"/metgrid.log*            "$WORK"/namelist.wps "$WORK"/namelist.input "$WORK"/met-header.txt            "$WORK"/run/rsl.error.0000 "$WORK"/run/rsl.out.0000 "$WORK"/run/namelist.input; do
+    [[ -f "$f" ]] && cp -f "$f" "$DIAG/$(basename "$(dirname "$f")")-$(basename "$f")" 2>/dev/null || true
+  done
+}
+trap copy_diag EXIT
 rm -rf "$WORK/source" "$WORK/soil" "$WORK/run" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 mkdir -p "$WORK/source" "$WORK/soil" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 
@@ -42,6 +50,7 @@ END_M="$(echo "$END_COMPACT" | cut -c5-6)"
 END_D="$(echo "$END_COMPACT" | cut -c7-8)"
 END_H="$(echo "$END_COMPACT" | cut -c9-10)"
 SEG_H=$((WRF_END_HOUR-WRF_START_HOUR))
+RESTART_MIN=$((SEG_H*60))
 
 curl -fL --retry 3 --connect-timeout 20 --max-time 900 -o "$WORK/geog.tar.gz" https://www2.mmm.ucar.edu/wrf/src/wps_files/geog_low_res_mandatory.tar.gz
 tar -xzf "$WORK/geog.tar.gz" -C "$WORK/geog_extract"
@@ -112,6 +121,7 @@ cat > "$WORK/namelist.input" <<EOF
  history_interval=$WRF_HISTORY_INTERVAL_MINUTES,
  frames_per_outfile=1,
  restart=.false.,
+ restart_interval=$RESTART_MIN,
  io_form_history=2,
  io_form_restart=2,
  io_form_input=2,
@@ -190,6 +200,8 @@ cat > "$WORK/namelist.input" <<EOF
 /
 EOF
 
+chmod -R a+rwX "$WORK"
+
 docker run --rm --entrypoint /bin/bash -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -v "$WORK:/work" "$IMAGE" -lc '
 set -euo pipefail
 cd /work
@@ -205,8 +217,12 @@ while IFS= read -r FILE; do
 done < <(find /work/source -maxdepth 1 -type f -name "*.grib2" -print | sort)
 ln -sf /work/Vtable.source Vtable
 
-/comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1
-/comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-source.stdout 2>&1
+echo "=== GEOGRID ==="
+/comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1 || { cat geogrid.stdout; cat geogrid.log 2>/dev/null || true; exit 41; }
+test -f geo_em.d01.nc || { cat geogrid.stdout; exit 41; }
+echo "=== UNGRIB ATMOSFERA ==="
+/comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-source.stdout 2>&1 || { cat ungrib-source.stdout; cat ungrib.log 2>/dev/null || true; exit 43; }
+ls -lh SRC:* || { cat ungrib-source.stdout; cat ungrib.log 2>/dev/null || true; exit 43; }
 
 sed -i -E "s/^[[:space:]]*prefix[[:space:]]*=.*/ prefix = \"SOIL\",/" namelist.wps
 IDX=0
@@ -218,11 +234,14 @@ while IFS= read -r FILE; do
   IDX=$((IDX+1))
 done < <(find /work/soil -maxdepth 1 -type f -name "*.grib2" -print | sort)
 ln -sf /work/Vtable.soil Vtable
-/comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-soil.stdout 2>&1
+echo "=== UNGRIB SOLO GFS ==="
+/comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-soil.stdout 2>&1 || { cat ungrib-soil.stdout; cat ungrib.log 2>/dev/null || true; exit 45; }
+ls -lh SOIL:* || { cat ungrib-soil.stdout; cat ungrib.log 2>/dev/null || true; exit 45; }
 
-/comsoftware/wrf/WPS-4.3/metgrid.exe > metgrid.stdout 2>&1
+echo "=== METGRID ==="
+/comsoftware/wrf/WPS-4.3/metgrid.exe > metgrid.stdout 2>&1 || { cat metgrid.stdout; cat metgrid.log 2>/dev/null || true; exit 46; }
 FIRST_MET=$(find . -maxdepth 1 -name "met_em.d01.*.nc" -print | sort | head -1)
-test -n "$FIRST_MET"
+test -n "$FIRST_MET" || { cat metgrid.stdout; cat metgrid.log 2>/dev/null || true; exit 46; }
 ncdump -h "$FIRST_MET" > met-header.txt
 NUM_LEVELS=$(sed -n -E "s/.*:NUM_METGRID_LEVELS = ([0-9]+).*/\1/p" met-header.txt | head -1)
 NUM_SOIL=$(sed -n -E "s/.*:NUM_METGRID_SOIL_LEVELS = ([0-9]+).*/\1/p" met-header.txt | head -1)
@@ -237,12 +256,13 @@ cp namelist.input run/namelist.input
 cp met_em.d01.*.nc run/
 cd run
 
-mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe
+echo "=== REAL.EXE ==="
+mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe || { STATUS=$?; tail -240 rsl.error.0000 || true; exit "$STATUS"; }
 test -s wrfinput_d01
 test -s wrfbdy_d01
 
 echo "=== WRF TARC 3 KM / REFL_10CM NATIVO ==="
-mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1
-grep -q "SUCCESS COMPLETE WRF" rsl.error.0000
+mpirun --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
+grep -q "SUCCESS COMPLETE WRF" rsl.error.0000 || { tail -260 rsl.error.0000 || true; exit 51; }
 ls -lh wrfout_d01_* wrfrst_d01_* wrfbdy_d01 | tee /work/tarc-files.txt
 '
