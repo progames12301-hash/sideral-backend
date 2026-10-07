@@ -18,8 +18,9 @@ ICON_SOURCE_XFIRST=-55.0
 ICON_SOURCE_YFIRST=-24.0
 ICON_SOURCE_XINC=0.25
 ICON_SOURCE_YINC=0.25
+SOURCE_END_HOUR="${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
 
-(( WRF_START_HOUR >= 0 && WRF_END_HOUR > WRF_START_HOUR && WRF_START_HOUR % 3 == 0 && WRF_END_HOUR % 3 == 0 && WRF_END_HOUR <= 42 )) || {
+(( WRF_START_HOUR >= 0 && WRF_END_HOUR > WRF_START_HOUR && WRF_START_HOUR % 3 == 0 && WRF_END_HOUR % 3 == 0 && WRF_END_HOUR <= 42 && SOURCE_END_HOUR >= WRF_END_HOUR && SOURCE_END_HOUR % 3 == 0 && SOURCE_END_HOUR <= 42 )) || {
   echo "Segmento ICON CBR invalido: F$WRF_START_HOUR-F$WRF_END_HOUR" >&2
   exit 2
 }
@@ -42,7 +43,7 @@ PY
   for C in "${CANDIDATES[@]}"; do
     read -r DATE CYCLE <<< "$C"
     STAMP="$(printf '%s%s' "$DATE" "$CYCLE")"
-    FH="$(printf '%03d' "$WRF_END_HOUR")"
+    FH="$(printf '%03d' "$SOURCE_END_HOUR")"
     URL="https://opendata.dwd.de/weather/nwp/icon/grib/"$CYCLE"/t_2m/icon_global_icosahedral_single-level_"$STAMP"_"$FH"_T_2M.grib2.bz2"
     if curl --fail --location --retry 5 --retry-delay 5 --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
       RUN_DATE="$DATE"
@@ -52,7 +53,7 @@ PY
   done
 fi
 
-test -n "$RUN_DATE" || { echo "Nenhuma rodada ICON recente com F$WRF_END_HOUR" >&2; exit 20; }
+test -n "$RUN_DATE" || { echo "Nenhuma rodada ICON recente com F$SOURCE_END_HOUR" >&2; exit 20; }
 echo "ICON CBR selecionado: $RUN_DATE $RUN_CYCLE Z"
 
 rm -rf "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
@@ -97,7 +98,7 @@ PY
 
 docker run --rm --user "$HOST_UID:$HOST_UID" -v "$REGRID_DIR:/work" "$ICON_REGRID_IMAGE" cdo gennn,/work/target_grid.txt /data/grids/icon/icon_grid.nc /work/icon_weights.nc
 
-for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
+for H in $(seq "$WRF_START_HOUR" 3 "$SOURCE_END_HOUR"); do
   printf -v FH '%03d' "$H"
   RAW="$RAW_DIR/icon_f"$FH"_raw.grib2"
   SIMPLE="$RAW_DIR/icon_f"$FH"_simple.grib2"
@@ -126,7 +127,7 @@ for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
   rm -f "$RAW" "$SIMPLE" "$FI" "$HGT0" "$HGT" "$CHECK"
 done
 
-export SOURCE_MODEL=icon RUN_DATE RUN_CYCLE WRF_START_HOUR WRF_END_HOUR
+export SOURCE_MODEL=icon RUN_DATE RUN_CYCLE WRF_START_HOUR WRF_END_HOUR WRF_BOUNDARY_END_HOUR="$SOURCE_END_HOUR"
 export WRF_HISTORY_INTERVAL_MINUTES=60
 export WRF_DX_METERS=4000 WRF_DY_METERS=4000 WRF_E_WE=401 WRF_E_SN=501 WRF_TIME_STEP=20
 export WRF_REF_LAT=-10.5 WRF_REF_LON=-40.0 WRF_STAND_LON=-40.0
