@@ -265,6 +265,12 @@ mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf
 test -s wrfinput_d01
 test -s wrfbdy_d01
 
+if [[ "${WRF_BOUNDARY_ONLY:-0}" == "1" ]]; then
+  echo "=== TARC: LBC do segmento preparada; WRF forecast sera executado no restart ==="
+  ls -lh wrfbdy_d01
+  exit 0
+fi
+
 echo "=== WRF TARC 3 KM / REFL_10CM NATIVO ==="
 mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
 grep -q "SUCCESS COMPLETE WRF" rsl.error.0000 || { tail -260 rsl.error.0000 || true; exit 51; }
