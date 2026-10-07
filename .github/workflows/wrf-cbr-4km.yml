@@ -46,9 +46,13 @@ jobs:
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -101,9 +105,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -156,9 +164,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -211,9 +223,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -266,9 +282,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -321,9 +341,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -376,9 +400,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -431,9 +459,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -486,9 +518,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -541,9 +577,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -596,9 +636,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -651,9 +695,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -706,9 +754,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -761,9 +813,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
@@ -816,9 +872,13 @@ PY
             wrf/run_cbr_restart_segment.sh
           )
           for f in "${scripts[@]}"; do
-            test -f "$f"
-            test -x "$f" || { echo "ERRO: CBR script não executável: $f" >&2; exit 1; }
+            test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
+          done
+          chmod +x "${scripts[@]}"
+          for f in "${scripts[@]}"; do
+            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
+            stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
