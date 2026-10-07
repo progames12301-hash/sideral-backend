@@ -117,7 +117,7 @@ jobs:
       - name: Checkout dos extratores TARC
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: tarc-wrf-3km
           fetch-depth: 1
 
       - name: Definir run ID TARC
