@@ -79,7 +79,7 @@ if run_cycle not in {"00","06","12","18"}:
 open("tarc-run.env","w").write(f"RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n")
 PY
   source tarc-run.env
-  gh release create "$CHECKPOINT_TAG" --target tarc-wrf-3km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF TARC 3 KM ICON checkpoint $GITHUB_RUN_ID" || true
+  gh release create "$CHECKPOINT_TAG" --target tarc-wrf-3km-main --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF TARC 3 KM ICON checkpoint $GITHUB_RUN_ID" || true
   gh release upload "$CHECKPOINT_TAG" tarc-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
