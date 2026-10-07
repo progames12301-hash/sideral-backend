@@ -48,9 +48,7 @@ jobs:
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -107,9 +105,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -166,9 +162,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -225,9 +219,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -284,9 +276,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -343,9 +333,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -402,9 +390,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -461,9 +447,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -520,9 +504,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -579,9 +561,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -638,9 +618,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -697,9 +675,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -756,9 +732,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -815,9 +789,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
@@ -874,9 +846,7 @@ PY
           for f in "${scripts[@]}"; do
             test -f "$f" || { echo "ERRO: CBR script ausente: $f" >&2; exit 1; }
           done
-          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: não foi possível tornar CBR script executável: $f" >&2; exit 1; }
             bash -n "$f"
             stat -c 'CBR script: %A %a %n' "$f"
           done
