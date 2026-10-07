@@ -243,8 +243,8 @@ echo "=== METGRID ==="
 FIRST_MET=$(find . -maxdepth 1 -name "met_em.d01.*.nc" -print | sort | head -1)
 test -n "$FIRST_MET" || { cat metgrid.stdout; cat metgrid.log 2>/dev/null || true; exit 46; }
 ncdump -h "$FIRST_MET" > met-header.txt
-NUM_LEVELS=$(sed -n -E "s/.*:NUM_METGRID_LEVELS = ([0-9]+).*/\1/p" met-header.txt | head -1)
-NUM_SOIL=$(sed -n -E "s/.*:NUM_METGRID_SOIL_LEVELS = ([0-9]+).*/\1/p" met-header.txt | head -1)
+NUM_LEVELS=$(sed -n -E "s/^[[:space:]]*num_metgrid_levels = ([0-9]+) ;/\1/p" met-header.txt | head -1)
+NUM_SOIL=$(sed -n -E "s/^[[:space:]]*num_sm_layers = ([0-9]+) ;/\1/p" met-header.txt | head -1)
 test -n "$NUM_LEVELS"
 test -n "$NUM_SOIL"
 sed -i -E "s/num_metgrid_levels=[0-9]+/num_metgrid_levels=$NUM_LEVELS/" namelist.input
