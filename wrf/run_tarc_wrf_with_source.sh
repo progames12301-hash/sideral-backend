@@ -208,7 +208,7 @@ ln -sf /work/Vtable.source Vtable
 /comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1
 /comsoftware/wrf/WPS-4.3/ungrib.exe > ungrib-source.stdout 2>&1
 
-sed -i -E "s/^[[:space:]]*prefix[[:space:]]*=.*/ prefix = '\''SOIL''',/" namelist.wps
+sed -i -E "s/^[[:space:]]*prefix[[:space:]]*=.*/ prefix = 'SOIL',/" namelist.wps
 IDX=0
 rm -f GRIBFILE.* Vtable
 while IFS= read -r FILE; do
