@@ -98,4 +98,20 @@ PY
   gh release upload "$CHECKPOINT_TAG"     tarc-run.env tarc-namelist.input tarc-boundary-3km-*     tarc-restart-$END_HOUR-* tarc-wrfout-$SEGMENT_INDEX-*     --repo "$GITHUB_REPOSITORY" --clobber
 fi
 
+
+# Gera produtos 2D compactos para o frontend sem substituir os wrfout nativos.
+if [[ "$COLD_START" == "1" ]]; then
+  POST_INPUT="$ROOT/wrf_work/run"
+else
+  POST_INPUT="$ROOT/tarc_segment_output"
+fi
+if [[ -n "$(find "$POST_INPUT" -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)" ]]; then
+  python3 -m pip install --disable-pip-version-check -q netCDF4 numpy
+  PRODUCT_DIR="$ROOT/tarc_products_$SEGMENT_INDEX"
+  rm -rf "$PRODUCT_DIR"
+  python3 wrf/tarc_postprocess.py "$POST_INPUT"/wrfout_d01_* --output-dir "$PRODUCT_DIR"
+  mv "$PRODUCT_DIR/metadata.json" "tarc-products-$SEGMENT_INDEX.json"
+  gh release upload "$CHECKPOINT_TAG" "$PRODUCT_DIR"/*.npz "tarc-products-$SEGMENT_INDEX.json" --repo "$GITHUB_REPOSITORY" --clobber
+fi
+
 echo "TARC checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
