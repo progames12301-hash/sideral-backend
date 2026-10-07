@@ -60,6 +60,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 0 6 0 1
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg00
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   seg01:
     name: TARC ICON F006-F012
@@ -98,6 +108,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 6 12 1 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg01
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   seg02:
     name: TARC ICON F012-F018
@@ -136,6 +156,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 12 18 2 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg02
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   seg03:
     name: TARC ICON F018-F024
@@ -174,6 +204,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 18 24 3 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg03
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   seg04:
     name: TARC ICON F024-F030
@@ -212,6 +252,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 24 30 4 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg04
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   seg05:
     name: TARC ICON F030-F036
@@ -250,6 +300,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 30 36 5 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg05
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   seg06:
     name: TARC ICON F036-F042
@@ -288,6 +348,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 36 42 6 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg06
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   seg07:
     name: TARC ICON F042-F048
@@ -326,6 +396,16 @@ jobs:
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
           bash wrf/run_tarc_checkpoint_segment.sh 42 48 7 0
+      - name: Salvar diagnósticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-diagnostics-seg07
+          path: |
+            tarc_diagnostics/
+            tarc_segment_output/rsl.*
+          if-no-files-found: ignore
+          retention-days: 7
 
   complete:
     name: TARC 3 KM F000-F048 completo e pós-processado
@@ -359,10 +439,16 @@ jobs:
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
         run: |
           set -euo pipefail
-          rm -rf tarc_all_wrfout tarc_products tarc_severe
+          rm -rf tarc_all_wrfout tarc_raw_wrfout tarc_products tarc_severe
           mkdir -p tarc_all_wrfout
           gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'wrfout_d01_*' --dir tarc_all_wrfout --clobber
+          mkdir -p tarc_raw_wrfout
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'tarc-wrfout-*' --dir tarc_raw_wrfout --clobber
+          for f in tarc_raw_wrfout/tarc-wrfout-*; do
+            [[ -f "$f" ]] || continue
+            n="$(basename "$f" | sed -E 's/^tarc-wrfout-[0-9]+-//; s/_([0-9]{2})[.]([0-9]{2})[.]([0-9]{2})$/_\1:\2:\3/')"
+            mv -f "$f" "tarc_all_wrfout/$n"
+          done
           gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'tarc-run.env' --dir . --clobber
           test -n "$(find tarc_all_wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)"
           test -s tarc-run.env
