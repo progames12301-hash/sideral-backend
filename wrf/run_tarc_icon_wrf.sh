@@ -6,7 +6,7 @@ set -euo pipefail
 : "$WRF_END_HOUR"
 
 ROOT="$GITHUB_WORKSPACE"
-ICON_REGRID_IMAGE="deutscherwetterdienst/regrid:icon-grids"
+ICON_REGRID_IMAGE="deutscherwetterdienst/regrid@sha256:163aecdbc58f78482d203c98e96a077947ad66490f6bf3c41be4d4b79773e921"
 RAW_DIR="$ROOT/tarc_icon_source_raw"
 REG_DIR="$ROOT/tarc_icon_source_regular"
 REGRID_DIR="$ROOT/tarc_icon_regrid"
@@ -44,7 +44,7 @@ PY
     STAMP="$(printf '%s%s' "$DATE" "$CYCLE")"
     FH="$(printf '%03d' "$WRF_END_HOUR")"
     URL="https://opendata.dwd.de/weather/nwp/icon/grib/"$CYCLE"/t_2m/icon_global_icosahedral_single-level_"$STAMP"_"$FH"_T_2M.grib2.bz2"
-    if curl -fsSL --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
+    if curl --fail --location --retry 5 --retry-delay 5 --silent --show-error --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
       RUN_DATE="$DATE"
       RUN_CYCLE="$CYCLE"
       break
@@ -68,6 +68,35 @@ yfirst = $ICON_SOURCE_YFIRST
 yinc = $ICON_SOURCE_YINC
 EOF
 
+python3 - <<'PY'
+ICON_XSIZE=93
+ICON_YSIZE=81
+ICON_XFIRST=-65.0
+ICON_YFIRST=-38.0
+ICON_XINC=0.25
+ICON_YINC=0.25
+WRF_WEST=-59.0
+WRF_EAST=-48.0
+WRF_SOUTH=-34.0
+WRF_NORTH=-22.0
+lon_min=ICON_XFIRST
+lon_max=ICON_XFIRST + (ICON_XSIZE-1)*ICON_XINC
+lat_min=ICON_YFIRST
+lat_max=ICON_YFIRST + (ICON_YSIZE-1)*ICON_YINC
+print(f"ICON lonlat target: {ICON_XSIZE}x{ICON_YSIZE}; dx={ICON_XINC:.2f}°, dy={ICON_YINC:.2f}°")
+print(f"ICON lonlat box: lon={lon_min:.2f}..{lon_max:.2f}, lat={lat_min:.2f}..{lat_max:.2f}")
+print("WRF TARC 3 KM box: lon=-59.00..-48.00, lat=-34.00..-22.00; grid=361x445; dx=3000 m; dy=3000 m")
+margins={
+    "west": WRF_WEST - lon_min,
+    "east": lon_max - WRF_EAST,
+    "south": WRF_SOUTH - lat_min,
+    "north": lat_max - WRF_NORTH,
+}
+print("Margens ICON→WRF: " + ", ".join(f"{k}={v:.2f}°" for k,v in margins.items()))
+if min(margins.values()) < 1.0:
+    raise SystemExit("Grade ICON lonlat nao cobre o dominio WRF com margem minima de 1 grau em todos os lados")
+PY
+
 docker pull "$ICON_REGRID_IMAGE"
 docker run --rm --user "$HOST_UID:$HOST_UID" -v "$REGRID_DIR:/work" "$ICON_REGRID_IMAGE" cdo gennn,/work/target_grid.txt /data/grids/icon/icon_grid.nc /work/icon_weights.nc
 
@@ -82,6 +111,12 @@ for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
   CHECK="$RAW_DIR/icon_f"$FH"_hgt_check.grib2"
 
   python3 "$ROOT/wrf/fetch_icon_wrf_step.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --step "$H" --output "$RAW"
+  ICON_COUNT="$(grib_count "$RAW")"
+  if [[ "$ICON_COUNT" -ne 71 ]]; then
+    echo "ICON TARC F$FH: esperado exatamente 71 mensagens GRIB2 (13 niveis x 5 campos + 6 superficie), encontrado $ICON_COUNT" >&2
+    exit 25
+  fi
+  echo "ICON TARC F$FH: 71/71 mensagens GRIB2 validadas"
   grib_set -r -s packingType=grid_simple "$RAW" "$SIMPLE"
   docker run --rm --user "$HOST_UID:$HOST_UID"     -v "$RAW_DIR:/input" -v "$REG_DIR:/output" -v "$REGRID_DIR:/weights"     "$ICON_REGRID_IMAGE" cdo -f grb2 remap,/weights/target_grid.txt,/weights/icon_weights.nc "/input/$(basename "$SIMPLE")" "/output/$(basename "$OUT")"
 
