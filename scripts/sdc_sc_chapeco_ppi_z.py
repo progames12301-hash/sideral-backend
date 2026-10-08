@@ -141,7 +141,44 @@ def choose_ppi_image(page_html: str, page_url: str):
     scores.sort(key=lambda x:(-x[0],x[1]))
     return scores[0]
 
+def get_wp_posts(session):
+    api = (
+        "https://www.defesacivil.sc.gov.br/wp-json/wp/v2/posts"
+        "?search=Chapec%C3%B3&per_page=30&orderby=date&order=desc"
+    )
+    try:
+        r=fetch(session,api)
+        payload=r.json()
+        if isinstance(payload,list):
+            return payload
+    except Exception:
+        pass
+    return []
+
 def get_latest_ppi(session, category_url):
+    # Preferred: structured WordPress API, avoiding category HTML/JS.
+    posts=get_wp_posts(session)
+    best=None
+    for post in posts:
+        title=text_clean(str(post.get("title",{}).get("rendered","")))
+        rendered=str(post.get("content",{}).get("rendered",""))
+        link=str(post.get("link","")).strip()
+        date=str(post.get("date","")).strip()
+        combined=(title+" "+rendered).lower()
+        if "chapec" not in combined or ("radar" not in combined and "mppi" not in combined):
+            continue
+        candidate=choose_ppi_image(rendered+" "+title,link or category_url)
+        if candidate:
+            score,src,meta=candidate
+            score += 25
+            if "mppi" in combined: score += 20
+            if "refletividade" in combined: score += 20
+            if best is None or (score,date)>(best[0],best[1]):
+                best=(score,date,link,src,meta,rendered)
+    if best is not None:
+        return (best[0],best[2],best[3],best[4],best[5])
+
+    # Fallback: crawl the public Monitoramento category.
     r=fetch(session,category_url)
     urls=find_post_urls(r.text,category_url)
     # Search several recent posts because the newest post is not necessarily a radar post.
