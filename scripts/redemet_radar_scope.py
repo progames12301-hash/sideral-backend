@@ -114,9 +114,11 @@ def sample_source(rgba: np.ndarray, mask: np.ndarray, cx: float, cy: float, radi
     counts = {}
     for pixel in hits:
         counts[pixel] = counts.get(pixel,0)+1
-    pixel = max(counts.items(), key=lambda kv:(kv[1],kv[0]))[0]
-    distances = ((PALETTE - np.array(pixel, dtype=np.int16)) ** 2).sum(axis=1)
-    return tuple(int(v) for v in PALETTE[int(np.argmin(distances))])
+    pixel = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+    rgb = np.array(pixel[:3], dtype=np.int16)
+    distances = ((PALETTE - rgb) ** 2).sum(axis=1)
+    mapped = PALETTE[int(np.argmin(distances))]
+    return (int(mapped[0]), int(mapped[1]), int(mapped[2]), int(pixel[3]))
 
 
 def render_scope(source: Image.Image, item: dict[str, Any], azimuth_deg: float, gate_px: float, gap_px: float) -> Image.Image:
