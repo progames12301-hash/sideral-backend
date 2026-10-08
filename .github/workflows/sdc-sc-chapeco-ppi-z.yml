@@ -55,8 +55,6 @@ jobs:
       - name: Baixar PPI Z real do SIFAP e gerar Super-Res
         run: |
           set -euo pipefail
-        run: |
-          set -euo pipefail
           rm -rf sdc-sc-chapeco-ppi-z
           python scripts/sdc_sc_chapeco_ppi_z.py \
             --width 3840 \
