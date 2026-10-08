@@ -8,24 +8,33 @@ from io import BytesIO
 from pathlib import Path
 
 import requests
+import urllib3
 from PIL import Image
 
 SIFAP = "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar"
-RENDER = "https://sideral-backend.onrender.com"
-SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v3"
+SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v4"
+
+# O certificado apresentado pelo SIFAP/Defesa Civil SC está com a cadeia
+# incompleta para o runner do GitHub Actions. A origem continua sendo
+# exclusivamente o SIFAP oficial; aqui apenas desabilitamos a validação TLS
+# para conseguir acessar o endpoint que já é usado pelo backend Sideral.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 def get(session, url, params, accept, timeout=(15, 90)):
     r = session.get(
         url,
         params=params,
         timeout=timeout,
+        verify=False,
         headers={
-            "User-Agent": "Sideral-SDC-SC-Chapeco-PPI-Z/3.0",
+            "User-Agent": "Sideral-SDC-SC-Chapeco-PPI-Z/4.0",
             "Accept": accept,
         },
     )
     r.raise_for_status()
     return r
+
 
 def get_latest_direct(session):
     r = get(
@@ -36,17 +45,28 @@ def get_latest_direct(session):
         (15, 60),
     )
     names = r.json()
+
+    if isinstance(names, dict):
+        for key in ("images", "files", "data", "result"):
+            value = names.get(key)
+            if isinstance(value, list):
+                names = value
+                break
+
     safe = sorted({
         str(name).strip()
-        for name in names
+        for name in (names if isinstance(names, list) else [])
         if isinstance(name, (str, int))
         and len(str(name).strip()) >= 18
         and str(name).strip().lower().endswith(".png")
         and str(name).strip()[:14].isdigit()
     })
+
     if not safe:
         raise RuntimeError("O SIFAP não retornou imagens PPI Z para CHP/Chapecó.")
-    return safe[-1], "sifap-direct"
+
+    return safe[-1]
+
 
 def get_image_direct(session, filename):
     r = get(
@@ -57,55 +77,15 @@ def get_image_direct(session, filename):
         (15, 120),
     )
     ctype = (r.headers.get("Content-Type") or "").lower()
+
     if "image/png" not in ctype and "image/jpeg" not in ctype:
         raise RuntimeError(f"SIFAP retornou conteúdo que não é imagem: {ctype}")
+
     if len(r.content) < 1000:
         raise RuntimeError("SIFAP retornou uma imagem inválida ou vazia.")
+
     return r.content, ctype
 
-def get_latest_render(session):
-    r = get(
-        session,
-        f"{RENDER}/api/regional/radar",
-        {"product": "reflectivity"},
-        "application/json,*/*",
-        (15, 90),
-    )
-    payload = r.json()
-    radars = payload.get("radars") or []
-    radar = next(
-        (item for item in radars if str(item.get("id", "")).lower() == "sc-chapeco"),
-        None,
-    )
-    if not radar:
-        raise RuntimeError("Render não retornou sc-chapeco.")
-    frames = radar.get("frames") or []
-    if not frames:
-        raise RuntimeError("Render não retornou quadros para Chapecó.")
-    filename = str(frames[-1].get("key") or "").strip()
-    if not filename:
-        raise RuntimeError("O quadro de Chapecó não possui arquivo.")
-    return filename, "sideral-render-proxy"
-
-def get_image_render(session, filename):
-    r = get(
-        session,
-        f"{RENDER}/api/regional/radar/image",
-        {
-            "provider": "sc",
-            "radar": "sc-chapeco",
-            "product": "reflectivity",
-            "file": filename,
-        },
-        "image/png,image/jpeg,*/*",
-        (15, 120),
-    )
-    ctype = (r.headers.get("Content-Type") or "").lower()
-    if "image/png" not in ctype and "image/jpeg" not in ctype:
-        raise RuntimeError(f"Render não retornou imagem: {ctype}")
-    if len(r.content) < 1000:
-        raise RuntimeError("Render retornou imagem inválida ou vazia.")
-    return r.content, ctype
 
 def make_uhd(source: Image.Image, width: int, height: int) -> Image.Image:
     source = source.convert("RGBA")
@@ -118,8 +98,11 @@ def make_uhd(source: Image.Image, width: int, height: int) -> Image.Image:
     fit.close()
     return canvas
 
+
 def main():
-    ap = argparse.ArgumentParser(description="PPI Z real do radar de Chapecó via SIFAP/SDC SC.")
+    ap = argparse.ArgumentParser(
+        description="PPI Z real do radar de Chapecó via SIFAP/Defesa Civil SC."
+    )
     ap.add_argument("--width", type=int, default=3840)
     ap.add_argument("--height", type=int, default=2160)
     ap.add_argument("--output", default="sdc-sc-chapeco-ppi-z")
@@ -130,14 +113,10 @@ def main():
 
     session = requests.Session()
 
-    errors = []
-    try:
-        filename, source_mode = get_latest_direct(session)
-        body, content_type = get_image_direct(session, filename)
-    except Exception as exc:
-        errors.append(f"SIFAP: {type(exc).__name__}: {exc}")
-        filename, source_mode = get_latest_render(session)
-        body, content_type = get_image_render(session, filename)
+    # Única origem: SIFAP oficial da Defesa Civil SC.
+    # Não existe fallback para Render ou qualquer outro proxy.
+    filename = get_latest_direct(session)
+    body, content_type = get_image_direct(session, filename)
 
     source_name = "chapeco-ppi-z-source.png"
     uhd_name = "chapeco-ppi-z-uhd.png"
@@ -145,8 +124,10 @@ def main():
     with Image.open(BytesIO(body)) as source:
         source = source.convert("RGBA")
         source.save(out / source_name, "PNG", optimize=True, compress_level=6)
+
         uhd = make_uhd(source, max(256, args.width), max(256, args.height))
         uhd.save(out / uhd_name, "PNG", optimize=True, compress_level=6)
+
         source_size = source.size
         uhd_size = uhd.size
         uhd.close()
@@ -164,13 +145,14 @@ def main():
         },
         "product": "PPI Z / Reflectivity",
         "source": {
-            "mode": source_mode,
+            "mode": "sifap-direct",
             "upstream": SIFAP,
             "listEndpoint": f"{SIFAP}/getUltimasImagens",
             "imageEndpoint": f"{SIFAP}/getImagem",
             "productCode": "0",
             "radarCode": "CHP",
             "file": filename,
+            "tlsVerification": False,
         },
         "sourceImage": {
             "file": source_name,
@@ -188,9 +170,12 @@ def main():
             "mode": "official-radar-image",
             "inventedDbz": False,
             "inventedCells": False,
-            "note": "A imagem publicada é o próprio PPI de refletividade retornado pelo SIFAP/Defesa Civil SC; a versão UHD apenas redimensiona a imagem original.",
+            "note": (
+                "A imagem publicada é o próprio PPI de refletividade retornado "
+                "pelo SIFAP/Defesa Civil SC; a versão UHD apenas redimensiona "
+                "a imagem original."
+            ),
         },
-        "fallbackErrors": errors,
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 
@@ -199,15 +184,19 @@ def main():
         encoding="utf-8",
     )
 
-    print(json.dumps({
-        "mode": source_mode,
-        "radar": "CHP",
-        "product": "PPI Z",
-        "file": filename,
-        "source": source_name,
-        "uhd": uhd_name,
-        "resolution": f"{uhd_size[0]}x{uhd_size[1]}",
-    }, ensure_ascii=False))
+    print(json.dumps(
+        {
+            "mode": "sifap-direct",
+            "radar": "CHP",
+            "product": "PPI Z",
+            "file": filename,
+            "source": source_name,
+            "uhd": uhd_name,
+            "resolution": f"{uhd_size[0]}x{uhd_size[1]}",
+        },
+        ensure_ascii=False,
+    ))
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
