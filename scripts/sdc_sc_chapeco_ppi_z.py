@@ -132,10 +132,13 @@ def sample_color(rgba: np.ndarray, mask: np.ndarray, cx: float, cy: float, radiu
     for pixel in hits:
         counts[pixel] = counts.get(pixel, 0) + 1
     pixel = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
-    rgb = np.array(pixel[:3], dtype=np.int16)
-    distances = ((PALETTE - rgb) ** 2).sum(axis=1)
+    # Normaliza explicitamente para RGB antes de comparar com a paleta de 3 canais.
+    pixel_rgb = tuple(int(v) for v in pixel[:3])
+    pixel_alpha = int(pixel[3]) if len(pixel) > 3 else 255
+    rgb = np.asarray(pixel_rgb, dtype=np.int16)
+    distances = np.sum((PALETTE - rgb[None, :]) ** 2, axis=1)
     mapped = PALETTE[int(np.argmin(distances))]
-    return (int(mapped[0]), int(mapped[1]), int(mapped[2]), int(pixel[3]))
+    return (int(mapped[0]), int(mapped[1]), int(mapped[2]), pixel_alpha)
 
 def make_radar_scope_superres(
     source: Image.Image,
