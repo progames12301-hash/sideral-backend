@@ -67,8 +67,13 @@ async def main_async(args):
                 url=response.url
                 low=url.lower()
                 ctype=(response.headers.get("content-type") or "").lower()
-                if not any(k in low for k in KEYWORDS):
+
+                # JSON/text can be filtered by radar keywords. Images are NOT
+                # filtered by URL because the real radar file may use an opaque path.
+                is_image=("image/" in ctype or response.request.resource_type in {"image","img"})
+                if not is_image and not any(k in low for k in KEYWORDS):
                     return
+
                 event={
                     "url":url,
                     "status":response.status,
@@ -76,24 +81,53 @@ async def main_async(args):
                     "resourceType":response.request.resource_type,
                 }
                 events.append(event)
+
                 if response.status != 200:
                     return
-                if "image/" in ctype:
+
+                if is_image:
                     try:
                         body=await response.body()
-                        if len(body) > 5000:
-                            ext=".png" if "png" in ctype else ".jpg"
-                            candidate=out/f"network-{len(candidates):03d}{ext}"
-                            candidate.write_bytes(body)
-                            candidates.append({"file":str(candidate),"url":url,"contentType":ctype,"bytes":len(body)})
+                        if len(body) < 10000:
+                            return
+                        try:
+                            with Image.open(BytesIO(body)) as im:
+                                iw,ih=im.size
+                        except Exception:
+                            return
+
+                        # Ignore browser UI assets and tiny generic map tiles.
+                        if iw < 400 or ih < 400:
+                            return
+
+                        candidate=out/f"network-{len(candidates):03d}.png"
+                        candidate.write_bytes(body)
+                        item={
+                            "file":str(candidate),
+                            "url":url,
+                            "contentType":ctype or "image/unknown",
+                            "bytes":len(body),
+                            "width":iw,
+                            "height":ih,
+                        }
+                        candidates.append(item)
+                        event["width"]=iw
+                        event["height"]=ih
                     except Exception:
                         pass
+
                 elif "json" in ctype:
                     try:
-                        text=(await response.text())[:1000000]
-                        if re.search(r"chapec|ppi|mppi|reflect|dbz",text,re.I):
-                            (out/f"network-{len(candidates):03d}.json").write_text(text,encoding="utf-8")
-                            candidates.append({"file":str(out/f"network-{len(candidates)-1:03d}.json"),"url":url,"contentType":ctype,"bytes":len(text)})
+                        body_text=(await response.text())[:1000000]
+                        if re.search(r"chapec|chapeco|ppi|mppi|reflect|reflet|dbz|radar",body_text,re.I):
+                            candidate=out/f"network-{len(candidates):03d}.json"
+                            candidate.write_text(body_text,encoding="utf-8")
+                            candidates.append({
+                                "file":str(candidate),
+                                "url":url,
+                                "contentType":ctype,
+                                "bytes":len(body_text),
+                            })
                     except Exception:
                         pass
             except Exception:
