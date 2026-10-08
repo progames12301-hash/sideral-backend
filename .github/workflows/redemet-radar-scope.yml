@@ -22,12 +22,12 @@ on:
       azimuth_step:
         description: "Passo angular dos gates em graus"
         required: false
-        default: "0.20"
+        default: "0.35"
         type: string
       gate_pixels:
         description: "Comprimento radial de cada gate em pixels"
         required: false
-        default: "2"
+        default: "3"
         type: string
       gate_gap:
         description: "Espaço entre gates em pixels"
@@ -73,9 +73,15 @@ jobs:
         env:
           PRODUCT: ${{ inputs.product || '03km' }}
           FRAMES: ${{ inputs.frames || '1' }}
-          AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.20' }}
-          GATE_PIXELS: ${{ inputs.gate_pixels || '2' }}
+          AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.35' }}
+          GATE_PIXELS: ${{ inputs.gate_pixels || '3' }}
+      target_width:
+        description: "Largura de saída em 4K"
+        required: false
+        default: "3840"
+        type: string
           GATE_GAP: ${{ inputs.gate_gap || '0' }}
+          TARGET_WIDTH: ${{ inputs.target_width || '3840' }}
         run: |
           set -euo pipefail
           rm -rf redemet-radar-scope
@@ -86,6 +92,7 @@ jobs:
             --azimuth-step "$AZIMUTH_STEP" \
             --gate-pixels "$GATE_PIXELS" \
             --gate-gap "$GATE_GAP" \
+            --target-width "$TARGET_WIDTH" \
             --output redemet-radar-scope
           test -s redemet-radar-scope/manifest.json
           test -n "$(find redemet-radar-scope -type f -name '*.png' -size +0c -print -quit)"
