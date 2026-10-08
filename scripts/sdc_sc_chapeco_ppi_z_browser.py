@@ -104,11 +104,11 @@ async def main_async(args):
         await page.goto(MAP_URL,wait_until="domcontentloaded",timeout=90000)
         await page.wait_for_timeout(15000)
 
-        # Try to expose radar controls without assuming a specific framework.
+        # Read the rendered page text only for diagnostics.
         texts=await page.locator("body").inner_text(timeout=15000)
         (out/"page-text.txt").write_text(texts[:200000],encoding="utf-8")
 
-        # Attempt common controls by accessible/text labels.
+        # Attempt common radar controls.
         patterns=[
             re.compile(r"chapec[oó]",re.I),
             re.compile(r"ppi",re.I),
@@ -125,24 +125,52 @@ async def main_async(args):
                 pass
 
         await page.wait_for_timeout(15000)
-        await page.screenshot(path=str(out/"map-screenshot.png"),full_page=True)
 
         # Capture text again after controls are opened.
         texts2=await page.locator("body").inner_text(timeout=15000)
         (out/"page-text-after.txt").write_text(texts2[:200000],encoding="utf-8")
 
+        # Inspect actual <img> elements too. Some radar products are exposed as
+        # images in the DOM even when their URL has no "radar" keyword.
+        try:
+            dom_images=await page.locator("img").evaluate_all(
+                "(els) => els.map(e => ({src:e.currentSrc || e.src || '', width:e.naturalWidth || e.width || 0, height:e.naturalHeight || e.height || 0})).filter(x => x.src)"
+            )
+            (out/"dom-images.json").write_text(
+                json.dumps(dom_images,ensure_ascii=False,indent=2),encoding="utf-8"
+            )
+            for item in dom_images:
+                u=item.get("src","")
+                w=int(item.get("width") or 0)
+                h=int(item.get("height") or 0)
+                if u.startswith(("http://","https://")) and w >= 400 and h >= 400:
+                    events.append({"url":u,"status":200,"contentType":"image/dom","resourceType":"img","width":w,"height":h})
+        except Exception:
+            pass
+
         await browser.close()
 
-    # Prefer actual network images whose URL names the radar/product.
+    # Prefer a real radar image over UI assets/map tiles.
     scored=[]
     for item in candidates:
         low=item["url"].lower()
         score=0
-        if "chapec" in low: score+=100
-        if "ppi" in low or "mppi" in low: score+=80
-        if "reflect" in low or "reflet" in low or "dbz" in low: score+=80
-        if "radar" in low: score+=30
-        if "image/" in item.get("contentType",""): score+=10
+        if "chapec" in low or "chapeco" in low: score+=100
+        if "ppi" in low or "mppi" in low: score+=100
+        if "reflect" in low or "reflet" in low or "dbz" in low: score+=100
+        if "radar" in low: score+=35
+        if "png" in low or "jpeg" in low or "jpg" in low: score+=5
+        if item.get("width",0) >= 500: score+=25
+        if item.get("height",0) >= 500: score+=25
+        if item.get("width",0) and item.get("height",0):
+            ratio=item["width"]/item["height"]
+            if 0.80 <= ratio <= 1.25: score+=35
+        if item.get("bytes",0) >= 50000: score+=20
+        # 256x256/512x512 generic tiles are penalized unless the URL explicitly
+        # identifies the radar product.
+        if item.get("width") in (256,512) and item.get("height") in (256,512):
+            if not any(k in low for k in ("radar","ppi","mppi","dbz")):
+                score-=80
         scored.append((score,item))
     scored.sort(key=lambda x:(-x[0],x[1]["url"]))
 
@@ -191,7 +219,7 @@ async def main_async(args):
         "selected":selected,
         "candidates":len(candidates),
         "networkEvents":len(events),
-        "screenshot":str(out/"map-screenshot.png")
+        "radarImage":selected.get("file") if selected else None
     },ensure_ascii=False))
 
 if __name__=="__main__":
