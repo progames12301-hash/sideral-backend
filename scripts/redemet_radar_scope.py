@@ -17,23 +17,14 @@ import numpy as np
 import requests
 from PIL import Image, ImageDraw
 
-SCHEMA = "sideral-redemet-radar-scope-v2"
+SCHEMA = "sideral-redemet-radar-scope-v1"
 DEFAULT_API = "https://sideral-backend.onrender.com"
 OFFICIAL_HOST = "estatico-redemet.decea.mil.br"
 PRODUCTS = ("03km", "05km", "07km", "10km", "maxcappi")
 PALETTE = np.array([
-    (94,173,206),
-    (102,196,220),
-    (96,210,195),
-    (71,214,135),
-    (46,219,82),
-    (22,218,22),
-    (24,175,15),
-    (26,141,12),
-    (32,115,9),
-    (100,143,6),
-    (171,179,4),
-    (229,205,1),
+    (4,233,231),(1,159,244),(3,0,244),(2,253,2),(1,197,1),(0,142,0),
+    (254,254,0),(253,149,0),(253,0,0),(212,0,0),(188,0,0),(248,0,253),
+    (152,84,198),(255,255,255)
 ], dtype=np.int16)
 WEIGHTS = np.array((2,4,1), dtype=np.int32)
 
@@ -114,11 +105,7 @@ def sample_source(rgba: np.ndarray, mask: np.ndarray, cx: float, cy: float, radi
     counts = {}
     for pixel in hits:
         counts[pixel] = counts.get(pixel,0)+1
-    pixel = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
-    rgb = np.array(pixel[:3], dtype=np.int16)
-    distances = ((PALETTE - rgb) ** 2).sum(axis=1)
-    mapped = PALETTE[int(np.argmin(distances))]
-    return (int(mapped[0]), int(mapped[1]), int(mapped[2]), int(pixel[3]))
+    return max(counts.items(), key=lambda kv:(kv[1],kv[0]))[0]
 
 
 def render_scope(source: Image.Image, item: dict[str, Any], azimuth_deg: float, gate_px: float, gap_px: float) -> Image.Image:
@@ -172,28 +159,13 @@ def source_timestamp(item: dict[str, Any], url: str) -> str:
 
 def fetch_frames(session: requests.Session, api: str, product: str, count: int):
     url = api.rstrip("/") + "/api/redemet/radar"
-    params = {"product": product, "anima": max(1, min(15, count))}
-    last_error: Exception | None = None
-
-    # O Render pode levar alguns segundos para acordar. Permita uma leitura
-    # longa, mas faça no máximo uma segunda tentativa em caso de timeout/erro
-    # transitório, evitando ficar preso indefinidamente.
-    for attempt in range(2):
-        try:
-            r = session.get(url, params=params, timeout=(15, 120))
-            r.raise_for_status()
-            payload = r.json()
-            radar = payload.get("data", {}).get("radar", [])
-            if not isinstance(radar, list) or not radar:
-                raise RuntimeError("Render não retornou quadros REDEMET")
-            return radar[:count]
-        except (requests.RequestException, ValueError, RuntimeError) as exc:
-            last_error = exc
-            if attempt == 0:
-                import time
-                time.sleep(4)
-
-    raise RuntimeError(f"Falha ao consultar Render/REDEMET: {last_error}")
+    r = session.get(url,params={"product":product,"anima":max(1,min(15,count))},timeout=40)
+    r.raise_for_status()
+    payload = r.json()
+    radar = payload.get("data",{}).get("radar",[])
+    if not isinstance(radar,list) or not radar:
+        raise RuntimeError("Render não retornou quadros REDEMET")
+    return radar[:count]
 
 
 def main() -> int:
@@ -203,10 +175,8 @@ def main() -> int:
     ap.add_argument("--frames",type=int,default=1)
     ap.add_argument("--output",default="redemet-radar-scope")
     ap.add_argument("--azimuth-step",type=float,default=0.35)
-    ap.add_argument("--gate-pixels",type=float,default=3.0)
-    ap.add_argument("--gate-gap",type=float,default=0.0)
-    ap.add_argument("--target-width",type=int,default=3840)
-    ap.add_argument("--target-height",type=int,default=2160)
+    ap.add_argument("--gate-pixels",type=float,default=7.0)
+    ap.add_argument("--gate-gap",type=float,default=0.7)
     args = ap.parse_args()
 
     out = Path(args.output)
@@ -236,7 +206,7 @@ def main() -> int:
             parsed = urlparse(src)
             if parsed.scheme != "https" or parsed.hostname != OFFICIAL_HOST or not parsed.path.startswith("/radar/"):
                 raise RuntimeError("Render retornou URL REDEMET fora do domínio oficial")
-            r = session.get(src,timeout=(15,90))
+            r = session.get(src,timeout=40)
             r.raise_for_status()
             with Image.open(BytesIO(r.content)) as original:
                 scope = render_scope(original,item,args.azimuth_step,args.gate_pixels,args.gate_gap)
@@ -244,26 +214,9 @@ def main() -> int:
                 rel = Path(args.product)/safe(loc)/name
                 target = out/rel
                 target.parent.mkdir(parents=True,exist_ok=True)
-
-                # Saída Ultra HD (UHD): 3840x2160 por padrão.
-                # Mantém a proporção original e centraliza o radar em uma tela UHD.
-                target_width = max(1, int(args.target_width))
-                target_height = max(1, int(args.target_height))
-                scale = min(target_width / scope.width, target_height / scope.height)
-                fit_w = max(1, round(scope.width * scale))
-                fit_h = max(1, round(scope.height * scale))
-                scope_fit = scope.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
-                uhd = Image.new("RGBA", (target_width, target_height), (0, 0, 0, 0))
-                x = (target_width - fit_w) // 2
-                y = (target_height - fit_h) // 2
-                uhd.alpha_composite(scope_fit, (x, y))
-                scope_fit.close()
-                scope.close()
-                scope = uhd
                 scope.save(target,"PNG",optimize=True,compress_level=6)
                 scope.close()
                 iw,ih = original.size
-                ow,oh = target_width,target_height
             seen.add(src)
             generated += 1
             t = when(item.get("data"))
@@ -276,8 +229,8 @@ def main() -> int:
                 "scopeUrl":f"https://raw.githubusercontent.com/progames12301-hash/sideral-backend/redemet-radar-scope/{rel.as_posix()}",
                 "bounds":list(b),
                 "radar":{"longitude":number(item,"lon_center"),"latitude":number(item,"lat_center")},
-                "image":{"width":iw,"height":ih,"outputWidth":ow,"outputHeight":oh},
-                "render":{"azimuthStepDegrees":args.azimuth_step,"gatePixels":args.gate_pixels,"gateGapPixels":args.gate_gap,"outputResolution":"Ultra HD","outputWidth":ow,"outputHeight":oh,"mode":"source-color-sampling"}
+                "image":{"width":iw,"height":ih},
+                "render":{"azimuthStepDegrees":args.azimuth_step,"gatePixels":args.gate_pixels,"gateGapPixels":args.gate_gap,"mode":"source-color-sampling"}
             })
         if items:
             manifest_frames.append({"date":max(dates).isoformat().replace("+00:00","Z") if dates else None,"items":items})
