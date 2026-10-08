@@ -63,7 +63,7 @@ def extract_candidates(page_html: str, page_url: str):
         candidates.append((src,alt+" "+attrs,relevant_image((match,alt))))
     # linked images
     for a in re.findall(r"<a\b([^>]+)>(.*?)</a>",page_html,re.I|re.S):
-        img=re.search(r'(?:src|href)=["\\']([^"\\']+\.(?:png|jpe?g|webp))["\\']',a[1],re.I)
+        img=re.search(r"(?:src|href)=['\"]([^'\"]+\.(?:png|jpe?g|webp))['\"]",a[1],re.I)
         if img:
             src=urljoin(page_url,html.unescape(img.group(1)))
             candidates.append((src,text_clean(re.sub(r"<.*?>"," ",a[1])),False))
