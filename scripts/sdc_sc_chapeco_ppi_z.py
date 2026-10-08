@@ -3,280 +3,174 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import html
 import json
-import re
-import subprocess
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import quote, urljoin, urlparse
 
-import numpy as np
 import requests
 from PIL import Image
 
-BASE = "https://www.defesacivil.sc.gov.br/"
-MONITORING = "https://www.defesacivil.sc.gov.br/categoria/monitoramento/"
-JINA_PREFIX = "https://r.jina.ai/"
-ALLORIGINS_PREFIX = "https://api.allorigins.win/raw?url="
-CORSPROXY_PREFIX = "https://corsproxy.io/?url="
-WRSRV_PREFIX = "https://wsrv.nl/?url="
-SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v1"
+DEFAULT_API = "https://sideral-backend.onrender.com"
+SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v2"
 
-def text_clean(value: str) -> str:
-    return re.sub(r"\s+", " ", html.unescape(value or "")).strip()
-
-def fetch(session, url, timeout=(15,45), image=False):
-    headers={
-        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.5",
-        "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" if image
-               else "text/html,application/xhtml+xml,*/*;q=0.8",
-    }
-
-    parsed=urlparse(url)
-    candidates=[url]
-    if parsed.hostname == "www.defesacivil.sc.gov.br":
-        candidates.append(url.replace("://www.defesacivil.sc.gov.br","://defesacivil.sc.gov.br",1))
-    elif parsed.hostname == "defesacivil.sc.gov.br":
-        candidates.append(url.replace("://defesacivil.sc.gov.br","://www.defesacivil.sc.gov.br",1))
-
-    errors=[]
-
-    # Direct access: one short attempt per official hostname.
-    for candidate in candidates:
-        try:
-            r=session.get(candidate,timeout=timeout,headers=headers,allow_redirects=True)
-            r.raise_for_status()
-            return r
-        except requests.RequestException as exc:
-            errors.append(f"direct:{type(exc).__name__}:{getattr(exc.response,'status_code',None)}")
-
-    # One bounded proxy attempt. Do not chain several 90-second proxies:
-    # a dead source must fail fast enough for the 10-minute schedule.
-    if image:
-        fallback_sources=[
-            WRSRV_PREFIX + quote(candidates[-1],safe=""),
-            CORSPROXY_PREFIX + quote(candidates[-1],safe=""),
-        ]
-    else:
-        fallback_sources=[
-            ALLORIGINS_PREFIX + quote(candidates[-1],safe=""),
-            JINA_PREFIX + candidates[-1],
-        ]
-
-    for fallback in fallback_sources:
-        try:
-            r=session.get(fallback,timeout=(15,45),headers=headers)
-            r.raise_for_status()
-            return r
-        except requests.RequestException as exc:
-            errors.append(f"fallback:{type(exc).__name__}:{getattr(exc.response,'status_code',None)}")
-
-    raise requests.RequestException(
-        "Falha ao acessar SDC/SC após tentativas rápidas: " + " | ".join(errors)
-    )
-
-def find_post_urls(index_html: str, base_url: str) -> list[str]:
-    found=[]
-    hrefs = re.findall(r"href=['\"]([^'\"]+)['\"]",index_html,re.I)
-    hrefs += re.findall(r"\\]\((https?://[^)]+)\\)",index_html,re.I)
-    for href in hrefs:
-        u=urljoin(base_url,html.unescape(href))
-        p=urlparse(u)
-        if p.hostname != urlparse(base_url).hostname:
-            continue
-        if not p.path or "/categoria/" in p.path or "/tag/" in p.path or "/author/" in p.path:
-            continue
-        if re.search(r"/20\d{2}/\d{2}/\d{2}/",p.path) and u not in found:
-            found.append(u)
-    return found
-
-def relevant_image(img):
-    attrs=" ".join(img)
-    low=attrs.lower()
-    radar=("radar" in low or "mppi" in low or "reflectividade" in low or "dbz" in low)
-    chapeco="chapec" in low
-    return radar and (chapeco or "ppi" in low or "reflet" in low)
-
-def extract_candidates(page_html: str, page_url: str):
-    candidates=[]
-    # img tags
-    for match in re.findall(r"<img\b([^>]+)>",page_html,re.I|re.S):
-        src_m=re.search(r"(?:src|data-src|data-lazy-src)=['\"]([^'\"]+)['\"]",match,re.I)
-        if not src_m:
-            continue
-        src=urljoin(page_url,html.unescape(src_m.group(1)))
-        attrs=text_clean(re.sub(r"<.*?>"," ",match))
-        alt_m=re.search(r"alt=['\"]([^'\"]*)['\"]",match,re.I)
-        alt=text_clean(alt_m.group(1)) if alt_m else ""
-        candidates.append((src,alt+" "+attrs,relevant_image((match,alt))))
-    # linked images
-    for a in re.findall(r"<a\b([^>]+)>(.*?)</a>",page_html,re.I|re.S):
-        img=re.search(r"(?:src|href)=['\"]([^'\"]+\.(?:png|jpe?g|webp))['\"]",a[1],re.I)
-        if img:
-            src=urljoin(page_url,html.unescape(img.group(1)))
-            candidates.append((src,text_clean(re.sub(r"<.*?>"," ",a[1])),False))
-    # Markdown images returned by text proxies such as Jina Reader.
-    for alt,src0 in re.findall(r"!\[([^\]]*)\]\((https?://[^)]+)\)",page_html,re.I):
-        src=urljoin(page_url,html.unescape(src0))
-        candidates.append((src,text_clean(alt),False))
-    # score using surrounding article text and image attributes
-    return candidates
-
-def choose_ppi_image(page_html: str, page_url: str):
-    page_text=text_clean(re.sub(r"<script.*?</script>|<style.*?</style>"," ",page_html,flags=re.I|re.S))
-    scores=[]
-    for src,meta,strong in extract_candidates(page_html,page_url):
-        if urlparse(src).scheme not in {"https","http"}:
-            continue
-        low=(meta+" "+page_text[:12000]).lower()
-        score=0
-        if "chapec" in low: score+=50
-        if "radar meteorol" in low or "radar meteorológico" in low: score+=35
-        if "mppi" in low: score+=30
-        if "refletividade" in low: score+=30
-        if "dbz" in low: score+=25
-        if "velocidade" in low or "mppi-v" in low: score-=35
-        if strong: score+=20
-        if re.search(r"radar|mppi|reflect|dbz|chapec",src.lower()): score+=10
-        scores.append((score,src,meta))
-    if not scores:
-        return None
-    scores.sort(key=lambda x:(-x[0],x[1]))
-    return scores[0]
-
-def get_wp_posts(session):
-    api = (
-        "https://defesacivil.sc.gov.br/wp-json/wp/v2/posts"
-        "?search=Chapec%C3%B3&per_page=30&orderby=date&order=desc"
-    )
-    try:
-        r=fetch(session,api)
-        payload=r.json()
-        if isinstance(payload,list):
-            return payload
-    except Exception:
-        pass
-    return []
-
-def get_latest_ppi(session, category_url):
-    # Preferred: structured WordPress API, avoiding category HTML/JS.
-    posts=get_wp_posts(session)
-    best=None
-    for post in posts:
-        title=text_clean(str(post.get("title",{}).get("rendered","")))
-        rendered=str(post.get("content",{}).get("rendered",""))
-        link=str(post.get("link","")).strip()
-        date=str(post.get("date","")).strip()
-        combined=(title+" "+rendered).lower()
-        if "chapec" not in combined or ("radar" not in combined and "mppi" not in combined):
-            continue
-        candidate=choose_ppi_image(rendered+" "+title,link or category_url)
-        if candidate:
-            score,src,meta=candidate
-            score += 25
-            if "mppi" in combined: score += 20
-            if "refletividade" in combined: score += 20
-            if best is None or (score,date)>(best[0],best[1]):
-                best=(score,date,link,src,meta,rendered)
-    if best is not None:
-        return (best[0],best[2],best[3],best[4],best[5])
-
-    # Fallback: crawl the public Monitoramento category.
-    r=fetch(session,category_url)
-    urls=find_post_urls(r.text,category_url)
-    # Search several recent posts because the newest post is not necessarily a radar post.
-    best=None
-    for post_url in urls[:20]:
-        try:
-            pr=fetch(session,post_url)
-            low=pr.text.lower()
-            if "chapec" not in low or ("radar" not in low and "mppi" not in low):
-                continue
-            candidate=choose_ppi_image(pr.text,post_url)
-            if candidate:
-                score,src,meta=candidate
-                if best is None or score>best[0]:
-                    best=(score,post_url,src,meta,pr.text)
-        except requests.RequestException:
-            continue
-    if best is None:
-        raise RuntimeError("Não foi encontrada publicação recente com PPI/MPPI de Chapecó.")
-    return best
-
-def radar_echo_rgba(image):
-    rgba=np.asarray(image.convert("RGBA"),dtype=np.uint8)
-    rgb=rgba[...,:3].astype(np.int16)
-    hi=rgb.max(axis=2); lo=rgb.min(axis=2); sat=hi-lo
-    # SC/Defesa Civil radar palettes commonly use cyan/blue/green/yellow/orange/red.
-    palette=np.array([
-        [0,220,255],[0,120,255],[0,255,255],[0,255,0],[80,255,0],
-        [255,255,0],[255,180,0],[255,100,0],[255,0,0],[190,0,0],[255,0,255]
-    ],dtype=np.int16)
-    d=((rgb[...,None,:]-palette[None,None,:,:])**2).sum(axis=3)
-    mask=(d.min(axis=2)<19000)&(hi-lo>25)&(hi>70)
-    # Avoid obvious white/grey map, labels and black frame.
-    mask &= ~((hi>235)&(sat<22))
-    mask &= ~(hi<25)
-    out=rgba.copy()
-    out[...,3]=np.where(mask, np.minimum(255,rgba[...,3].astype(np.int16)),0).astype(np.uint8)
-    return Image.fromarray(out,"RGBA"),mask
-
-def make_uhd(img,width=3840,height=2160):
-    scale=min(width/img.width,height/img.height)
-    w=max(1,round(img.width*scale)); h=max(1,round(img.height*scale))
-    fit=img.resize((w,h),Image.Resampling.LANCZOS)
-    out=Image.new("RGBA",(width,height),(0,0,0,0))
-    out.alpha_composite(fit,((width-w)//2,(height-h)//2))
-    fit.close()
-    return out
-
-def main():
-    ap=argparse.ArgumentParser()
-    ap.add_argument("--category",default=MONITORING)
-    ap.add_argument("--output",default="sdc-sc-chapeco-ppi-z")
-    ap.add_argument("--width",type=int,default=3840)
-    ap.add_argument("--height",type=int,default=2160)
-    args=ap.parse_args()
-
-    out=Path(args.output); out.mkdir(parents=True,exist_ok=True)
-    session=requests.Session()
-    score,post_url,image_url,meta,page_html=get_latest_ppi(session,args.category)
-
-    ir=fetch(session,image_url,timeout=(15,90),image=True)
-    with Image.open(BytesIO(ir.content)) as source:
-        source=source.convert("RGBA")
-        transparent,mask=radar_echo_rgba(source)
-        uhd=make_uhd(transparent,args.width,args.height)
-        uhd_name="chapeco-ppi-z-uhd.png"
-        source_name="chapeco-ppi-z-source.png"
-        source.save(out/source_name,"PNG",optimize=True,compress_level=6)
-        uhd.save(out/uhd_name,"PNG",optimize=True,compress_level=6)
-        source_size=source.size
-        uhd_size=uhd.size
-
-    # Preserve the official source image and the extracted transparent radar layer.
-    manifest={
-        "schema":SCHEMA,
-        "provider":"Defesa Civil de Santa Catarina",
-        "radar":"Chapecó",
-        "product":"PPI Z / MPPI Refletividade",
-        "sourcePost":post_url,
-        "sourceImage":image_url,
-        "sourceImageSize":{"width":source_size[0],"height":source_size[1]},
-        "output":{"file":uhd_name,"width":uhd_size[0],"height":uhd_size[1],"format":"PNG","transparentEchoLayer":True},
-        "processing":{
-            "mode":"official-image-extraction",
-            "inventedDbz":False,
-            "inventedCells":False,
-            "note":"A camada é extraída da imagem PPI oficial; não recupera valores que não estejam representados pela imagem."
+def get_json(session, url, params=None):
+    r = session.get(
+        url,
+        params=params or {},
+        timeout=(15, 90),
+        headers={
+            "User-Agent": "Sideral-SDC-SC-Chapeco-PPI-Z/2.0",
+            "Accept": "application/json",
         },
-        "generatedAt":dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00","Z"),
-        "echoPixels":int(mask.sum()),
-        "selectionScore":score
-    }
-    (out/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-    print(json.dumps(manifest,ensure_ascii=False))
+    )
+    r.raise_for_status()
+    return r.json()
 
-if __name__=="__main__":
+def get_image(session, url, params):
+    r = session.get(
+        url,
+        params=params,
+        timeout=(15, 120),
+        headers={
+            "User-Agent": "Sideral-SDC-SC-Chapeco-PPI-Z/2.0",
+            "Accept": "image/png,image/jpeg,*/*",
+        },
+    )
+    r.raise_for_status()
+    ctype = r.headers.get("Content-Type", "").lower()
+    if "image/png" not in ctype and "image/jpeg" not in ctype:
+        raise RuntimeError(f"O proxy do Sideral não retornou uma imagem: {ctype}")
+    if len(r.content) < 1000:
+        raise RuntimeError("A imagem do PPI retornada é pequena/inválida.")
+    return r.content, ctype
+
+def make_uhd(source: Image.Image, width: int, height: int) -> Image.Image:
+    source = source.convert("RGBA")
+    scale = min(width / source.width, height / source.height)
+    fit_w = max(1, round(source.width * scale))
+    fit_h = max(1, round(source.height * scale))
+    fit = source.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    canvas.alpha_composite(fit, ((width - fit_w) // 2, (height - fit_h) // 2))
+    fit.close()
+    return canvas
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Baixa o PPI Z real do radar de Chapecó via endpoint SIFAP já integrado ao Sideral."
+    )
+    ap.add_argument("--api", default=DEFAULT_API)
+    ap.add_argument("--width", type=int, default=3840)
+    ap.add_argument("--height", type=int, default=2160)
+    ap.add_argument("--output", default="sdc-sc-chapeco-ppi-z")
+    args = ap.parse_args()
+
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+
+    session = requests.Session()
+
+    catalog_url = args.api.rstrip("/") + "/api/regional/radar"
+    image_url = args.api.rstrip("/") + "/api/regional/radar/image"
+
+    payload = get_json(session, catalog_url, {"product": "reflectivity"})
+    radars = payload.get("radars") or []
+    radar = next((r for r in radars if str(r.get("id", "")).lower() == "sc-chapeco"), None)
+
+    if not radar:
+        # Diagnostic: keep the exact catalog response for inspection.
+        (out / "catalog.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        raise RuntimeError("O endpoint regional do Sideral não retornou o radar sc-chapeco.")
+
+    frames = radar.get("frames") or []
+    if not frames:
+        raise RuntimeError("O radar de Chapecó foi encontrado, mas não possui quadros PPI.")
+
+    frame = frames[-1]
+    filename = str(frame.get("key") or "").strip()
+    if not filename:
+        raise RuntimeError("O quadro de Chapecó não possui nome de arquivo.")
+
+    body, content_type = get_image(
+        session,
+        image_url,
+        {
+            "provider": "sc",
+            "radar": "sc-chapeco",
+            "product": "reflectivity",
+            "file": filename,
+        },
+    )
+
+    source_name = "chapeco-ppi-z-source.png"
+    uhd_name = "chapeco-ppi-z-uhd.png"
+
+    with Image.open(BytesIO(body)) as source:
+        source = source.convert("RGBA")
+        source.save(out / source_name, "PNG", optimize=True, compress_level=6)
+        uhd = make_uhd(source, max(256, args.width), max(256, args.height))
+        uhd.save(out / uhd_name, "PNG", optimize=True, compress_level=6)
+        source_width, source_height = source.size
+        uhd_width, uhd_height = uhd.size
+        uhd.close()
+
+    manifest = {
+        "schema": SCHEMA,
+        "provider": "Defesa Civil de Santa Catarina / SIFAP",
+        "radar": {
+            "id": radar.get("id"),
+            "code": radar.get("code"),
+            "name": radar.get("name"),
+            "latitude": radar.get("latitude"),
+            "longitude": radar.get("longitude"),
+            "rangeKm": radar.get("rangeKm"),
+        },
+        "product": "PPI Z / Reflectivity",
+        "source": {
+            "sideralCatalog": catalog_url,
+            "sideralImageProxy": image_url,
+            "upstream": "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar",
+            "productCode": radar.get("product", "0"),
+            "file": filename,
+        },
+        "frame": frame,
+        "sourceImage": {
+            "width": source_width,
+            "height": source_height,
+            "contentType": content_type,
+        },
+        "output": {
+            "file": uhd_name,
+            "width": uhd_width,
+            "height": uhd_height,
+            "format": "PNG",
+        },
+        "processing": {
+            "mode": "official-radar-image-proxy",
+            "inventedDbz": False,
+            "inventedCells": False,
+            "note": "A saída é a própria imagem PPI de refletividade do radar, ampliada para UHD; nenhum campo meteorológico é sintetizado.",
+        },
+        "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+    (out / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    print(json.dumps({
+        "radar": radar.get("name"),
+        "frame": frame,
+        "source": source_name,
+        "uhd": uhd_name,
+        "resolution": f"{uhd_width}x{uhd_height}",
+    }, ensure_ascii=False))
+    return 0
+
+if __name__ == "__main__":
     raise SystemExit(main())
