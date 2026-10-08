@@ -189,9 +189,9 @@ def main() -> int:
     ap.add_argument("--product",choices=PRODUCTS,default="03km")
     ap.add_argument("--frames",type=int,default=1)
     ap.add_argument("--output",default="redemet-radar-scope")
-    ap.add_argument("--azimuth-step",type=float,default=0.35)
-    ap.add_argument("--gate-pixels",type=float,default=7.0)
-    ap.add_argument("--gate-gap",type=float,default=0.7)
+    ap.add_argument("--azimuth-step",type=float,default=0.20)
+    ap.add_argument("--gate-pixels",type=float,default=2.0)
+    ap.add_argument("--gate-gap",type=float,default=0.0)
     args = ap.parse_args()
 
     out = Path(args.output)
