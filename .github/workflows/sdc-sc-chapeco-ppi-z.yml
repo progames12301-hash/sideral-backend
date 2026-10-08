@@ -42,10 +42,20 @@ jobs:
           python scripts/sdc_sc_chapeco_ppi_z_browser.py \
             --output sdc-sc-chapeco-ppi-z
           test -s sdc-sc-chapeco-ppi-z/manifest.json
-          test -s sdc-sc-chapeco-ppi-z/map-screenshot.png
-          if [ ! -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-uhd.png ]; then
-            echo "PPI Z ainda não foi identificado pelo mapa. Os diagnósticos serão publicados."
-          fi
+          python - <<'PY'
+          import json, pathlib, sys
+          p=pathlib.Path("sdc-sc-chapeco-ppi-z/manifest.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          selected=d.get("selected") or {}
+          output=d.get("output") or {}
+          radar=output.get("uhd")
+          if not selected.get("url"):
+              raise SystemExit("Nenhuma imagem real de radar foi capturada.")
+          if not radar or not pathlib.Path("sdc-sc-chapeco-ppi-z/chapeco-ppi-z-uhd.png").is_file():
+              raise SystemExit("A captura encontrada não é uma imagem PPI Z utilizável.")
+          print("Imagem real do radar:", selected.get("url"))
+          print("Saída UHD: 3840x2160") 
+          PY
 
       - name: Verificar se é uma imagem nova
         id: changed
@@ -72,6 +82,8 @@ jobs:
           git rm -rf . >/dev/null 2>&1 || true
           git clean -fdx
           cp -a /tmp/sdc-sc-chapeco-ppi-z/. .
+          rm -f map-screenshot.png page-text.txt page-text-after.txt
+          rm -f dom-images.json
           git config user.name "sideral-sdc-sc-radar-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           cat > README.md <<'EOF'
