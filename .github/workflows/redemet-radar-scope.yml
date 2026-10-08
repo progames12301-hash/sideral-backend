@@ -34,6 +34,11 @@ on:
         required: false
         default: "0"
         type: string
+      target_width:
+        description: "Largura de saída em 4K"
+        required: false
+        default: "3840"
+        type: string
   schedule:
     - cron: "*/10 * * * *"
 
@@ -75,11 +80,6 @@ jobs:
           FRAMES: ${{ inputs.frames || '1' }}
           AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.35' }}
           GATE_PIXELS: ${{ inputs.gate_pixels || '3' }}
-      target_width:
-        description: "Largura de saída em 4K"
-        required: false
-        default: "3840"
-        type: string
           GATE_GAP: ${{ inputs.gate_gap || '0' }}
           TARGET_WIDTH: ${{ inputs.target_width || '3840' }}
         run: |
