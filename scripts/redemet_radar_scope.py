@@ -189,9 +189,10 @@ def main() -> int:
     ap.add_argument("--product",choices=PRODUCTS,default="03km")
     ap.add_argument("--frames",type=int,default=1)
     ap.add_argument("--output",default="redemet-radar-scope")
-    ap.add_argument("--azimuth-step",type=float,default=0.20)
-    ap.add_argument("--gate-pixels",type=float,default=2.0)
+    ap.add_argument("--azimuth-step",type=float,default=0.35)
+    ap.add_argument("--gate-pixels",type=float,default=3.0)
     ap.add_argument("--gate-gap",type=float,default=0.0)
+    ap.add_argument("--target-width",type=int,default=3840)
     args = ap.parse_args()
 
     out = Path(args.output)
@@ -229,9 +230,19 @@ def main() -> int:
                 rel = Path(args.product)/safe(loc)/name
                 target = out/rel
                 target.parent.mkdir(parents=True,exist_ok=True)
+
+                # Saída em 4K: amplia somente a imagem já renderizada e preserva
+                # a proporção original do radar, sem esticar latitude/longitude.
+                target_width = max(1, int(args.target_width))
+                if scope.width != target_width:
+                    target_height = max(1, round(scope.height * target_width / scope.width))
+                    scope_4k = scope.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                    scope.close()
+                    scope = scope_4k
                 scope.save(target,"PNG",optimize=True,compress_level=6)
                 scope.close()
                 iw,ih = original.size
+                ow,oh = scope.size
             seen.add(src)
             generated += 1
             t = when(item.get("data"))
@@ -244,7 +255,7 @@ def main() -> int:
                 "scopeUrl":f"https://raw.githubusercontent.com/progames12301-hash/sideral-backend/redemet-radar-scope/{rel.as_posix()}",
                 "bounds":list(b),
                 "radar":{"longitude":number(item,"lon_center"),"latitude":number(item,"lat_center")},
-                "image":{"width":iw,"height":ih},
+                "image":{"width":iw,"height":ih,"outputWidth":ow,"outputHeight":oh},
                 "render":{"azimuthStepDegrees":args.azimuth_step,"gatePixels":args.gate_pixels,"gateGapPixels":args.gate_gap,"mode":"source-color-sampling"}
             })
         if items:
