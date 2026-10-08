@@ -35,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pillow requests
 
-      - name: Baixar PPI Z real via Sideral/ SIFAP
+      - name: Baixar PPI Z real do SIFAP
         run: |
           set -euo pipefail
           rm -rf sdc-sc-chapeco-ppi-z
@@ -84,7 +84,7 @@ jobs:
           # Sideral — Chapecó PPI Z
 
           Imagem real de PPI Z/refletividade do radar de Chapecó da Defesa Civil SC,
-          obtida pelo endpoint SIFAP integrado ao backend Sideral.
+          obtida pelo endpoint SIFAP já utilizado pelo backend Sideral.
 
           A imagem original é preservada e também publicada em UHD 3840×2160.
           EOF
