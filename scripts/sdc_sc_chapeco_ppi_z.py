@@ -26,15 +26,15 @@ SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v1"
 def text_clean(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(value or "")).strip()
 
-def fetch(session, url, timeout=(15,60), image=False):
+def fetch(session, url, timeout=(15,45), image=False):
     headers={
-        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.4",
+        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.5",
         "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" if image
                else "text/html,application/xhtml+xml,*/*;q=0.8",
     }
 
-    candidates=[url]
     parsed=urlparse(url)
+    candidates=[url]
     if parsed.hostname == "www.defesacivil.sc.gov.br":
         candidates.append(url.replace("://www.defesacivil.sc.gov.br","://defesacivil.sc.gov.br",1))
     elif parsed.hostname == "defesacivil.sc.gov.br":
@@ -42,70 +42,38 @@ def fetch(session, url, timeout=(15,60), image=False):
 
     errors=[]
 
-    # GitHub-hosted runners occasionally have route/IPv6 issues with this host.
-    # curl -4 is tried first because it uses a different HTTP stack and forces IPv4.
+    # Direct access: one short attempt per official hostname.
     for candidate in candidates:
         try:
-            result=subprocess.run(
-                [
-                    "curl","-4","-L","--fail","--silent","--show-error",
-                    "--retry","3","--retry-all-errors","--retry-delay","2",
-                    "--connect-timeout","30","--max-time","120",
-                    "-A",headers["User-Agent"],candidate
-                ],
-                check=True, capture_output=True, timeout=135
-            )
-            response=requests.Response()
-            response.status_code=200
-            response.url=candidate
-            response._content=result.stdout
-            response.headers["Content-Type"]="image/png" if image else "text/html; charset=utf-8"
-            return response
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-            errors.append(f"curl4:{candidate}:{type(exc).__name__}")
+            r=session.get(candidate,timeout=timeout,headers=headers,allow_redirects=True)
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:
+            errors.append(f"direct:{type(exc).__name__}:{getattr(exc.response,'status_code',None)}")
 
-    for candidate in candidates:
-        for attempt in range(2):
-            try:
-                r=session.get(candidate,timeout=timeout,headers=headers,allow_redirects=True)
-                r.raise_for_status()
-                return r
-            except requests.RequestException as exc:
-                errors.append(f"direct:{candidate}:{type(exc).__name__}")
-                if attempt == 0:
-                    import time
-                    time.sleep(2)
-
-    fallback_sources=[]
+    # One bounded proxy attempt. Do not chain several 90-second proxies:
+    # a dead source must fail fast enough for the 10-minute schedule.
     if image:
-        fallback_sources += [
-            WRSRV_PREFIX + quote(candidates[0],safe=""),
+        fallback_sources=[
             WRSRV_PREFIX + quote(candidates[-1],safe=""),
-            CORSPROXY_PREFIX + quote(candidates[0],safe=""),
+            CORSPROXY_PREFIX + quote(candidates[-1],safe=""),
         ]
     else:
-        for candidate in candidates:
-            fallback_sources += [
-                ALLORIGINS_PREFIX + quote(candidate,safe=""),
-                JINA_PREFIX + candidate,
-                JINA_PREFIX + candidate.replace("https://","http://",1),
-            ]
+        fallback_sources=[
+            ALLORIGINS_PREFIX + quote(candidates[-1],safe=""),
+            JINA_PREFIX + candidates[-1],
+        ]
 
-    seen=set()
     for fallback in fallback_sources:
-        if fallback in seen:
-            continue
-        seen.add(fallback)
         try:
-            r=session.get(fallback,timeout=(20,90),headers=headers)
+            r=session.get(fallback,timeout=(15,45),headers=headers)
             r.raise_for_status()
             return r
         except requests.RequestException as exc:
             errors.append(f"fallback:{type(exc).__name__}:{getattr(exc.response,'status_code',None)}")
-            continue
 
     raise requests.RequestException(
-        "Falha ao acessar SDC/SC: " + " | ".join(errors)[-1800:]
+        "Falha ao acessar SDC/SC após tentativas rápidas: " + " | ".join(errors)
     )
 
 def find_post_urls(index_html: str, base_url: str) -> list[str]:
