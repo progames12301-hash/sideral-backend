@@ -6,6 +6,7 @@ import datetime as dt
 import html
 import json
 import re
+import subprocess
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, urljoin, urlparse
@@ -27,7 +28,7 @@ def text_clean(value: str) -> str:
 
 def fetch(session, url, timeout=(15,60), image=False):
     headers={
-        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.3",
+        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.4",
         "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" if image
                else "text/html,application/xhtml+xml,*/*;q=0.8",
     }
@@ -40,6 +41,29 @@ def fetch(session, url, timeout=(15,60), image=False):
         candidates.append(url.replace("://defesacivil.sc.gov.br","://www.defesacivil.sc.gov.br",1))
 
     errors=[]
+
+    # GitHub-hosted runners occasionally have route/IPv6 issues with this host.
+    # curl -4 is tried first because it uses a different HTTP stack and forces IPv4.
+    for candidate in candidates:
+        try:
+            result=subprocess.run(
+                [
+                    "curl","-4","-L","--fail","--silent","--show-error",
+                    "--retry","3","--retry-all-errors","--retry-delay","2",
+                    "--connect-timeout","30","--max-time","120",
+                    "-A",headers["User-Agent"],candidate
+                ],
+                check=True, capture_output=True, timeout=135
+            )
+            response=requests.Response()
+            response.status_code=200
+            response.url=candidate
+            response._content=result.stdout
+            response.headers["Content-Type"]="image/png" if image else "text/html; charset=utf-8"
+            return response
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+            errors.append(f"curl4:{candidate}:{type(exc).__name__}")
+
     for candidate in candidates:
         for attempt in range(2):
             try:
