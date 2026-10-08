@@ -10,13 +10,13 @@ permissions:
 
 concurrency:
   group: sideral-sdc-sc-chapeco-ppi-z
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ppi-z:
     name: Capturar PPI Z oficial de Chapecó
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
