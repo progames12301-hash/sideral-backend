@@ -33,24 +33,7 @@ jobs:
       - name: Dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pillow requests opencv-contrib-python-headless numpy
-
-      - name: Restaurar cache do modelo EDSR
-        uses: actions/cache@v4
-        with:
-          path: EDSR_x4.pb
-          key: sideral-edsr-x4-v1
-
-      - name: Baixar modelo EDSR x4
-        run: |
-          set -euo pipefail
-          if [ ! -s EDSR_x4.pb ]; then
-            curl -L --fail --retry 4 --retry-delay 2 \
-              "https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x4.pb" \
-              -o EDSR_x4.pb
-          fi
-          test -s EDSR_x4.pb
-          ls -lh EDSR_x4.pb
+          python -m pip install pillow requests numpy
 
       - name: Baixar PPI Z real do SIFAP e gerar Super-Res
         run: |
@@ -59,7 +42,6 @@ jobs:
           python scripts/sdc_sc_chapeco_ppi_z.py \
             --width 3840 \
             --height 2160 \
-            --model EDSR_x4.pb \
             --output sdc-sc-chapeco-ppi-z
 
           test -s sdc-sc-chapeco-ppi-z/manifest.json
@@ -105,7 +87,7 @@ jobs:
           Imagem real de PPI Z/refletividade do radar de Chapecó da Defesa Civil SC,
           obtida pelo endpoint SIFAP já utilizado pelo backend Sideral.
 
-          A imagem original é preservada, com versão UHD 3840×2160 e versão Super-Res EDSR x4.
+          A imagem original é preservada, com versão UHD 3840×2160 e versão Super-Res Radar Scope em gates polares.
           EOF
 
           git add .
