@@ -51,8 +51,8 @@ jobs:
         id: changed
         run: |
           set -euo pipefail
-          CURRENT=$(python -c 'import json; print(json.load(open("sdc-sc-chapeco-ppi-z/manifest.json", encoding="utf-8")).get("sourceImage", ""))')
-          PREVIOUS=$(curl -fsSL "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/sdc-sc-chapeco-ppi-z/manifest.json" 2>/dev/null | python -c 'import json,sys; print(json.load(sys.stdin).get("sourceImage", ""))' 2>/dev/null || true)
+          CURRENT=$(python -c 'import json; d=json.load(open("sdc-sc-chapeco-ppi-z/manifest.json", encoding="utf-8")); print((d.get("selected") or {}).get("url", ""))')
+          PREVIOUS=$(curl -fsSL "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/sdc-sc-chapeco-ppi-z/manifest.json" 2>/dev/null | python -c 'import json,sys; d=json.load(sys.stdin); print((d.get("selected") or {}).get("url", ""))' 2>/dev/null || true)
           echo "Atual:   $CURRENT"
           echo "Anterior:$PREVIOUS"
           if [ -n "$CURRENT" ] && [ "$CURRENT" = "$PREVIOUS" ]; then
