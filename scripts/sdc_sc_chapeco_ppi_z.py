@@ -17,6 +17,8 @@ from PIL import Image
 BASE = "https://www.defesacivil.sc.gov.br/"
 MONITORING = "https://www.defesacivil.sc.gov.br/categoria/monitoramento/"
 JINA_PREFIX = "https://r.jina.ai/"
+ALLORIGINS_PREFIX = "https://api.allorigins.win/raw?url="
+CORSPROXY_PREFIX = "https://corsproxy.io/?url="
 WRSRV_PREFIX = "https://wsrv.nl/?url="
 SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v1"
 
@@ -25,34 +27,50 @@ def text_clean(value: str) -> str:
 
 def fetch(session, url, timeout=(15,60), image=False):
     headers={
-        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.1",
+        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.2",
         "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" if image
                else "text/html,application/xhtml+xml,*/*;q=0.8",
     }
-    last=None
+    errors=[]
+
+    # Primeiro tenta a fonte oficial diretamente.
     for attempt in range(3):
         try:
             r=session.get(url,timeout=timeout,headers=headers)
             r.raise_for_status()
             return r
         except requests.RequestException as exc:
-            last=exc
+            errors.append(f"direct:{type(exc).__name__}:{exc}")
             if attempt < 2:
                 import time
                 time.sleep(2*(attempt+1))
-    # The SDC website sometimes times out from GitHub-hosted runners.
+
+    # GitHub-hosted runners podem não alcançar a SDC diretamente.
     if image:
-        proxy=WRSRV_PREFIX + quote(url,safe="")
-        r=session.get(proxy,timeout=(20,90),headers=headers)
-        r.raise_for_status()
-        return r
-    jina=JINA_PREFIX + url
-    r=session.get(jina,timeout=(20,90),headers={
-        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.1",
-        "Accept":"text/plain,text/html,*/*;q=0.8",
-    })
-    r.raise_for_status()
-    return r
+        fallbacks=[
+            WRSRV_PREFIX + quote(url,safe=""),
+            CORSPROXY_PREFIX + quote(url,safe=""),
+        ]
+    else:
+        fallbacks=[
+            ALLORIGINS_PREFIX + quote(url,safe=""),
+            CORSPROXY_PREFIX + quote(url,safe=""),
+            JINA_PREFIX + url,
+        ]
+
+    for fallback in fallbacks:
+        try:
+            r=session.get(fallback,timeout=(20,90),headers=headers)
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:
+            errors.append(f"fallback:{fallback.split('?')[0]}:{type(exc).__name__}:{exc}")
+            continue
+
+    raise requests.RequestException(
+        "Falha ao acessar a fonte SDC/SC após tentativas diretas e fallbacks: "
+        + " | ".join(errors)[-1800:]
+    )
 
 def find_post_urls(index_html: str, base_url: str) -> list[str]:
     found=[]
