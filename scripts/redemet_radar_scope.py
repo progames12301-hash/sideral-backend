@@ -159,13 +159,28 @@ def source_timestamp(item: dict[str, Any], url: str) -> str:
 
 def fetch_frames(session: requests.Session, api: str, product: str, count: int):
     url = api.rstrip("/") + "/api/redemet/radar"
-    r = session.get(url,params={"product":product,"anima":max(1,min(15,count))},timeout=40)
-    r.raise_for_status()
-    payload = r.json()
-    radar = payload.get("data",{}).get("radar",[])
-    if not isinstance(radar,list) or not radar:
-        raise RuntimeError("Render não retornou quadros REDEMET")
-    return radar[:count]
+    params = {"product": product, "anima": max(1, min(15, count))}
+    last_error: Exception | None = None
+
+    # O Render pode levar alguns segundos para acordar. Permita uma leitura
+    # longa, mas faça no máximo uma segunda tentativa em caso de timeout/erro
+    # transitório, evitando ficar preso indefinidamente.
+    for attempt in range(2):
+        try:
+            r = session.get(url, params=params, timeout=(15, 120))
+            r.raise_for_status()
+            payload = r.json()
+            radar = payload.get("data", {}).get("radar", [])
+            if not isinstance(radar, list) or not radar:
+                raise RuntimeError("Render não retornou quadros REDEMET")
+            return radar[:count]
+        except (requests.RequestException, ValueError, RuntimeError) as exc:
+            last_error = exc
+            if attempt == 0:
+                import time
+                time.sleep(4)
+
+    raise RuntimeError(f"Falha ao consultar Render/REDEMET: {last_error}")
 
 
 def main() -> int:
@@ -206,7 +221,7 @@ def main() -> int:
             parsed = urlparse(src)
             if parsed.scheme != "https" or parsed.hostname != OFFICIAL_HOST or not parsed.path.startswith("/radar/"):
                 raise RuntimeError("Render retornou URL REDEMET fora do domínio oficial")
-            r = session.get(src,timeout=40)
+            r = session.get(src,timeout=(15,90))
             r.raise_for_status()
             with Image.open(BytesIO(r.content)) as original:
                 scope = render_scope(original,item,args.azimuth_step,args.gate_pixels,args.gate_gap)
