@@ -27,22 +27,7 @@ on:
       gate_pixels:
         description: "Comprimento radial de cada gate em pixels"
         required: false
-        default: "3"
-        type: string
-      gate_gap:
-        description: "Espaço entre gates em pixels"
-        required: false
-        default: "0"
-        type: string
-      target_width:
-        description: "Largura de saída Ultra HD (UHD)"
-        required: false
-        default: "3840"
-        type: string
-      target_height:
-        description: "Altura de saída Ultra HD (UHD)"
-        required: false
-        default: "2160"
+        default: "7"
         type: string
   schedule:
     - cron: "*/10 * * * *"
@@ -84,10 +69,7 @@ jobs:
           PRODUCT: ${{ inputs.product || '03km' }}
           FRAMES: ${{ inputs.frames || '1' }}
           AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.35' }}
-          GATE_PIXELS: ${{ inputs.gate_pixels || '3' }}
-          GATE_GAP: ${{ inputs.gate_gap || '0' }}
-          TARGET_WIDTH: ${{ inputs.target_width || '3840' }}
-          TARGET_HEIGHT: ${{ inputs.target_height || '2160' }}
+          GATE_PIXELS: ${{ inputs.gate_pixels || '7' }}
         run: |
           set -euo pipefail
           rm -rf redemet-radar-scope
@@ -97,9 +79,6 @@ jobs:
             --frames "$FRAMES" \
             --azimuth-step "$AZIMUTH_STEP" \
             --gate-pixels "$GATE_PIXELS" \
-            --gate-gap "$GATE_GAP" \
-            --target-width "$TARGET_WIDTH" \
-            --target-height "$TARGET_HEIGHT" \
             --output redemet-radar-scope
           test -s redemet-radar-scope/manifest.json
           test -n "$(find redemet-radar-scope -type f -name '*.png' -size +0c -print -quit)"
