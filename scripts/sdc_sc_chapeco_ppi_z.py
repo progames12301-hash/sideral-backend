@@ -8,7 +8,7 @@ import json
 import re
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import numpy as np
 import requests
@@ -16,22 +16,49 @@ from PIL import Image
 
 BASE = "https://www.defesacivil.sc.gov.br/"
 MONITORING = "https://www.defesacivil.sc.gov.br/categoria/monitoramento/"
+JINA_PREFIX = "https://r.jina.ai/"
+WRSRV_PREFIX = "https://wsrv.nl/?url="
 SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v1"
 
 def text_clean(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(value or "")).strip()
 
-def fetch(session, url, timeout=(15,60)):
-    r=session.get(url,timeout=timeout,headers={
-        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.0",
-        "Accept":"text/html,image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+def fetch(session, url, timeout=(15,60), image=False):
+    headers={
+        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.1",
+        "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" if image
+               else "text/html,application/xhtml+xml,*/*;q=0.8",
+    }
+    last=None
+    for attempt in range(3):
+        try:
+            r=session.get(url,timeout=timeout,headers=headers)
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:
+            last=exc
+            if attempt < 2:
+                import time
+                time.sleep(2*(attempt+1))
+    # The SDC website sometimes times out from GitHub-hosted runners.
+    if image:
+        proxy=WRSRV_PREFIX + quote(url,safe="")
+        r=session.get(proxy,timeout=(20,90),headers=headers)
+        r.raise_for_status()
+        return r
+    jina=JINA_PREFIX + url
+    r=session.get(jina,timeout=(20,90),headers={
+        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.1",
+        "Accept":"text/plain,text/html,*/*;q=0.8",
     })
     r.raise_for_status()
     return r
 
 def find_post_urls(index_html: str, base_url: str) -> list[str]:
     found=[]
-    for href in re.findall(r"href=['\"]([^'\"]+)['\"]",index_html,re.I):
+    hrefs = re.findall(r"href=['\"]([^'\"]+)['\"]",index_html,re.I)
+    hrefs += re.findall(r"\\]\((https?://[^)]+)\\)",index_html,re.I)
+    for href in hrefs:
         u=urljoin(base_url,html.unescape(href))
         p=urlparse(u)
         if p.hostname != urlparse(base_url).hostname:
@@ -67,6 +94,10 @@ def extract_candidates(page_html: str, page_url: str):
         if img:
             src=urljoin(page_url,html.unescape(img.group(1)))
             candidates.append((src,text_clean(re.sub(r"<.*?>"," ",a[1])),False))
+    # Markdown images returned by text proxies such as Jina Reader.
+    for alt,src0 in re.findall(r"!\[([^\]]*)\]\((https?://[^)]+)\)",page_html,re.I):
+        src=urljoin(page_url,html.unescape(src0))
+        candidates.append((src,text_clean(alt),False))
     # score using surrounding article text and image attributes
     return candidates
 
@@ -153,7 +184,7 @@ def main():
     session=requests.Session()
     score,post_url,image_url,meta,page_html=get_latest_ppi(session,args.category)
 
-    ir=fetch(session,image_url,timeout=(15,90))
+    ir=fetch(session,image_url,timeout=(15,90),image=True)
     with Image.open(BytesIO(ir.content)) as source:
         source=source.convert("RGBA")
         transparent,mask=radar_echo_rgba(source)
