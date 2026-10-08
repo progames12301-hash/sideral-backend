@@ -32,19 +32,20 @@ jobs:
       - name: Dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy pillow requests
+          python -m pip install numpy pillow requests playwright
+          python -m playwright install --with-deps chromium
 
-      - name: Gerar PPI Z UHD a partir da publicação oficial
+      - name: Capturar PPI Z pelo mapa oficial
         run: |
           set -euo pipefail
           rm -rf sdc-sc-chapeco-ppi-z
-          python scripts/sdc_sc_chapeco_ppi_z.py \
-            --width 3840 \
-            --height 2160 \
+          python scripts/sdc_sc_chapeco_ppi_z_browser.py \
             --output sdc-sc-chapeco-ppi-z
           test -s sdc-sc-chapeco-ppi-z/manifest.json
-          test -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-source.png
-          test -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-uhd.png
+          test -s sdc-sc-chapeco-ppi-z/map-screenshot.png
+          if [ ! -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-uhd.png ]; then
+            echo "PPI Z ainda não foi identificado pelo mapa. Os diagnósticos serão publicados."
+          fi
 
       - name: Verificar se é uma imagem nova
         id: changed
