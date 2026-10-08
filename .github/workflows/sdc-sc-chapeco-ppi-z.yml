@@ -14,9 +14,10 @@ concurrency:
 
 jobs:
   ppi-z:
-    name: Capturar PPI Z oficial de Chapecó
+    name: Baixar PPI Z real de Chapecó
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 15
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,39 +33,31 @@ jobs:
       - name: Dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy pillow requests playwright
-          python -m playwright install --with-deps chromium
+          python -m pip install pillow requests
 
-      - name: Capturar PPI Z pelo mapa oficial
+      - name: Baixar PPI Z real via Sideral/ SIFAP
         run: |
           set -euo pipefail
           rm -rf sdc-sc-chapeco-ppi-z
-          python scripts/sdc_sc_chapeco_ppi_z_browser.py \
+          python scripts/sdc_sc_chapeco_ppi_z.py \
+            --width 3840 \
+            --height 2160 \
             --output sdc-sc-chapeco-ppi-z
-          test -s sdc-sc-chapeco-ppi-z/manifest.json
-          python - <<'PY'
-          import json, pathlib, sys
-          p=pathlib.Path("sdc-sc-chapeco-ppi-z/manifest.json")
-          d=json.loads(p.read_text(encoding="utf-8"))
-          selected=d.get("selected") or {}
-          output=d.get("output") or {}
-          radar=output.get("uhd")
-          if not selected.get("url"):
-              raise SystemExit("Nenhuma imagem real de radar foi capturada.")
-          if not radar or not pathlib.Path("sdc-sc-chapeco-ppi-z/chapeco-ppi-z-uhd.png").is_file():
-              raise SystemExit("A captura encontrada não é uma imagem PPI Z utilizável.")
-          print("Imagem real do radar:", selected.get("url"))
-          print("Saída UHD: 3840x2160") 
-          PY
 
-      - name: Verificar se é uma imagem nova
+          test -s sdc-sc-chapeco-ppi-z/manifest.json
+          test -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-source.png
+          test -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-uhd.png
+
+      - name: Verificar se é um quadro novo
         id: changed
         run: |
           set -euo pipefail
-          CURRENT=$(python -c 'import json; d=json.load(open("sdc-sc-chapeco-ppi-z/manifest.json", encoding="utf-8")); print((d.get("selected") or {}).get("url", ""))')
-          PREVIOUS=$(curl -fsSL "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/sdc-sc-chapeco-ppi-z/manifest.json" 2>/dev/null | python -c 'import json,sys; d=json.load(sys.stdin); print((d.get("selected") or {}).get("url", ""))' 2>/dev/null || true)
-          echo "Atual:   $CURRENT"
-          echo "Anterior:$PREVIOUS"
+          CURRENT=$(python -c 'import json; d=json.load(open("sdc-sc-chapeco-ppi-z/manifest.json", encoding="utf-8")); print(d["source"]["file"])')
+          PREVIOUS=$(curl -fsSL "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/sdc-sc-chapeco-ppi-z/manifest.json" 2>/dev/null | python -c 'import json,sys; print(json.load(sys.stdin).get("source",{}).get("file",""))' 2>/dev/null || true)
+
+          echo "Atual:    $CURRENT"
+          echo "Anterior: $PREVIOUS"
+
           if [ -n "$CURRENT" ] && [ "$CURRENT" = "$PREVIOUS" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -78,22 +71,24 @@ jobs:
           rm -rf /tmp/sdc-sc-chapeco-ppi-z
           mkdir -p /tmp/sdc-sc-chapeco-ppi-z
           cp -a sdc-sc-chapeco-ppi-z/. /tmp/sdc-sc-chapeco-ppi-z/
+
           git checkout --orphan sdc-sc-chapeco-ppi-z
           git rm -rf . >/dev/null 2>&1 || true
           git clean -fdx
           cp -a /tmp/sdc-sc-chapeco-ppi-z/. .
-          rm -f page-text.txt page-text-after.txt
-          rm -f dom-images.json
+
           git config user.name "sideral-sdc-sc-radar-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           cat > README.md <<'EOF'
           # Sideral — Chapecó PPI Z
 
-          Imagem PPI Z/MPPI de refletividade do radar meteorológico de Chapecó,
-          capturada da publicação oficial da Defesa Civil de Santa Catarina.
+          Imagem real de PPI Z/refletividade do radar de Chapecó da Defesa Civil SC,
+          obtida pelo endpoint SIFAP integrado ao backend Sideral.
 
-          Saída adicional em PNG UHD 3840×2160 com camada de ecos transparente.
+          A imagem original é preservada e também publicada em UHD 3840×2160.
           EOF
+
           git add .
-          git commit -m "Atualiza PPI Z Chapecó SDC SC"
+          git commit -m "Atualiza PPI Z real Chapecó SDC SC"
           git push --force origin HEAD:sdc-sc-chapeco-ppi-z
