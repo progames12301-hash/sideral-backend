@@ -27,7 +27,12 @@ on:
       gate_pixels:
         description: "Comprimento radial de cada gate em pixels"
         required: false
-        default: "7"
+        default: "3"
+        type: string
+      gate_gap:
+        description: "Espaço entre gates em pixels"
+        required: false
+        default: "0"
         type: string
   schedule:
     - cron: "*/10 * * * *"
@@ -69,7 +74,8 @@ jobs:
           PRODUCT: ${{ inputs.product || '03km' }}
           FRAMES: ${{ inputs.frames || '1' }}
           AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.35' }}
-          GATE_PIXELS: ${{ inputs.gate_pixels || '7' }}
+          GATE_PIXELS: ${{ inputs.gate_pixels || '3' }}
+          GATE_GAP: ${{ inputs.gate_gap || '0' }}
         run: |
           set -euo pipefail
           rm -rf redemet-radar-scope
@@ -79,6 +85,7 @@ jobs:
             --frames "$FRAMES" \
             --azimuth-step "$AZIMUTH_STEP" \
             --gate-pixels "$GATE_PIXELS" \
+            --gate-gap "$GATE_GAP" \
             --output redemet-radar-scope
           test -s redemet-radar-scope/manifest.json
           test -n "$(find redemet-radar-scope -type f -name '*.png' -size +0c -print -quit)"
