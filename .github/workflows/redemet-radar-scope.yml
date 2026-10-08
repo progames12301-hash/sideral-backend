@@ -35,9 +35,14 @@ on:
         default: "0"
         type: string
       target_width:
-        description: "Largura de saída em 4K"
+        description: "Largura de saída Ultra HD (UHD)"
         required: false
         default: "3840"
+        type: string
+      target_height:
+        description: "Altura de saída Ultra HD (UHD)"
+        required: false
+        default: "2160"
         type: string
   schedule:
     - cron: "*/10 * * * *"
@@ -82,6 +87,7 @@ jobs:
           GATE_PIXELS: ${{ inputs.gate_pixels || '3' }}
           GATE_GAP: ${{ inputs.gate_gap || '0' }}
           TARGET_WIDTH: ${{ inputs.target_width || '3840' }}
+          TARGET_HEIGHT: ${{ inputs.target_height || '2160' }}
         run: |
           set -euo pipefail
           rm -rf redemet-radar-scope
@@ -93,6 +99,7 @@ jobs:
             --gate-pixels "$GATE_PIXELS" \
             --gate-gap "$GATE_GAP" \
             --target-width "$TARGET_WIDTH" \
+            --target-height "$TARGET_HEIGHT" \
             --output redemet-radar-scope
           test -s redemet-radar-scope/manifest.json
           test -n "$(find redemet-radar-scope -type f -name '*.png' -size +0c -print -quit)"
