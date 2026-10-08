@@ -145,23 +145,70 @@ class Handler(legacy.Handler):
         for name in ('data', 'area'):
             value = str(query.get(name, [''])[0]).strip()
             if value: params[name] = value
+
         upstream = f"{legacy.REDEMET_API_URL.rstrip('/')}/produtos/radar/{product}"
-        last_error = None
-        for headers in ({'User-Agent':'SideralMeteorologia/1.0','Accept':'application/json'},{'X-Api-Key':key,'User-Agent':'SideralMeteorologia/1.0','Accept':'application/json'}):
-            try:
-                response=legacy.requests.get(upstream,params=params,headers=headers,timeout=35); response.raise_for_status(); payload=response.json()
-                if not isinstance(payload,dict): raise RuntimeError('A REDEMET retornou JSON inválido.')
-                if payload.get('status') not in (True,1,'true','1'): raise RuntimeError(str(payload.get('message') or payload.get('error') or 'Resposta sem status=True'))
-                data=payload.get('data'); normalized=dict(data) if isinstance(data,dict) else {'radar': data if isinstance(data,list) else []}
-                radar=normalized.get('radar'); normalized['radar']=radar if isinstance(radar,list) else []
-                if not normalized['radar']: raise RuntimeError('A REDEMET respondeu sem quadros de radar.')
-                normalized['product']=product; normalized['provider']='REDEMET / DECEA'; normalized['source']=upstream
-                return send_json(self,200,{'status':True,'message':payload.get('message',200),'provider':'REDEMET / DECEA','data':normalized})
-            except Exception as exc: last_error=exc
-        cached=legacy.redemet_cached_radar_payload(product)
-        if cached: return send_json(self,200,cached)
-        safe=str(last_error or 'erro desconhecido').replace(key,'[REDACTED]')
-        return send_json(self,502,{'status':False,'provider':'REDEMET / DECEA','error':'Falha ao consultar a API oficial da REDEMET.','details':safe[:500]})
+        headers = {
+            'X-Api-Key': key,
+            'User-Agent': 'SideralMeteorologia/1.0',
+            'Accept': 'application/json',
+        }
+
+        # Uma única consulta longa à REDEMET. A implementação anterior fazia
+        # duas consultas de 35 s, o que podia manter o endpoint do Render
+        # ocupado por ~70 s e estourar o timeout do GitHub Actions.
+        try:
+            response = legacy.requests.get(
+                upstream,
+                params=params,
+                headers=headers,
+                timeout=(10, 55),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise RuntimeError('A REDEMET retornou JSON inválido.')
+            if payload.get('status') not in (True, 1, 'true', '1'):
+                raise RuntimeError(
+                    str(payload.get('message') or payload.get('error') or 'Resposta sem status=True')
+                )
+
+            data = payload.get('data')
+            normalized = dict(data) if isinstance(data, dict) else {
+                'radar': data if isinstance(data, list) else []
+            }
+            radar = normalized.get('radar')
+            normalized['radar'] = radar if isinstance(radar, list) else []
+            if not normalized['radar']:
+                raise RuntimeError('A REDEMET respondeu sem quadros de radar.')
+
+            normalized['product'] = product
+            normalized['provider'] = 'REDEMET / DECEA'
+            normalized['source'] = upstream
+            return send_json(
+                self,
+                200,
+                {
+                    'status': True,
+                    'message': payload.get('message', 200),
+                    'provider': 'REDEMET / DECEA',
+                    'data': normalized,
+                },
+            )
+        except Exception as exc:
+            cached = legacy.redemet_cached_radar_payload(product)
+            if cached:
+                return send_json(self, 200, cached)
+            safe = str(exc).replace(key, '[REDACTED]')
+            return send_json(
+                self,
+                502,
+                {
+                    'status': False,
+                    'provider': 'REDEMET / DECEA',
+                    'error': 'Falha ao consultar a API oficial da REDEMET.',
+                    'details': safe[:500],
+                },
+            )
 
     def do_POST(self): return super().do_POST()
 
