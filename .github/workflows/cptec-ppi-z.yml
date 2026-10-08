@@ -1,0 +1,95 @@
+name: CPTEC PPI Z Real
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-cptec-ppi-z
+  cancel-in-progress: true
+
+jobs:
+  ppi-z:
+    name: Extrair PPI Z volumétrico CPTEC
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pillow requests netCDF4
+
+      - name: Descobrir último volume CPTEC
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/latest_cptec.txt
+          import re, requests
+          from urllib.parse import urljoin
+          index="https://ftp.cptec.inpe.br/nowcasting/DADOS/radar_volumetrico/"
+          r=requests.get(index,timeout=(15,45))
+          r.raise_for_status()
+          files=sorted(re.findall(r'href=[\"\x27]([^\"\x27]+\\.nc)[\"\x27]',r.text,re.I))
+          if not files:
+              raise SystemExit("CPTEC não publicou nenhum NetCDF volumétrico no índice.")
+          print(urljoin(index,files[-1]))
+          PY
+          LATEST_URL=$(cat /tmp/latest_cptec.txt)
+          LATEST_FILE=$(basename "$LATEST_URL")
+          echo "CPTEC volume: $LATEST_FILE"
+          PREVIOUS_FILE=$(curl -fsSL "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/cptec-ppi-z/manifest.json" 2>/dev/null | python -c 'import json,sys; print(json.load(sys.stdin).get("sourceFile",""))' 2>/dev/null || true)
+          if [ "$LATEST_FILE" = "$PREVIOUS_FILE" ]; then
+            echo "Nenhum volume novo; encerrando."
+            exit 0
+          fi
+          echo "$LATEST_URL" > /tmp/cptec_source_url
+
+      - name: Gerar PPI Z UHD
+        run: |
+          set -euo pipefail
+          rm -rf cptec-ppi-z
+          python scripts/cptec_ppi_z.py \
+            --url "$(cat /tmp/cptec_source_url)" \
+            --elevation 0.5 \
+            --max-range-km 250 \
+            --width 3840 \
+            --height 2160 \
+            --output cptec-ppi-z
+          test -s cptec-ppi-z/manifest.json
+          test -n "$(find cptec-ppi-z -type f -name '*.png' -size +0c -print -quit)"
+
+      - name: Publicar branch cptec-ppi-z
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cptec-ppi-z-result
+          cp -a cptec-ppi-z/. /tmp/cptec-ppi-z-result/
+          git checkout --orphan cptec-ppi-z
+          git rm -rf . >/dev/null 2>&1 || true
+          git clean -fdx
+          cp -a /tmp/cptec-ppi-z-result/. .
+          rm -f source.nc
+          cat > README.md <<'EOF'
+          # Sideral CPTEC PPI Z
+
+          PPI de refletividade calculado diretamente dos NetCDF volumétricos
+          publicados pelo CPTEC/INPE.
+          EOF
+          git config user.name "sideral-cptec-ppi-z-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Atualiza PPI Z CPTEC"
+          git push --force origin HEAD:cptec-ppi-z
