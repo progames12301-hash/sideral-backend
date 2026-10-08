@@ -31,7 +31,7 @@ def fetch(session, url, timeout=(15,60)):
 
 def find_post_urls(index_html: str, base_url: str) -> list[str]:
     found=[]
-    for href in re.findall(r'href=["\\']([^"\\']+)["\\']',index_html,re.I):
+    for href in re.findall(r"href=['\"]([^'\"]+)['\"]",index_html,re.I):
         u=urljoin(base_url,html.unescape(href))
         p=urlparse(u)
         if p.hostname != urlparse(base_url).hostname:
@@ -53,12 +53,12 @@ def extract_candidates(page_html: str, page_url: str):
     candidates=[]
     # img tags
     for match in re.findall(r"<img\b([^>]+)>",page_html,re.I|re.S):
-        src_m=re.search(r'(?:src|data-src|data-lazy-src)=["\\']([^"\\']+)["\\']',match,re.I)
+        src_m=re.search(r"(?:src|data-src|data-lazy-src)=['\"]([^'\"]+)['\"]",match,re.I)
         if not src_m:
             continue
         src=urljoin(page_url,html.unescape(src_m.group(1)))
         attrs=text_clean(re.sub(r"<.*?>"," ",match))
-        alt_m=re.search(r'alt=["\\']([^"\\']*)["\\']',match,re.I)
+        alt_m=re.search(r"alt=['\"]([^'\"]*)['\"]",match,re.I)
         alt=text_clean(alt_m.group(1)) if alt_m else ""
         candidates.append((src,alt+" "+attrs,relevant_image((match,alt))))
     # linked images
