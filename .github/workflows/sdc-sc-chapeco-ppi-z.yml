@@ -1,0 +1,86 @@
+name: SDC SC Chapecó PPI Z
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sideral-sdc-sc-chapeco-ppi-z
+  cancel-in-progress: true
+
+jobs:
+  ppi-z:
+    name: Capturar PPI Z oficial de Chapecó
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pillow requests
+
+      - name: Gerar PPI Z UHD a partir da publicação oficial
+        run: |
+          set -euo pipefail
+          rm -rf sdc-sc-chapeco-ppi-z
+          python scripts/sdc_sc_chapeco_ppi_z.py \
+            --width 3840 \
+            --height 2160 \
+            --output sdc-sc-chapeco-ppi-z
+          test -s sdc-sc-chapeco-ppi-z/manifest.json
+          test -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-source.png
+          test -s sdc-sc-chapeco-ppi-z/chapeco-ppi-z-uhd.png
+
+      - name: Verificar se é uma imagem nova
+        id: changed
+        run: |
+          set -euo pipefail
+          CURRENT=$(python -c 'import json; print(json.load(open("sdc-sc-chapeco-ppi-z/manifest.json", encoding="utf-8")).get("sourceImage", ""))')
+          PREVIOUS=$(curl -fsSL "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/sdc-sc-chapeco-ppi-z/manifest.json" 2>/dev/null | python -c 'import json,sys; print(json.load(sys.stdin).get("sourceImage", ""))' 2>/dev/null || true)
+          echo "Atual:   $CURRENT"
+          echo "Anterior:$PREVIOUS"
+          if [ -n "$CURRENT" ] && [ "$CURRENT" = "$PREVIOUS" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publicar branch PPI Z Chapecó
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/sdc-sc-chapeco-ppi-z
+          mkdir -p /tmp/sdc-sc-chapeco-ppi-z
+          cp -a sdc-sc-chapeco-ppi-z/. /tmp/sdc-sc-chapeco-ppi-z/
+          git checkout --orphan sdc-sc-chapeco-ppi-z
+          git rm -rf . >/dev/null 2>&1 || true
+          git clean -fdx
+          cp -a /tmp/sdc-sc-chapeco-ppi-z/. .
+          git config user.name "sideral-sdc-sc-radar-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cat > README.md <<'EOF'
+          # Sideral — Chapecó PPI Z
+
+          Imagem PPI Z/MPPI de refletividade do radar meteorológico de Chapecó,
+          capturada da publicação oficial da Defesa Civil de Santa Catarina.
+
+          Saída adicional em PNG UHD 3840×2160 com camada de ecos transparente.
+          EOF
+          git add .
+          git commit -m "Atualiza PPI Z Chapecó SDC SC"
+          git push --force origin HEAD:sdc-sc-chapeco-ppi-z
