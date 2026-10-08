@@ -54,6 +54,7 @@ jobs:
           PREVIOUS_FILE=$(curl -fsSL "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/cptec-ppi-z/manifest.json" 2>/dev/null | python -c 'import json,sys; print(json.load(sys.stdin).get("sourceFile",""))' 2>/dev/null || true)
           if [ "$LATEST_FILE" = "$PREVIOUS_FILE" ]; then
             echo "Nenhum volume novo; encerrando."
+            touch /tmp/no_new_cptec
             exit 0
           fi
           echo "$LATEST_URL" > /tmp/cptec_source_url
@@ -61,6 +62,10 @@ jobs:
       - name: Gerar PPI Z UHD
         run: |
           set -euo pipefail
+          if [ -f /tmp/no_new_cptec ]; then
+            echo "Sem volume novo."
+            exit 0
+          fi
           rm -rf cptec-ppi-z
           python scripts/cptec_ppi_z.py \
             --url "$(cat /tmp/cptec_source_url)" \
@@ -75,6 +80,10 @@ jobs:
       - name: Publicar branch cptec-ppi-z
         run: |
           set -euo pipefail
+          if [ -f /tmp/no_new_cptec ]; then
+            echo "Sem volume novo; nada a publicar."
+            exit 0
+          fi
           mkdir -p /tmp/cptec-ppi-z-result
           cp -a cptec-ppi-z/. /tmp/cptec-ppi-z-result/
           git checkout --orphan cptec-ppi-z
