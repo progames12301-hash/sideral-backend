@@ -27,49 +27,61 @@ def text_clean(value: str) -> str:
 
 def fetch(session, url, timeout=(15,60), image=False):
     headers={
-        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.2",
+        "User-Agent":"Sideral-SDC-SC-PPI-Z/1.3",
         "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" if image
                else "text/html,application/xhtml+xml,*/*;q=0.8",
     }
+
+    candidates=[url]
+    parsed=urlparse(url)
+    if parsed.hostname == "www.defesacivil.sc.gov.br":
+        candidates.append(url.replace("://www.defesacivil.sc.gov.br","://defesacivil.sc.gov.br",1))
+    elif parsed.hostname == "defesacivil.sc.gov.br":
+        candidates.append(url.replace("://defesacivil.sc.gov.br","://www.defesacivil.sc.gov.br",1))
+
     errors=[]
+    for candidate in candidates:
+        for attempt in range(2):
+            try:
+                r=session.get(candidate,timeout=timeout,headers=headers,allow_redirects=True)
+                r.raise_for_status()
+                return r
+            except requests.RequestException as exc:
+                errors.append(f"direct:{candidate}:{type(exc).__name__}")
+                if attempt == 0:
+                    import time
+                    time.sleep(2)
 
-    # Primeiro tenta a fonte oficial diretamente.
-    for attempt in range(3):
-        try:
-            r=session.get(url,timeout=timeout,headers=headers)
-            r.raise_for_status()
-            return r
-        except requests.RequestException as exc:
-            errors.append(f"direct:{type(exc).__name__}:{exc}")
-            if attempt < 2:
-                import time
-                time.sleep(2*(attempt+1))
-
-    # GitHub-hosted runners podem não alcançar a SDC diretamente.
+    fallback_sources=[]
     if image:
-        fallbacks=[
-            WRSRV_PREFIX + quote(url,safe=""),
-            CORSPROXY_PREFIX + quote(url,safe=""),
+        fallback_sources += [
+            WRSRV_PREFIX + quote(candidates[0],safe=""),
+            WRSRV_PREFIX + quote(candidates[-1],safe=""),
+            CORSPROXY_PREFIX + quote(candidates[0],safe=""),
         ]
     else:
-        fallbacks=[
-            ALLORIGINS_PREFIX + quote(url,safe=""),
-            CORSPROXY_PREFIX + quote(url,safe=""),
-            JINA_PREFIX + url,
-        ]
+        for candidate in candidates:
+            fallback_sources += [
+                ALLORIGINS_PREFIX + quote(candidate,safe=""),
+                JINA_PREFIX + candidate,
+                JINA_PREFIX + candidate.replace("https://","http://",1),
+            ]
 
-    for fallback in fallbacks:
+    seen=set()
+    for fallback in fallback_sources:
+        if fallback in seen:
+            continue
+        seen.add(fallback)
         try:
             r=session.get(fallback,timeout=(20,90),headers=headers)
             r.raise_for_status()
             return r
         except requests.RequestException as exc:
-            errors.append(f"fallback:{fallback.split('?')[0]}:{type(exc).__name__}:{exc}")
+            errors.append(f"fallback:{type(exc).__name__}:{getattr(exc.response,'status_code',None)}")
             continue
 
     raise requests.RequestException(
-        "Falha ao acessar a fonte SDC/SC após tentativas diretas e fallbacks: "
-        + " | ".join(errors)[-1800:]
+        "Falha ao acessar SDC/SC: " + " | ".join(errors)[-1800:]
     )
 
 def find_post_urls(index_html: str, base_url: str) -> list[str]:
@@ -143,7 +155,7 @@ def choose_ppi_image(page_html: str, page_url: str):
 
 def get_wp_posts(session):
     api = (
-        "https://www.defesacivil.sc.gov.br/wp-json/wp/v2/posts"
+        "https://defesacivil.sc.gov.br/wp-json/wp/v2/posts"
         "?search=Chapec%C3%B3&per_page=30&orderby=date&order=desc"
     )
     try:
