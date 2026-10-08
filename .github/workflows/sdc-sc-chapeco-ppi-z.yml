@@ -82,7 +82,7 @@ jobs:
           git rm -rf . >/dev/null 2>&1 || true
           git clean -fdx
           cp -a /tmp/sdc-sc-chapeco-ppi-z/. .
-          rm -f map-screenshot.png page-text.txt page-text-after.txt
+          rm -f page-text.txt page-text-after.txt
           rm -f dom-images.json
           git config user.name "sideral-sdc-sc-radar-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
