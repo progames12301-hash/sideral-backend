@@ -14,7 +14,7 @@ import math
 import numpy as np
 
 SIFAP = "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar"
-SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v5"
+SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v6"
 
 # O certificado apresentado pelo SIFAP/Defesa Civil SC está com a cadeia
 # incompleta para o runner do GitHub Actions. A origem continua sendo
@@ -92,11 +92,18 @@ def get_image_direct(session, filename):
 
 
 PALETTE = np.array([
-    (0, 255, 255), (0, 200, 255), (0, 128, 255), (0, 0, 255),
-    (0, 255, 0), (0, 200, 0), (0, 128, 0),
-    (255, 255, 0), (255, 200, 0), (255, 140, 0),
-    (255, 0, 0), (200, 0, 0), (255, 0, 255),
-    (180, 0, 220), (255, 255, 255)
+    (94,173,206),
+    (102,196,220),
+    (96,210,195),
+    (71,214,135),
+    (46,219,82),
+    (22,218,22),
+    (24,175,15),
+    (26,141,12),
+    (32,115,9),
+    (100,143,6),
+    (171,179,4),
+    (229,205,1),
 ], dtype=np.int16)
 
 def echo_mask(rgba: np.ndarray) -> np.ndarray:
@@ -124,7 +131,9 @@ def sample_color(rgba: np.ndarray, mask: np.ndarray, cx: float, cy: float, radiu
     counts = {}
     for pixel in hits:
         counts[pixel] = counts.get(pixel, 0) + 1
-    return max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+    pixel = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+    distances = ((PALETTE - np.array(pixel, dtype=np.int16)) ** 2).sum(axis=1)
+    return tuple(int(v) for v in PALETTE[int(np.argmin(distances))])
 
 def make_radar_scope_superres(
     source: Image.Image,
