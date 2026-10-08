@@ -193,6 +193,7 @@ def main() -> int:
     ap.add_argument("--gate-pixels",type=float,default=3.0)
     ap.add_argument("--gate-gap",type=float,default=0.0)
     ap.add_argument("--target-width",type=int,default=3840)
+    ap.add_argument("--target-height",type=int,default=2160)
     args = ap.parse_args()
 
     out = Path(args.output)
@@ -231,18 +232,25 @@ def main() -> int:
                 target = out/rel
                 target.parent.mkdir(parents=True,exist_ok=True)
 
-                # Saída em 4K: amplia somente a imagem já renderizada e preserva
-                # a proporção original do radar, sem esticar latitude/longitude.
+                # Saída Ultra HD (UHD): 3840x2160 por padrão.
+                # Mantém a proporção original e centraliza o radar em uma tela UHD.
                 target_width = max(1, int(args.target_width))
-                if scope.width != target_width:
-                    target_height = max(1, round(scope.height * target_width / scope.width))
-                    scope_4k = scope.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                    scope.close()
-                    scope = scope_4k
+                target_height = max(1, int(args.target_height))
+                scale = min(target_width / scope.width, target_height / scope.height)
+                fit_w = max(1, round(scope.width * scale))
+                fit_h = max(1, round(scope.height * scale))
+                scope_fit = scope.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+                uhd = Image.new("RGBA", (target_width, target_height), (0, 0, 0, 0))
+                x = (target_width - fit_w) // 2
+                y = (target_height - fit_h) // 2
+                uhd.alpha_composite(scope_fit, (x, y))
+                scope_fit.close()
+                scope.close()
+                scope = uhd
                 scope.save(target,"PNG",optimize=True,compress_level=6)
                 scope.close()
                 iw,ih = original.size
-                ow,oh = scope.size
+                ow,oh = target_width,target_height
             seen.add(src)
             generated += 1
             t = when(item.get("data"))
@@ -256,7 +264,7 @@ def main() -> int:
                 "bounds":list(b),
                 "radar":{"longitude":number(item,"lon_center"),"latitude":number(item,"lat_center")},
                 "image":{"width":iw,"height":ih,"outputWidth":ow,"outputHeight":oh},
-                "render":{"azimuthStepDegrees":args.azimuth_step,"gatePixels":args.gate_pixels,"gateGapPixels":args.gate_gap,"mode":"source-color-sampling"}
+                "render":{"azimuthStepDegrees":args.azimuth_step,"gatePixels":args.gate_pixels,"gateGapPixels":args.gate_gap,"outputResolution":"Ultra HD","outputWidth":ow,"outputHeight":oh,"mode":"source-color-sampling"}
             })
         if items:
             manifest_frames.append({"date":max(dates).isoformat().replace("+00:00","Z") if dates else None,"items":items})
