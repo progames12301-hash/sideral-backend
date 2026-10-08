@@ -22,12 +22,12 @@ on:
       azimuth_step:
         description: "Passo angular dos gates em graus"
         required: false
-        default: "0.35"
+        default: "0.20"
         type: string
       gate_pixels:
         description: "Comprimento radial de cada gate em pixels"
         required: false
-        default: "3"
+        default: "2"
         type: string
       gate_gap:
         description: "Espaço entre gates em pixels"
@@ -73,8 +73,8 @@ jobs:
         env:
           PRODUCT: ${{ inputs.product || '03km' }}
           FRAMES: ${{ inputs.frames || '1' }}
-          AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.35' }}
-          GATE_PIXELS: ${{ inputs.gate_pixels || '3' }}
+          AZIMUTH_STEP: ${{ inputs.azimuth_step || '0.20' }}
+          GATE_PIXELS: ${{ inputs.gate_pixels || '2' }}
           GATE_GAP: ${{ inputs.gate_gap || '0' }}
         run: |
           set -euo pipefail
