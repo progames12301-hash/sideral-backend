@@ -17,14 +17,23 @@ import numpy as np
 import requests
 from PIL import Image, ImageDraw
 
-SCHEMA = "sideral-redemet-radar-scope-v1"
+SCHEMA = "sideral-redemet-radar-scope-v2"
 DEFAULT_API = "https://sideral-backend.onrender.com"
 OFFICIAL_HOST = "estatico-redemet.decea.mil.br"
 PRODUCTS = ("03km", "05km", "07km", "10km", "maxcappi")
 PALETTE = np.array([
-    (4,233,231),(1,159,244),(3,0,244),(2,253,2),(1,197,1),(0,142,0),
-    (254,254,0),(253,149,0),(253,0,0),(212,0,0),(188,0,0),(248,0,253),
-    (152,84,198),(255,255,255)
+    (94,173,206),
+    (102,196,220),
+    (96,210,195),
+    (71,214,135),
+    (46,219,82),
+    (22,218,22),
+    (24,175,15),
+    (26,141,12),
+    (32,115,9),
+    (100,143,6),
+    (171,179,4),
+    (229,205,1),
 ], dtype=np.int16)
 WEIGHTS = np.array((2,4,1), dtype=np.int32)
 
@@ -105,7 +114,9 @@ def sample_source(rgba: np.ndarray, mask: np.ndarray, cx: float, cy: float, radi
     counts = {}
     for pixel in hits:
         counts[pixel] = counts.get(pixel,0)+1
-    return max(counts.items(), key=lambda kv:(kv[1],kv[0]))[0]
+    pixel = max(counts.items(), key=lambda kv:(kv[1],kv[0]))[0]
+    distances = ((PALETTE - np.array(pixel, dtype=np.int16)) ** 2).sum(axis=1)
+    return tuple(int(v) for v in PALETTE[int(np.argmin(distances))])
 
 
 def render_scope(source: Image.Image, item: dict[str, Any], azimuth_deg: float, gate_px: float, gap_px: float) -> Image.Image:
