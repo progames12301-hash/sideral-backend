@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from PIL import Image
+import numpy as np
 from playwright.async_api import async_playwright
 
 MAP_URL = "https://monitoramento.defesacivil.sc.gov.br/mapa"
@@ -19,6 +20,34 @@ KEYWORDS = (
     "radar", "ppi", "mppi", "reflect", "reflet", "dbz",
     "chapec", "chapeco", "zscan", "rainbow"
 )
+
+
+PALETTE=np.array([
+    [0,220,255],[0,120,255],[0,255,255],[0,255,0],[80,255,0],
+    [255,255,0],[255,180,0],[255,100,0],[255,0,0],[190,0,0],[255,0,255]
+],dtype=np.int16)
+
+def extract_echo(image):
+    rgba=np.asarray(image.convert("RGBA"),dtype=np.uint8)
+    rgb=rgba[...,:3].astype(np.int16)
+    hi=rgb.max(axis=2); lo=rgb.min(axis=2); sat=hi-lo
+    dist=((rgb[...,None,:]-PALETTE[None,None,:,:])**2).sum(axis=3)
+    mask=(dist.min(axis=2)<19000)&(sat>25)&(hi>70)
+    mask &= ~((hi>235)&(sat<22))
+    mask &= ~(hi<25)
+    out=rgba.copy()
+    out[...,3]=np.where(mask,rgba[...,3],0)
+    return Image.fromarray(out,"RGBA")
+
+def make_uhd(image,width=3840,height=2160):
+    scale=min(width/image.width,height/image.height)
+    w=max(1,round(image.width*scale))
+    h=max(1,round(image.height*scale))
+    fit=image.resize((w,h),Image.Resampling.LANCZOS)
+    out=Image.new("RGBA",(width,height),(0,0,0,0))
+    out.alpha_composite(fit,((width-w)//2,(height-h)//2))
+    fit.close()
+    return out
 
 async def main_async(args):
     out=Path(args.output)
@@ -124,6 +153,25 @@ async def main_async(args):
             selected["score"]=score
             break
 
+    output_files={}
+    if selected:
+        try:
+            with Image.open(selected["file"]) as source:
+                source=source.convert("RGBA")
+                source.save(out/"chapeco-ppi-z-source.png","PNG",optimize=True,compress_level=6)
+                echo=extract_echo(source)
+                uhd=make_uhd(echo,3840,2160)
+                uhd.save(out/"chapeco-ppi-z-uhd.png","PNG",optimize=True,compress_level=6)
+                output_files={
+                    "source":"chapeco-ppi-z-source.png",
+                    "uhd":"chapeco-ppi-z-uhd.png",
+                    "width":3840,
+                    "height":2160
+                }
+                echo.close()
+        except Exception as exc:
+            selected["processingError"]=f"{type(exc).__name__}: {exc}"
+
     manifest={
         "schema":SCHEMA,
         "provider":"Defesa Civil de Santa Catarina",
@@ -132,9 +180,10 @@ async def main_async(args):
         "mapUrl":MAP_URL,
         "generatedAt":dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00","Z"),
         "selected":selected,
+        "output":output_files,
         "networkEvents":events[-300:],
         "candidates":candidates,
-        "note":"Captura feita no aplicativo web oficial para descobrir/carregar o recurso efetivamente usado pelo mapa."
+        "note":"Captura feita no aplicativo web oficial para identificar e obter o recurso efetivamente usado pelo mapa."
     }
     (out/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
 
