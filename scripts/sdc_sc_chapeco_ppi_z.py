@@ -9,7 +9,7 @@ from pathlib import Path
 
 import requests
 import urllib3
-from PIL import Image
+from PIL import Image, ImageDraw
 import math
 import numpy as np
 
