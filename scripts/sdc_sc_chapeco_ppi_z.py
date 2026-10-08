@@ -10,12 +10,11 @@ from pathlib import Path
 import requests
 import urllib3
 from PIL import Image
-import cv2
+import math
 import numpy as np
 
 SIFAP = "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar"
 SCHEMA = "sideral-sdcsc-chapeco-ppi-z-v5"
-EDSR_URL = "https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x4.pb"
 
 # O certificado apresentado pelo SIFAP/Defesa Civil SC está com a cadeia
 # incompleta para o runner do GitHub Actions. A origem continua sendo
@@ -91,62 +90,105 @@ def get_image_direct(session, filename):
 
 
 
-def super_res_edsr(source: Image.Image, model_path: str, tile: int = 192, overlap: int = 16) -> Image.Image:
-    """Aplica EDSR x4 em tiles para manter o consumo de RAM controlado."""
-    rgba = np.array(source.convert("RGBA"))
-    bgr = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2BGR)
-    alpha = rgba[:, :, 3]
 
-    sr = cv2.dnn_superres.DnnSuperResImpl_create()
-    sr.readModel(model_path)
-    sr.setModel("edsr", 4)
+PALETTE = np.array([
+    (0, 255, 255), (0, 200, 255), (0, 128, 255), (0, 0, 255),
+    (0, 255, 0), (0, 200, 0), (0, 128, 0),
+    (255, 255, 0), (255, 200, 0), (255, 140, 0),
+    (255, 0, 0), (200, 0, 0), (255, 0, 255),
+    (180, 0, 220), (255, 255, 255)
+], dtype=np.int16)
 
-    h, w = bgr.shape[:2]
-    scale = 4
-    out_h, out_w = h * scale, w * scale
-    acc = np.zeros((out_h, out_w, 3), dtype=np.float32)
-    weights = np.zeros((out_h, out_w, 1), dtype=np.float32)
-    step = max(32, tile - overlap * 2)
+def echo_mask(rgba: np.ndarray) -> np.ndarray:
+    rgb = rgba[..., :3].astype(np.int16)
+    hi = rgb.max(axis=2)
+    lo = rgb.min(axis=2)
+    sat = hi - lo
+    distances = ((rgb[..., None, :] - PALETTE[None, None, :, :]) ** 2).sum(axis=3)
+    mask = distances.min(axis=2) < 18000
+    mask &= rgba[..., 3] >= 20
+    mask &= ~((hi < 18) | ((sat < 18) & (hi < 235)))
+    return mask
 
-    for y0 in range(0, h, step):
-        y1 = min(h, y0 + tile)
-        y0e = max(0, y1 - tile)
-        for x0 in range(0, w, step):
-            x1 = min(w, x0 + tile)
-            x0e = max(0, x1 - tile)
+def sample_color(rgba: np.ndarray, mask: np.ndarray, cx: float, cy: float, radius: float, angle: float):
+    ca, sa = math.cos(angle), math.sin(angle)
+    hits = []
+    for dr, tangent in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+        rr = radius + dr
+        x = int(round(cx + ca * rr - sa * tangent))
+        y = int(round(cy + sa * rr + ca * tangent))
+        if 0 <= x < rgba.shape[1] and 0 <= y < rgba.shape[0] and mask[y, x]:
+            hits.append(tuple(int(v) for v in rgba[y, x]))
+    if not hits:
+        return None
+    counts = {}
+    for pixel in hits:
+        counts[pixel] = counts.get(pixel, 0) + 1
+    return max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
 
-            patch = bgr[y0e:y1, x0e:x1]
-            result = sr.upsample(patch).astype(np.float32)
+def make_radar_scope_superres(
+    source: Image.Image,
+    width: int,
+    height: int,
+    azimuth_step: float = 0.35,
+    gate_pixels: float = 3.0,
+    gate_gap: float = 0.0,
+) -> Image.Image:
+    """Reconstrói o PPI em gates polares, no estilo Super-Res do Radar Scope REDEMET."""
+    rgba = np.asarray(source.convert("RGBA"), dtype=np.uint8)
+    h, w = rgba.shape[:2]
+    cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
+    mask = echo_mask(rgba)
 
-            oh, ow = result.shape[:2]
-            oy0, ox0 = y0e * scale, x0e * scale
-            oy1, ox1 = oy0 + oh, ox0 + ow
+    native = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(native, "RGBA")
 
-            wy = np.ones(oh, dtype=np.float32)
-            wx = np.ones(ow, dtype=np.float32)
-            edge = overlap * scale
+    max_r = math.hypot(max(cx, w - 1 - cx), max(cy, h - 1 - cy))
+    az = math.radians(max(0.08, min(3.0, azimuth_step)))
+    half = az * 0.46
+    gate = max(1.0, gate_pixels)
+    gap = max(0.0, min(gate * 0.6, gate_gap))
 
-            if y0e > 0:
-                n = min(edge, oh // 2)
-                wy[:n] = np.linspace(0.05, 1.0, n, dtype=np.float32)
-            if y1 < h:
-                n = min(edge, oh // 2)
-                wy[-n:] = np.linspace(1.0, 0.05, n, dtype=np.float32)
-            if x0e > 0:
-                n = min(edge, ow // 2)
-                wx[:n] = np.linspace(0.05, 1.0, n, dtype=np.float32)
-            if x1 < w:
-                n = min(edge, ow // 2)
-                wx[-n:] = np.linspace(1.0, 0.05, n, dtype=np.float32)
+    for gi in range(int(max_r / gate) + 1):
+        inner = gi * gate + gap / 2.0
+        outer = (gi + 1) * gate - gap / 2.0
+        if outer <= inner:
+            continue
 
-            ww = (wy[:, None] * wx[None, :])[:, :, None]
-            acc[oy0:oy1, ox0:ox1] += result * ww
-            weights[oy0:oy1, ox0:ox1] += ww
+        mid = (inner + outer) / 2.0
+        for ai in range(int(math.ceil(2 * math.pi / az))):
+            angle = -math.pi + (ai + 0.5) * az
+            color = sample_color(rgba, mask, cx, cy, mid, angle)
+            if color is None:
+                continue
 
-    out_bgr = np.clip(acc / np.maximum(weights, 1e-6), 0, 255).astype(np.uint8)
-    out_rgb = cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB)
-    out_alpha = cv2.resize(alpha, (out_w, out_h), interpolation=cv2.INTER_LANCZOS4)
-    return Image.fromarray(np.dstack([out_rgb, out_alpha]), "RGBA")
+            a1, a2 = angle - half, angle + half
+            poly = [
+                (cx + math.cos(a1) * inner, cy + math.sin(a1) * inner),
+                (cx + math.cos(a2) * inner, cy + math.sin(a2) * inner),
+                (cx + math.cos(a2) * outer, cy + math.sin(a2) * outer),
+                (cx + math.cos(a1) * outer, cy + math.sin(a1) * outer),
+            ]
+            draw.polygon(
+                poly,
+                fill=(
+                    int(color[0]),
+                    int(color[1]),
+                    int(color[2]),
+                    min(255, max(35, int(color[3] * 0.96))),
+                ),
+            )
+
+    scale = min(width / w, height / h)
+    fit_w = max(1, round(w * scale))
+    fit_h = max(1, round(h * scale))
+    fit = native.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    canvas.alpha_composite(fit, ((width - fit_w) // 2, (height - fit_h) // 2))
+    fit.close()
+    native.close()
+    return canvas
+
 
 def make_uhd(source: Image.Image, width: int, height: int) -> Image.Image:
     source = source.convert("RGBA")
@@ -167,7 +209,9 @@ def main():
     ap.add_argument("--width", type=int, default=3840)
     ap.add_argument("--height", type=int, default=2160)
     ap.add_argument("--output", default="sdc-sc-chapeco-ppi-z")
-    ap.add_argument("--model", default="EDSR_x4.pb")
+    ap.add_argument("--azimuth-step", type=float, default=0.35)
+    ap.add_argument("--gate-pixels", type=float, default=3.0)
+    ap.add_argument("--gate-gap", type=float, default=0.0)
     args = ap.parse_args()
 
     out = Path(args.output)
@@ -191,12 +235,19 @@ def main():
         uhd = make_uhd(source, max(256, args.width), max(256, args.height))
         uhd.save(out / uhd_name, "PNG", optimize=True, compress_level=6)
 
-        model_path = Path(args.model)
-        if not model_path.exists():
-            raise RuntimeError(f"Modelo EDSR não encontrado: {model_path}")
-
-        print(f"Aplicando super-resolução EDSR x4 em tiles no PPI real {source.size}...")
-        sr = super_res_edsr(source, str(model_path))
+        print(
+            f"Gerando Super-Res Radar Scope "
+            f"(azimute={args.azimuth_step}°, gate={args.gate_pixels}px, gap={args.gate_gap}px) "
+            f"a partir do PPI real {source.size}..."
+        )
+        sr = make_radar_scope_superres(
+            source,
+            max(256, args.width),
+            max(256, args.height),
+            args.azimuth_step,
+            args.gate_pixels,
+            args.gate_gap,
+        )
         sr.save(out / superres_name, "PNG", optimize=True, compress_level=6)
 
         source_size = source.size
@@ -244,22 +295,22 @@ def main():
             "width": sr_size[0],
             "height": sr_size[1],
             "format": "PNG",
-            "model": "EDSR x4",
-            "method": "OpenCV dnn_superres em tiles com sobreposição",
+            "model": "Radar Scope polar gates",
+            "method": "reconstrução polar com gates no estilo REDEMET",
             "inventedDbz": False,
             "inventedCells": False,
             "note": (
-                "A super-resolução atua somente sobre a imagem real do radar; "
+                "A Super-Res reconstrói o desenho dos ecos em gates polares usando somente as cores presentes no PPI oficial; "
                 "nenhum dBZ, célula ou precipitação é inventado."
             ),
         },
         "processing": {
-            "mode": "official-radar-image-plus-edsr",
+            "mode": "official-radar-image-plus-radar-scope-superres",
             "inventedDbz": False,
             "inventedCells": False,
             "note": (
                 "A fonte é o PPI de refletividade do SIFAP/Defesa Civil SC. "
-                "A versão UHD é redimensionada e a super-res usa EDSR x4."
+                "A Super-Res usa gates polares no estilo Radar Scope da REDEMET."
             ),
         },
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -281,6 +332,9 @@ def main():
             "superres": superres_name,
             "resolution": f"{uhd_size[0]}x{uhd_size[1]}",
             "superresResolution": f"{sr_size[0]}x{sr_size[1]}",
+            "azimuthStepDegrees": args.azimuth_step,
+            "gatePixels": args.gate_pixels,
+            "gateGapPixels": args.gate_gap,
         },
         ensure_ascii=False,
     ))
