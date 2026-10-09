@@ -212,7 +212,10 @@ def main():
     for level in LEVELS:
         variables += [hourly_name("temperature", level), hourly_name("dew_point", level), hourly_name("relative_humidity", level),
                       hourly_name("wind_speed", level), hourly_name("wind_direction", level), hourly_name("geopotential_height", level), hourly_name("vertical_velocity", level)]
-    params = {"latitude": latitudes, "longitude": longitudes, "hourly": ",".join(variables), "models": "ecmwf_ifs025",
+    # Open-Meteo expects multi-location coordinates as comma-separated
+    # values, not repeated latitude=/longitude= query parameters.
+    params = {"latitude": ",".join(map(str, latitudes)), "longitude": ",".join(map(str, longitudes)),
+              "hourly": ",".join(variables), "models": "ecmwf_ifs025",
               "run": run.strftime("%Y-%m-%dT%H:%M"), "forecast_hours": "49", "wind_speed_unit": "kn",
               "temperature_unit": "celsius", "timeformat": "iso8601", "timezone": "UTC", "cell_selection": "nearest"}
     print(f"[Sideral] ECMWF IFS 0.25° via Open-Meteo Single Runs: {run:%Y-%m-%d %HZ}", flush=True)
