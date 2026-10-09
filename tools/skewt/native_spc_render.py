@@ -54,6 +54,23 @@ def _clean_profile(prof):
     return p, t, td, z, u, v, om
 
 
+def _densify_profile(p, t, td, z, u, v, omega, count=55):
+    """Interpolate the drawing profile to 55 pressure levels; physics stays native SHARPpy."""
+    if len(p) >= count:
+        return p, t, td, z, u, v, omega
+    target_p = np.geomspace(float(p[0]), float(p[-1]), count)
+    target_logp = np.log(target_p)
+
+    def interp(values):
+        values = np.asarray(values, dtype=float)
+        good = np.isfinite(values) & np.isfinite(p)
+        if good.sum() < 2:
+            return np.full(count, np.nan, dtype=float)
+        return np.interp(target_logp, np.log(p[good][::-1]), values[good][::-1])
+
+    return (target_p, interp(t), interp(td), interp(z), interp(u), interp(v), interp(omega))
+
+
 def _xskew(temp_c, pressure_hpa):
     p = np.maximum(np.asarray(pressure_hpa, dtype=float), 1.0)
     return np.asarray(temp_c, dtype=float) + SKEW * np.log(1000.0 / p)
@@ -209,43 +226,69 @@ def _pwat_mm(p, td):
 def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     ax.set_yscale("log")
     ax.set_ylim(1050, 100)
-    ax.set_xlim(-43, 57)
+    ax.set_xlim(-43, 64)
     ax.set_facecolor("white")
     ax.spines[:].set_color(INK)
     ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=8, colors=INK, direction="out", length=3, pad=2)
     ax.set_xlabel("Temperature (°C)", fontsize=9, labelpad=4)
     ax.set_ylabel("Pressure (hPa)", fontsize=9, labelpad=8)
+
+    # Pressure grid: major every 100 hPa, supporting levels every 25 hPa.
     p_ticks = [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]
+    p_minor = [float(pp) for pp in np.arange(125, 1050, 25) if pp not in p_ticks]
     ax.yaxis.set_major_locator(FixedLocator(p_ticks))
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f"{int(val)}" if val in p_ticks else ""))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f"{int(val)}" if any(abs(val-x)<0.5 for x in p_ticks) else ""))
+    ax.yaxis.set_minor_locator(FixedLocator(p_minor))
     ax.set_xticks(np.arange(-40, 56, 10))
-    ps = np.geomspace(100, 1050, 150)
+    ax.set_xticks(np.arange(-40, 56, 5), minor=True)
+    ax.tick_params(axis="x", which="minor", length=2, color="#777777")
+    ps = np.geomspace(100, 1050, 240)
     for pp in p_ticks:
-        ax.axhline(pp, color="#b8b8b8", lw=0.65, zorder=0)
-    for pp in [950, 850, 750, 650, 550, 450, 350, 250, 150]:
-        ax.axhline(pp, color="#e0e0e0", lw=0.45, zorder=0)
-    for temp in np.arange(-80, 71, 10):
-        ax.plot(_xskew(np.full_like(ps, temp), ps), ps, ls=(0, (2, 3)),
-                color="#9e9e9e" if temp % 20 else "#6c8ccd", lw=0.52, alpha=0.75, zorder=0)
-    for theta_k in np.arange(260, 451, 10):
+        ax.axhline(pp, color="#a7a7a7", lw=0.62, zorder=0)
+    for pp in p_minor:
+        ax.axhline(pp, color="#e4e4e4", lw=0.34, zorder=0)
+
+    # Isotherms every 5 C; every 10 C is emphasized.
+    for temp in np.arange(-90, 66, 5):
+        major = (int(temp) % 10 == 0)
+        ax.plot(_xskew(np.full_like(ps, temp), ps), ps,
+                ls=(0, (2, 3)), color="#7192c4" if major else "#b7b7b7",
+                lw=0.54 if major else 0.38, alpha=0.80 if major else 0.66, zorder=0)
+
+    # Dry adiabats every 5 K (10 K emphasized), giving a denser thermodynamic mesh.
+    for theta_k in np.arange(250, 506, 5):
         tt = theta_k * (ps / 1000.0) ** 0.2854 - 273.15
-        ax.plot(_xskew(tt, ps), ps, color="#c49a5a", ls=(0, (2, 3)), lw=0.58, alpha=0.8, zorder=0)
+        major = (int(theta_k) % 10 == 0)
+        ax.plot(_xskew(tt, ps), ps, color="#c49a5a" if major else "#dfc6a1",
+                ls=(0, (2, 3)), lw=0.58 if major else 0.40,
+                alpha=0.82 if major else 0.66, zorder=0)
+
+    # Moist adiabats every 5 C. Vectorized SHARPpy wet lifting is much faster
+    # than evaluating each point separately for each of the 459 generated frames.
     try:
         from sharppy.sharptab import thermo
-        pp_grid = np.geomspace(1000, 100, 70)
-        for start_t in [-10, 0, 10, 20, 30, 40]:
-            curve = np.full_like(pp_grid, np.nan)
-            for i, pi in enumerate(pp_grid):
-                curve[i] = float(thermo.wetlift(1000.0, float(start_t), float(pi)))
-            ax.plot(_xskew(curve, pp_grid), pp_grid, color="#64a878", ls=(0, (2, 3)), lw=0.58, alpha=0.77, zorder=0)
+        pp_grid = np.geomspace(1000, 100, 100)
+        for start_t in np.arange(-35, 56, 5):
+            curve = _arr(thermo.wetlift(1000.0, float(start_t), pp_grid))
+            if len(curve) == len(pp_grid):
+                major = (int(start_t) % 10 == 0)
+                ax.plot(_xskew(curve, pp_grid), pp_grid,
+                        color="#45935c" if major else "#98c4a0",
+                        ls=(0, (2, 3)), lw=0.60 if major else 0.40,
+                        alpha=0.82 if major else 0.67, zorder=0)
     except Exception:
         pass
-    for r in [0.4, 1, 2, 4, 8, 12, 16, 24, 32]:
+
+    # Mixing-ratio lines, in g/kg, with the lower-value lines kept subtle.
+    for r in [0.1, 0.2, 0.4, 0.6, 0.8, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 28, 32]:
         e = (r * ps) / (622.0 + r)
         loge = np.log(np.maximum(e, 0.01) / 6.112)
         tdline = 243.5 * loge / (17.67 - loge)
-        ax.plot(_xskew(tdline, ps), ps, color="#86b68e", ls=(0, (1, 3)), lw=0.55, alpha=0.72, zorder=0)
+        major = r in (0.4, 1, 2, 4, 8, 16, 24, 32)
+        ax.plot(_xskew(tdline, ps), ps, color="#86b68e" if major else "#b2ceb5",
+                ls=(0, (1, 3)), lw=0.56 if major else 0.38,
+                alpha=0.78 if major else 0.62, zorder=0)
     h_agl = z - z[0]
     for pp in [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]:
         height = _interp_pressure(h_agl, p, pp)
@@ -256,16 +299,44 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     parcel = _parcel_curve(p, t, td)
     if np.isfinite(parcel).sum() > 3:
         ax.plot(_xskew(parcel, p), p, color=RED, lw=1.25, ls="--", zorder=4)
+    # Mark LCL/LFC/EL using whichever SHARPpy parcel contains each value.
     parcel_objects = [getattr(pcl, n, None) for n in ("sfcpcl", "mlpcl", "mupcl", "fcstpcl")]
-    sfc = next((x for x in parcel_objects if x is not None), None)
-    if sfc is not None:
-        for attr, short in (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL")):
-            pp = _finite(getattr(sfc, attr, None))
-            if pp is not None and 100 <= pp <= 1050:
-                ax.axhline(pp, color="#333333", lw=0.55, ls=(0, (3, 3)), alpha=0.65)
-                ax.text(56.2, pp, short, fontsize=7, ha="left", va="center", color="#555555", clip_on=False)
-    idx = np.unique(np.linspace(0, len(p) - 1, min(22, len(p))).round().astype(int))
-    ax.barbs(np.full(len(idx), 50.4), p[idx], u[idx], v[idx], length=4.4,
+    markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
+    marker_pressures = {}
+    for attr, short in markers:
+        pressure_value = next((_finite(getattr(parcel, attr, None))
+                               for parcel in parcel_objects if parcel is not None
+                               and _finite(getattr(parcel, attr, None)) is not None), None)
+        if pressure_value is None and short == "LCL":
+            try:
+                from sharppy.sharptab import thermo
+                pressure_value = float(thermo.drylift(float(p[0]), float(t[0]), float(td[0]))[0])
+            except Exception:
+                pressure_value = None
+        marker_pressures[short] = pressure_value
+        if pressure_value is not None and 100 <= pressure_value <= 1050:
+            ax.axhline(pressure_value, color="#2c2c2c", lw=0.72,
+                       ls=(0, (3, 3)), alpha=0.84, zorder=3)
+            ax.text(57.0, pressure_value, short, fontsize=7.2, weight="bold",
+                    ha="left", va="center", color="#303030",
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.76, pad=0.5),
+                    clip_on=False, zorder=9)
+
+    # Freezing level, a common sounding reference mark.
+    freeze_idx = np.where(np.isfinite(t[:-1]) & np.isfinite(t[1:]) & (t[:-1] * t[1:] <= 0))[0]
+    if len(freeze_idx):
+        i = int(freeze_idx[0])
+        if abs(t[i + 1] - t[i]) > 1e-6:
+            frac = -t[i] / (t[i + 1] - t[i])
+            p0 = float(np.exp(np.log(p[i]) + frac * (np.log(p[i + 1]) - np.log(p[i]))))
+            if 100 <= p0 <= 1050:
+                ax.axhline(p0, color="#5d75a5", lw=0.6, ls=(0, (1, 3)), alpha=0.8, zorder=2)
+                ax.text(43.0, p0, "0°C", fontsize=6.6, color="#526991",
+                        ha="left", va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=0.25))
+
+    # Frequent wind barbs, as in an operational sounding.
+    idx = np.unique(np.linspace(0, len(p) - 1, min(25, len(p))).round().astype(int))
+    ax.barbs(np.full(len(idx), 53.5), p[idx], u[idx], v[idx], length=4.4,
              linewidth=0.55, barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, zorder=7)
     ax.set_title(f"Station: {station}\nDate: {date_text}", fontsize=10.5, loc="left", pad=6, color=INK)
@@ -458,6 +529,10 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     """Render one SHARPpy profile as a classic white, multi-panel SPC-style PNG."""
     out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     p, t, td, z, u, v, omega = _clean_profile(prof)
+    # The native ECMWF input may have only 13 pressure levels. Interpolate the
+    # display profiles to 55 levels so thermodynamic curves, hodograph and barbs
+    # are continuous while SHARPpy's parcel diagnostics remain unchanged.
+    p, t, td, z, u, v, omega = _densify_profile(p, t, td, z, u, v, omega, count=55)
     h_agl = z - z[0]
     fh = int(meta.get("fh", 0))
     valid = getattr(prof, "date", None)
