@@ -112,7 +112,7 @@ jobs:
           mkdir -p "$NETCDF"
           ln -sfn /usr/include "$NETCDF/include"
           ln -sfn /usr/lib/x86_64-linux-gnu "$NETCDF/lib"
-          printf '1\n1\n' | ./configure
+          printf '35\n0\n' | ./configure
           ./compile -j 2 em_scm_xy > "$GITHUB_WORKSPACE/wrf-scm-build.log" 2>&1 || {
             tail -n 250 "$GITHUB_WORKSPACE/wrf-scm-build.log"
             exit 1
