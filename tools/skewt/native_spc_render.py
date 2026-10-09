@@ -490,7 +490,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     fig = plt.figure(figsize=(W / DPI, H / DPI), dpi=DPI, facecolor="white")
     ax_skew = fig.add_axes([0.078, 0.236, 0.402, 0.704])
     ax_theta = fig.add_axes([0.508, 0.236, 0.112, 0.704])
-    ax_hodo = fig.add_axes([0.628, 0.584, 0.336, 0.356])
+    ax_hodo = fig.add_axes([0.628, 0.550, 0.336, 0.390])
     ax_adv = fig.add_axes([0.650, 0.139, 0.142, 0.400])
     ax_srw = fig.add_axes([0.832, 0.139, 0.140, 0.400])
 
