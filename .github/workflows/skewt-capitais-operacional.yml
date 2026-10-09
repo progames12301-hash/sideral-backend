@@ -7,6 +7,7 @@ on:
       - 'tools/skewt/native_spc_render.py'
       - 'tools/skewt/generate_sharppy_product.py'
       - 'tools/skewt/generate_capitals_sharppy.py'
+      - '.github/workflows/skewt-capitais-operacional.yml'
   schedule:
     # GitHub cron é UTC. Executa os ciclos ECMWF 06Z, 12Z e 18Z.
     - cron: '45 13 * * *' # 06Z
@@ -24,7 +25,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sideral-skewt-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'push' && '12') || (github.event.schedule == '45 13 * * *' && '06') || (github.event.schedule == '45 19 * * *' && '12') || '18' }}
+  group: sideral-skewt-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'push' && 'refresh') || (github.event.schedule == '45 13 * * *' && '06') || (github.event.schedule == '45 19 * * *' && '12') || '18' }}
   cancel-in-progress: true
 
 env:
@@ -50,8 +51,17 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             cycle="${{ inputs.cycle }}"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
-            # Regera imediatamente o ciclo mais recente ao mudar o renderizador.
-            cycle='12'
+            # A Single Runs API nem sempre tem o ciclo mais recente publicado
+            # logo após a inicialização. Selecione um ciclo que já teve tempo
+            # de ser processado pelo ECMWF/Open-Meteo.
+            hour=$(date -u +%H)
+            if (( 10#$hour >= 21 )); then
+              cycle='12'
+            elif (( 10#$hour >= 15 )); then
+              cycle='06'
+            else
+              cycle='18'
+            fi
           else
             case "${{ github.event.schedule }}" in
               '45 13 * * *') cycle='06' ;;
