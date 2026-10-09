@@ -301,6 +301,7 @@ def main():
 
         meta = {
             "location": args.label, "fh": fh,
+            "latitude": args.lat, "longitude": args.lon,
             "valid": (run_dt + dt.timedelta(hours=fh)).strftime("%Y-%m-%d %H:%MZ"),
         }
         render_dir = out / stem
