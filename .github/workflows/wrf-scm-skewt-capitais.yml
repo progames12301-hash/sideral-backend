@@ -113,10 +113,19 @@ jobs:
           ln -sfn /usr/include "$NETCDF/include"
           ln -sfn /usr/lib/x86_64-linux-gnu "$NETCDF/lib"
           printf '32\n1\n' | ./configure
-          ./compile -j 2 em_scm_xy > "$GITHUB_WORKSPACE/wrf-scm-build.log" 2>&1 || {
-            tail -n 250 "$GITHUB_WORKSPACE/wrf-scm-build.log"
-            exit 1
-          }
+          echo "WRF source tree: $(pwd)"
+          ls -l ./compile
+          set +e
+          ./compile -j 2 em_scm_xy > "$GITHUB_WORKSPACE/wrf-scm-build.log" 2>&1
+          compile_rc=$?
+          set -e
+          echo "WRF compile exit code: $compile_rc"
+          echo "WRF compile log size: $(wc -c < "$GITHUB_WORKSPACE/wrf-scm-build.log") bytes"
+          echo "===== WRF compile log (last 300 lines) ====="
+          tail -n 300 "$GITHUB_WORKSPACE/wrf-scm-build.log"
+          echo "===== WRF binaries found ====="
+          find main test/em_scm_xy -maxdepth 1 -type f -name "*.exe" -ls || true
+          test "$compile_rc" -eq 0
           test -x test/em_scm_xy/ideal.exe || test -x main/ideal.exe
           test -x test/em_scm_xy/wrf.exe || test -x main/wrf.exe
           echo "Official WRF SCM binaries compiled."
