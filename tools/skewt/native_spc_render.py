@@ -10,6 +10,7 @@ from pathlib import Path
 import math
 
 import numpy as np
+from PIL import Image
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -338,7 +339,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
                         ha="left", va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=0.25))
 
     # Frequent wind barbs, as in an operational sounding.
-    idx = np.unique(np.linspace(0, len(p) - 1, min(25, len(p))).round().astype(int))
+    idx = np.unique(np.linspace(0, len(p) - 1, min(50, len(p))).round().astype(int))
     ax.barbs(np.full(len(idx), 53.5), p[idx], u[idx], v[idx], length=4.4,
              linewidth=0.55, barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, zorder=7)
@@ -579,8 +580,15 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     _make_srw(ax_srw, h_agl, u, v, motion[1])
     _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, motion)
 
-    fig.text(0.935, 0.045, "SIDERAL", ha="center", va="center", fontsize=10, weight="bold", color="#165e99")
-    fig.text(0.935, 0.029, "METEOROLOGIA", ha="center", va="center", fontsize=5.8, color="#555555")
+    # Use the exact Sideral logo asset supplied for the brand; do not synthesize a text logo.
+    logo_path = Path(__file__).resolve().parents[2] / "assets" / "sideral-logo.png"
+    if not logo_path.is_file():
+        raise FileNotFoundError(f"Logo oficial Sideral ausente: {logo_path}")
+    with Image.open(logo_path) as source_logo:
+        logo = source_logo.convert("RGBA")
+    logo_ax = fig.add_axes([0.855, 0.012, 0.135, 0.075], zorder=20)
+    logo_ax.imshow(logo, interpolation="lanczos")
+    logo_ax.set_axis_off()
     fig.savefig(out_dir / "full.png", dpi=DPI, facecolor="white", bbox_inches=None)
     for ax, name in ((ax_skew, "skewt.png"), (ax_hodo, "hodograph.png")):
         bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
