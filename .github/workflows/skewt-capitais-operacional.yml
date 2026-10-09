@@ -1,6 +1,12 @@
 name: Sideral Skew-T SHARPpy — 27 Capitais
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/skewt/native_spc_render.py'
+      - 'tools/skewt/generate_sharppy_product.py'
+      - 'tools/skewt/generate_capitals_sharppy.py'
   schedule:
     # GitHub cron é UTC. Executa os ciclos ECMWF 06Z, 12Z e 18Z.
     - cron: '45 13 * * *' # 06Z
@@ -18,7 +24,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sideral-skewt-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || github.event.schedule }}
+  group: sideral-skewt-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'push' && '12') || (github.event.schedule == '45 13 * * *' && '06') || (github.event.schedule == '45 19 * * *' && '12') || '18' }}
   cancel-in-progress: false
 
 env:
@@ -43,6 +49,9 @@ jobs:
           set -euo pipefail
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             cycle="${{ inputs.cycle }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            # Regera imediatamente o ciclo mais recente ao mudar o renderizador.
+            cycle='12'
           else
             case "${{ github.event.schedule }}" in
               '45 13 * * *') cycle='06' ;;
