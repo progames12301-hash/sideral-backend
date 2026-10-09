@@ -1,0 +1,217 @@
+name: WRF SCM 3 KM — Skew-T 27 capitais
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wrf/scm_skewt/**'
+      - '.github/workflows/wrf-scm-skewt-capitais.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Piloto Brasília ou execução completa'
+        required: true
+        type: choice
+        default: pilot
+        options: [pilot, full]
+      cycle:
+        description: 'Ciclo ECMWF IFS'
+        required: true
+        type: choice
+        default: '06'
+        options: ['06', '12', '18']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wrf-scm-skewt-capitais
+  cancel-in-progress: true
+
+jobs:
+  scm-skewt:
+    name: Compile WRF SCM, run columns and render Skew-T
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      MPLBACKEND: Agg
+      GH_REPO: progames12301-hash/sideral-backend
+    steps:
+      - name: Checkout Sideral
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: sideral
+
+      - name: Checkout official WRF source
+        uses: actions/checkout@v4
+        with:
+          repository: wrf-model/WRF
+          ref: 06d4240ae989cc3e50af412bb472df3d9048783c
+          path: wrf-src
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Validate pipeline Python syntax
+        run: |
+          set -euo pipefail
+          python -m py_compile sideral/wrf/scm_skewt/prepare_scm_cases.py
+          python -m py_compile sideral/wrf/scm_skewt/run_render_scm.py
+          echo "Python syntax OK."
+
+      - name: Select execution mode and ECMWF cycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            mode="${{ inputs.mode }}"
+            cycle="${{ inputs.cycle }}"
+          else
+            mode='pilot'
+            hour=$(date -u +%H)
+            if (( 10#$hour >= 21 )); then
+              cycle='12'
+            elif (( 10#$hour >= 15 )); then
+              cycle='06'
+            else
+              cycle='18'
+            fi
+          fi
+          case "$mode" in pilot|full) ;; *) echo "Modo inválido: $mode"; exit 2;; esac
+          case "$cycle" in 06|12|18) ;; *) echo "Ciclo inválido: $cycle"; exit 2;; esac
+          echo "MODE=$mode" >> "$GITHUB_ENV"
+          echo "CYCLE=$cycle" >> "$GITHUB_ENV"
+          echo "WRF SCM mode=$mode; ECMWF cycle=$cycle Z"
+
+      - name: Install compiler, NetCDF and WRF build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential gfortran csh tcsh m4 flex bison perl \
+            libnetcdf-dev libnetcdff-dev netcdf-bin libhdf5-dev libpng-dev zlib1g-dev libjpeg-dev
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python scientific and Skew-T dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'matplotlib>=3.8,<4' \
+            'Pillow>=10,<11' 'SHARPpy @ git+https://github.com/sharppy/SHARPpy.git@main'
+
+      - name: Configure and compile the official WRF SCM testcase
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd wrf-src
+          export NETCDF="$RUNNER_TEMP/netcdf"
+          mkdir -p "$NETCDF"
+          ln -sfn /usr/include "$NETCDF/include"
+          ln -sfn /usr/lib/x86_64-linux-gnu "$NETCDF/lib"
+          printf '1\n1\n' | ./configure
+          ./compile -j 2 em_scm_xy > "$GITHUB_WORKSPACE/wrf-scm-build.log" 2>&1 || {
+            tail -n 250 "$GITHUB_WORKSPACE/wrf-scm-build.log"
+            exit 1
+          }
+          test -x test/em_scm_xy/ideal.exe || test -x main/ideal.exe
+          test -x test/em_scm_xy/wrf.exe || test -x main/wrf.exe
+          echo "Official WRF SCM binaries compiled."
+
+      - name: Prepare city-specific ECMWF soundings and SCM forcing
+        run: |
+          set -euo pipefail
+          python sideral/wrf/scm_skewt/prepare_scm_cases.py \
+            --cycle "$CYCLE" --mode "$MODE" --wrf-root wrf-src --work-root wrf-scm-work
+
+      - name: Run WRF SCM and render Skew-T profiles
+        run: |
+          set -euo pipefail
+          python sideral/wrf/scm_skewt/run_render_scm.py \
+            --work-root wrf-scm-work --out-root build/skewt-scm --mode "$MODE"
+
+      - name: Validate SCM profile and PNG counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from PIL import Image
+          root=Path("build/skewt-scm")
+          data=json.loads((root/"manifest.json").read_text(encoding="utf-8"))
+          expected=1 if os.environ["MODE"]=="pilot" else 27
+          assert len(data["cities"])==expected, (len(data["cities"]),expected)
+          pngs=sorted(root.glob("*/*.png"))
+          profiles=sorted(root.glob("*/*.json"))
+          assert len(pngs)==expected*17, (len(pngs),expected*17)
+          assert len(profiles)==expected*17, (len(profiles),expected*17)
+          for p in pngs:
+              assert p.stat().st_size>10000, f"PNG pequeno/vazio: {p}"
+              with Image.open(p) as im: im.verify()
+          for p in profiles:
+              row=json.loads(p.read_text(encoding="utf-8"))
+              assert row["model"]=="WRF-ARW SCM" and len(row["profile"])>=10, p
+          print(f"SCM validado: {expected} capital(is), {len(pngs)} PNGs e {len(profiles)} perfis JSON")
+          PY
+
+      - name: Build release index (full mode only)
+        if: success() && env.MODE == 'full'
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path("build/skewt-scm")
+          tag="skewt-scm-live-"+os.environ["CYCLE"]
+          assets=sorted(p.name for p in root.glob("*/*") if p.is_file() and p.suffix in {".png",".json"})
+          if len(assets)!=918:
+              raise SystemExit(f"Esperados 918 arquivos de imagem/perfil, encontrados {len(assets)}")
+          item={
+            "schema":"sideral-wrf-scm-skewt-publication-v1",
+            "model":"WRF-ARW SCM",
+            "nominal_grid_spacing_km":3,
+            "horizontal_stencil":"3x3 periodic; no resolved horizontal gradients",
+            "tag":tag,"cycle":os.environ["CYCLE"],
+            "asset_count":len(assets),"cities":27,"frames_per_city":17,
+            "assets":assets,
+            "download_base":"https://github.com/progames12301-hash/sideral-backend/releases/download/"+tag+"/"
+          }
+          (root/"publication.json").write_text(json.dumps(item,ensure_ascii=False,indent=2),encoding="utf-8")
+          PY
+
+      - name: Publish separate SCM Skew-T release (full mode only)
+        if: success() && env.MODE == 'full'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="skewt-scm-live-$CYCLE"
+          gh release delete "$tag" --repo "$GH_REPO" --yes --cleanup-tag || true
+          count=$(find build/skewt-scm -mindepth 2 -maxdepth 2 -type f \( -name '*.png' -o -name '*.json' \) | wc -l)
+          test "$count" -eq 918
+          gh release create "$tag" --repo "$GH_REPO" \
+            --title "WRF SCM Skew-T - 27 capitais - $CYCLE Z" \
+            --notes "Perfis de coluna WRF-ARW SCM, stencil 3x3 periódico, inicializados e forçados pelo ECMWF IFS 0.25°. Não é previsão regional de 3 km com gradientes horizontais resolvidos. F000-F048 a cada 3h; 459 PNGs e 459 perfis JSON." \
+            --latest=false $(find build/skewt-scm -mindepth 2 -maxdepth 2 -type f \( -name '*.png' -o -name '*.json' \) | sort) \
+            build/skewt-scm/manifest.json build/skewt-scm/publication.json
+          png_count=$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')
+          test "$png_count" -eq 459
+          gh release view "$tag" --repo "$GH_REPO" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'
+
+      - name: Save pilot products and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrf-scm-skewt
+          path: |
+            build/skewt-scm/
+            wrf-scm-work/*/ideal.log
+            wrf-scm-work/*/wrf.log
+            wrf-scm-build.log
+          if-no-files-found: ignore
+          retention-days: 7
