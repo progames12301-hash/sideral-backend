@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
+# Shared white multi-panel SPC-style layout for every published Skew-T frame.
 RENDERER = ROOT / "tools" / "skewt" / "native_spc_render.py"
 
 CAPITALS = [
