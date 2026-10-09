@@ -181,6 +181,7 @@ def render_one(renderer, sounding, capital, fh, output):
     tmp_dir.mkdir(parents=True, exist_ok=True)
     meta = {
         "capital": capital[0], "location": capital[0], "fh": fh,
+        "latitude": capital[2], "longitude": capital[3],
         "valid": sounding.date.strftime("%Y-%m-%d %HZ"),
         "title": f"SIDERAL SKEW-T — {capital[0]} — F{fh:03d}",
     }
