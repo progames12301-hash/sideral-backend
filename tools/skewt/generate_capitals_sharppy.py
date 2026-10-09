@@ -213,7 +213,8 @@ def main():
         variables += [hourly_name("temperature", level), hourly_name("dew_point", level), hourly_name("relative_humidity", level),
                       hourly_name("wind_speed", level), hourly_name("wind_direction", level), hourly_name("geopotential_height", level), hourly_name("vertical_velocity", level)]
     # Open-Meteo expects multi-location coordinates as comma-separated
-    # values, not repeated latitude=/longitude= query parameters.
+    # values, not repeated latitude=/longitude= query parameters. Keep this request
+    # shape explicit so the generated 27-capital product stays a single ordered batch.
     params = {"latitude": ",".join(map(str, latitudes)), "longitude": ",".join(map(str, longitudes)),
               "hourly": ",".join(variables), "models": "ecmwf_ifs025",
               "run": run.strftime("%Y-%m-%dT%H:%M"), "forecast_hours": "49", "wind_speed_unit": "kn",
