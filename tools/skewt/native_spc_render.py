@@ -270,7 +270,10 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
         from sharppy.sharptab import thermo
         pp_grid = np.geomspace(1000, 100, 100)
         for start_t in np.arange(-35, 56, 5):
-            curve = _arr(thermo.wetlift(1000.0, float(start_t), pp_grid))
+            # SHARPpy's vectorized satlift requires the initial parcel
+            # temperature array to have the same shape as the target pressures.
+            start_profile = np.full_like(pp_grid, float(start_t), dtype=float)
+            curve = _arr(thermo.wetlift(1000.0, start_profile, pp_grid))
             if len(curve) == len(pp_grid):
                 major = (int(start_t) % 10 == 0)
                 ax.plot(_xskew(curve, pp_grid), pp_grid,
