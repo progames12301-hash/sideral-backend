@@ -112,7 +112,7 @@ jobs:
           mkdir -p "$NETCDF"
           ln -sfn /usr/include "$NETCDF/include"
           ln -sfn /usr/lib/x86_64-linux-gnu "$NETCDF/lib"
-          printf '32\n1\n' | ./configure
+          printf '32\n0\n' | ./configure
           echo "WRF source tree: $(pwd)"
           ls -l ./compile
           set +e
