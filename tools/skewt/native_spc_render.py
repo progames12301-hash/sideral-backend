@@ -371,7 +371,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
         tdline = 243.5 * loge / (17.67 - loge)
         major = r in (0.4, 1, 2, 4, 8, 16, 24, 32)
         ax.plot(_xskew(tdline, ps), ps, color="#86b68e" if major else "#b2ceb5",
-                ls=(0, 3) if major else (0, (1, 3)), lw=0.56 if major else 0.38,
+                ls=(0, (1, 3)), lw=0.56 if major else 0.38,
                 alpha=0.78 if major else 0.62, zorder=0)
 
     # The portion below the station's actual surface pressure is not part of the
@@ -589,7 +589,6 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
         ax.annotate("", xy=(sx, sy), xytext=(0, 0),
                     arrowprops=dict(arrowstyle="-|>", lw=1.0, color="#c3c3c3", shrinkA=0, shrinkB=0), zorder=2)
         ax.text(sx + 2.5, sy + 2.0, label, fontsize=8, weight="bold", color=INK, zorder=6)
-    ax.set_title(title_text, fontsize=9.0, loc="left", pad=6, color=INK)
     ca = "--" if critical_angle is None else f"{critical_angle:.0f}°"
     # Put diagnostic text in the title area, not over the wind trace.
     hemisphere_short = "Sul" if "sul" in preferred_label.lower() else "Norte"
