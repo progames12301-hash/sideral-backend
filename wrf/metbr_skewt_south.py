@@ -363,7 +363,7 @@ def main():
             temp_json = json_out.with_suffix(".json.tmp")
             temp_json.write_text(json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(",", ":")), encoding="utf-8")
             temp_json.replace(json_out)
-            manifest["assets"].extend([f"{city['slug']}/{png_out.name}", f"{city['slug']}/{json_out.name}"])
+            manifest["assets"].extend([png_out.name, json_out.name])
             print(f"[METBR Skew-T] {city['name']} {frame}: {len(rows)} níveis", flush=True)
             gc.collect()
 
