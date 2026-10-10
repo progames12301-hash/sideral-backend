@@ -1,1 +1,21 @@
-{"schemaVersion":"1.0","model":"WRF Brasil","resolutionKm":21,"nx":215,"ny":215,"dxMeters":21000,"dyMeters":21000,"frameCount":49,"temporalResolutionMinutes":60,"reflectivitySource":"REFL_10CM_NATIVE","nativeGrid":true,"initTime":"2026-09-25T06:00:00Z","lastValidTime":"2026-09-27T06:00:00Z","firstFrameReflectivity":{"minDbz":0.0,"maxDbz":0.0}}
+{
+  "schemaVersion": "2.0",
+  "model": "WRF Brasil",
+  "resolutionKm": 21,
+  "nx": 215,
+  "ny": 215,
+  "dxMeters": 21000,
+  "dyMeters": 21000,
+  "frameCount": 49,
+  "temporalResolutionMinutes": 60,
+  "reflectivitySource": "REFL_10CM_NATIVE",
+  "pressureSource": "SLP_NATIVE",
+  "nativeGrid": true,
+  "generatedAt": "2026-10-10T04:25:58Z",
+  "firstStats": {
+    "minDbz": 0.0,
+    "maxDbz": 0.0,
+    "minSlpHpa": 531.60609375,
+    "maxSlpHpa": 1033.67078125
+  }
+}
