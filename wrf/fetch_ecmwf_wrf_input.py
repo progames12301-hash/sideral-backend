@@ -84,6 +84,7 @@ def with_retry(label: str, func):
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--max-hour", type=int, required=True)
+    p.add_argument("--hour-offset", type=int, default=0, help="Lead-time offset in hours for matching an older run to target valid times")
     p.add_argument("--output", required=True)
     p.add_argument("--run-env", required=True)
     p.add_argument("--date")
@@ -92,9 +93,11 @@ def main() -> None:
 
     if args.max_hour < 0 or args.max_hour % 3:
         raise SystemExit("--max-hour precisa ser multiplo de 3")
+    if args.hour_offset < 0 or args.hour_offset % 3:
+        raise SystemExit("--hour-offset precisa ser multiplo de 3 e >= 0")
 
     client = Client(source="ecmwf", model="ifs")
-    steps = list(range(0, args.max_hour + 1, 3))
+    steps = list(range(args.hour_offset, args.max_hour + args.hour_offset + 1, 3))
 
     if args.date and args.cycle:
         run = dt.datetime.strptime(args.date + args.cycle.zfill(2), "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
