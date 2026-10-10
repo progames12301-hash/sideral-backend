@@ -232,12 +232,21 @@ def _srh(prof, lower, upper, storm):
         return np.nan
 
 
-def _shear(h_agl, u, v, layer):
-    u0, v0 = _interp_height(u, h_agl, 0), _interp_height(v, h_agl, 0)
-    u1, v1 = _interp_height(u, h_agl, layer), _interp_height(v, h_agl, layer)
-    if not all(math.isfinite(x) for x in (u0, v0, u1, v1)):
+def _shear(prof, layer):
+    """Surface-to-layer vector shear from SHARPpy's pressure/height interpolation."""
+    try:
+        from sharppy.sharptab import interp, winds
+        surface_pressure = _finite(prof.pres[prof.sfc])
+        layer_pressure = _finite(interp.pres(prof, interp.to_msl(prof, float(layer))))
+        if surface_pressure is None or layer_pressure is None:
+            return np.nan
+        du, dv = winds.wind_shear(prof, pbot=surface_pressure, ptop=layer_pressure)
+        du, dv = _finite(du), _finite(dv)
+        if du is None or dv is None:
+            return np.nan
+        return math.hypot(du, dv)
+    except Exception:
         return np.nan
-    return math.hypot(u1 - u0, v1 - v0)
 
 
 def _lapse_height(t, h, low, high):
@@ -647,8 +656,19 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
         ground_m = float(z[0])
     h_agl = z - ground_m
     h_agl[np.abs(h_agl) < 2.0] = 0.0
-    lapse03, lapse36 = _lapse_height(t, h_agl, 0, 3000), _lapse_height(t, h_agl, 3000, 6000)
-    lapse8505, lapse7005 = _lapse_pressure(t, z, p, 850, 500), _lapse_pressure(t, z, p, 700, 500)
+    lapse03 = _finite(getattr(prof, "lapserate_3km", None))
+    lapse36 = _finite(getattr(prof, "lapserate_3_6km", None))
+    lapse8505 = _finite(getattr(prof, "lapserate_850_500", None))
+    lapse7005 = _finite(getattr(prof, "lapserate_700_500", None))
+    # Fallbacks are only used if SHARPpy lacks the corresponding layer value.
+    if lapse03 is None:
+        lapse03 = _lapse_height(t, h_agl, 0, 3000)
+    if lapse36 is None:
+        lapse36 = _lapse_height(t, h_agl, 3000, 6000)
+    if lapse8505 is None:
+        lapse8505 = _lapse_pressure(t, z, p, 850, 500)
+    if lapse7005 is None:
+        lapse7005 = _lapse_pressure(t, z, p, 700, 500)
     pwat_inches = _finite(getattr(prof, "pwat", None))
     pwat = pwat_inches * 25.4 if pwat_inches is not None else _pwat_mm(p, td)
     kidx = _finite(getattr(prof, "k_idx", None))
@@ -763,7 +783,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     srh01 = _srh(prof, 0, 1000, preferred)
     srh03 = _srh(prof, 0, 3000, preferred)
     srh06 = _srh(prof, 0, 6000, preferred)
-    shear01, shear03, shear06 = (_shear(h_agl, u, v, h) for h in (1000, 3000, 6000))
+    shear01, shear03, shear06 = (_shear(prof, h) for h in (1000, 3000, 6000))
 
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 8, "axes.linewidth": 0.85, "savefig.facecolor": "white"})
     fig = plt.figure(figsize=(W / DPI, H / DPI), dpi=DPI, facecolor="white")
