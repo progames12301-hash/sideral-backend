@@ -72,6 +72,14 @@ prepare_source_with_fallback() {
     esac
     if (( rc == 0 )); then
       selected="$model"
+      if [[ "$model" == "icon" && -s "$ROOT/tarc-icon-run.env" ]]; then
+        source "$ROOT/tarc-icon-run.env"
+        export RUN_DATE RUN_CYCLE
+        FORCE_RUN_DATE="$RUN_DATE"
+        FORCE_RUN_CYCLE="$RUN_CYCLE"
+        export FORCE_RUN_DATE FORCE_RUN_CYCLE
+        echo "TARC: ciclo ICON validado e fixado: $RUN_DATE $RUN_CYCLE Z"
+      fi
       echo "TARC SOURCE FALLBACK: fonte escolhida ${selected^^}"
       break
     fi
@@ -128,27 +136,20 @@ if [[ "$COLD_START" == "0" ]]; then
   gh release upload "$CHECKPOINT_TAG" "$UPLOAD_DIR"/* --repo "$GITHUB_REPOSITORY" --clobber
 else
   python3 - <<'PY'
-import json, os, urllib.request
-repo=os.environ["GITHUB_REPOSITORY"]
-url=f"https://raw.githubusercontent.com/{repo}/icon-data/metadata.json?run={os.environ.get('GITHUB_RUN_ID','0')}"
-req=urllib.request.Request(url, headers={"Cache-Control":"no-cache","User-Agent":"Sideral-TARC"})
-with urllib.request.urlopen(req, timeout=30) as r:
-    m=json.load(r)
-if str(m.get("model","")).lower() != "icon":
-    raise SystemExit("metadata atual nao e ICON")
-run_date=str(m["runDate"]).replace("-","")
-run_cycle="".join(c for c in str(m["runCycle"]) if c.isdigit()).zfill(2)[:2]
-if run_cycle not in {"00","06","12","18"}:
-    raise SystemExit("ciclo ICON invalido")
-open("tarc-run.env","w").write(f"RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\nSOURCE_MODEL=icon\n")
+import datetime as dt
+now=dt.datetime.now(dt.timezone.utc)
+run=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
+open("tarc-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\n")
 PY
   source tarc-run.env
   gh release create "$CHECKPOINT_TAG" --target tarc-wrf-3km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF TARC 3 KM ICON checkpoint $GITHUB_RUN_ID" || true
   gh release upload "$CHECKPOINT_TAG" tarc-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
+  export TARC_ALLOW_RESELECT_ICON=1
   export WRF_BOUNDARY_ONLY=0
   prepare_source_with_fallback 0
+  unset TARC_ALLOW_RESELECT_ICON
 
   test -s wrf_work/run/wrfinput_d01
   test -s wrf_work/run/wrfbdy_d01
