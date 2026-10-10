@@ -164,13 +164,19 @@ def main() -> None:
         if len(available) < 10:
             raise RuntimeError(f"Dados ICON insuficientes: apenas {len(available)} arquivos baixados")
 
-        # Mantem ordem deterministica e ignora somente campos indisponiveis.
-        with output.open("wb") as out:
-            for _, part, _ in available:
-                out.write(part.read_bytes())
-
-    if output.stat().st_size < 1_000_000:
-        raise RuntimeError(f"Arquivo ICON combinado pequeno demais: {output.stat().st_size}")
+        # Monta em arquivo temporario e publica o passo apenas depois de completo.
+        temp_output = output.with_name(output.name + ".part")
+        try:
+            with temp_output.open("wb") as out:
+                for _, part, _ in available:
+                    out.write(part.read_bytes())
+            if temp_output.stat().st_size < 1_000_000:
+                raise RuntimeError(f"Arquivo ICON combinado pequeno demais: {temp_output.stat().st_size}")
+            temp_output.replace(output)
+        except Exception:
+            temp_output.unlink(missing_ok=True)
+            output.unlink(missing_ok=True)
+            raise
     print(
         f"ICON F{args.step:03d} combinado: {output.stat().st_size / 1024 / 1024:.1f} MiB "
         f"({len(available)}/{len(jobs)} campos/arquivos)"
