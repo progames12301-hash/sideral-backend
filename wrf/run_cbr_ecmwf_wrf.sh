@@ -49,15 +49,15 @@ PY
 )
 
 SELECTED_OFFSET=""
-log(){ printf '\\n===== %s =====\\n' "$*"; }
+log(){ printf '\n===== %s =====\n' "$*"; }
 log "Fallback CBR ECMWF: procurando ciclo IFS que cubra a janela válida"
 for CANDIDATE in "${IFS_CANDIDATES[@]}"; do
   read -r SRC_DATE SRC_CYCLE OFFSET <<< "$CANDIDATE"
   rm -f "$RAW" "$RAW_PRESSURE" "$RAW_SURFACE" "$ENV_FILE"
   echo "ECMWF CBR: fonte ${SRC_DATE} ${SRC_CYCLE}Z; offset base ${OFFSET} h; alvo F${WRF_START_HOUR}-F${WRF_END_HOUR}"
-  if python3 "$ROOT/wrf/fetch_ecmwf_wrf_input.py" \\
-      --start-hour "$WRF_START_HOUR" --max-hour "$WRF_END_HOUR" --hour-offset "$OFFSET" \\
-      --date "$SRC_DATE" --cycle "$SRC_CYCLE" \\
+  if python3 "$ROOT/wrf/fetch_ecmwf_wrf_input.py" \
+      --start-hour "$WRF_START_HOUR" --max-hour "$WRF_END_HOUR" --hour-offset "$OFFSET" \
+      --date "$SRC_DATE" --cycle "$SRC_CYCLE" \
       --output "$RAW" --run-env "$ENV_FILE"; then
     SELECTED_OFFSET="$OFFSET"
     break
@@ -97,17 +97,17 @@ for H in $(seq "$WRF_START_HOUR" 3 "$WRF_END_HOUR"); do
   test -s "$P_STEP" || { echo "ECMWF pressure source F${SOURCE_FH} ausente" >&2; exit 25; }
   test -s "$S_STEP" || { echo "ECMWF surface source F${SOURCE_FH} ausente" >&2; exit 26; }
 
-  docker run --rm -v "$RAW_DIR:/input" "$CDO_IMAGE" \\
-    cdo -f grb2 sellonlatbox,${ECMWF_SOURCE_WEST},${ECMWF_SOURCE_EAST},${ECMWF_SOURCE_SOUTH},${ECMWF_SOURCE_NORTH} \\
+  docker run --rm -v "$RAW_DIR:/input" "$CDO_IMAGE" \
+    cdo -f grb2 sellonlatbox,${ECMWF_SOURCE_WEST},${ECMWF_SOURCE_EAST},${ECMWF_SOURCE_SOUTH},${ECMWF_SOURCE_NORTH} \
     "/input/$(basename "$P_STEP")" "/input/$(basename "$P_REG")"
-  docker run --rm -v "$RAW_DIR:/input" "$CDO_IMAGE" \\
-    cdo -f grb2 sellonlatbox,${ECMWF_SOURCE_WEST},${ECMWF_SOURCE_EAST},${ECMWF_SOURCE_SOUTH},${ECMWF_SOURCE_NORTH} \\
+  docker run --rm -v "$RAW_DIR:/input" "$CDO_IMAGE" \
+    cdo -f grb2 sellonlatbox,${ECMWF_SOURCE_WEST},${ECMWF_SOURCE_EAST},${ECMWF_SOURCE_SOUTH},${ECMWF_SOURCE_NORTH} \
     "/input/$(basename "$S_STEP")" "/input/$(basename "$S_REG")"
 
   # IFS fornece geopotencial; converte m²/s² em altura geopotencial (m) para o WPS.
   grib_copy -w discipline=0,parameterCategory=3,parameterNumber=4 "$P_REG" "$GH_IN" || true
   test -s "$GH_IN" || { echo "ECMWF geopotencial ausente no F$FH" >&2; exit 27; }
-  docker run --rm -v "$RAW_DIR:/input" "$CDO_IMAGE" \\
+  docker run --rm -v "$RAW_DIR:/input" "$CDO_IMAGE" \
     cdo -f grb2 divc,9.80665 "/input/$(basename "$GH_IN")" "/input/$(basename "$GH_HEIGHT")"
   grib_set -r -s discipline=0,parameterCategory=3,parameterNumber=5,typeOfFirstFixedSurface=100 "$GH_HEIGHT" "$GH_FIXED"
   test -s "$GH_FIXED"
