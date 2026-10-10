@@ -144,7 +144,7 @@ def make_profile(ds, time_index, city, point, valid_time):
     # surrounding the selected mass-grid point and interpolate to its center.
     u_pair = as_float_array(ds.variables["U"][time_index, :, j, i:i + 2])
     v_pair = as_float_array(ds.variables["V"][time_index, :, j:j + 2, i])
-    if u_pair.ndim != 2 or u_pair.shape[-1] != 2 or v_pair.ndim != 2 or v_pair.shape[-2] != 2:
+    if u_pair.ndim != 2 or u_pair.shape[-1] != 2 or v_pair.ndim != 2 or v_pair.shape[-1] != 2:
         raise RuntimeError(f"{city['name']}: grade staggered U/V insuficiente.")
     u = 0.5 * (u_pair[:, 0] + u_pair[:, 1])
     v = 0.5 * (v_pair[:, 0] + v_pair[:, 1])
