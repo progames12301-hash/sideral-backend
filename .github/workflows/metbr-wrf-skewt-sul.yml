@@ -1,0 +1,240 @@
+name: METBR WRF 4 KM — Skew-T Sul
+
+on:
+  workflow_run:
+    workflows: ["METBR WRF 4 KM - ICON"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      metbr_run_id:
+        description: "ID de uma execução METBR concluída; vazio usa a última execução bem-sucedida"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: skewt-metbr-sul-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: Extract native METBR columns and publish Southern Skew-Ts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+      MPLBACKEND: Agg
+      SKEWT_RELEASE_TAG: skewt-metbr-sul-live
+      GH_TOKEN: ${{ github.token }}
+      METBR_RUN_ID_INPUT: ${{ inputs.metbr_run_id }}
+    steps:
+      - name: Checkout Sideral tools
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Select successful METBR run
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            RUN_ID="$(python - <<'PY'
+          import json, os
+          event=json.loads(open(os.environ["GITHUB_EVENT_PATH"],encoding="utf-8").read())
+          print(event["workflow_run"]["id"])
+          PY
+          )"
+          else
+            RUN_ID="$METBR_RUN_ID_INPUT"
+            if [[ -z "$RUN_ID" ]]; then
+              RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml \
+                --status completed --limit 30 --json databaseId,conclusion,workflowName \
+                --jq '[.[] | select(.conclusion == "success" and .workflowName == "METBR WRF 4 KM - ICON")][0].databaseId')"
+            fi
+          fi
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "Não encontrei um ID de execução METBR válido." >&2; exit 2; }
+          RUN_JSON="$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,workflowName,status)"
+          python - "$RUN_JSON" <<'PY'
+          import json,sys
+          run=json.loads(sys.argv[1])
+          if run.get("workflowName") != "METBR WRF 4 KM - ICON":
+              raise SystemExit(f"Workflow de origem inesperado: {run.get('workflowName')!r}")
+          if run.get("status") != "completed" or run.get("conclusion") != "success":
+              raise SystemExit(f"METBR ainda não está concluído com sucesso: {run}")
+          print("METBR validado:", run["workflowName"], run["conclusion"])
+          PY
+          echo "METBR_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "METBR_TAG=metbr-wrf-4km-checkpoint-$RUN_ID" >> "$GITHUB_ENV"
+          echo "METBR source run=$RUN_ID"
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install native profile and Skew-T dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'matplotlib>=3.8,<4' \
+            'Pillow>=10,<11' 'SHARPpy @ git+https://github.com/sharppy/SHARPpy.git@main'
+          python -m py_compile wrf/metbr_skewt_south.py tools/skewt/native_spc_render.py
+          test -s assets/sideral-logo.png
+
+      - name: Download METBR F042 publication marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p metbr_meta metbr_wrfout
+          gh release view "$METBR_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > metbr_meta/assets.txt
+          grep -Fxq 'metbr-publication-F42.txt' metbr_meta/assets.txt || {
+            echo "O release METBR não contém a publicação final F042." >&2
+            exit 10
+          }
+          gh release download "$METBR_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'metbr-publication-F42.txt' --dir metbr_meta --clobber
+          test -s metbr_meta/metbr-publication-F42.txt
+          grep -Fxq "run_id=$METBR_RUN_ID" metbr_meta/metbr-publication-F42.txt
+          grep -Fxq "segment=F39-F42" metbr_meta/metbr-publication-F42.txt
+          sed -n '1,20p' metbr_meta/metbr-publication-F42.txt
+          RUN_DATE="$(sed -n 's/^run_date=//p' metbr_meta/metbr-publication-F42.txt | head -1)"
+          RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_meta/metbr-publication-F42.txt | head -1 | tr -d 'Z')"
+          [[ "$RUN_DATE" =~ ^[0-9]{8}$ ]] || { echo "run_date inválido: $RUN_DATE" >&2; exit 11; }
+          [[ "$RUN_CYCLE" =~ ^(00|06|12|18)$ ]] || { echo "run_cycle inválido: $RUN_CYCLE" >&2; exit 12; }
+          echo "METBR_RUN_DATE=$RUN_DATE" >> "$GITHUB_ENV"
+          echo "METBR_RUN_CYCLE=$RUN_CYCLE" >> "$GITHUB_ENV"
+
+      - name: Select only F000/F003/.../F042 native WRFOUTs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import datetime as dt, os, re
+          from pathlib import Path
+          names=Path("metbr_meta/assets.txt").read_text(encoding="utf-8").splitlines()
+          run=dt.datetime.strptime(os.environ["METBR_RUN_DATE"]+os.environ["METBR_RUN_CYCLE"], "%Y%m%d%H")
+          pattern=re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[.:](\d{2})[.:](\d{2})$")
+          lookup={}
+          for name in names:
+              m=pattern.fullmatch(name)
+              if not m:
+                  continue
+              valid=dt.datetime.strptime("_".join((m.group(1),m.group(2),m.group(3),m.group(4))), "%Y-%m-%d_%H_%M_%S")
+              lookup[valid]=name
+          selected=[]
+          for hour in range(0,43,3):
+              valid=run+dt.timedelta(hours=hour)
+              if valid not in lookup:
+                  raise SystemExit(f"WRFOUT nativo ausente para F{hour:03d} ({valid:%Y-%m-%d %H:%M:%S}): release não completo")
+              selected.append(lookup[valid])
+          Path("metbr_meta/selected-assets.txt").write_text("\n".join(selected)+"\n",encoding="utf-8")
+          print("Selecionados",len(selected),"WRFOUTs:",*selected,sep="\n")
+          PY
+          while IFS= read -r asset; do
+            [[ -n "$asset" ]] || continue
+            echo "Baixando apenas o frame necessário: $asset"
+            gh release download "$METBR_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" --dir metbr_wrfout --clobber
+          done < metbr_meta/selected-assets.txt
+          test "$(find metbr_wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)" -eq 15
+          du -sh metbr_wrfout
+
+      - name: Extract three Southern capitals from native METBR columns
+        run: |
+          set -euo pipefail
+          python wrf/metbr_skewt_south.py \
+            --input-dir metbr_wrfout \
+            --publication-file metbr_meta/metbr-publication-F42.txt \
+            --out-root build/skewt-metbr-sul
+
+      - name: Validate Southern Skew-T and native profile JSON
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("build/skewt-metbr-sul")
+          manifest=json.loads((root/"manifest.json").read_text(encoding="utf-8"))
+          assert manifest["model"] == "METBR WRF 4 km"
+          assert manifest["native_grid_spacing_km"] == 4
+          assert [c["slug"] for c in manifest["cities"]] == ["curitiba","florianopolis","porto-alegre"]
+          assert manifest["forecast_hours"] == list(range(0,43,3))
+          pngs=sorted(root.glob("*/*.png"))
+          profiles=sorted(root.glob("*/*.json"))
+          assert len(pngs)==45, f"PNGs: {len(pngs)}"
+          assert len(profiles)==45, f"JSON profiles: {len(profiles)}"
+          for p in pngs:
+              assert p.stat().st_size > 10000, f"PNG vazio/pequeno: {p}"
+              with Image.open(p) as im: im.verify()
+          for p in profiles:
+              row=json.loads(p.read_text(encoding="utf-8"))
+              assert row["model"] == "METBR WRF 4 km"
+              assert row["native_grid_spacing_km"] == 4
+              assert len(row["profile"]) >= 10, p
+              assert row["forecast_hour"] in range(0,43,3)
+          assert len(manifest["assets"]) == 90
+          print(f"METBR Sul validado: {len(manifest['cities'])} cidades, 45 Skew-T PNGs e 45 perfis JSON.")
+          PY
+
+      - name: Build publication index
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path("build/skewt-metbr-sul")
+          manifest=json.loads((root/"manifest.json").read_text(encoding="utf-8"))
+          item={
+            "schema":"sideral-metbr-wrf-skewt-publication-v1",
+            "model":"METBR WRF 4 km",
+            "source":"native METBR WRFOUT",
+            "native_grid_spacing_km":4,
+            "run_utc":manifest["run_utc"],
+            "tag":os.environ["SKEWT_RELEASE_TAG"],
+            "cities":3,
+            "frames_per_city":15,
+            "forecast_hours":list(range(0,43,3)),
+            "assets":manifest["assets"],
+            "download_base":"https://github.com/progames12301-hash/sideral-backend/releases/download/"+os.environ["SKEWT_RELEASE_TAG"]+"/"
+          }
+          (root/"publication.json").write_text(json.dumps(item,ensure_ascii=False,indent=2),encoding="utf-8")
+          PY
+
+      - name: Publish separate METBR South Skew-T release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$SKEWT_RELEASE_TAG"
+          count="$(find build/skewt-metbr-sul -mindepth 2 -maxdepth 2 -type f \( -name '*.png' -o -name '*.json' \) | wc -l)"
+          test "$count" -eq 90
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+            --title "METBR WRF 4 km — Skew-T Sul — $(date -u +%Y-%m-%d)" \
+            --notes "Sondagens extraídas de colunas nativas do METBR WRF 4 km inicializado pelo ICON. Curitiba, Florianópolis e Porto Alegre; F000-F042 a cada 3 horas. Não roda um WRF adicional. Cada perfil representa a coluna da grade WRF mais próxima da capital." \
+            --latest=false $(find build/skewt-metbr-sul -mindepth 2 -maxdepth 2 -type f \( -name '*.png' -o -name '*.json' \) | sort) \
+            build/skewt-metbr-sul/manifest.json build/skewt-metbr-sul/publication.json
+          png_count="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')"
+          json_count="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name | select(endswith(".json"))] | length')"
+          test "$png_count" -eq 45
+          test "$json_count" -eq 47
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'
+
+      - name: Save METBR WRF Skew-T products and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metbr-wrf-skewt-sul
+          path: |
+            build/skewt-metbr-sul/
+            metbr_meta/
+          if-no-files-found: ignore
+          retention-days: 7
