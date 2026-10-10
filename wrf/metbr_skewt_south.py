@@ -140,14 +140,20 @@ def make_profile(ds, time_index, city, point, valid_time):
         raise RuntimeError(f"{city['name']}: PH/PHB não têm um nível staggered a mais que P/PB.")
     z = 0.5 * (ph[:-1] + ph[1:]) / G
 
-    # U/V are stored on WRF's staggered grids. Read only the two points
-    # surrounding the selected mass-grid point and interpolate to its center.
+    # WRF U/V are staggered and grid-relative. Destagger each component to
+    # the mass point first, then rotate to Earth-relative east/north components
+    # using the local map-projection angle. SHARPpy's hodograph, SRH, shear and
+    # Bunkers calculations require geographically oriented wind components.
     u_pair = as_float_array(ds.variables["U"][time_index, :, j, i:i + 2])
     v_pair = as_float_array(ds.variables["V"][time_index, :, j:j + 2, i])
     if u_pair.ndim != 2 or u_pair.shape[-1] != 2 or v_pair.ndim != 2 or v_pair.shape[-1] != 2:
         raise RuntimeError(f"{city['name']}: grade staggered U/V insuficiente.")
-    u = 0.5 * (u_pair[:, 0] + u_pair[:, 1])
-    v = 0.5 * (v_pair[:, 0] + v_pair[:, 1])
+    u_grid = 0.5 * (u_pair[:, 0] + u_pair[:, 1])
+    v_grid = 0.5 * (v_pair[:, 0] + v_pair[:, 1])
+    cosalpha = point_value(ds, "COSALPHA", time_index, j, i)
+    sinalpha = point_value(ds, "SINALPHA", time_index, j, i)
+    u = u_grid * cosalpha - v_grid * sinalpha
+    v = v_grid * cosalpha + u_grid * sinalpha
     w_stag = point_column(ds, "W", time_index, j, i)
     w = 0.5 * (w_stag[:-1] + w_stag[1:])
 
@@ -165,8 +171,10 @@ def make_profile(ds, time_index, city, point, valid_time):
     terrain = point_value(ds, "HGT", time_index, j, i)
     t2 = point_value(ds, "T2", time_index, j, i) - 273.15
     q2 = point_value(ds, "Q2", time_index, j, i)
-    u10 = point_value(ds, "U10", time_index, j, i) * MS_TO_KT
-    v10 = point_value(ds, "V10", time_index, j, i) * MS_TO_KT
+    u10_grid = point_value(ds, "U10", time_index, j, i)
+    v10_grid = point_value(ds, "V10", time_index, j, i)
+    u10 = (u10_grid * cosalpha - v10_grid * sinalpha) * MS_TO_KT
+    v10 = (v10_grid * cosalpha + u10_grid * sinalpha) * MS_TO_KT
     td2 = min(dewpoint_from_mixing_ratio(q2, psfc), t2)
 
     rows = [{
