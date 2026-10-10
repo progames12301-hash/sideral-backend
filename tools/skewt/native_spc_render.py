@@ -540,8 +540,10 @@ def _make_theta_axes(ax, p, t, td):
     ax.set_xticks([250, 280, 310, 340, 370])
     ax.set_yticks([1000, 900, 800, 700, 600, 500, 400, 300, 200, 100])
     ax.tick_params(axis="y", labelleft=False, left=False)
+    surface_pressure = float(p[0])
     for pp in [1000,900,800,700,600,500,400,300,200,100]:
-        ax.axhline(pp, color="#dddddd", lw=0.48, zorder=0)
+        if pp <= surface_pressure + 0.1:
+            ax.axhline(pp, color="#dddddd", lw=0.48, zorder=0)
     ax.plot(theta, p, color=GREEN, lw=1.3, label=r"$\theta$")
     ax.plot(thetae, p, color=RED, lw=1.2, label=r"$\theta_e$")
     ax.plot(thetaes, p, color=BLUE, lw=1.2, label=r"$\theta_{es}$")
@@ -620,8 +622,12 @@ def _make_advection(ax, prof, latitude):
     ax.set_yticks([1000,900,800,700,600,500,400,300,200,100])
     ax.tick_params(axis="y", labelleft=False, left=False)
     ax.axvline(0, color=INK, lw=0.9)
+    surface_pressure = _finite(prof.pres[prof.sfc])
+    if surface_pressure is None:
+        raise RuntimeError("Pressão de superfície ausente no perfil de advecção inferida.")
     for pp in [1000,800,600,400,200,100]:
-        ax.axhline(pp, color="#e3e3e3", lw=0.45, zorder=0)
+        if pp <= surface_pressure + 0.1:
+            ax.axhline(pp, color="#e3e3e3", lw=0.45, zorder=0)
 
     try:
         from sharppy.sharptab import params
