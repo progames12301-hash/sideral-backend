@@ -35,6 +35,7 @@ SIMPLE_SURFACE="$RAW_DIR/ecmwf_surface_simple.grib2"
 
 TARGET_DATE="${FORCE_RUN_DATE:?FORCE_RUN_DATE ausente}"
 TARGET_CYCLE="$(printf '%02d' "$((10#${FORCE_RUN_CYCLE:?FORCE_RUN_CYCLE ausente}))")"
+export TARGET_DATE TARGET_CYCLE
 
 # IFS Open Data publica as rodadas operacionais 00Z/12Z. Se o ciclo TARC
 # for 06Z/18Z, usa a rodada anterior e offset de lead-time para manter os
