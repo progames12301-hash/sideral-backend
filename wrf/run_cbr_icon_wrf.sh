@@ -25,37 +25,17 @@ SOURCE_END_HOUR="${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
   exit 2
 }
 
-if [[ -n "$FORCE_RUN_DATE" && -n "$FORCE_RUN_CYCLE" ]]; then
-  RUN_DATE="$FORCE_RUN_DATE"
-  RUN_CYCLE="$(printf '%02d' "$((10#$FORCE_RUN_CYCLE))")"
-else
-  mapfile -t CANDIDATES < <(python3 - <<'PY'
-import datetime as dt
-now=dt.datetime.now(dt.timezone.utc)
-base=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
-for n in range(8):
-    x=base-dt.timedelta(hours=6*n)
-    print(x.strftime('%Y%m%d %H'))
-PY
-)
-  RUN_DATE=""
-  RUN_CYCLE=""
-  for C in "${CANDIDATES[@]}"; do
-    read -r DATE CYCLE <<< "$C"
-    STAMP="$(printf '%s%s' "$DATE" "$CYCLE")"
-    FH="$(printf '%03d' "$SOURCE_END_HOUR")"
-    URL="https://opendata.dwd.de/weather/nwp/icon/grib/"$CYCLE"/t_2m/icon_global_icosahedral_single-level_"$STAMP"_"$FH"_T_2M.grib2.bz2"
-    if curl --fail --location --retry 5 --retry-delay 5 --range 0-0 --connect-timeout 15 --max-time 45 -o /dev/null "$URL"; then
-      RUN_DATE="$DATE"
-      RUN_CYCLE="$CYCLE"
-      break
-    fi
-  done
-fi
-
-test -n "$RUN_DATE" || { echo "Nenhuma rodada ICON recente com F$SOURCE_END_HOUR" >&2; exit 20; }
-echo "ICON CBR selecionado: $RUN_DATE $RUN_CYCLE Z"
-
+TARGET_DATE="${FORCE_RUN_DATE:?FORCE_RUN_DATE ausente}"
+TARGET_CYCLE="$(printf '%02d' "$((10#${FORCE_RUN_CYCLE:?FORCE_RUN_CYCLE ausente}))")"
+SELECTION_ENV="$ROOT/cbr-icon-run.env"
+python3 "$ROOT/wrf/select_cbr_icon_run.py" \
+  --target-date "$TARGET_DATE" --target-cycle "$TARGET_CYCLE" \
+  --start-hour "$WRF_START_HOUR" --end-hour "$SOURCE_END_HOUR" \
+  --output "$SELECTION_ENV"
+source "$SELECTION_ENV"
+RUN_DATE="$TARGET_DATE"
+RUN_CYCLE="$TARGET_CYCLE"
+echo "ICON CBR selecionado: fonte ${ICON_RUN_DATE} ${ICON_RUN_CYCLE}Z; offset=${ICON_OFFSET}h; alvo=${RUN_DATE} ${RUN_CYCLE}Z F${WRF_START_HOUR}-F${SOURCE_END_HOUR}"
 rm -rf "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 mkdir -p "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 
@@ -98,25 +78,38 @@ PY
 
 docker run --rm --user "$HOST_UID:$HOST_UID" -v "$REGRID_DIR:/work" "$ICON_REGRID_IMAGE" cdo gennn,/work/target_grid.txt /data/grids/icon/icon_grid.nc /work/icon_weights.nc
 
+echo "CBR ICON: baixando todos os GRIBs antes do processamento"
 for H in $(seq "$WRF_START_HOUR" 3 "$SOURCE_END_HOUR"); do
   printf -v FH '%03d' "$H"
-  RAW="$RAW_DIR/icon_f"$FH"_raw.grib2"
-  SIMPLE="$RAW_DIR/icon_f"$FH"_simple.grib2"
-  OUT="$REG_DIR/icon_f"$FH".grib2"
-  FI="$RAW_DIR/icon_f"$FH"_fi.grib2"
-  HGT0="$RAW_DIR/icon_f"$FH"_hgt0.grib2"
-  HGT="$RAW_DIR/icon_f"$FH"_hgt.grib2"
-  CHECK="$RAW_DIR/icon_f"$FH"_hgt_check.grib2"
-
-  python3 "$ROOT/wrf/fetch_icon_wrf_step.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --step "$H" --output "$RAW"
+  SOURCE_H=$((H+ICON_OFFSET))
+  printf -v SOURCE_FH '%03d' "$SOURCE_H"
+  RAW="$RAW_DIR/icon_target_f${FH}_raw.grib2"
+  python3 "$ROOT/wrf/fetch_icon_wrf_step.py" --date "$ICON_RUN_DATE" --cycle "$ICON_RUN_CYCLE" --step "$SOURCE_H" --output "$RAW"
   RAW_COUNT="$(grib_count "$RAW")"
-  test "$RAW_COUNT" -eq 71 || { echo "ERRO: ICON F$FH contém $RAW_COUNT mensagens; esperado exatamente 71." >&2; exit 22; }
+  test "$RAW_COUNT" -eq 71 || { echo "ERRO: ICON alvo F$FH (fonte F$SOURCE_FH) contém $RAW_COUNT mensagens; esperado 71." >&2; exit 22; }
+done
+
+echo "CBR ICON: download completo para todos os horários; iniciando regradeamento"
+for H in $(seq "$WRF_START_HOUR" 3 "$SOURCE_END_HOUR"); do
+  printf -v FH '%03d' "$H"
+  RAW="$RAW_DIR/icon_target_f${FH}_raw.grib2"
+  SIMPLE="$RAW_DIR/icon_target_f${FH}_simple.grib2"
+  OUT="$REG_DIR/icon_f${FH}.grib2"
+  FI="$RAW_DIR/icon_target_f${FH}_fi.grib2"
+  HGT0="$RAW_DIR/icon_target_f${FH}_hgt0.grib2"
+  HGT="$RAW_DIR/icon_target_f${FH}_hgt.grib2"
+  CHECK="$RAW_DIR/icon_target_f${FH}_hgt_check.grib2"
+
   grib_set -r -s packingType=grid_simple "$RAW" "$SIMPLE"
-  docker run --rm --user "$HOST_UID:$HOST_UID"     -v "$RAW_DIR:/input" -v "$REG_DIR:/output" -v "$REGRID_DIR:/weights"     "$ICON_REGRID_IMAGE" cdo -f grb2 remap,/weights/target_grid.txt,/weights/icon_weights.nc "/input/$(basename "$SIMPLE")" "/output/$(basename "$OUT")"
+  docker run --rm --user "$HOST_UID:$HOST_UID" \
+    -v "$RAW_DIR:/input" -v "$REG_DIR:/output" -v "$REGRID_DIR:/weights" \
+    "$ICON_REGRID_IMAGE" cdo -f grb2 remap,/weights/target_grid.txt,/weights/icon_weights.nc \
+    "/input/$(basename "$SIMPLE")" "/output/$(basename "$OUT")"
 
   grib_copy -w discipline=0,parameterCategory=3,parameterNumber=4 "$OUT" "$FI" || true
   test -s "$FI" || { echo "FI do ICON nao encontrado em F$FH" >&2; exit 23; }
-  docker run --rm --user "$HOST_UID:$HOST_UID" -v "$RAW_DIR:/input" "$ICON_REGRID_IMAGE" cdo -f grb2 divc,9.80665 "/input/$(basename "$FI")" "/input/$(basename "$HGT0")"
+  docker run --rm --user "$HOST_UID:$HOST_UID" -v "$RAW_DIR:/input" "$ICON_REGRID_IMAGE" \
+    cdo -f grb2 divc,9.80665 "/input/$(basename "$FI")" "/input/$(basename "$HGT0")"
   grib_set -r -s discipline=0,parameterCategory=3,parameterNumber=5,typeOfFirstFixedSurface=100 "$HGT0" "$HGT"
   test -s "$HGT"
   cat "$HGT" >> "$OUT"
