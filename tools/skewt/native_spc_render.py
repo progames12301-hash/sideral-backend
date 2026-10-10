@@ -240,7 +240,7 @@ def _pwat_mm(p, td):
     pp, qq = np.asarray(p)[order] * 100.0, np.asarray(specific_humidity)[order]
     if len(pp) < 2 or not np.isfinite(qq).all():
         return np.nan
-    return float(abs(np.trapezoid(qq, pp)) / 9.80665)
+    return float(abs(np.trapz(qq, pp)) / 9.80665)
 
 
 _MOIST_ADIABATS_CACHE = None
