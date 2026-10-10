@@ -335,11 +335,33 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
         height = _interp_pressure(h_agl, p, pp)
         if math.isfinite(height):
             ax.text(-41.8, pp, f"{height:.1f} m", ha="left", va="center", fontsize=6.6, color="#303030", clip_on=True)
-    ax.plot(_xskew(t, p), p, color=INK, lw=1.65, zorder=5, label="T")
-    ax.plot(_xskew(td, p), p, color=BLUE, lw=1.85, zorder=6, label="Td")
+    # Add the standard sounding traces in addition to T and Td: virtual
+    # temperature and wet-bulb temperature. SHARPpy documents both as part of
+    # the classic SPC Skew-T view; failures at isolated model levels are masked
+    # rather than replaced with invented values.
+    from sharppy.sharptab import thermo
+    t_virtual = np.asarray([
+        float(thermo.virtemp(float(pi), float(ti), float(di)))
+        for pi, ti, di in zip(p, t, td)
+    ], dtype=float)
+    tw_values = []
+    for pi, ti, di in zip(p, t, td):
+        try:
+            tw_values.append(float(thermo.wetbulb(float(pi), float(ti), float(di))))
+        except Exception:
+            tw_values.append(np.nan)
+    t_wet = np.asarray(tw_values, dtype=float)
+
+    ax.plot(_xskew(t, p), p, color="#c62828", lw=1.75, zorder=6, label="T")
+    ax.plot(_xskew(td, p), p, color=BLUE, lw=1.75, zorder=7, label="Td")
+    ax.plot(_xskew(t_virtual, p), p, color="#d97732", lw=0.95,
+            ls=(0, (4, 2)), zorder=5, label="Tv")
+    if np.isfinite(t_wet).sum() >= 3:
+        ax.plot(_xskew(t_wet, p), p, color="#13a6ac", lw=1.05,
+                ls="-", zorder=5, label="Tw")
     parcel = _parcel_curve(p, t, td)
     if np.isfinite(parcel).sum() > 3:
-        ax.plot(_xskew(parcel, p), p, color=RED, lw=1.25, ls="--", zorder=4)
+        ax.plot(_xskew(parcel, p), p, color=INK, lw=1.25, ls="--", zorder=4, label="Parcela")
     # Mark LCL/LFC/EL using whichever SHARPpy parcel contains each value.
     parcel_objects = [getattr(pcl, n, None) for n in ("sfcpcl", "mlpcl", "mupcl", "fcstpcl")]
     markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
