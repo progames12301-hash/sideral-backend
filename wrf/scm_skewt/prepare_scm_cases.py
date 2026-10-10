@@ -84,9 +84,9 @@ def profile(obj,i,city):
     for lev in LEVELS:
         p=float(lev)
         if p>=sp-1: continue
-        t=val(obj,name("temperature",lev)); td=val(obj,name("dew_point",lev))
+        t=val(obj,name("temperature",lev),i); td=val(obj,name("dew_point",lev),i)
         if td is None and t is not None:
-            rh=val(obj,name("relative_humidity",lev))
+            rh=val(obj,name("relative_humidity",lev),i)
             if rh is not None: td=dewpoint_rh(t,rh)
         ws,wd,z,omega=[val(obj,name(k,lev),i) for k in ("wind_speed","wind_direction","geopotential_height","vertical_velocity")]
         if None in (t,td,ws,wd,z) or z<=terrain+10: continue
