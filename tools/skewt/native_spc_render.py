@@ -371,8 +371,20 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
         tdline = 243.5 * loge / (17.67 - loge)
         major = r in (0.4, 1, 2, 4, 8, 16, 24, 32)
         ax.plot(_xskew(tdline, ps), ps, color="#86b68e" if major else "#b2ceb5",
-                ls=(0, (1, 3)), lw=0.56 if major else 0.38,
+                ls=(0, 3) if major else (0, (1, 3)), lw=0.56 if major else 0.38,
                 alpha=0.78 if major else 0.62, zorder=0)
+
+    # The portion below the station's actual surface pressure is not part of the
+    # sounding. Shade and hatch it so the displayed environmental traces cannot
+    # be visually interpreted as extending below the terrain.
+    surface_pressure = float(p[0])
+    if 100.0 < surface_pressure < 1050.0:
+        ax.axhspan(surface_pressure, 1050.0, facecolor="#f2f2f2",
+                   edgecolor="#d0d0d0", hatch="////", linewidth=0.0,
+                   alpha=0.55, zorder=1.5)
+        ax.axhline(surface_pressure, color="#555555", lw=0.95,
+                   ls=(0, (4, 2)), alpha=0.95, zorder=3)
+
     h_agl = z - float(ground_m)
     h_agl[np.abs(h_agl) < 2.0] = 0.0
     surface_pressure = float(p[0])
@@ -442,6 +454,18 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                                  linewidth=0, zorder=1)
         ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35,
                 ls="--", zorder=5, label="Parcela SFC")
+    # A compact curve legend makes the trace colors explicit without covering
+    # the lower-level thermodynamic structure. The cold upper-left is normally
+    # free of observed profiles; opaque frame keeps the grid legible underneath.
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        legend = ax.legend(handles, labels, loc="upper left", ncol=2,
+                           fontsize=6.2, frameon=True, framealpha=0.92,
+                           borderpad=0.25, handlelength=1.45,
+                           handletextpad=0.35, columnspacing=0.8,
+                           labelspacing=0.25, facecolor="white",
+                           edgecolor="#c0c0c0")
+        legend.set_zorder(10)
     # The plotted parcel path is surface-based, so LCL/LFC/EL markers must all
     # come from that same parcel. Never mix pressure levels from different parcel
     # definitions or draw a marker below the actual surface.
@@ -461,7 +485,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 and pressure_value >= np.nanmin(p) - 0.1):
             ax.axhline(pressure_value, color="#2c2c2c", lw=0.72,
                        ls=(0, (3, 3)), alpha=0.84, zorder=3)
-            ax.text(57.0, pressure_value, short, fontsize=7.2, weight="bold",
+            ax.text(44.5, pressure_value, short, fontsize=7.2, weight="bold",
                     ha="left", va="center", color="#303030",
                     bbox=dict(facecolor="white", edgecolor="none", alpha=0.76, pad=0.5),
                     clip_on=False, zorder=9)
@@ -475,15 +499,17 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             p0 = float(np.exp(np.log(p[i]) + frac * (np.log(p[i + 1]) - np.log(p[i]))))
             if 100 <= p0 <= 1050:
                 ax.axhline(p0, color="#5d75a5", lw=0.6, ls=(0, (1, 3)), alpha=0.8, zorder=2)
-                ax.text(43.0, p0, "0°C", fontsize=6.6, color="#526991",
+                ax.text(36.5, p0, "0°C", fontsize=6.6, color="#526991",
                         ha="left", va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=0.25))
 
     # Wind staffs are interpolated at standard 50-hPa intervals, plus the
     # actual model surface if it does not fall on a 50-hPa level. Sampling by
     # array index/log-pressure spacing made the upper-level barbs too dense.
     barb_pressure = np.arange(1000.0, 99.0, -50.0)
+    # Keep the actual surface barb, but omit nominal 50-hPa barbs too close
+    # to it (e.g., 900 hPa vs. a 918-hPa station surface).
     barb_pressure = barb_pressure[
-        (barb_pressure <= p[0] + 0.1) & (barb_pressure >= p[-1] - 0.1)
+        (barb_pressure <= p[0] - 25.0) & (barb_pressure >= p[-1] - 0.1)
     ]
     barb_pressure = np.unique(np.r_[barb_pressure, p[0]])[::-1]
     barb_u = np.asarray([_interp_pressure(u, p, value) for value in barb_pressure])
@@ -565,9 +591,13 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
         ax.text(sx + 2.5, sy + 2.0, label, fontsize=8, weight="bold", color=INK, zorder=6)
     ax.set_title(title_text, fontsize=9.0, loc="left", pad=6, color=INK)
     ca = "--" if critical_angle is None else f"{critical_angle:.0f}°"
-    ax.text(0.018, 0.975, f"Movimento de referência: {preferred_label}\nÂngulo crítico: {ca}",
-            transform=ax.transAxes, fontsize=7.3, ha="left", va="top", color=INK,
-            bbox=dict(facecolor="white", edgecolor="none", alpha=0.88, pad=1.6), zorder=8)
+    # Put diagnostic text in the title area, not over the wind trace.
+    hemisphere_short = "Sul" if "sul" in preferred_label.lower() else "Norte"
+    mover_short = "LM" if "LM" in preferred_label else "RM"
+    ax.set_title(
+        f"{title_text}\nReferência: {mover_short} ({hemisphere_short}) • Ângulo crítico: {ca}",
+        fontsize=7.8, loc="left", pad=3, color=INK,
+    )
 
 
 def _make_advection(ax, prof, latitude):
