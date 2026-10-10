@@ -309,7 +309,8 @@ def _moist_adiabat_curves():
 def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     ax.set_yscale("log")
     ax.set_ylim(1050, 100)
-    ax.set_xlim(-43, 64)
+    # Reserve enough right margin for large wind barbs and separated parcel labels.
+    ax.set_xlim(-43, 72)
     ax.set_facecolor("white")
     ax.spines[:].set_color(INK)
     ax.spines[:].set_linewidth(0.85)
@@ -317,9 +318,14 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     ax.set_xlabel("Temperature (°C)", fontsize=9, labelpad=4)
     ax.set_ylabel("Pressure (hPa)", fontsize=9, labelpad=8)
 
-    # Pressure grid: major every 100 hPa, supporting levels every 25 hPa.
+    # Pressure levels below the actual station pressure remain blank: no
+    # extrapolated environmental curve or synthetic grid is drawn underground.
+    surface_pressure = float(p[0])
     p_ticks = [1050, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]
-    p_minor = [float(pp) for pp in np.arange(125, 1000, 25) if pp not in p_ticks]
+    p_minor = [
+        float(pp) for pp in np.arange(125, 1000, 25)
+        if pp not in p_ticks and pp <= surface_pressure
+    ]
     ax.yaxis.set_major_locator(FixedLocator(p_ticks))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f"{int(val)}" if any(abs(val-x)<0.5 for x in p_ticks) else ""))
     ax.yaxis.set_minor_locator(FixedLocator(p_minor))
@@ -327,16 +333,16 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     ax.set_xticks(np.arange(-40, 56, 10))
     ax.set_xticks(np.arange(-40, 56, 5), minor=True)
     ax.tick_params(axis="x", which="minor", length=2, color="#777777")
-    ps = np.geomspace(100, 1050, 240)
+    # Every thermodynamic reference line ends at the true surface pressure.
+    ps = np.geomspace(100.0, max(100.0, min(1050.0, surface_pressure)), 240)
     for pp in p_ticks:
-        ax.axhline(pp, color="#a7a7a7", lw=0.62, zorder=0)
+        if pp <= surface_pressure + 0.1:
+            ax.axhline(pp, color="#a7a7a7", lw=0.62, zorder=0)
     for pp in p_minor:
         ax.axhline(pp, color="#e4e4e4", lw=0.34, zorder=0)
-    surface_pressure = float(p[0])
     if 100.0 <= surface_pressure <= 1050.0:
-        # Explicitly mark the real station surface; no trace is shown below it.
-        ax.axhline(surface_pressure, color="#555555", lw=0.9,
-                   ls=(0, (4, 2)), alpha=0.9, zorder=2)
+        ax.axhline(surface_pressure, color="#555555", lw=0.95,
+                   ls=(0, (4, 2)), alpha=0.95, zorder=3)
 
     # Isotherms every 5 C; every 10 C is emphasized.
     for temp in np.arange(-90, 66, 5):
@@ -357,9 +363,10 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     # Reuse these shared reference curves across all forecast frames to keep the
     # 27-city operational batch from repeating thousands of identical lifts.
     pp_grid, moist_curves = _moist_adiabat_curves()
+    visible_moist = pp_grid <= surface_pressure + 0.01
     for start_t, curve in moist_curves:
         major = (int(start_t) % 10 == 0)
-        ax.plot(_xskew(curve, pp_grid), pp_grid,
+        ax.plot(_xskew(curve[visible_moist], pp_grid[visible_moist]), pp_grid[visible_moist],
                 color="#377e4c" if major else "#9abc9e",
                 ls="-", lw=0.74 if major else 0.46,
                 alpha=0.92 if major else 0.70, zorder=0)
@@ -374,16 +381,8 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 ls=(0, (1, 3)), lw=0.56 if major else 0.38,
                 alpha=0.78 if major else 0.62, zorder=0)
 
-    # The portion below the station's actual surface pressure is not part of the
-    # sounding. Shade and hatch it so the displayed environmental traces cannot
-    # be visually interpreted as extending below the terrain.
-    surface_pressure = float(p[0])
-    if 100.0 < surface_pressure < 1050.0:
-        ax.axhspan(surface_pressure, 1050.0, facecolor="#f2f2f2",
-                   edgecolor="#d0d0d0", hatch="////", linewidth=0.0,
-                   alpha=0.55, zorder=1.5)
-        ax.axhline(surface_pressure, color="#555555", lw=0.95,
-                   ls=(0, (4, 2)), alpha=0.95, zorder=3)
+    # Do not hatch or shade the sub-surface pressure interval. It is left plain
+    # white, with only the surface-pressure boundary marking where the profile starts.
 
     h_agl = z - float(ground_m)
     h_agl[np.abs(h_agl) < 2.0] = 0.0
@@ -458,9 +457,12 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     # come from that same parcel. Never mix pressure levels from different parcel
     # definitions or draw a marker below the actual surface.
     surface_parcel = getattr(pcl, "sfcpcl", None)
-    markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
-    marker_pressures = {}
-    for attr, short in markers:
+    markers = (
+        ("lclpres", "LCL", "#178447", 43.0),
+        ("lfcpres", "LFC", "#b8860b", 47.4),
+        ("elpres", "EL", "#8147a8", 51.8),
+    )
+    for attr, short, marker_color, label_x in markers:
         pressure_value = _finite(getattr(surface_parcel, attr, None)) if surface_parcel is not None else None
         if pressure_value is None and short == "LCL":
             try:
@@ -468,15 +470,26 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 pressure_value = float(thermo.drylift(float(p[0]), float(t[0]), float(td[0]))[0])
             except Exception:
                 pressure_value = None
-        marker_pressures[short] = pressure_value
-        if (pressure_value is not None and 100 <= pressure_value <= surface_pressure + 0.1
-                and pressure_value >= np.nanmin(p) - 0.1):
-            ax.axhline(pressure_value, color="#2c2c2c", lw=0.72,
-                       ls=(0, (3, 3)), alpha=0.84, zorder=3)
-            ax.text(44.5, pressure_value, short, fontsize=7.2, weight="bold",
-                    ha="left", va="center", color="#303030",
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.76, pad=0.5),
-                    clip_on=False, zorder=9)
+        if pressure_value is None or not (100.0 <= pressure_value <= np.nanmax(p) + 0.1):
+            continue
+        if pressure_value < np.nanmin(p) - 0.1 or pressure_value > surface_pressure + 0.1:
+            # A parcel level below the local ground is physically outside this
+            # sounding; never draw its marker in the blank sub-surface region.
+            continue
+        if pressure_value >= surface_pressure - 0.75:
+            # A genuinely surface-based LCL is identified at the surface line,
+            # not as a long dashed line inside the below-ground plotting area.
+            ax.text(label_x, surface_pressure, f"{short}≈SFC", fontsize=6.3,
+                    weight="bold", ha="left", va="bottom", color=marker_color,
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.84, pad=0.35),
+                    clip_on=True, zorder=9)
+            continue
+        ax.axhline(pressure_value, color=marker_color, lw=0.85,
+                   ls=(0, (3, 2)), alpha=0.92, zorder=3)
+        ax.text(label_x, pressure_value, short, fontsize=7.0, weight="bold",
+                ha="left", va="center", color=marker_color,
+                bbox=dict(facecolor="white", edgecolor="none", alpha=0.86, pad=0.5),
+                clip_on=False, zorder=9)
 
     # Freezing level, a common sounding reference mark.
     freeze_idx = np.where(np.isfinite(t[:-1]) & np.isfinite(t[1:]) & (t[:-1] * t[1:] <= 0))[0]
@@ -490,25 +503,26 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 ax.text(36.5, p0, "0°C", fontsize=6.6, color="#526991",
                         ha="left", va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=0.25))
 
-    # Wind staffs are interpolated at standard 50-hPa intervals, plus the
-    # actual model surface if it does not fall on a 50-hPa level. Sampling by
-    # array index/log-pressure spacing made the upper-level barbs too dense.
-    # Denser staff at 25-hPa intervals; all barbs remain within the sounding.
-    barb_pressure = np.arange(1000.0, 99.0, -25.0)
-    # Keep the actual surface barb, but omit nominal 50-hPa barbs too close
-    # to it (e.g., 900 hPa vs. a 918-hPa station surface).
-    barb_pressure = barb_pressure[
-        (barb_pressure <= p[0] - 25.0) & (barb_pressure >= p[-1] - 0.1)
-    ]
-    barb_pressure = np.unique(np.r_[barb_pressure, p[0]])[::-1]
+    # Draw 55 wind staffs at evenly spaced log-pressure levels. The interpolation
+    # is display-only; the header still reports the number of native model levels.
+    # Log spacing avoids stacking barbs near the top of a pressure-coordinate plot.
+    barb_pressure = np.geomspace(float(p[0]), float(p[-1]), 55)
     barb_u = np.asarray([_interp_pressure(u, p, value) for value in barb_pressure])
     barb_v = np.asarray([_interp_pressure(v, p, value) for value in barb_pressure])
     barb_good = np.isfinite(barb_u) & np.isfinite(barb_v)
-    ax.barbs(np.full(int(barb_good.sum()), 53.0), barb_pressure[barb_good],
-             barb_u[barb_good], barb_v[barb_good], length=6.0,
-             linewidth=0.82, barb_increments={"half": 5, "full": 10, "flag": 50},
+    if int(barb_good.sum()) < 50:
+        raise RuntimeError(f"Somente {int(barb_good.sum())} barbelas de vento válidas; esperadas pelo menos 50.")
+    ax.barbs(np.full(int(barb_good.sum()), 58.0), barb_pressure[barb_good],
+             barb_u[barb_good], barb_v[barb_good], length=7.0,
+             linewidth=0.95, barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, zorder=7)
     # Keep both header lines inside the canvas and outside the plotting frame.
+    # A compact legend uses an otherwise clear upper-right pocket; labels make
+    # the physical traces distinguishable without changing the panel layout.
+    ax.legend(loc="upper center", bbox_to_anchor=(0.68, 0.985), ncol=2,
+              fontsize=5.8, frameon=True, framealpha=0.88,
+              borderpad=0.25, handlelength=1.5, handletextpad=0.35,
+              labelspacing=0.2, columnspacing=0.65)
     ax.text(0.0, 1.050, f"Skew-T | {station}", transform=ax.transAxes,
             fontsize=9.0, weight="bold", ha="left", va="bottom",
             color=INK, clip_on=False)
@@ -601,7 +615,7 @@ def _make_advection(ax, prof, latitude):
     ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_ylim(1050, 100); ax.set_xlim(-2, 2)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
-    ax.set_xlabel("Advecção térmica\ninferida (°C/h)", fontsize=6.6, labelpad=2)
+    ax.set_xlabel("Advecção térmica inferida\n(SHARPpy, °C/h)", fontsize=6.4, labelpad=2)
     ax.set_xticks([-2, -1, 0, 1, 2])
     ax.set_yticks([1000,900,800,700,600,500,400,300,200,100])
     ax.tick_params(axis="y", labelleft=False, left=False)
@@ -620,23 +634,44 @@ def _make_advection(ax, prof, latitude):
     if pressure_bounds.ndim != 2 or pressure_bounds.shape[1] != 2:
         return
     n = min(len(adv_values), len(pressure_bounds))
-    drawn = 0
+    layers = []
     for value, (p_bottom, p_top) in zip(adv_values[:n], pressure_bounds[:n]):
         if not (math.isfinite(float(value)) and math.isfinite(float(p_bottom))
                 and math.isfinite(float(p_top)) and 100 <= p_top < p_bottom <= 1050):
             continue
         value = float(value)
-        # Extreme values are omitted instead of being clipped into a saturated
-        # block that looks like a plausible but false advection magnitude.
+        # Do not cap extreme values: omit them and state the scale limitation.
         if abs(value) > 2.0:
             continue
-        color = "#c94c4c" if value > 0 else "#3266c5"
-        ax.fill_betweenx([p_top, p_bottom], 0, value, color=color, alpha=0.48, linewidth=0, zorder=2)
-        ax.plot([value, value], [p_top, p_bottom], color=color, lw=0.7, zorder=3)
-        drawn += 1
-    if drawn == 0:
-        ax.text(0.5, 0.5, "Sem dados", transform=ax.transAxes, ha="center", va="center",
+        p_mid = math.sqrt(float(p_bottom) * float(p_top))
+        layers.append((p_mid, value, float(p_bottom), float(p_top)))
+    if not layers:
+        ax.text(0.5, 0.5, "Sem dados válidos", transform=ax.transAxes, ha="center", va="center",
                 fontsize=7.2, color="#555555")
+        return
+
+    layers.sort(key=lambda item: item[0], reverse=True)
+    mid_pressure = np.asarray([row[0] for row in layers], dtype=float)
+    values = np.asarray([row[1] for row in layers], dtype=float)
+    # A thin profile trace is easier to read than opaque 100-hPa blocks.
+    # Very light signed shading preserves warming/cooling polarity without
+    # implying more vertical resolution than SHARPpy's layers provide.
+    for p_mid, value, p_bottom, p_top in layers:
+        color = "#c94c4c" if value > 0 else "#3266c5"
+        ax.fill_betweenx([p_top, p_bottom], 0, value, color=color, alpha=0.12, linewidth=0, zorder=1)
+    points = np.column_stack((values, mid_pressure)).reshape(-1, 1, 2)
+    if len(points) >= 2:
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        segment_colors = [
+            "#c94c4c" if (values[k] + values[k + 1]) / 2.0 > 0 else "#3266c5"
+            for k in range(len(values) - 1)
+        ]
+        ax.add_collection(LineCollection(segments, colors=segment_colors, linewidths=1.35, zorder=3))
+    point_colors = ["#c94c4c" if value > 0 else "#3266c5" for value in values]
+    ax.scatter(values, mid_pressure, c=point_colors, s=12, edgecolors="white", linewidths=0.25, zorder=4)
+    # Keep the range explicit. Extreme inferred values outside the plotted
+    # +/-2 C/h window are omitted rather than silently clipped.
+    ax.set_xlim(-2.0, 2.0)
 
 
 def _make_srw(ax, h_agl, u, v, storm, title_text):
@@ -852,8 +887,8 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     ax_skew = fig.add_axes([0.078, 0.236, 0.402, 0.704])
     ax_theta = fig.add_axes([0.508, 0.236, 0.112, 0.704])
     ax_hodo = fig.add_axes([0.628, 0.550, 0.336, 0.390])
-    ax_adv = fig.add_axes([0.650, 0.139, 0.142, 0.400])
-    ax_srw = fig.add_axes([0.832, 0.139, 0.140, 0.400])
+    ax_adv = fig.add_axes([0.650, 0.139, 0.142, 0.350])
+    ax_srw = fig.add_axes([0.832, 0.139, 0.140, 0.350])
 
     _make_skew_axes(ax_skew, p, t, td, z, u, v, prof, station_label, date_text, elevation)
     _make_theta_axes(ax_theta, p, t, td)
