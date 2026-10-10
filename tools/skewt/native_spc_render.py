@@ -114,7 +114,11 @@ def _finite(value):
         if value is None or np.ma.is_masked(value):
             return None
         result = float(value)
-        return result if math.isfinite(result) else None
+        # SHARPpy uses -9999 as its missing-data sentinel. Treating it as a
+        # real index creates physically meaningless values in the diagnostics.
+        if not math.isfinite(result) or math.isclose(result, -9999.0, abs_tol=0.5) or abs(result) >= 1e25:
+            return None
+        return result
     except Exception:
         return None
 
@@ -459,7 +463,7 @@ def _make_advection(ax, prof, latitude):
         drawn += 1
     if drawn == 0:
         ax.text(0.5, 0.5, "Sem dados", transform=ax.transAxes, ha="center", va="center",
-                fontsize=7.2, color="#555555)
+                fontsize=7.2, color="#555555")
 
 
 def _make_srw(ax, h_agl, u, v, storm, title_text):
@@ -490,7 +494,7 @@ def _make_srw(ax, h_agl, u, v, storm, title_text):
     ], loc="upper left", fontsize=5.8, frameon=True, framealpha=0.8, borderpad=0.2, handlelength=1.7, labelspacing=0.15)
 
 
-def _parcel_rows(prof, srh01, srh03, hemisphere_sign):
+def _parcel_rows(prof, srh01, srh03):
     rows = []
     for label, attr in [("SFC", "sfcpcl"), ("ML", "mlpcl"), ("MU", "mupcl"), ("FCST", "fcstpcl")]:
         pcl = getattr(prof, attr, None)
@@ -505,14 +509,14 @@ def _parcel_rows(prof, srh01, srh03, hemisphere_sign):
         li = _finite(getattr(pcl, "li5", None))
         ehi1 = cape * srh01 / 160000.0 if cape is not None and math.isfinite(srh01) else None
         ehi3 = cape * srh03 / 160000.0 if cape is not None and math.isfinite(srh03) else None
-        rows.append([label, _fmt(cape, 0), _fmt(cin, 0), _fmt(lcl, 0), _fmt(lfc, 0), _fmt(el, 0), _fmt(li, 1), _fmt(ehi1 * hemisphere_sign if ehi1 is not None else None, 2), _fmt(ehi3 * hemisphere_sign if ehi3 is not None else None, 2)])
+        rows.append([label, _fmt(cape, 0), _fmt(cin, 0), _fmt(lcl, 0), _fmt(lfc, 0), _fmt(el, 0), _fmt(li, 1), _fmt(ehi1, 2), _fmt(ehi3, 2)])
     return rows
 
 
-def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, hodo_motion, hemisphere_sign, latitude):
+def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, latitude):
     ax = fig.add_axes([0.035, 0.073, 0.63, 0.115]); ax.axis("off")
     cols = ["", "CAPE [J/kg]", "CIN [J/kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0-1", "EHI 0-3"]
-    table = ax.table(cellText=_parcel_rows(prof, srh01, srh03, hemisphere_sign), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
+    table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
                      colWidths=[0.07,0.13,0.13,0.12,0.12,0.12,0.08,0.10,0.10])
     table.auto_set_font_size(False); table.set_fontsize(7.3); table.scale(1, 1.26)
     for (r,c), cell in table.get_celld().items():
@@ -653,8 +657,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     _make_advection(ax_adv, prof, latitude)
     srw_title = "Vento relativo à tempestade (LM)" if is_southern else "Vento relativo à tempestade (RM)"
     _make_srw(ax_srw, h_agl, u, v, preferred, srw_title)
-    hemisphere_sign = -1.0 if is_southern else 1.0
-    _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, motion, hemisphere_sign, latitude)
+    _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, latitude)
 
     # Use the exact Sideral logo asset supplied for the brand; do not synthesize a text logo.
     logo_path = Path(__file__).resolve().parents[2] / "assets" / "sideral-logo.png"
@@ -662,7 +665,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
         raise FileNotFoundError(f"Logo oficial Sideral ausente: {logo_path}")
     with Image.open(logo_path) as source_logo:
         logo = source_logo.convert("RGBA")
-    logo_ax = fig.add_axes([0.872, 0.010, 0.105, 0.040], zorder=20)
+    logo_ax = fig.add_axes([0.862, 0.008, 0.112, 0.046], zorder=20)
     logo_ax.imshow(logo, interpolation="lanczos")
     logo_ax.set_axis_off()
     fig.savefig(out_dir / "full.png", dpi=DPI, facecolor="white", bbox_inches=None)
