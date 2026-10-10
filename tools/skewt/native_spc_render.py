@@ -230,13 +230,17 @@ def _lapse_pressure(t, h, p, p_low, p_high):
 
 
 def _pwat_mm(p, td):
+    """Precipitable water from specific humidity, integrated in pressure coordinates."""
     e = _vapor_pressure_from_td(td)
-    q = 0.622 * e / np.maximum(p - e, 0.1)
+    mixing_ratio = 0.622 * e / np.maximum(np.asarray(p, dtype=float) - e, 0.1)
+    # Hydrostatic precipitable water integrates specific humidity q, not
+    # mixing ratio r. Convert r -> q=r/(1+r) before integrating dp/g.
+    specific_humidity = mixing_ratio / (1.0 + mixing_ratio)
     order = np.argsort(p)
-    pp, qq = np.asarray(p)[order] * 100.0, np.asarray(q)[order]
-    if len(pp) < 2:
+    pp, qq = np.asarray(p)[order] * 100.0, np.asarray(specific_humidity)[order]
+    if len(pp) < 2 or not np.isfinite(qq).all():
         return np.nan
-    return float(abs(np.trapz(qq, pp)) / 9.80665)
+    return float(abs(np.trapezoid(qq, pp)) / 9.80665)
 
 
 _MOIST_ADIABATS_CACHE = None
@@ -669,7 +673,8 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
         raise RuntimeError("Latitude ausente; necessária para os cálculos meteorológicos dependentes do hemisfério.")
     lat_text = "--" if latitude is None else f"{latitude:.2f}{'N' if latitude >= 0 else 'S'}"
     lon_text = "--" if longitude is None else f"{longitude:.2f}{'E' if longitude >= 0 else 'W'}"
-    model_label = "METBR WRF 4 km" if "METBR" in station_raw.upper() else str(meta.get("model", "ECMWF IFS"))
+    model_hint = " ".join(str(meta.get(key, "")) for key in ("model", "station", "source"))
+    model_label = "METBR WRF 4 km" if "METBR" in model_hint.upper() else str(meta.get("model", "ECMWF IFS"))
     run_short = valid.strftime("%d/%m %HZ") if hasattr(valid, "strftime") else run_text
     valid_short = valid_dt.strftime("%d/%m %HZ") if hasattr(valid, "strftime") else valid_text
     date_text = (f"{model_label} • ciclo {run_short} • válido {valid_short} • F{fh:03d} • "
