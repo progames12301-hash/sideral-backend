@@ -28,7 +28,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F000-F003
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 0 3 0 1
@@ -49,7 +50,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F003-F006
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 3 6 1 0
@@ -70,7 +72,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F006-F009
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 6 9 2 0
@@ -91,7 +94,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F009-F012
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 9 12 3 0
@@ -112,7 +116,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F012-F015
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 12 15 4 0
@@ -133,7 +138,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F015-F018
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 15 18 5 0
@@ -154,7 +160,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F018-F021
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 18 21 6 0
@@ -175,7 +182,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F021-F024
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 21 24 7 0
@@ -196,7 +204,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F024-F027
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 24 27 8 0
@@ -217,7 +226,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F027-F030
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 27 30 9 0
@@ -238,7 +248,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F030-F033
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 30 33 10 0
@@ -259,7 +270,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F033-F036
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 33 36 11 0
@@ -280,7 +292,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F036-F039
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 36 39 12 0
@@ -301,7 +314,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Run         env:
+      - name: Run F039-F042
+        env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: metbr-wrf-4km-checkpoint-${{ github.run_id }}
         run: bash wrf/run_metbr_checkpoint_segment.sh 39 42 13 0
