@@ -297,16 +297,16 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     for temp in np.arange(-90, 66, 5):
         major = (int(temp) % 10 == 0)
         ax.plot(_xskew(np.full_like(ps, temp), ps), ps,
-                ls=(0, (2, 3)), color="#7192c4" if major else "#b7b7b7",
-                lw=0.54 if major else 0.38, alpha=0.80 if major else 0.66, zorder=0)
+                ls="-", color="#7290b7" if major else "#b3bdc9",
+                lw=0.70 if major else 0.43, alpha=0.86 if major else 0.72, zorder=0)
 
     # Dry adiabats every 5 K (10 K emphasized), giving a denser thermodynamic mesh.
     for theta_k in np.arange(250, 506, 5):
         tt = theta_k * (ps / 1000.0) ** 0.2854 - 273.15
         major = (int(theta_k) % 10 == 0)
-        ax.plot(_xskew(tt, ps), ps, color="#c49a5a" if major else "#dfc6a1",
-                ls=(0, (2, 3)), lw=0.58 if major else 0.40,
-                alpha=0.82 if major else 0.66, zorder=0)
+        ax.plot(_xskew(tt, ps), ps, color="#b28b55" if major else "#dbc8a9",
+                ls="-", lw=0.66 if major else 0.43,
+                alpha=0.86 if major else 0.69, zorder=0)
 
     # Moist adiabats (pseudoadiabats) every 5 C, calculated with SHARPpy.
     # Reuse these shared reference curves across all forecast frames to keep the
@@ -315,10 +315,9 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     for start_t, curve in moist_curves:
         major = (int(start_t) % 10 == 0)
         ax.plot(_xskew(curve, pp_grid), pp_grid,
-                color="#3c8752" if major else "#8fb99a",
-                ls="-" if major else (0, (2, 3)),
-                lw=0.72 if major else 0.48,
-                alpha=0.92 if major else 0.76, zorder=0)
+                color="#377e4c" if major else "#9abc9e",
+                ls="-", lw=0.74 if major else 0.46,
+                alpha=0.92 if major else 0.70, zorder=0)
 
     # Mixing-ratio lines, in g/kg, with the lower-value lines kept subtle.
     for r in [0.1, 0.2, 0.4, 0.6, 0.8, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 28, 32]:
@@ -331,10 +330,13 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 alpha=0.78 if major else 0.62, zorder=0)
     h_agl = z - float(ground_m)
     h_agl[np.abs(h_agl) < 2.0] = 0.0
+    surface_pressure = float(p[0])
     for pp in [1050, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]:
         height = _interp_pressure(h_agl, p, pp)
-        if math.isfinite(height):
-            ax.text(-41.8, pp, f"{height:.1f} m", ha="left", va="center", fontsize=6.6, color="#303030", clip_on=True)
+        if math.isfinite(height) and pp <= surface_pressure + 0.1:
+            ax.text(-41.8, pp, f"{height:.0f} m AGL", ha="left", va="center",
+                    fontsize=6.2, color="#303030", clip_on=True,
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.55, pad=0.15))
     # Add the standard sounding traces in addition to T and Td: virtual
     # temperature and wet-bulb temperature. SHARPpy documents both as part of
     # the classic SPC Skew-T view; failures at isolated model levels are masked
@@ -362,14 +364,14 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     parcel = _parcel_curve(p, t, td)
     if np.isfinite(parcel).sum() > 3:
         ax.plot(_xskew(parcel, p), p, color=INK, lw=1.25, ls="--", zorder=4, label="Parcela")
-    # Mark LCL/LFC/EL using whichever SHARPpy parcel contains each value.
-    parcel_objects = [getattr(pcl, n, None) for n in ("sfcpcl", "mlpcl", "mupcl", "fcstpcl")]
+    # The plotted parcel path is surface-based, so LCL/LFC/EL markers must all
+    # come from that same parcel. Never mix pressure levels from different parcel
+    # definitions or draw a marker below the actual surface.
+    surface_parcel = getattr(pcl, "sfcpcl", None)
     markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
     marker_pressures = {}
     for attr, short in markers:
-        pressure_value = next((_finite(getattr(parcel, attr, None))
-                               for parcel in parcel_objects if parcel is not None
-                               and _finite(getattr(parcel, attr, None)) is not None), None)
+        pressure_value = _finite(getattr(surface_parcel, attr, None)) if surface_parcel is not None else None
         if pressure_value is None and short == "LCL":
             try:
                 from sharppy.sharptab import thermo
@@ -377,7 +379,8 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             except Exception:
                 pressure_value = None
         marker_pressures[short] = pressure_value
-        if pressure_value is not None and 100 <= pressure_value <= 1050:
+        if (pressure_value is not None and 100 <= pressure_value <= surface_pressure + 0.1
+                and pressure_value >= np.nanmin(p) - 0.1):
             ax.axhline(pressure_value, color="#2c2c2c", lw=0.72,
                        ls=(0, (3, 3)), alpha=0.84, zorder=3)
             ax.text(57.0, pressure_value, short, fontsize=7.2, weight="bold",
@@ -402,7 +405,12 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     ax.barbs(np.full(len(idx), 53.5), p[idx], u[idx], v[idx], length=4.4,
              linewidth=0.55, barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, zorder=7)
-    ax.set_title(f"Skew-T | {station}\n{date_text}", fontsize=9.0, loc="left", pad=6, color=INK)
+    ax.text(0.0, 1.074, f"Skew-T | {station}", transform=ax.transAxes,
+            fontsize=9.0, weight="bold", ha="left", va="bottom",
+            color=INK, clip_on=False)
+    ax.text(0.0, 1.035, date_text, transform=ax.transAxes,
+            fontsize=6.5, ha="left", va="bottom",
+            color="#333333", clip_on=False)
 
 
 def _make_theta_axes(ax, p, t, td):
@@ -661,7 +669,11 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
         raise RuntimeError("Latitude ausente; necessária para os cálculos meteorológicos dependentes do hemisfério.")
     lat_text = "--" if latitude is None else f"{latitude:.2f}{'N' if latitude >= 0 else 'S'}"
     lon_text = "--" if longitude is None else f"{longitude:.2f}{'E' if longitude >= 0 else 'W'}"
-    date_text = f"METBR WRF 4 km • ciclo {run_text} • válido {valid_text} • F{fh:03d} • SFC {p[0]:.0f} hPa • {elevation:.0f} m"
+    model_label = "METBR WRF 4 km" if "METBR" in station_raw.upper() else str(meta.get("model", "ECMWF IFS"))
+    run_short = valid.strftime("%d/%m %HZ") if hasattr(valid, "strftime") else run_text
+    valid_short = valid_dt.strftime("%d/%m %HZ") if hasattr(valid, "strftime") else valid_text
+    date_text = (f"{model_label} • ciclo {run_short} • válido {valid_short} • F{fh:03d} • "
+                 f"SFC {p[0]:.0f} hPa • terreno {elevation:.0f} m • {native_level_count} níveis nativos")
 
     motion = _storm_motion(prof, h_agl, u, v)
     # The cyclonic Bunkers mover changes hemisphere: RM in the Northern
