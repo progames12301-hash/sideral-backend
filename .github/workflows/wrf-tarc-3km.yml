@@ -3,7 +3,7 @@ name: WRF TARC 3 KM — fallback ICON → ECMWF → GFS
 on:
   workflow_dispatch:
   schedule:
-    - cron: '45 7 * * *'
+    - cron: '15 10 * * *'
 
 permissions:
   contents: write
