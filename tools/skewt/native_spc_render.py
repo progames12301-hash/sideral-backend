@@ -411,9 +411,19 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 ax.text(43.0, p0, "0°C", fontsize=6.6, color="#526991",
                         ha="left", va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=0.25))
 
-    # Frequent wind barbs, as in an operational sounding.
-    idx = np.unique(np.linspace(0, len(p) - 1, min(50, len(p))).round().astype(int))
-    ax.barbs(np.full(len(idx), 53.5), p[idx], u[idx], v[idx], length=4.4,
+    # Wind staffs are interpolated at standard 50-hPa intervals, plus the
+    # actual model surface if it does not fall on a 50-hPa level. Sampling by
+    # array index/log-pressure spacing made the upper-level barbs too dense.
+    barb_pressure = np.arange(1000.0, 99.0, -50.0)
+    barb_pressure = barb_pressure[
+        (barb_pressure <= p[0] + 0.1) & (barb_pressure >= p[-1] - 0.1)
+    ]
+    barb_pressure = np.unique(np.r_[barb_pressure, p[0]])[::-1]
+    barb_u = np.asarray([_interp_pressure(u, p, value) for value in barb_pressure])
+    barb_v = np.asarray([_interp_pressure(v, p, value) for value in barb_pressure])
+    barb_good = np.isfinite(barb_u) & np.isfinite(barb_v)
+    ax.barbs(np.full(int(barb_good.sum()), 53.5), barb_pressure[barb_good],
+             barb_u[barb_good], barb_v[barb_good], length=4.4,
              linewidth=0.55, barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, zorder=7)
     ax.text(0.0, 1.074, f"Skew-T | {station}", transform=ax.transAxes,
