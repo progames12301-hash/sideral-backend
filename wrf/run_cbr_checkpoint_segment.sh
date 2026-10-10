@@ -28,7 +28,7 @@ for tool in grib_set grib_copy grib_count; do
   command -v "$tool" >/dev/null || { echo "ecCodes/$tool indisponivel" >&2; exit 10; }
 done
 
-chmod +x wrf/run_cbr_checkpoint_segment.sh wrf/run_cbr_icon_wrf.sh wrf/run_cbr_wrf_with_source.sh wrf/run_cbr_restart_segment.sh
+chmod +x wrf/run_cbr_checkpoint_segment.sh wrf/run_cbr_icon_wrf.sh wrf/run_cbr_ecmwf_wrf.sh wrf/run_cbr_gfs_wrf.sh wrf/run_cbr_wrf_with_source.sh wrf/run_cbr_restart_segment.sh
 
 export WRF_TARGET_RESOLUTION_KM=4
 export WRF_DX_METERS=4000 WRF_DY_METERS=4000
@@ -39,6 +39,52 @@ export WRF_MPI_PROCS=8
 export WRF_REF_LAT=-10.5 WRF_REF_LON=-40.0 WRF_STAND_LON=-40.0
 export WRF_RUN_HOURS=$((END_HOUR-START_HOUR))
 export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
+
+prepare_source_with_fallback() {
+  local boundary_only="${1:?Informe 0 para cold start, 1 para LBC de restart}"
+  local first="${SOURCE_MODEL:-icon}"
+  local model rc selected=""
+  local -a candidates=()
+
+  case "$first" in
+    icon) candidates=(icon ecmwf gfs) ;;
+    ecmwf) candidates=(ecmwf gfs) ;;
+    gfs) candidates=(gfs) ;;
+    *) echo "SOURCE_MODEL invalido no checkpoint CBR: $first" >&2; return 2 ;;
+  esac
+
+  export WRF_BOUNDARY_ONLY="$boundary_only"
+  for model in "${candidates[@]}"; do
+    echo
+    echo "===== CBR SOURCE FALLBACK: tentando ${model^^}; boundary_only=$boundary_only ====="
+    case "$model" in
+      icon)
+        if bash wrf/run_cbr_icon_wrf.sh; then rc=0; else rc=$?; fi
+        ;;
+      ecmwf)
+        if bash wrf/run_cbr_ecmwf_wrf.sh; then rc=0; else rc=$?; fi
+        ;;
+      gfs)
+        if bash wrf/run_cbr_gfs_wrf.sh; then rc=0; else rc=$?; fi
+        ;;
+    esac
+    if (( rc == 0 )); then
+      selected="$model"
+      echo "CBR SOURCE FALLBACK: fonte escolhida ${selected^^}"
+      break
+    fi
+    echo "CBR SOURCE FALLBACK: ${model^^} falhou (exit=$rc); seguindo para a proxima fonte"
+  done
+
+  [[ -n "$selected" ]] || {
+    echo "ERRO: CBR falhou com todas as fontes permitidas (ICON -> ECMWF -> GFS)." >&2
+    return 1
+  }
+
+  SOURCE_MODEL="$selected"
+  printf 'RUN_DATE=%s\nRUN_CYCLE=%s\nSOURCE_MODEL=%s\n' "$RUN_DATE" "$RUN_CYCLE" "$SOURCE_MODEL" > cbr-run.env
+  gh release upload "$CHECKPOINT_TAG" cbr-run.env --repo "$GITHUB_REPOSITORY" --clobber
+}
 
 if [[ "$COLD_START" == "0" ]]; then
   rm -rf "$INPUT"/*
@@ -64,8 +110,8 @@ if [[ "$COLD_START" == "0" ]]; then
   export WRF_MPI_PROCS=8
   export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
   export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
-  echo "CBR: preparando LBC ICON F$START_HOUR-F$END_HOUR"
-  bash wrf/run_cbr_icon_wrf.sh
+  echo "CBR: preparando LBC com fallback ICON -> ECMWF -> GFS F$START_HOUR-F$END_HOUR"
+  prepare_source_with_fallback 1
   test -s "$ROOT/cbr_wrf_work/run/wrfbdy_d01" || { echo "LBC CBR ausente para F$START_HOUR-F$END_HOUR" >&2; exit 27; }
   cp -f "$ROOT/cbr_wrf_work/run/wrfbdy_d01" "$INPUT/normalized/wrfbdy_d01"
 
@@ -82,27 +128,20 @@ if [[ "$COLD_START" == "0" ]]; then
   for f in "$OUTPUT_DIR"/wrfout_d01_*; do cp -f "$f" "$UPLOAD_DIR/cbr-wrfout-$SEGMENT_INDEX-$(basename "$f")"; done
   gh release upload "$CHECKPOINT_TAG" "$UPLOAD_DIR"/* --repo "$GITHUB_REPOSITORY" --clobber
 else
+  # Timeline base for WRF. The ICON selector checks actual files and can use
+  # any published ICON cycle that covers this segment's valid-time window.
   python3 - <<'PY'
-import json, os, urllib.request
-repo=os.environ["GITHUB_REPOSITORY"]
-url=f"https://raw.githubusercontent.com/{repo}/icon-data/metadata.json?run={os.environ.get('GITHUB_RUN_ID','0')}"
-req=urllib.request.Request(url, headers={"Cache-Control":"no-cache","User-Agent":"Sideral-CBR"})
-with urllib.request.urlopen(req, timeout=30) as r:
-    m=json.load(r)
-if str(m.get("model","")).lower() != "icon":
-    raise SystemExit("metadata atual nao e ICON")
-run_date=str(m["runDate"]).replace("-","")
-run_cycle="".join(c for c in str(m["runCycle"]) if c.isdigit()).zfill(2)[:2]
-if run_cycle not in {"00","06","12","18"}:
-    raise SystemExit("ciclo ICON invalido")
-open("cbr-run.env","w").write(f"RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n")
+import datetime as dt
+now=dt.datetime.now(dt.timezone.utc)
+run=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
+open("cbr-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\\nRUN_CYCLE={run:%H}\\nSOURCE_MODEL=icon\\n")
 PY
   source cbr-run.env
   gh release create "$CHECKPOINT_TAG" --target cbr-wrf-4km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF CBR 4 KM ICON checkpoint $GITHUB_RUN_ID" || true
   gh release upload "$CHECKPOINT_TAG" cbr-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
-  bash wrf/run_cbr_icon_wrf.sh
+  prepare_source_with_fallback 0
 
   test -s cbr_wrf_work/run/wrfinput_d01
   test -s cbr_wrf_work/run/wrfbdy_d01
