@@ -526,10 +526,15 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     order = np.argsort(h_agl)
     hh, uu, vv = h_agl[order], u[order], v[order]
     mw, rm, lm = motion
-    motion_components = np.asarray([*mw, *rm, *lm], dtype=float)
-    wind_components = np.r_[uu[np.isfinite(uu)], vv[np.isfinite(vv)], motion_components[np.isfinite(motion_components)]]
-    max_component = float(np.max(np.abs(wind_components))) if wind_components.size else 0.0
-    radius = max(60, int(math.ceil((max_component + 5.0) / 10.0) * 10))
+    valid_uv = np.isfinite(uu) & np.isfinite(vv)
+    wind_speeds = np.hypot(uu[valid_uv], vv[valid_uv])
+    motion_speeds = np.asarray([
+        math.hypot(*mw), math.hypot(*rm), math.hypot(*lm)
+    ], dtype=float)
+    all_speeds = np.r_[wind_speeds, motion_speeds[np.isfinite(motion_speeds)]]
+    max_radius = float(np.max(all_speeds)) if all_speeds.size else 0.0
+    # Hodograph rings are radial wind-speed distances (kt), not component limits.
+    radius = max(60, int(math.ceil((max_radius + 5.0) / 10.0) * 10))
     ax.set_facecolor("white"); ax.set_aspect("equal", adjustable="box")
     ax.set_xlim(-radius, radius); ax.set_ylim(-radius, radius)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.9)
