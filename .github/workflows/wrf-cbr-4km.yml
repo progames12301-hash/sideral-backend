@@ -56,6 +56,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -116,6 +117,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -175,6 +177,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -234,6 +237,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -293,6 +297,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -352,6 +357,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -411,6 +417,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -470,6 +477,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -529,6 +537,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -588,6 +597,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -647,6 +657,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -706,6 +717,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -765,6 +777,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -824,6 +837,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -883,6 +897,7 @@ jobs:
           done
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
           from pathlib import Path
