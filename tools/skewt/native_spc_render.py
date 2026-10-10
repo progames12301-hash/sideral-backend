@@ -493,10 +493,11 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
              barb_u[barb_good], barb_v[barb_good], length=4.4,
              linewidth=0.55, barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, zorder=7)
-    ax.text(0.0, 1.074, f"Skew-T | {station}", transform=ax.transAxes,
+    # Keep both header lines inside the canvas and outside the plotting frame.
+    ax.text(0.0, 1.050, f"Skew-T | {station}", transform=ax.transAxes,
             fontsize=9.0, weight="bold", ha="left", va="bottom",
             color=INK, clip_on=False)
-    ax.text(0.0, 1.035, date_text, transform=ax.transAxes,
+    ax.text(0.0, 1.006, date_text, transform=ax.transAxes,
             fontsize=6.5, ha="left", va="bottom",
             color="#333333", clip_on=False)
 
