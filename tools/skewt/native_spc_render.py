@@ -493,7 +493,8 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     # Wind staffs are interpolated at standard 50-hPa intervals, plus the
     # actual model surface if it does not fall on a 50-hPa level. Sampling by
     # array index/log-pressure spacing made the upper-level barbs too dense.
-    barb_pressure = np.arange(1000.0, 99.0, -50.0)
+    # Denser staff at 25-hPa intervals; all barbs remain within the sounding.
+    barb_pressure = np.arange(1000.0, 99.0, -25.0)
     # Keep the actual surface barb, but omit nominal 50-hPa barbs too close
     # to it (e.g., 900 hPa vs. a 918-hPa station surface).
     barb_pressure = barb_pressure[
@@ -503,9 +504,9 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     barb_u = np.asarray([_interp_pressure(u, p, value) for value in barb_pressure])
     barb_v = np.asarray([_interp_pressure(v, p, value) for value in barb_pressure])
     barb_good = np.isfinite(barb_u) & np.isfinite(barb_v)
-    ax.barbs(np.full(int(barb_good.sum()), 53.5), barb_pressure[barb_good],
-             barb_u[barb_good], barb_v[barb_good], length=4.4,
-             linewidth=0.55, barb_increments={"half": 5, "full": 10, "flag": 50},
+    ax.barbs(np.full(int(barb_good.sum()), 53.0), barb_pressure[barb_good],
+             barb_u[barb_good], barb_v[barb_good], length=6.0,
+             linewidth=0.82, barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, zorder=7)
     # Keep both header lines inside the canvas and outside the plotting frame.
     ax.text(0.0, 1.050, f"Skew-T | {station}", transform=ax.transAxes,
@@ -560,6 +561,12 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
             ax.text(-r, 1.5, f"{r}", fontsize=7, color="#bdbdbd", ha="center", va="bottom")
             ax.text(1.8, r, f"{r}", fontsize=7, color="#bdbdbd", ha="left", va="center")
     ax.axhline(0, color="#5c5c5c", lw=0.9, zorder=1); ax.axvline(0, color="#5c5c5c", lw=0.9, zorder=1)
+    # Filter missing or duplicate heights before connecting wind vectors.
+    valid = np.isfinite(hh) & np.isfinite(uu) & np.isfinite(vv) & (hh >= 0)
+    hh, uu, vv = hh[valid], uu[valid], vv[valid]
+    if len(hh):
+        unique = np.r_[True, np.diff(hh) > 0.5]
+        hh, uu, vv = hh[unique], uu[unique], vv[unique]
     pts = np.column_stack((uu, vv)).reshape(-1, 1, 2)
     if len(pts) >= 2:
         segments = np.concatenate([pts[:-1], pts[1:]], axis=1)
@@ -567,7 +574,10 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
         bounds = [0, 2000, 4000, 9000, 11000, np.inf]
         colors = ["#003cff", "#a900d8", "#ff8a00", "#ff3030", "#ff3030"]
         seg_colors = [colors[min(np.searchsorted(bounds[1:], hz, side="right"), len(colors)-1)] for hz in mids]
-        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=1.65, zorder=4))
+        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=2.2, zorder=4))
+        # Show the individual sampled winds as well as the connected trace.
+        ax.plot(uu, vv, linestyle="none", marker="o", markersize=2.0,
+                markerfacecolor="#111111", markeredgewidth=0, alpha=0.72, zorder=5)
         for target, label in [(1000, "1"), (3000, "3"), (6000, "6"), (9000, "9"), (12000, "12")]:
             if hh.min() <= target <= hh.max():
                 px, py = np.interp(target, hh, uu), np.interp(target, hh, vv)
@@ -591,7 +601,7 @@ def _make_advection(ax, prof, latitude):
     ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_ylim(1050, 100); ax.set_xlim(-2, 2)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
-    ax.set_xlabel("Advecção térmica\ninferida (°C/h)", fontsize=7.0, labelpad=2)
+    ax.set_xlabel("Advecção térmica\ninferida (°C/h)", fontsize=6.6, labelpad=2)
     ax.set_xticks([-2, -1, 0, 1, 2])
     ax.set_yticks([1000,900,800,700,600,500,400,300,200,100])
     ax.tick_params(axis="y", labelleft=False, left=False)
@@ -615,10 +625,14 @@ def _make_advection(ax, prof, latitude):
         if not (math.isfinite(float(value)) and math.isfinite(float(p_bottom))
                 and math.isfinite(float(p_top)) and 100 <= p_top < p_bottom <= 1050):
             continue
-        plotted = float(np.clip(value, -2.0, 2.0))
-        color = "#c94c4c" if plotted > 0 else "#3266c5"
-        ax.fill_betweenx([p_top, p_bottom], 0, plotted, color=color, alpha=0.72, linewidth=0, zorder=2)
-        ax.plot([plotted, plotted], [p_top, p_bottom], color=color, lw=0.55, zorder=3)
+        value = float(value)
+        # Extreme values are omitted instead of being clipped into a saturated
+        # block that looks like a plausible but false advection magnitude.
+        if abs(value) > 2.0:
+            continue
+        color = "#c94c4c" if value > 0 else "#3266c5"
+        ax.fill_betweenx([p_top, p_bottom], 0, value, color=color, alpha=0.48, linewidth=0, zorder=2)
+        ax.plot([value, value], [p_top, p_bottom], color=color, lw=0.7, zorder=3)
         drawn += 1
     if drawn == 0:
         ax.text(0.5, 0.5, "Sem dados", transform=ax.transAxes, ha="center", va="center",
