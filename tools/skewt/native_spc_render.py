@@ -154,21 +154,47 @@ def _theta_profiles(p, t, td):
     return theta, thetae, thetaes
 
 
-def _parcel_curve(p, t, td):
+def _parcel_curve(prof, p, t, td):
+    """Interpolate SHARPpy's native surface-parcel virtual-temperature trace."""
+    target_p = np.asarray(p, dtype=float)
+    result = np.full_like(target_p, np.nan, dtype=float)
     try:
         from sharppy.sharptab import thermo
-        ps, ts, tds = float(p[0]), float(t[0]), float(td[0])
+        parcel = getattr(prof, "sfcpcl", None)
+        ptrace = _arr(getattr(parcel, "ptrace", [])) if parcel is not None else np.asarray([])
+        ttrace = _arr(getattr(parcel, "ttrace", [])) if parcel is not None else np.asarray([])
+        good = np.isfinite(ptrace) & (ptrace > 0) & np.isfinite(ttrace)
+        if good.sum() >= 2:
+            pressure = ptrace[good]
+            temperature = ttrace[good]
+            order = np.argsort(pressure)
+            pressure, temperature = pressure[order], temperature[order]
+            unique = np.r_[True, np.diff(pressure) > 0.01]
+            pressure, temperature = pressure[unique], temperature[unique]
+            inside = (target_p >= pressure.min()) & (target_p <= pressure.max())
+            result[inside] = np.interp(
+                np.log(target_p[inside]), np.log(pressure), temperature
+            )
+            if np.isfinite(result).sum() >= 2:
+                return result
+
+        # Defensive fallback for profiles where SHARPpy did not produce a
+        # usable SFC trace. Keep this trace limited to the observed pressure
+        # range and do not extrapolate below the station surface.
+        ps, ts, tds = float(target_p[0]), float(t[0]), float(td[0])
         lclp, lclt = thermo.drylift(ps, ts, tds)
         lclp, lclt = float(lclp), float(lclt)
-        result = np.full_like(p, np.nan, dtype=float)
-        for i, pi in enumerate(p):
+        for i, pi in enumerate(target_p):
+            if pi < target_p.min() or pi > target_p.max():
+                continue
             if pi >= lclp:
-                result[i] = (ts + 273.15) * (pi / ps) ** 0.2854 - 273.15
+                result[i] = float(thermo.virtemp(float(pi), float(t[i]), float(td[i])))
             else:
-                result[i] = float(thermo.wetlift(lclp, lclt, float(pi)))
+                parcel_t = float(thermo.wetlift(lclp, lclt, float(pi)))
+                result[i] = float(thermo.virtemp(float(pi), parcel_t, parcel_t))
         return result
     except Exception:
-        return np.full_like(p, np.nan, dtype=float)
+        return result
 
 
 def _storm_motion(prof, h_agl, u, v):
@@ -372,9 +398,35 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     if np.isfinite(t_wet).sum() >= 3:
         ax.plot(_xskew(t_wet, p), p, color="#13a6ac", lw=1.15,
                 ls="-", zorder=5, label="Tw")
-    parcel = _parcel_curve(p, t, td)
-    if np.isfinite(parcel).sum() > 3:
-        ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.25, ls="--", zorder=4, label="Parcela SFC")
+    parcel = _parcel_curve(pcl, p, t, td)
+    parcel_good = np.isfinite(parcel) & np.isfinite(t_virtual) & np.isfinite(p)
+    surface_parcel = getattr(pcl, "sfcpcl", None)
+    lfc_for_shading = _finite(getattr(surface_parcel, "lfcpres", None)) if surface_parcel is not None else None
+    el_for_shading = _finite(getattr(surface_parcel, "elpres", None)) if surface_parcel is not None else None
+    env_x = _xskew(t_virtual, p)
+    parcel_x = _xskew(parcel, p)
+    # CAPE/CIN shading compares the virtual temperature of the SHARPpy surface
+    # parcel with the environmental virtual temperature, limited to the LFC/EL
+    # pressure interval. Missing LFC/EL values intentionally suppress shading.
+    if np.isfinite(parcel_x).sum() > 3:
+        cin_layer = parcel_good & (parcel < t_virtual)
+        if lfc_for_shading is not None:
+            cin_layer &= p >= lfc_for_shading
+        else:
+            cin_layer[:] = False
+        if cin_layer.sum() > 1:
+            ax.fill_betweenx(p, env_x, parcel_x, where=cin_layer,
+                             interpolate=True, color="#3b6fd8", alpha=0.17,
+                             linewidth=0, zorder=1)
+        if lfc_for_shading is not None and el_for_shading is not None:
+            cape_layer = (parcel_good & (parcel > t_virtual)
+                          & (p <= lfc_for_shading) & (p >= el_for_shading))
+            if cape_layer.sum() > 1:
+                ax.fill_betweenx(p, env_x, parcel_x, where=cape_layer,
+                                 interpolate=True, color="#d64545", alpha=0.16,
+                                 linewidth=0, zorder=1)
+        ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35,
+                ls="--", zorder=5, label="Parcela SFC")
     # The plotted parcel path is surface-based, so LCL/LFC/EL markers must all
     # come from that same parcel. Never mix pressure levels from different parcel
     # definitions or draw a marker below the actual surface.
