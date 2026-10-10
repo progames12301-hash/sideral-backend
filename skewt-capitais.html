@@ -12,51 +12,117 @@
 <body>
 <header class="bar">
 <div class="brand">SIDERAL / SKEW-T</div>
+<div class="field"><label>MODELO</label><select id="model"><option value="ecmwf" selected>ECMWF IFS — 27 capitais</option><option value="metbr">WRF METBR 4 km — Sul</option></select></div>
 <div class="field"><label>CAPITAL</label><select id="city"></select></div>
-<div class="field"><label>CICLO ECMWF</label><select id="cycle"><option value="06">06Z</option><option value="12" selected>12Z</option><option value="18">18Z</option></select></div>
+<div class="field" id="cycleField"><label>CICLO ECMWF</label><select id="cycle"><option value="06">06Z</option><option value="12" selected>12Z</option><option value="18">18Z</option></select></div>
 <div class="field"><label>PREVISÃO</label><select id="fh"></select></div>
 <button class="primary" id="open">ABRIR</button>
 <button id="download" disabled>BAIXAR PNG</button>
 <div id="status" class="status">Verificando PNG...</div>
 </header>
 <main class="frame">
-<section id="viewer" class="viewer"><div class="empty">Carregando...</div></section>
+<section id="viewer" class="viewer"><div class="empty">Carregando sondagens...</div></section>
 <section class="meta">
-<div><div class="k">MODELO</div><div class="v">ECMWF IFS 0.25°</div></div>
-<div><div class="k">FONTE</div><div class="v">GitHub / Sideral</div></div>
+<div><div class="k">MODELO</div><div class="v" id="modelText">ECMWF IFS 0.25°</div></div>
+<div><div class="k">FONTE</div><div class="v" id="sourceText">GitHub / Sideral</div></div>
 <div><div class="k">FRAME</div><div class="v" id="frame">--</div></div>
 </section>
 </main>
 <div id="busy" class="busy">CARREGANDO...</div>
 <script>
-const RELEASE='https://github.com/progames12301-hash/sideral-backend/releases/download';
-const CAPITALS=[['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']];
-const HOURS=Array.from({length:17},(_,i)=>i*3);
-const $=id=>document.getElementById(id);let current='';
-for(const h of HOURS){let o=document.createElement('option');o.value=h;o.textContent='F'+String(h).padStart(3,'0');if(h===0)o.selected=true;$('fh').appendChild(o)}
-CAPITALS.forEach(c=>{let o=document.createElement('option');o.value=c[1];o.textContent=c[0];$('city').appendChild(o)});
-function setStatus(t,cls=''){ $('status').textContent=t;$('status').className='status '+cls }
-function asset(slug,cycle,fh){return `${RELEASE}/skewt-live-${cycle}/${slug}-f${String(fh).padStart(3,'0')}.png`}
-function load(){
-  const slug=$('city').value,cycle=$('cycle').value,fh=Number($('fh').value),cap=CAPITALS.find(c=>c[1]===slug);
-  const url=asset(slug,cycle,fh)+'?t='+Date.now();
-  $('busy').style.display='grid';$('viewer').innerHTML='';$('download').disabled=true;current='';
-  const im=new Image();
-  im.alt=`Skew-T ${cap[0]} ${cycle}Z F${String(fh).padStart(3,'0')}`;
-  im.onload=()=>{
-    $('busy').style.display='none';$('viewer').appendChild(im);current=url.split('?')[0];$('download').disabled=false;
-    $('frame').textContent=`${cap[0]} • ${cycle}Z • F${String(fh).padStart(3,'0')}`;
-    setStatus('PNG carregado.','ok');
-  };
-  im.onerror=()=>{
-    $('busy').style.display='none';$('download').disabled=true;
-    $('viewer').innerHTML='<div class="empty">Este PNG não está publicado para esta capital/ciclo/frame.</div>';
-    setStatus('PNG não disponível.','err');
-  };
-  im.src=url;
+const BASE='https://github.com/progames12301-hash/sideral-backend/releases/download';
+const CAPITALS=[
+['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']];
+const SOUTH_CAPITALS=[['Curitiba','curitiba'],['Florianópolis','florianopolis'],['Porto Alegre','porto-alegre']];
+const $=id=>document.getElementById(id);
+let current='',available=[];
+function isMetbr(){return $('model').value==='metbr'}
+function cities(){return isMetbr()?SOUTH_CAPITALS:CAPITALS}
+function asset(slug,cycle,fh){
+ const frame=slug+'-f'+String(fh).padStart(3,'0')+'.png';
+ return isMetbr()?BASE+'/skewt-metbr-sul-live/'+frame:BASE+'/skewt-live-'+cycle+'/'+frame;
 }
-$('open').onclick=load;$('city').onchange=load;$('cycle').onchange=load;$('fh').onchange=load;$('download').onclick=()=>{if(!current)return;let a=document.createElement('a');a.href=current;a.download='sideral-skewt.png';a.click()};
-load();
+function setStatus(text,cls=''){$('status').textContent=text;$('status').className='status '+cls}
+function updateModelMeta(){
+ const metbr=isMetbr();
+ $('cycleField').style.display=metbr?'none':'';
+ $('modelText').textContent=metbr?'WRF METBR 4 km':'ECMWF IFS 0.25°';
+ $('sourceText').textContent=metbr?'METBR WRFOUT nativo':'Open-Meteo Single Runs';
+ $('viewer').setAttribute('aria-label',metbr?'Sondagem WRF METBR do Sul':'Sondagem ECMWF IFS');
+ document.title=metbr?'Sideral — Skew-T WRF METBR Sul':'Sideral — Skew-T SHARPpy';
+}
+function fillHours(){
+ const selected=Number($('fh').value||0);
+ const max=isMetbr()?42:48;
+ $('fh').innerHTML='';
+ for(let h=0;h<=max;h+=3){
+  const o=document.createElement('option');o.value=h;o.textContent='F'+String(h).padStart(3,'0');
+  if(h===selected||(selected>max&&h===0))o.selected=true;
+  $('fh').appendChild(o);
+ }
+}
+function fillCities(){
+ $('city').innerHTML='';
+ available.forEach(c=>{const o=document.createElement('option');o.value=c[1];o.textContent=c[0];$('city').appendChild(o)});
+ $('open').disabled=!available.length;
+}
+function probe(cap,cycle){
+ return new Promise(resolve=>{
+  const im=new Image();im.onload=()=>resolve(cap);im.onerror=()=>resolve(null);
+  im.src=asset(cap[1],cycle,0)+'?probe='+Date.now();
+ });
+}
+async function check(){
+ updateModelMeta();
+ $('busy').style.display='grid';
+ $('viewer').innerHTML='<div class="empty">Verificando sondagens publicadas...</div>';
+ $('download').disabled=true;current='';available=[];fillCities();
+ const cycle=$('cycle').value;
+ const candidates=cities();
+ const results=await Promise.all(candidates.map(c=>probe(c,cycle)));
+ available=results.filter(Boolean);
+ fillCities();
+ $('busy').style.display='none';
+ if(!available.length){
+  const label=isMetbr()?'WRF METBR do Sul':'ECMWF IFS '+cycle+'Z';
+  setStatus('Nenhuma sondagem publicada para '+label+'.','err');
+  $('viewer').innerHTML='<div class="empty">Nenhuma rodada disponível nesta fonte. O ECMWF continua independente da publicação WRF.</div>';
+  return;
+ }
+ setStatus(isMetbr()?available.length+'/3 capitais do Sul disponíveis no METBR WRF 4 km.':available.length+'/27 capitais disponíveis em '+cycle+'Z.','ok');
+ load();
+}
+function load(){
+ const slug=$('city').value;if(!slug)return;
+ const cycle=$('cycle').value;const fh=Number($('fh').value);
+ const cap=cities().find(c=>c[1]===slug);const src=asset(slug,cycle,fh)+'?t='+Date.now();
+ $('busy').style.display='grid';$('viewer').innerHTML='';$('download').disabled=true;current='';
+ const im=new Image();
+ im.alt='Skew-T '+(cap?cap[0]:slug)+' '+(isMetbr()?'METBR WRF 4 km':'ECMWF '+cycle+'Z')+' F'+String(fh).padStart(3,'0');
+ im.onload=()=>{
+  $('busy').style.display='none';$('viewer').appendChild(im);current=src.split('?')[0];$('download').disabled=false;
+  $('frame').textContent=(cap?cap[0]:slug)+' • '+(isMetbr()?'METBR WRF 4 km':cycle+'Z')+' • F'+String(fh).padStart(3,'0');
+  setStatus('PNG carregado.','ok');
+ };
+ im.onerror=()=>{
+  $('busy').style.display='none';$('download').disabled=true;
+  $('viewer').innerHTML='<div class="empty">Este frame ainda não foi publicado para esta rodada.</div>';
+  setStatus('PNG não disponível para este frame.','err');
+ };
+ im.src=src;
+}
+$('model').addEventListener('change',()=>{fillHours();check()});
+$('cycle').addEventListener('change',check);
+$('city').addEventListener('change',load);
+$('fh').addEventListener('change',load);
+$('open').addEventListener('click',load);
+$('download').addEventListener('click',()=>{
+ if(!current)return;
+ const a=document.createElement('a');a.href=current;
+ a.download='sideral-skewt-'+$('city').value+'-f'+String($('fh').value).padStart(3,'0')+'.png';
+ document.body.appendChild(a);a.click();a.remove();
+});
+fillHours();check();
 </script>
 </body>
 </html>
