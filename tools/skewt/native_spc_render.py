@@ -341,6 +341,10 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             ax.text(-41.8, pp, f"{height:.0f} m AGL", ha="left", va="center",
                     fontsize=6.2, color="#303030", clip_on=True,
                     bbox=dict(facecolor="white", edgecolor="none", alpha=0.55, pad=0.15))
+    ax.text(-41.8, surface_pressure, f"SFC {surface_pressure:.0f} hPa / 0 m AGL",
+            ha="left", va="bottom", fontsize=6.5, weight="bold",
+            color="#303030", clip_on=True,
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=0.2))
     # Add the standard sounding traces in addition to T and Td: virtual
     # temperature and wet-bulb temperature. SHARPpy documents both as part of
     # the classic SPC Skew-T view; failures at isolated model levels are masked
@@ -358,16 +362,18 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             tw_values.append(np.nan)
     t_wet = np.asarray(tw_values, dtype=float)
 
-    ax.plot(_xskew(t, p), p, color="#c62828", lw=1.75, zorder=6, label="T")
-    ax.plot(_xskew(td, p), p, color=BLUE, lw=1.75, zorder=7, label="Td")
-    ax.plot(_xskew(t_virtual, p), p, color="#d97732", lw=0.95,
-            ls=(0, (4, 2)), zorder=5, label="Tv")
+    # SHARPpy's standard color convention: T red, Td green, virtual T dashed
+    # red, wet-bulb T cyan, and lifted surface parcel dashed dark.
+    ax.plot(_xskew(t, p), p, color="#d62728", lw=1.8, zorder=6, label="T")
+    ax.plot(_xskew(td, p), p, color="#238b45", lw=1.8, zorder=7, label="Td")
+    ax.plot(_xskew(t_virtual, p), p, color="#bf3b3b", lw=1.0,
+            ls="--", zorder=5, label="Tv")
     if np.isfinite(t_wet).sum() >= 3:
-        ax.plot(_xskew(t_wet, p), p, color="#13a6ac", lw=1.05,
+        ax.plot(_xskew(t_wet, p), p, color="#13a6ac", lw=1.15,
                 ls="-", zorder=5, label="Tw")
     parcel = _parcel_curve(p, t, td)
     if np.isfinite(parcel).sum() > 3:
-        ax.plot(_xskew(parcel, p), p, color=INK, lw=1.25, ls="--", zorder=4, label="Parcela")
+        ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.25, ls="--", zorder=4, label="Parcela SFC")
     # The plotted parcel path is surface-based, so LCL/LFC/EL markers must all
     # come from that same parcel. Never mix pressure levels from different parcel
     # definitions or draw a marker below the actual surface.
