@@ -15,6 +15,7 @@ on:
     paths:
       - '.github/workflows/metbr-wrf-skewt-sul.yml'
       - 'wrf/metbr_skewt_south.py'
+      - 'tools/skewt/native_spc_render.py'
       - 'skewt.html'
       - 'skewt-capitais.html'
 
@@ -45,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pyyaml
-          python -m py_compile wrf/metbr_skewt_south.py
+          python -m py_compile wrf/metbr_skewt_south.py tools/skewt/native_spc_render.py
           python - <<'PY'
           import re
           from pathlib import Path
