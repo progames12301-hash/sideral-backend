@@ -141,8 +141,8 @@ def choose_run(session: requests.Session, target: dt.datetime, start_hour: int, 
         _, first_idx = gfs_urls(candidate.strftime("%Y%m%d"), candidate.strftime("%H"), first_step)
         _, last_idx = gfs_urls(candidate.strftime("%Y%m%d"), candidate.strftime("%H"), last_step)
         print(
-            f"Testando GFS land {candidate:%Y%m%d %H}Z: "
-            f"F{lag:03d}..F{last_step:03d} para validar {target:%Y%m%d %H}Z"
+            f"Testando GFS land {candidate:%Y%m%d %H}Z (offset base {offset:+d} h): "
+            f"F{first_step:03d}..F{last_step:03d} para validar {target:%Y%m%d %H}Z"
         )
         if exists(session, first_idx) and exists(session, last_idx):
             return candidate, offset
