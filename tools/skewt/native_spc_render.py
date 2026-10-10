@@ -454,18 +454,6 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                                  linewidth=0, zorder=1)
         ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35,
                 ls="--", zorder=5, label="Parcela SFC")
-    # A compact curve legend makes the trace colors explicit without covering
-    # the lower-level thermodynamic structure. The cold upper-left is normally
-    # free of observed profiles; opaque frame keeps the grid legible underneath.
-    handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        legend = ax.legend(handles, labels, loc="upper left", ncol=2,
-                           fontsize=6.2, frameon=True, framealpha=0.92,
-                           borderpad=0.25, handlelength=1.45,
-                           handletextpad=0.35, columnspacing=0.8,
-                           labelspacing=0.25, facecolor="white",
-                           edgecolor="#c0c0c0")
-        legend.set_zorder(10)
     # The plotted parcel path is surface-based, so LCL/LFC/EL markers must all
     # come from that same parcel. Never mix pressure levels from different parcel
     # definitions or draw a marker below the actual surface.
