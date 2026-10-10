@@ -179,19 +179,25 @@ def _parcel_curve(prof, p, t, td):
                 return result
 
         # Defensive fallback for profiles where SHARPpy did not produce a
-        # usable SFC trace. Keep this trace limited to the observed pressure
-        # range and do not extrapolate below the station surface.
+        # usable SFC trace. Lift the parcel dry with conserved mixing ratio to
+        # LCL, then pseudoadiabatically above LCL; never extrapolate below SFC.
         ps, ts, tds = float(target_p[0]), float(t[0]), float(td[0])
         lclp, lclt = thermo.drylift(ps, ts, tds)
         lclp, lclt = float(lclp), float(lclt)
+        e0 = float(_vapor_pressure_from_td(np.asarray([tds]))[0])
+        mixing_ratio = 0.622 * e0 / max(ps - e0, 0.1)
         for i, pi in enumerate(target_p):
-            if pi < target_p.min() or pi > target_p.max():
+            if not (float(target_p.min()) <= pi <= float(target_p.max())):
                 continue
             if pi >= lclp:
-                result[i] = float(thermo.virtemp(float(pi), float(t[i]), float(td[i])))
+                parcel_t = (ts + 273.15) * (float(pi) / ps) ** 0.2854 - 273.15
+                vapor = float(pi) * mixing_ratio / (0.622 + mixing_ratio)
+                loge = math.log(max(vapor, 1e-5) / 6.112)
+                parcel_td = 243.5 * loge / (17.67 - loge)
             else:
                 parcel_t = float(thermo.wetlift(lclp, lclt, float(pi)))
-                result[i] = float(thermo.virtemp(float(pi), parcel_t, parcel_t))
+                parcel_td = parcel_t
+            result[i] = float(thermo.virtemp(float(pi), parcel_t, parcel_td))
         return result
     except Exception:
         return result
@@ -516,19 +522,24 @@ def _make_theta_axes(ax, p, t, td):
 def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, preferred_label):
     h_agl = z - float(ground_m)
     h_agl[np.abs(h_agl) < 2.0] = 0.0
+    order = np.argsort(h_agl)
+    hh, uu, vv = h_agl[order], u[order], v[order]
+    mw, rm, lm = motion
+    motion_components = np.asarray([*mw, *rm, *lm], dtype=float)
+    wind_components = np.r_[uu[np.isfinite(uu)], vv[np.isfinite(vv)], motion_components[np.isfinite(motion_components)]]
+    max_component = float(np.max(np.abs(wind_components))) if wind_components.size else 0.0
+    radius = max(60, int(math.ceil((max_component + 5.0) / 10.0) * 10))
     ax.set_facecolor("white"); ax.set_aspect("equal", adjustable="box")
-    ax.set_xlim(-60, 60); ax.set_ylim(-60, 60)
+    ax.set_xlim(-radius, radius); ax.set_ylim(-radius, radius)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.9)
     ax.set_xticks([]); ax.set_yticks([])
-    for r in [10, 20, 30, 40, 50, 60]:
+    for r in range(10, radius + 1, 10):
         ax.add_patch(plt.Circle((0, 0), r, fill=False, lw=0.8 if r % 20 == 0 else 0.45,
                                 edgecolor="#4c4c4c" if r % 20 == 0 else "#c9c9c9", zorder=0))
-        if r in (10, 30, 50):
+        if r % 20 == 10:
             ax.text(-r, 1.5, f"{r}", fontsize=7, color="#bdbdbd", ha="center", va="bottom")
             ax.text(1.8, r, f"{r}", fontsize=7, color="#bdbdbd", ha="left", va="center")
     ax.axhline(0, color="#5c5c5c", lw=0.9, zorder=1); ax.axvline(0, color="#5c5c5c", lw=0.9, zorder=1)
-    order = np.argsort(h_agl)
-    hh, uu, vv = h_agl[order], u[order], v[order]
     pts = np.column_stack((uu, vv)).reshape(-1, 1, 2)
     if len(pts) >= 2:
         segments = np.concatenate([pts[:-1], pts[1:]], axis=1)
@@ -542,7 +553,6 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
                 px, py = np.interp(target, hh, uu), np.interp(target, hh, vv)
                 ax.plot(px, py, "o", ms=2.5, color="#111111", zorder=5)
                 ax.text(px + 1.3, py + 1.3, label, fontsize=7, weight="bold", color=INK, zorder=6)
-    mw, rm, lm = motion
     for sx, sy, label in [(lm[0], lm[1], "LM"), (mw[0], mw[1], "MW"), (rm[0], rm[1], "RM")]:
         ax.annotate("", xy=(sx, sy), xytext=(0, 0),
                     arrowprops=dict(arrowstyle="-|>", lw=1.0, color="#c3c3c3", shrinkA=0, shrinkB=0), zorder=2)
@@ -605,6 +615,13 @@ def _make_srw(ax, h_agl, u, v, storm, title_text):
     good = np.isfinite(h_agl) & np.isfinite(rel)
     if good.sum() >= 2:
         order = np.argsort(h_agl[good]); hh, rr = h_agl[good][order] / 1000.0, rel[good][order]
+        max_relative_wind = float(np.nanmax(rr))
+        if max_relative_wind <= 80.0:
+            xmax, xstep = max(50, int(math.ceil(max_relative_wind / 10.0) * 10)), 10
+        else:
+            xmax, xstep = int(math.ceil(max_relative_wind / 20.0) * 20), 20
+        ax.set_xlim(0, xmax)
+        ax.set_xticks(np.arange(0, xmax + 0.1, xstep))
         pts = np.column_stack((rr, hh)).reshape(-1, 1, 2)
         segments = np.concatenate([pts[:-1], pts[1:]], axis=1)
         mids = (hh[:-1] + hh[1:]) / 2
