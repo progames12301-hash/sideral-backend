@@ -603,13 +603,18 @@ def _make_advection(ax, prof, latitude):
 
 
 def _make_srw(ax, h_agl, u, v, storm, title_text):
-    ax.set_facecolor("white"); ax.set_xlim(0, 50); ax.set_ylim(0, 16)
+    height_valid = np.asarray(h_agl, dtype=float)
+    height_valid = height_valid[np.isfinite(height_valid)]
+    maximum_height_km = float(np.max(height_valid) / 1000.0) if height_valid.size else 0.0
+    ymax = max(16, int(math.ceil(maximum_height_km / 2.0) * 2))
+    y_ticks = np.arange(0, ymax + 0.1, 2)
+    ax.set_facecolor("white"); ax.set_xlim(0, 50); ax.set_ylim(0, ymax)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7.5, colors=INK, direction="out", length=3, pad=2)
     ax.set_ylabel("Altura AGL (km)", fontsize=7.5, labelpad=3)
     ax.set_xlabel("Vento relativo (kt)", fontsize=7.5, labelpad=3)
-    ax.set_xticks([0, 10, 20, 30, 40, 50]); ax.set_yticks([0,2,4,6,8,10,12,14,16])
-    for hz in [2,4,6,8,10,12,14,16]:
+    ax.set_xticks([0, 10, 20, 30, 40, 50]); ax.set_yticks(y_ticks)
+    for hz in y_ticks[1:]:
         ax.axhline(hz, color="#e4e4e4", lw=0.42, zorder=0)
     rel = np.hypot(u - storm[0], v - storm[1])
     good = np.isfinite(h_agl) & np.isfinite(rel)
