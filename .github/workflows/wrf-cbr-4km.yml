@@ -57,14 +57,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F000-F003
         env:
@@ -117,14 +117,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F003-F006
         env:
@@ -176,14 +176,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F006-F009
         env:
@@ -235,14 +235,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F009-F012
         env:
@@ -294,14 +294,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F012-F015
         env:
@@ -353,14 +353,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F015-F018
         env:
@@ -412,14 +412,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F018-F021
         env:
@@ -471,14 +471,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F021-F024
         env:
@@ -530,14 +530,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F024-F027
         env:
@@ -589,14 +589,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F027-F030
         env:
@@ -648,14 +648,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F030-F033
         env:
@@ -707,14 +707,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F033-F036
         env:
@@ -766,14 +766,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F036-F039
         env:
@@ -825,14 +825,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Executar CBR F039-F042
         env:
@@ -884,14 +884,14 @@ jobs:
           shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
-                    import json
-                    from pathlib import Path
-                    m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
-                    assert m['model']=='WRF CBR 4 KM'
-                    assert m['resolutionKm']==4
-                    assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
-                    assert m['forecast']['hours']==42
-                    print('CBR preflight: catálogo/grade OK')
+          import json
+          from pathlib import Path
+          m=json.loads(Path('wrf/cbr_variable_catalog.json').read_text(encoding='utf-8'))
+          assert m['model']=='WRF CBR 4 KM'
+          assert m['resolutionKm']==4
+          assert m['domain']['e_we']==401 and m['domain']['e_sn']==501
+          assert m['forecast']['hours']==42
+          print('CBR preflight: catálogo/grade OK')
           PY
       - name: Baixar WRFOUT completo
         env:
@@ -926,19 +926,19 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-                    import json, gzip, pathlib
-                    meta=json.loads(pathlib.Path('cbr_json/metadata.json').read_text())
-                    assert meta['model']=='WRF CBR 4 KM'
-                    assert meta['modelKey']=='cbr_wrf_4km'
-                    assert meta['resolutionKm']==4
-                    assert meta['grid']=={'nx':401,'ny':501}
-                    assert not meta['missingForecastHours'], meta['missingForecastHours']
-                    assert meta['frameCount']==43, meta['frameCount']
-                    with gzip.open('cbr_json/frames/f000.json.gz','rt',encoding='utf-8') as fh:
-                        f=json.load(fh)
-                    assert f['nativeReflectivity']=='REFL_10CM'
-                    assert f['grid']=={'nx':401,'ny':501}
-                    print('CBR JSON válido: 43 frames, 401x501')
+          import json, gzip, pathlib
+          meta=json.loads(pathlib.Path('cbr_json/metadata.json').read_text())
+          assert meta['model']=='WRF CBR 4 KM'
+          assert meta['modelKey']=='cbr_wrf_4km'
+          assert meta['resolutionKm']==4
+          assert meta['grid']=={'nx':401,'ny':501}
+          assert not meta['missingForecastHours'], meta['missingForecastHours']
+          assert meta['frameCount']==43, meta['frameCount']
+          with gzip.open('cbr_json/frames/f000.json.gz','rt',encoding='utf-8') as fh:
+              f=json.load(fh)
+          assert f['nativeReflectivity']=='REFL_10CM'
+          assert f['grid']=={'nx':401,'ny':501}
+          print('CBR JSON válido: 43 frames, 401x501')
           PY
 
       - name: Publicar JSON no branch cbr-json-data
