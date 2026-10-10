@@ -352,7 +352,9 @@ def main():
             sounding, rows, terrain, valid_time = frames_by_city[city["slug"]][forecast_hour]
             frame = f"f{forecast_hour:03d}"
             meta = {
-                "location": city["name"], "station": city["name"] + " / METBR WRF 4 km",
+                "location": city["name"], "state": city["state"],
+                "model": "METBR WRF 4 km",
+                "station": city["name"] + " / METBR WRF 4 km",
                 "latitude": city["latitude"], "longitude": city["longitude"],
                 "elevation": terrain, "fh": forecast_hour, "valid": valid_time, "run": run_time,
             }
