@@ -29,13 +29,18 @@ copy_diag() {
 trap copy_diag EXIT
 rm -rf "$WORK/source" "$WORK/soil" "$WORK/run" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 mkdir -p "$WORK/source" "$WORK/soil" "$WORK/geog_extract" "$WORK/WPS_GEOG"
+rm -f "$WORK/use_wps_gfs_vtable" "$WORK/Vtable.source"
 
 echo "TARC 3 KM: F$WRF_START_HOUR-F$WRF_END_HOUR; LBC ate F$BOUNDARY_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
 
 find "$SOURCE_DIR" -maxdepth 1 -type f -name '*.grib2' -print | sort > "$DIAG/source-files.txt"
 test -s "$DIAG/source-files.txt"
 while IFS= read -r f; do cp -f "$f" "$WORK/source/"; done < "$DIAG/source-files.txt"
-cp -f "$SOURCE_VTABLE" "$WORK/Vtable.source"
+if [[ "$SOURCE_VTABLE" == "__WPS_GFS__" ]]; then
+  touch "$WORK/use_wps_gfs_vtable"
+else
+  cp -f "$SOURCE_VTABLE" "$WORK/Vtable.source"
+fi
 cp -f "$ROOT/wrf/Vtable.GFS_SOIL" "$WORK/Vtable.soil"
 
 python3 "$ROOT/wrf/fetch_gfs_land_support.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --max-hour "$BOUNDARY_END_HOUR" --output-dir "$WORK/soil"
@@ -219,7 +224,11 @@ while IFS= read -r FILE; do
   ln -sf "$FILE" "GRIBFILE.$LINK_NAME"
   IDX=$((IDX+1))
 done < <(find /work/source -maxdepth 1 -type f -name "*.grib2" -print | sort)
-ln -sf /work/Vtable.source Vtable
+if test -f /work/use_wps_gfs_vtable; then
+  ln -sf /comsoftware/wrf/WPS-4.3/ungrib/Variable_Tables/Vtable.GFS Vtable
+else
+  ln -sf /work/Vtable.source Vtable
+fi
 
 echo "=== GEOGRID ==="
 /comsoftware/wrf/WPS-4.3/geogrid.exe > geogrid.stdout 2>&1 || { cat geogrid.stdout; cat geogrid.log 2>/dev/null || true; exit 41; }
