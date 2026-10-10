@@ -1,9 +1,9 @@
-name: WRF CBR 4 KM - ICON
+name: WRF CBR 4 KM — fallback ICON → ECMWF → GFS
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '25 7 * * *'
+    - cron: '15 10 * * *'
 
 permissions:
   contents: write
@@ -25,7 +25,7 @@ env:
 
 jobs:
   seg00:
-    name: CBR ICON F000-F003
+    name: CBR fallback F000-F003
     runs-on: ubuntu-22.04
     
     timeout-minutes: 355
@@ -42,6 +42,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -53,7 +55,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -82,7 +84,7 @@ jobs:
           retention-days: 7
 
   seg01:
-    name: CBR ICON F003-F006
+    name: CBR fallback F003-F006
     runs-on: ubuntu-22.04
     needs: seg00
     
@@ -100,6 +102,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -111,7 +115,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -140,7 +144,7 @@ jobs:
           retention-days: 7
 
   seg02:
-    name: CBR ICON F006-F009
+    name: CBR fallback F006-F009
     runs-on: ubuntu-22.04
     needs: seg01
     timeout-minutes: 355
@@ -157,6 +161,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -168,7 +174,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -197,7 +203,7 @@ jobs:
           retention-days: 7
 
   seg03:
-    name: CBR ICON F009-F012
+    name: CBR fallback F009-F012
     runs-on: ubuntu-22.04
     needs: seg02
     timeout-minutes: 355
@@ -214,6 +220,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -225,7 +233,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -254,7 +262,7 @@ jobs:
           retention-days: 7
 
   seg04:
-    name: CBR ICON F012-F015
+    name: CBR fallback F012-F015
     runs-on: ubuntu-22.04
     needs: seg03
     timeout-minutes: 355
@@ -271,6 +279,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -282,7 +292,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -311,7 +321,7 @@ jobs:
           retention-days: 7
 
   seg05:
-    name: CBR ICON F015-F018
+    name: CBR fallback F015-F018
     runs-on: ubuntu-22.04
     needs: seg04
     timeout-minutes: 355
@@ -328,6 +338,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -339,7 +351,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -368,7 +380,7 @@ jobs:
           retention-days: 7
 
   seg06:
-    name: CBR ICON F018-F021
+    name: CBR fallback F018-F021
     runs-on: ubuntu-22.04
     needs: seg05
     timeout-minutes: 355
@@ -385,6 +397,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -396,7 +410,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -425,7 +439,7 @@ jobs:
           retention-days: 7
 
   seg07:
-    name: CBR ICON F021-F024
+    name: CBR fallback F021-F024
     runs-on: ubuntu-22.04
     needs: seg06
     timeout-minutes: 355
@@ -442,6 +456,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -453,7 +469,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -482,7 +498,7 @@ jobs:
           retention-days: 7
 
   seg08:
-    name: CBR ICON F024-F027
+    name: CBR fallback F024-F027
     runs-on: ubuntu-22.04
     needs: seg07
     timeout-minutes: 355
@@ -499,6 +515,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -510,7 +528,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -539,7 +557,7 @@ jobs:
           retention-days: 7
 
   seg09:
-    name: CBR ICON F027-F030
+    name: CBR fallback F027-F030
     runs-on: ubuntu-22.04
     needs: seg08
     timeout-minutes: 355
@@ -556,6 +574,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -567,7 +587,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -596,7 +616,7 @@ jobs:
           retention-days: 7
 
   seg10:
-    name: CBR ICON F030-F033
+    name: CBR fallback F030-F033
     runs-on: ubuntu-22.04
     needs: seg09
     timeout-minutes: 355
@@ -613,6 +633,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -624,7 +646,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -653,7 +675,7 @@ jobs:
           retention-days: 7
 
   seg11:
-    name: CBR ICON F033-F036
+    name: CBR fallback F033-F036
     runs-on: ubuntu-22.04
     needs: seg10
     timeout-minutes: 355
@@ -670,6 +692,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -681,7 +705,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -710,7 +734,7 @@ jobs:
           retention-days: 7
 
   seg12:
-    name: CBR ICON F036-F039
+    name: CBR fallback F036-F039
     runs-on: ubuntu-22.04
     needs: seg11
     timeout-minutes: 355
@@ -727,6 +751,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -738,7 +764,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -767,7 +793,7 @@ jobs:
           retention-days: 7
 
   seg13:
-    name: CBR ICON F039-F042
+    name: CBR fallback F039-F042
     runs-on: ubuntu-22.04
     needs: seg12
     timeout-minutes: 355
@@ -784,6 +810,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -795,7 +823,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
@@ -841,6 +869,8 @@ jobs:
           scripts=(
             wrf/run_cbr_checkpoint_segment.sh
             wrf/run_cbr_icon_wrf.sh
+            wrf/run_cbr_ecmwf_wrf.sh
+            wrf/run_cbr_gfs_wrf.sh
             wrf/run_cbr_wrf_with_source.sh
             wrf/run_cbr_restart_segment.sh
           )
@@ -852,7 +882,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py
           python3 - <<'PY'
                     import json
                     from pathlib import Path
