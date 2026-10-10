@@ -239,6 +239,28 @@ def _pwat_mm(p, td):
     return float(abs(np.trapz(qq, pp)) / 9.80665)
 
 
+_MOIST_ADIABATS_CACHE = None
+
+
+def _moist_adiabat_curves():
+    """Calculate the thermodynamic reference curves once per rendering process."""
+    global _MOIST_ADIABATS_CACHE
+    if _MOIST_ADIABATS_CACHE is None:
+        from sharppy.sharptab import thermo
+        pressure = np.geomspace(1000.0, 100.0, 100)
+        curves = []
+        for start_t in np.arange(-30, 41, 5):
+            curve = np.asarray(
+                [float(thermo.wetlift(1000.0, float(start_t), float(pp))) for pp in pressure],
+                dtype=float,
+            )
+            if not np.isfinite(curve).all():
+                raise RuntimeError(f"SHARPpy gerou uma adiabat úmida inválida a {start_t:.0f} °C.")
+            curves.append((float(start_t), curve))
+        _MOIST_ADIABATS_CACHE = (pressure, curves)
+    return _MOIST_ADIABATS_CACHE
+
+
 def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     ax.set_yscale("log")
     ax.set_ylim(1050, 100)
@@ -286,19 +308,11 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 ls=(0, (2, 3)), lw=0.58 if major else 0.40,
                 alpha=0.82 if major else 0.66, zorder=0)
 
-    # Moist adiabats every 5 C. Vectorized SHARPpy wet lifting is much faster
-    # than evaluating each point separately for each of the 459 generated frames.
-    from sharppy.sharptab import thermo
-    pp_grid = np.geomspace(1000.0, 100.0, 100)
-    # wetlift accepts scalar p/t/p2. Evaluate it level by level rather than
-    # silently swallowing an exception and accidentally omitting moist adiabats.
-    for start_t in np.arange(-30, 41, 5):
-        curve = np.asarray(
-            [float(thermo.wetlift(1000.0, float(start_t), float(pp))) for pp in pp_grid],
-            dtype=float,
-        )
-        if not np.isfinite(curve).all():
-            raise RuntimeError(f"SHARPpy gerou uma adiabat úmida inválida a {start_t:.0f} °C.")
+    # Moist adiabats (pseudoadiabats) every 5 C, calculated with SHARPpy.
+    # Reuse these shared reference curves across all forecast frames to keep the
+    # 27-city operational batch from repeating thousands of identical lifts.
+    pp_grid, moist_curves = _moist_adiabat_curves()
+    for start_t, curve in moist_curves:
         major = (int(start_t) % 10 == 0)
         ax.plot(_xskew(curve, pp_grid), pp_grid,
                 color="#3c8752" if major else "#8fb99a",
@@ -374,8 +388,8 @@ def _make_theta_axes(ax, p, t, td):
     ax.set_yscale("log"); ax.set_ylim(1050, 100); ax.set_xlim(245, 380)
     ax.set_facecolor("white")
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
-    ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
-    ax.set_xticks([245, 270, 295, 320, 345, 370])
+    ax.tick_params(axis="both", labelsize=6.5, colors=INK, direction="out", length=3, pad=2)
+    ax.set_xticks([250, 280, 310, 340, 370])
     ax.set_yticks([1000, 900, 800, 700, 600, 500, 400, 300, 200, 100])
     ax.tick_params(axis="y", labelleft=False, left=False)
     for pp in [1000,900,800,700,600,500,400,300,200,100]:
@@ -432,7 +446,7 @@ def _make_advection(ax, prof, latitude):
     ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_ylim(1050, 100); ax.set_xlim(-2, 2)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
-    ax.set_xlabel("Advecção térmica inferida (°C/h)", fontsize=7.4, labelpad=3)
+    ax.set_xlabel("Advecção térmica\ninferida (°C/h)", fontsize=7.0, labelpad=2)
     ax.set_xticks([-2, -1, 0, 1, 2])
     ax.set_yticks([1000,900,800,700,600,500,400,300,200,100])
     ax.tick_params(axis="y", labelleft=False, left=False)
