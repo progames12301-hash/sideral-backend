@@ -10,6 +10,13 @@ on:
         description: "ID de uma execução METBR concluída; vazio usa a última execução bem-sucedida"
         required: false
         type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/metbr-wrf-skewt-sul.yml'
+      - 'wrf/metbr_skewt_south.py'
+      - 'skewt.html'
+      - 'skewt-capitais.html'
 
 permissions:
   contents: write
@@ -20,6 +27,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-source:
+    if: github.event_name == 'push'
+    name: Validate METBR Skew-T pipeline and interface
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Sideral
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check YAML, Python and browser JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q pyyaml
+          python -m py_compile wrf/metbr_skewt_south.py
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          import yaml
+          workflow=Path(".github/workflows/metbr-wrf-skewt-sul.yml").read_text(encoding="utf-8")
+          yaml.safe_load(workflow)
+          for name in ("skewt.html", "skewt-capitais.html"):
+              content=Path(name).read_text(encoding="utf-8")
+              blocks=re.findall(r"<script>(.*?)</script>", content, flags=re.S)
+              if not blocks:
+                  raise SystemExit(f"Bloco JavaScript não encontrado em {name}")
+              Path("/tmp/"+name.replace(".html",".js")).write_text("\\n".join(blocks),encoding="utf-8")
+          print("YAML e Python validos; JavaScript extraido para node --check.")
+          PY
+          node --check /tmp/skewt.js
+          node --check /tmp/skewt-capitais.js
+          echo "Preflight METBR Skew-T concluído."
   publish:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: Extract native METBR columns and publish Southern Skew-Ts
