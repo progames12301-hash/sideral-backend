@@ -51,29 +51,63 @@ def download_one(url: str, path: Path, required: bool) -> Path | None:
     for attempt in range(1, 6):
         try:
             with requests.get(url, headers={"User-Agent": UA}, timeout=180, stream=True) as r:
-                if r.status_code == 404:
+                status = r.status_code
+                if status == 404:
                     if required:
                         raise RuntimeError(f"Campo ICON essencial nao publicado (HTTP 404): {url}")
                     print(f"AVISO ICON: campo opcional indisponivel (404), ignorando: {url.rsplit('/', 1)[-1]}")
                     return None
+                if 400 <= status < 500:
+                    message = f"HTTP {status} definitivo para {url}"
+                    if required:
+                        raise RuntimeError(message)
+                    print(f"AVISO ICON: campo opcional indisponivel ({message}); ignorando")
+                    return None
                 r.raise_for_status()
                 data = r.content
-            path.write_bytes(bz2.decompress(data))
+
+            # Erro de conteúdo/compressão não é tratado como indisponibilidade temporária.
+            unpacked = bz2.decompress(data)
+            if not unpacked:
+                raise RuntimeError(f"Download ICON vazio: {url}")
+            temp_path = path.with_name(path.name + ".part")
+            temp_path.write_bytes(unpacked)
+            temp_path.replace(path)
             print(f"OK {url.rsplit('/', 1)[-1]} -> {path.stat().st_size / 1024 / 1024:.2f} MiB")
             return path
-        except Exception as exc:
-            if required and "HTTP 404" in str(exc):
-                path.unlink(missing_ok=True)
+
+        except requests.HTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            path.unlink(missing_ok=True)
+            path.with_name(path.name + ".part").unlink(missing_ok=True)
+            if status is not None and 400 <= status < 500:
+                if required:
+                    raise RuntimeError(f"HTTP {status} definitivo em campo ICON essencial: {url}") from exc
+                print(f"AVISO ICON: campo opcional HTTP {status}; ignorando: {url.rsplit('/', 1)[-1]}")
+                return None
+            if status is None or status < 500:
                 raise
             last = exc
+
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            last = exc
             path.unlink(missing_ok=True)
-            if attempt == 5:
-                break
-            time.sleep(attempt * 2)
+            path.with_name(path.name + ".part").unlink(missing_ok=True)
+
+        except Exception:
+            path.unlink(missing_ok=True)
+            path.with_name(path.name + ".part").unlink(missing_ok=True)
+            raise
+
+        if attempt < 5:
+            delay = attempt * 2
+            print(f"ICON: erro temporario em tentativa {attempt}/5; aguardando {delay}s: {url.rsplit('/', 1)[-1]}")
+            time.sleep(delay)
+
     if not required:
-        print(f"AVISO ICON: campo opcional falhou apos tentativas; ignorando: {url.rsplit('/', 1)[-1]} ({last})")
+        print(f"AVISO ICON: campo opcional falhou apos falhas transitorias; ignorando: {url.rsplit('/', 1)[-1]} ({last})")
         return None
-    raise RuntimeError(f"Falha ICON apos 5 tentativas: {url}: {last}")
+    raise RuntimeError(f"Falha ICON apos 5 tentativas por erro transitorio (5xx/timeout/conexao): {url}: {last}")
 
 
 def main() -> None:
