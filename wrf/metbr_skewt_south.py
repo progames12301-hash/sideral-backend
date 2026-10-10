@@ -102,8 +102,7 @@ def choose_gridpoint(ds, city):
 def point_value(ds, key, time_index, j, i):
     if key not in ds.variables:
         raise RuntimeError(f"METBR WRFOUT sem variável obrigatória {key}")
-    a = as_float_array(ds.variables[key][time_index])
-    value = float(a[j, i])
+    value = float(as_float_array(ds.variables[key][time_index, j, i]))
     if not math.isfinite(value):
         raise RuntimeError(f"{key} inválido no ponto j={j}, i={i}")
     return value
@@ -112,9 +111,10 @@ def point_value(ds, key, time_index, j, i):
 def point_column(ds, key, time_index, j, i):
     if key not in ds.variables:
         raise RuntimeError(f"METBR WRFOUT sem variável obrigatória {key}")
-    a = as_float_array(ds.variables[key][time_index])
-    col = np.asarray(a[..., j, i], dtype=np.float64)
-    if not np.isfinite(col).any():
+    # Read only a single vertical column from NetCDF; never load the complete
+    # 3-D atmospheric field into RAM on the hosted runner.
+    col = np.asarray(as_float_array(ds.variables[key][time_index, :, j, i]), dtype=np.float64)
+    if col.ndim != 1 or not np.isfinite(col).any():
         raise RuntimeError(f"Coluna vertical {key} inválida em j={j}, i={i}")
     return col
 
@@ -140,12 +140,14 @@ def make_profile(ds, time_index, city, point, valid_time):
         raise RuntimeError(f"{city['name']}: PH/PHB não têm um nível staggered a mais que P/PB.")
     z = 0.5 * (ph[:-1] + ph[1:]) / G
 
-    u_stag = as_float_array(ds.variables["U"][time_index])
-    v_stag = as_float_array(ds.variables["V"][time_index])
-    if u_stag.shape[-1] <= i + 1 or v_stag.shape[-2] <= j + 1:
+    # U/V are stored on WRF's staggered grids. Read only the two points
+    # surrounding the selected mass-grid point and interpolate to its center.
+    u_pair = as_float_array(ds.variables["U"][time_index, :, j, i:i + 2])
+    v_pair = as_float_array(ds.variables["V"][time_index, :, j:j + 2, i])
+    if u_pair.ndim != 2 or u_pair.shape[-1] != 2 or v_pair.ndim != 2 or v_pair.shape[-2] != 2:
         raise RuntimeError(f"{city['name']}: grade staggered U/V insuficiente.")
-    u = 0.5 * (u_stag[:, j, i] + u_stag[:, j, i + 1])
-    v = 0.5 * (v_stag[:, j, i] + v_stag[:, j + 1, i])
+    u = 0.5 * (u_pair[:, 0] + u_pair[:, 1])
+    v = 0.5 * (v_pair[:, 0] + v_pair[:, 1])
     w_stag = point_column(ds, "W", time_index, j, i)
     w = 0.5 * (w_stag[:-1] + w_stag[1:])
 
