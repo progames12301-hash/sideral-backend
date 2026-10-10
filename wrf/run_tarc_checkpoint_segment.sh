@@ -28,7 +28,7 @@ for tool in grib_set grib_copy grib_count; do
   command -v "$tool" >/dev/null || { echo "ecCodes/$tool indisponivel" >&2; exit 10; }
 done
 
-chmod +x wrf/run_tarc_checkpoint_segment.sh wrf/run_tarc_icon_wrf.sh wrf/run_tarc_wrf_with_source.sh wrf/run_tarc_restart_segment.sh
+chmod +x wrf/run_tarc_checkpoint_segment.sh wrf/run_tarc_icon_wrf.sh wrf/run_tarc_ecmwf_wrf.sh wrf/run_tarc_gfs_wrf.sh wrf/run_tarc_wrf_with_source.sh wrf/run_tarc_restart_segment.sh
 
 export WRF_TARGET_RESOLUTION_KM=3
 export WRF_DX_METERS=3000 WRF_DY_METERS=3000
@@ -40,6 +40,53 @@ export WRF_BOUNDARY_END_HOUR="$END_HOUR"
 export WRF_REF_LAT=-28.0 WRF_REF_LON=-53.5 WRF_STAND_LON=-53.5
 export WRF_RUN_HOURS=$((END_HOUR-START_HOUR))
 export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
+
+
+prepare_source_with_fallback() {
+  local boundary_only="${1:?Informe 0 para cold start, 1 para LBC de restart}"
+  local first="${SOURCE_MODEL:-icon}"
+  local model rc selected=""
+  local -a candidates=()
+
+  case "$first" in
+    icon) candidates=(icon ecmwf gfs) ;;
+    ecmwf) candidates=(ecmwf gfs) ;;
+    gfs) candidates=(gfs) ;;
+    *) echo "SOURCE_MODEL invalido no checkpoint: $first" >&2; return 2 ;;
+  esac
+
+  export WRF_BOUNDARY_ONLY="$boundary_only"
+  for model in "${candidates[@]}"; do
+    echo
+    echo "===== TARC SOURCE FALLBACK: tentando ${model^^}; boundary_only=$boundary_only ====="
+    case "$model" in
+      icon)
+        if bash wrf/run_tarc_icon_wrf.sh; then rc=0; else rc=$?; fi
+        ;;
+      ecmwf)
+        if bash wrf/run_tarc_ecmwf_wrf.sh; then rc=0; else rc=$?; fi
+        ;;
+      gfs)
+        if bash wrf/run_tarc_gfs_wrf.sh; then rc=0; else rc=$?; fi
+        ;;
+    esac
+    if (( rc == 0 )); then
+      selected="$model"
+      echo "TARC SOURCE FALLBACK: fonte escolhida ${selected^^}"
+      break
+    fi
+    echo "TARC SOURCE FALLBACK: ${model^^} falhou (exit=$rc); seguindo para a proxima fonte"
+  done
+
+  [[ -n "$selected" ]] || {
+    echo "ERRO: TARC falhou com todas as fontes permitidas a partir de $first (ICON -> ECMWF -> GFS)." >&2
+    return 1
+  }
+
+  SOURCE_MODEL="$selected"
+  printf 'RUN_DATE=%s\nRUN_CYCLE=%s\nSOURCE_MODEL=%s\n' "$RUN_DATE" "$RUN_CYCLE" "$SOURCE_MODEL" > tarc-run.env
+  gh release upload "$CHECKPOINT_TAG" tarc-run.env --repo "$GITHUB_REPOSITORY" --clobber
+}
 
 if [[ "$COLD_START" == "0" ]]; then
   rm -rf "$INPUT"/*
@@ -63,8 +110,8 @@ if [[ "$COLD_START" == "0" ]]; then
   export WRF_HISTORY_INTERVAL_MINUTES=60 WRF_TIME_STEP=18 WRF_MPI_PROCS=4
   export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
   export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
-  echo "TARC: preparando LBC ICON F$START_HOUR-F$END_HOUR"
-  bash wrf/run_tarc_icon_wrf.sh
+  echo "TARC: preparando LBC com fallback ICON -> ECMWF -> GFS F$START_HOUR-F$END_HOUR"
+  prepare_source_with_fallback 1
   test -s "$ROOT/wrf_work/run/wrfbdy_d01" || { echo "LBC TARC ausente para F$START_HOUR-F$END_HOUR" >&2; exit 27; }
   cp -f "$ROOT/wrf_work/run/wrfbdy_d01" "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/wrfbdy_d01"
@@ -93,14 +140,15 @@ run_date=str(m["runDate"]).replace("-","")
 run_cycle="".join(c for c in str(m["runCycle"]) if c.isdigit()).zfill(2)[:2]
 if run_cycle not in {"00","06","12","18"}:
     raise SystemExit("ciclo ICON invalido")
-open("tarc-run.env","w").write(f"RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n")
+open("tarc-run.env","w").write(f"RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\nSOURCE_MODEL=icon\n")
 PY
   source tarc-run.env
   gh release create "$CHECKPOINT_TAG" --target tarc-wrf-3km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF TARC 3 KM ICON checkpoint $GITHUB_RUN_ID" || true
   gh release upload "$CHECKPOINT_TAG" tarc-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
-  bash wrf/run_tarc_icon_wrf.sh
+  export WRF_BOUNDARY_ONLY=0
+  prepare_source_with_fallback 0
 
   test -s wrf_work/run/wrfinput_d01
   test -s wrf_work/run/wrfbdy_d01
