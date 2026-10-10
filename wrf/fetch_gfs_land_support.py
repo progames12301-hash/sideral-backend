@@ -127,19 +127,25 @@ def fetch_step(session: requests.Session, date: str, cycle: str, step: int, outp
     print(f"{output}: {output.stat().st_size / 1024 / 1024:.1f} MiB, {len(selected)} mensagens")
 
 
-def choose_run(session: requests.Session, target: dt.datetime, max_target_hour: int) -> tuple[dt.datetime, int]:
-    # GFS roda de 6 em 6 h. Tenta a rodada equivalente e depois recua.
-    for lag in (0, 6, 12, 18, 24, 30, 36):
-        candidate = target - dt.timedelta(hours=lag)
-        last_step = lag + max_target_hour
-        _, first_idx = gfs_urls(candidate.strftime("%Y%m%d"), candidate.strftime("%H"), lag)
+def choose_run(session: requests.Session, target: dt.datetime, start_hour: int, max_target_hour: int) -> tuple[dt.datetime, int]:
+    # Seleciona um ciclo existente que nao seja posterior ao primeiro horario valido.
+    target_start = target + dt.timedelta(hours=start_hour)
+    first_candidate = target_start.replace(hour=(target_start.hour // 6) * 6, minute=0, second=0, microsecond=0)
+    for back in range(8):
+        candidate = first_candidate - dt.timedelta(hours=6 * back)
+        offset = int((target - candidate).total_seconds() // 3600)
+        first_step = start_hour + offset
+        last_step = max_target_hour + offset
+        if first_step < 0 or last_step < first_step:
+            continue
+        _, first_idx = gfs_urls(candidate.strftime("%Y%m%d"), candidate.strftime("%H"), first_step)
         _, last_idx = gfs_urls(candidate.strftime("%Y%m%d"), candidate.strftime("%H"), last_step)
         print(
             f"Testando GFS land {candidate:%Y%m%d %H}Z: "
             f"F{lag:03d}..F{last_step:03d} para validar {target:%Y%m%d %H}Z"
         )
         if exists(session, first_idx) and exists(session, last_idx):
-            return candidate, lag
+            return candidate, offset
     raise RuntimeError(
         f"Nenhuma rodada GFS de suporte cobre {target:%Y%m%d %H}Z ate +{max_target_hour} h"
     )
@@ -149,12 +155,13 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--date", required=True)
     p.add_argument("--cycle", required=True)
+    p.add_argument("--start-hour", type=int, default=0)
     p.add_argument("--max-hour", type=int, required=True)
     p.add_argument("--output-dir", required=True)
     args = p.parse_args()
 
-    if args.max_hour < 0:
-        raise SystemExit("--max-hour deve ser >= 0")
+    if args.start_hour < 0 or args.max_hour < args.start_hour or args.start_hour % 3 or args.max_hour % 3:
+        raise SystemExit("--start-hour/--max-hour invalidos; devem ser multiplos de 3 e em ordem")
 
     # As fontes atmosfericas usadas pelo WPS estao em passos de 3 h. Para um
     # horizonte como F040, a cobertura lateral precisa chegar a F042.
@@ -164,15 +171,15 @@ def main() -> None:
     session = requests.Session()
     session.headers.update({"User-Agent": UA})
     out = Path(args.output_dir)
-    gfs_run, lag = choose_run(session, target, source_max_hour)
+    gfs_run, offset = choose_run(session, target, args.start_hour, source_max_hour)
     gfs_date, gfs_cycle = gfs_run.strftime("%Y%m%d"), gfs_run.strftime("%H")
     print(
-        f"GFS land escolhido: {gfs_date} {gfs_cycle}Z (lag {lag} h); "
+        f"GFS land escolhido: {gfs_date} {gfs_cycle}Z (offset base {offset} h); "
         f"horarios validos alinhados ao alvo {target:%Y%m%d %H}Z"
     )
 
-    for target_step in range(0, source_max_hour + 1, 3):
-        gfs_step = lag + target_step
+    for target_step in range(args.start_hour, source_max_hour + 1, 3):
+        gfs_step = offset + target_step
         fetch_step(
             session,
             gfs_date,
