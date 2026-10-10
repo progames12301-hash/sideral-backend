@@ -62,6 +62,9 @@ def download_one(url: str, path: Path, required: bool) -> Path | None:
             print(f"OK {url.rsplit('/', 1)[-1]} -> {path.stat().st_size / 1024 / 1024:.2f} MiB")
             return path
         except Exception as exc:
+            if required and "HTTP 404" in str(exc):
+                path.unlink(missing_ok=True)
+                raise
             last = exc
             path.unlink(missing_ok=True)
             if attempt == 5:
