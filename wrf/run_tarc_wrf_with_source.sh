@@ -29,13 +29,13 @@ copy_diag() {
 trap copy_diag EXIT
 rm -rf "$WORK/source" "$WORK/soil" "$WORK/run" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 mkdir -p "$WORK/source" "$WORK/soil" "$WORK/geog_extract" "$WORK/WPS_GEOG"
-rm -f "$WORK/use_wps_gfs_vtable" "$WORK/Vtable.source"
+rm -f "$WORK/use_wps_gfs_vtable" "$WORK/Vtable.source" "$WORK"/GRIBFILE.* "$WORK"/SRC:* "$WORK"/SOIL:* "$WORK"/FILE:* "$WORK"/met_em.d01.*.nc "$WORK"/geo_em.d01.nc "$WORK"/Vtable "$WORK"/geogrid.log "$WORK"/ungrib.log "$WORK"/metgrid.log
 
 echo "TARC 3 KM: F$WRF_START_HOUR-F$WRF_END_HOUR; LBC ate F$BOUNDARY_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
 
 find "$SOURCE_DIR" -maxdepth 1 -type f -name '*.grib2' -print | sort > "$DIAG/source-files.txt"
 test -s "$DIAG/source-files.txt"
-while IFS= read -r f; do cp -f "$f" "$WORK/source/"; done < "$DIAG/source-files.txt"
+while IFS= read -r f; do ln -f "$f" "$WORK/source/$(basename "$f")"; done < "$DIAG/source-files.txt"
 if [[ "$SOURCE_VTABLE" == "__WPS_GFS__" ]]; then
   touch "$WORK/use_wps_gfs_vtable"
 else
