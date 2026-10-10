@@ -54,6 +54,8 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py
+          echo "ShellCheck e sintaxe Python dos fallbacks validados."
       - name: Executar F000-F003
         env:
           GH_TOKEN: ${{ github.token }}
