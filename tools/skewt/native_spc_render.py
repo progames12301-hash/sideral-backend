@@ -337,7 +337,8 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     surface_pressure = float(p[0])
     for pp in [1050, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]:
         height = _interp_pressure(h_agl, p, pp)
-        if math.isfinite(height) and pp <= surface_pressure + 0.1:
+        if (math.isfinite(height) and pp <= surface_pressure + 0.1
+                and abs(pp - surface_pressure) >= 25.0):
             ax.text(-41.8, pp, f"{height:.0f} m AGL", ha="left", va="center",
                     fontsize=6.2, color="#303030", clip_on=True,
                     bbox=dict(facecolor="white", edgecolor="none", alpha=0.55, pad=0.15))
