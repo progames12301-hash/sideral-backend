@@ -786,8 +786,11 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     lon_text = "--" if longitude is None else f"{longitude:.2f}{'E' if longitude >= 0 else 'W'}"
     model_hint = " ".join(str(meta.get(key, "")) for key in ("model", "station", "source"))
     model_label = "METBR WRF 4 km" if "METBR" in model_hint.upper() else str(meta.get("model", "ECMWF IFS"))
-    run_short = valid.strftime("%d/%m %HZ") if hasattr(valid, "strftime") else run_text
-    valid_short = valid_dt.strftime("%d/%m %HZ") if hasattr(valid, "strftime") else valid_text
+    if hasattr(valid, "strftime"):
+        run_short = (valid_dt - timedelta(hours=fh)).strftime("%d/%m %HZ")
+        valid_short = valid_dt.strftime("%d/%m %HZ")
+    else:
+        run_short, valid_short = run_text, valid_text
     date_text = (f"{model_label} • ciclo {run_short} • válido {valid_short} • F{fh:03d} • "
                  f"SFC {p[0]:.0f} hPa • terreno {elevation:.0f} m • {native_level_count} níveis nativos")
 
