@@ -2265,6 +2265,11 @@ def _metbr_render_click_profile(lat: float, lon: float, checkpoint: dict[str, An
         profile_data["domain"] = {key: round(value, 4) for key, value in domain.items()}
         profile_data["native_grid_spacing_km"] = 4
         profile_data["checkpoint_tag"] = checkpoint["tag"]
+        profile_data["grid_latitude"] = float(point["grid_latitude"])
+        profile_data["grid_longitude"] = float(point["grid_longitude"])
+        profile_data["surface_elevation_m"] = float(terrain)
+        profile_data["valid"] = valid_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        profile_data["forecast_hour"] = 0
 
     renderer = metbr.load_renderer()
     with tempfile.TemporaryDirectory(prefix="sideral-metbr-click-", dir=str(METBR_CLICK_CACHE_DIR)) as temp_dir:
