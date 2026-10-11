@@ -638,15 +638,13 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
             layer_colors[min(np.searchsorted(layer_bounds, height, side="right"), 3)]
             for height in mid_height
         ]
-        # Layered, segment-matched glow gives each altitude band the vivid neon look
-        # of the reference while keeping the actual wind trace crisp and readable.
-        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=10.0, alpha=0.045, zorder=2))
-        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=6.0, alpha=0.085, zorder=2))
-        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=3.8, alpha=0.18, zorder=3))
-        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=2.65, alpha=0.98, zorder=4))
-        ax.plot(uu, vv, linestyle="none", marker="o", markersize=3.0,
-                markerfacecolor="#f1f5fa", markeredgecolor="#111821",
-                markeredgewidth=0.45, alpha=0.98, zorder=5)
+        # Clean, solid altitude-coloured track; deliberately no glow/neon effect.
+        ax.add_collection(LineCollection(
+            segments, colors=seg_colors, linewidths=2.2, alpha=0.94, zorder=3
+        ))
+        ax.plot(uu, vv, linestyle="none", marker="o", markersize=2.6,
+                markerfacecolor="#e8edf4", markeredgecolor="#19212b",
+                markeredgewidth=0.4, alpha=0.95, zorder=4)
 
     # Height labels are interpolated from the native vertical column. Use
     # point-based offsets and opaque dark tags so low-level labels near 0 km
