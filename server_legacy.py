@@ -1,5 +1,7 @@
 from __future__ import annotations
 import datetime as dt
+import base64
+import tempfile
 import gc
 import csv
 import io
@@ -179,6 +181,12 @@ regional_rs_image_cache_lock = threading.Lock()
 # Sondagens ECMWF + SHARPpy. O cache evita repetir download/processamento no Render.
 SOUNDING_CACHE_SECONDS = 15 * 60
 sounding_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+# Render Skew-T temporariamente no servidor; PNGs ficam somente em memória/cache TTL.
+WRF_SOUNDING_RENDER_CACHE_SECONDS = 15 * 60
+WRF_SOUNDING_RENDER_CACHE_MAX = 12
+wrf_sounding_render_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+wrf_sounding_data_lock = threading.Lock()
+wrf_sounding_render_lock = threading.Lock()
 ECMWF_PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100]
 ECMWF_GRIB_CACHE_SECONDS = 3 * 60 * 60
 ECMWF_SOUNDING_CACHE_DIR = Path(
@@ -1883,7 +1891,7 @@ def _published_wrf_sounding_payload(lat: float, lon: float, model_key: str, fore
         return [round(float(item[key]), digits) for item in points]
     profile = {"pressure": series("pressure"), "height": series("height", 0), "height_agl": [round(max(0., float(item["height"]) - terrain), 0) for item in points], "temperature": series("temperature"), "dewpoint": series("dewpoint"), "u": series("u"), "v": series("v"), "wind_speed": [round(math.hypot(float(item["u"]), float(item["v"])), 1) for item in points], "wind_direction": [round(wind_direction_deg(float(item["u"]), float(item["v"]))) for item in points], "omega": [None] * len(points)}
     empty = {"direction": None, "speed": None, "u": None, "v": None}
-    return {"model": f"{model_key.upper()} -> WRF", "model_id": f"wrf_{model_key}", "latitude": lat, "longitude": lon, "grid_latitude": round(float(lats[point]), 3), "grid_longitude": round(float(lons[point]), 3), "run": metadata.get("runDate"), "run_cycle": metadata.get("runCycle", "WRF"), "forecast_hour": int(frame.get("forecastHour", 0)), "valid": frame.get("validTime") or grid.get("validTime"), "surface_elevation_m": round(terrain), "surface_pressure_hpa": profile["pressure"][0], "profile": profile, "parcels": {}, "thermodynamics": {}, "kinematics": {"storm_motion_name": "WRF", "bunkers_rm": empty, "bunkers_lm": empty, "corfidi_up": empty, "corfidi_down": empty}, "severe": {}, "winter": {}, "analogs": {"hail": {}, "supercell": {}, "database_scope": "Perfil vertical compacto extraido do wrfout operacional."}, "source": f"WRF {model_key.upper()} - perfil vertical publicado", "attribution": "Sideral WRF", "cache": False}
+    return {"model": f"{model_key.upper()} -> WRF", "model_id": f"wrf_{model_key}", "latitude": lat, "longitude": lon, "domain": {"south": round(south, 4), "north": round(north, 4), "west": round(west, 4), "east": round(east, 4)}, "grid_latitude": round(float(lats[point]), 3), "grid_longitude": round(float(lons[point]), 3), "run": metadata.get("runDate"), "run_cycle": metadata.get("runCycle", "WRF"), "forecast_hour": int(frame.get("forecastHour", 0)), "valid": frame.get("validTime") or grid.get("validTime"), "surface_elevation_m": round(terrain), "surface_pressure_hpa": profile["pressure"][0], "profile": profile, "parcels": {}, "thermodynamics": {}, "kinematics": {"storm_motion_name": "WRF", "bunkers_rm": empty, "bunkers_lm": empty, "corfidi_up": empty, "corfidi_down": empty}, "severe": {}, "winter": {}, "analogs": {"hail": {}, "supercell": {}, "database_scope": "Perfil vertical compacto extraido do wrfout operacional."}, "source": f"WRF {model_key.upper()} - perfil vertical publicado", "attribution": "Sideral WRF", "cache": False}
 
 
 def _wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour: int) -> dict[str, Any]:
@@ -1942,6 +1950,77 @@ def _wrf_sounding_payload(lat: float, lon: float, model_key: str, forecast_hour:
         return {"model": f"{model_key.upper()} â†’ WRF", "model_id": f"wrf_{model_key}", "latitude": lat, "longitude": lon, "grid_latitude": round(float(lats[row, col]), 3), "grid_longitude": round(float(lons[row, col]), 3), "run": None, "run_cycle": "WRF", "forecast_hour": forecast_hour, "valid": valid, "surface_elevation_m": round(terrain), "surface_pressure_hpa": profile["pressure"][0], "profile": profile, "parcels": {}, "thermodynamics": {}, "kinematics": {"storm_motion_name": "WRF", "bunkers_rm": empty, "bunkers_lm": empty, "corfidi_up": empty, "corfidi_down": empty}, "severe": {}, "winter": {}, "analogs": {"hail": {}, "supercell": {}, "database_scope": "Perfil vertical extraÃ­do diretamente do wrfout publicado."}, "source": f"WRF {model_key.upper()} Â· perfil vertical nativo do wrfout", "attribution": "Sideral WRF", "cache": False}
     finally:
         dataset.close()
+
+
+
+def _render_wrf_sounding_png(payload: dict[str, Any]) -> bytes:
+    """Build the same native multi-panel Sideral Skew-T in memory for a WRF grid point."""
+    import importlib.util
+    import numpy as np
+    from sharppy.sharptab import profile as shp_profile
+
+    values = payload.get("profile") or {}
+    required = ("pressure", "height", "temperature", "dewpoint", "u", "v")
+    arrays = {name: np.asarray(values.get(name) or [], dtype=np.float64) for name in required}
+    lengths = {len(item) for item in arrays.values()}
+    if len(lengths) != 1 or not lengths or next(iter(lengths)) < 8:
+        raise RuntimeError("A coluna WRF publicada não tem níveis suficientes para desenhar o Skew-T.")
+    pressure = arrays["pressure"]
+    height = arrays["height"]
+    temperature = arrays["temperature"]
+    dewpoint = np.minimum(temperature, arrays["dewpoint"])
+    u, v = arrays["u"], arrays["v"]
+    omega_raw = values.get("omega") or [None] * len(pressure)
+    omega = np.asarray([np.nan if item is None else float(item) for item in omega_raw], dtype=np.float64)
+    if np.any(~np.isfinite(pressure)) or np.any(pressure <= 0):
+        raise RuntimeError("A coluna WRF contém níveis de pressão inválidos.")
+
+    valid_text = str(payload.get("valid") or "")
+    try:
+        valid_time = dt.datetime.fromisoformat(valid_text.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        valid_time = dt.datetime.utcnow()
+    from sharppy.sharptab import profile as profile_module
+    sounding = profile_module.create_profile(
+        profile="convective",
+        pres=pressure,
+        hght=height,
+        tmpc=temperature,
+        dwpc=dewpoint,
+        u=u,
+        v=v,
+        omeg=np.ma.masked_invalid(omega),
+        strictQC=False,
+        latitude=float(payload.get("latitude", 0.0)),
+        date=valid_time,
+        location=f"{float(payload.get('latitude', 0.0)):.3f}, {float(payload.get('longitude', 0.0)):.3f}",
+    )
+
+    renderer_path = BASE_DIR / "tools" / "skewt" / "native_spc_render.py"
+    spec = importlib.util.spec_from_file_location("sideral_native_spc_render_dynamic", renderer_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Renderizador nativo Sideral Skew-T indisponível.")
+    renderer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(renderer)
+    with tempfile.TemporaryDirectory(prefix="sideral-skewt-") as temporary_directory:
+        output = renderer.render_native_spc(
+            sounding,
+            Path(temporary_directory),
+            {
+                "fh": int(payload.get("forecast_hour", 0)),
+                "valid": valid_time,
+                "run": payload.get("run") or valid_time.strftime("%Y%m%d%HZ"),
+                "station": f"CLICK-TO-POINT · {float(payload.get('latitude', 0.0)):.3f}, {float(payload.get('longitude', 0.0)):.3f}",
+                "location": "Click-to-point",
+                "latitude": float(payload.get("latitude", 0.0)),
+                "longitude": float(payload.get("longitude", 0.0)),
+                "elevation": float(payload.get("surface_elevation_m") or 0.0),
+            },
+        )
+        image_bytes = Path(output).read_bytes()
+    if not image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise RuntimeError("O renderizador não produziu um PNG válido.")
+    return image_bytes
 
 
 
@@ -2103,6 +2182,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
         if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
         
+        if parsed_path == "/api/wrf/sounding/render":
+            self.handle_wrf_sounding_render(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/wrf/sounding":
 
         
@@ -2184,6 +2265,74 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(response.body)
         except (BrokenPipeError, ConnectionResetError):
             return
+
+
+    def handle_wrf_sounding_render(self, query: dict[str, list[str]]) -> None:
+        """Return the native WRF F000 Skew-T PNG and numeric profile for a clicked point.
+
+        The vertical-grid query is the same one used by /api/wrf/sounding. The
+        plot is rendered into a temporary directory and the PNG is returned as a
+        data URI; no permanent PNG or per-click file is published.
+        """
+        started = time.monotonic()
+        try:
+            lat = float(query.get("lat", ["-25.43"])[0])
+            lon = float(query.get("lon", ["-49.27"])[0])
+            model = str(query.get("model", ["gfs"])[0]).lower().strip()
+            fh = int(query.get("fh", ["0"])[0])
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                self.send_json(400, {"error": "Latitude/longitude inválidas.", "code": "BAD_COORDINATES"}); return
+            if fh != 0:
+                self.send_json(400, {"error": "Este teste click-to-point está limitado à validade F000.", "code": "F000_ONLY"}); return
+            if model not in {"gfs", "icon", "ecmwf"}:
+                self.send_json(400, {"error": "Modelo WRF inválido.", "code": "BAD_WRF_MODEL"}); return
+
+            cache_key = (round(lat, 3), round(lon, 3), model, fh, "wrf-click-skewt-png-v1")
+            cached_png = wrf_sounding_render_cache.get(cache_key)
+            if cached_png and time.monotonic() - float(cached_png.get("saved_at", 0.0)) < WRF_SOUNDING_RENDER_CACHE_SECONDS:
+                response = dict(cached_png["data"])
+                response["render_cache"] = True
+                response["render_ms"] = 0
+                self.send_json(200, response); return
+
+            profile_key = (round(lat, 3), round(lon, 3), model, fh, "wrf-native-profile-v1")
+            with wrf_sounding_data_lock:
+                cached_profile = sounding_cache.get(profile_key)
+                if cached_profile and time.monotonic() - float(cached_profile.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
+                    profile_payload = dict(cached_profile["data"])
+                    profile_payload["cache"] = True
+                else:
+                    profile_payload = _wrf_sounding_payload(lat, lon, model, fh)
+                    sounding_cache[profile_key] = {"saved_at": time.monotonic(), "data": dict(profile_payload)}
+
+            with wrf_sounding_render_lock:
+                # Another request could have rendered the same point while this
+                # request waited for Matplotlib's thread-safe section.
+                cached_png = wrf_sounding_render_cache.get(cache_key)
+                if cached_png and time.monotonic() - float(cached_png.get("saved_at", 0.0)) < WRF_SOUNDING_RENDER_CACHE_SECONDS:
+                    response = dict(cached_png["data"])
+                    response["render_cache"] = True
+                    response["render_ms"] = 0
+                    self.send_json(200, response); return
+
+                png = _render_wrf_sounding_png(profile_payload)
+                response = dict(profile_payload)
+                response["png_data_uri"] = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+                response["render_cache"] = False
+                response["render_ms"] = round((time.monotonic() - started) * 1000)
+                wrf_sounding_render_cache[cache_key] = {"saved_at": time.monotonic(), "data": dict(response)}
+                if len(wrf_sounding_render_cache) > WRF_SOUNDING_RENDER_CACHE_MAX:
+                    oldest = sorted(wrf_sounding_render_cache, key=lambda key: wrf_sounding_render_cache[key].get("saved_at", 0.0))
+                    for old_key in oldest[:len(wrf_sounding_render_cache) - WRF_SOUNDING_RENDER_CACHE_MAX]:
+                        wrf_sounding_render_cache.pop(old_key, None)
+            self.send_json(200, response)
+        except WRFDomainError as exc:
+            self.send_json(422, {"error": str(exc), "code": "WRF_OUTSIDE_DOMAIN"})
+        except (ValueError, FileNotFoundError, RuntimeError) as exc:
+            self.send_json(503, {"error": _sanitize_server_error(exc), "code": "WRF_SOUNDING_UNAVAILABLE"})
+        except Exception as exc:
+            _log_sounding_error("WRF Skew-T render", exc)
+            self.send_json(500, {"error": "Não foi possível renderizar o Skew-T deste ponto agora.", "code": "WRF_SKEWT_RENDER_FAILED"})
 
     def handle_wrf_sounding(self, query: dict[str, list[str]]) -> None:
         try:
