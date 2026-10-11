@@ -468,6 +468,143 @@ def extract_available_fields(ds, expected_shape, reflectivity):
     return result, sources
 
 
+
+def extract_native_vertical_profile_grid(ds, expected_shape):
+    """Pack the full native METBR WRF F000 vertical column at every grid cell.
+
+    Surface values are prepended to the native mass-level columns, preserving
+    the same input variables and thermodynamic/wind conversions as
+    wrf/metbr_skewt_south.py. Arrays are float32 and stored level-major in NPZ
+    so Render can mmap individual fields instead of loading a full JSON object.
+    """
+    import math
+
+    nx, ny = int(expected_shape[1]), int(expected_shape[0])
+    expected_size = nx * ny
+    required_2d = ("HGT", "PSFC", "T2", "Q2", "U10", "V10")
+    surface = {}
+    missing = []
+    for name in required_2d:
+        value, found = _read_2d(ds, (name,), expected_shape)
+        if value is None:
+            missing.append(name)
+        else:
+            surface[name] = value
+    required_3d = ("P", "PB", "T", "QVAPOR", "U", "V", "PH", "PHB")
+    fields = {name: _read_3d(ds, name, expected_shape) for name in required_3d}
+    missing.extend(name for name, value in fields.items() if value is None)
+    if missing:
+        raise RuntimeError("METBR F000 sem campos verticais obrigatórios para Skew-T: " + ", ".join(sorted(set(missing))))
+
+    p_pa = fields["P"] + fields["PB"]
+    theta_k = fields["T"] + 300.0
+    if p_pa.shape != theta_k.shape or p_pa.shape != fields["QVAPOR"].shape:
+        raise RuntimeError("P/PB/T/QVAPOR não possuem a mesma grade vertical METBR.")
+    if p_pa.shape != fields["U"].shape or p_pa.shape != fields["V"].shape:
+        raise RuntimeError("U/V não correspondem à grade horizontal e vertical METBR.")
+    if fields["PH"].shape != fields["PHB"].shape or fields["PH"].shape[0] != p_pa.shape[0] + 1:
+        raise RuntimeError("PH/PHB não fornecem interfaces verticais compatíveis com a grade METBR.")
+
+    pressure_hpa = p_pa / 100.0
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        temp_k = theta_k * (np.maximum(p_pa, 1.0) / 100000.0) ** 0.2854
+        temperature_c = temp_k - 273.15
+        qv = np.maximum(fields["QVAPOR"], 1.0e-8)
+        vapor_hpa = np.minimum(pressure_hpa * qv / (0.622 + qv), pressure_hpa * 0.98)
+        loge = np.log(np.maximum(vapor_hpa, 1.0e-5) / 6.112)
+        dewpoint_c = 243.5 * loge / (17.67 - loge)
+        dewpoint_c = np.minimum(dewpoint_c, temperature_c)
+
+    # WRF's PH/PHB are staggered vertically; average adjacent interfaces to
+    # obtain native mass-level height MSL, then use HGT for AGL filtering.
+    height_m = 0.5 * (fields["PH"][:-1] + fields["PH"][1:] +
+                      fields["PHB"][:-1] + fields["PHB"][1:]) / 9.80665
+    terrain = surface["HGT"]
+    psfc_hpa = surface["PSFC"] / 100.0
+
+    u = fields["U"]
+    v = fields["V"]
+    cosa, _ = _read_2d(ds, ("COSALPHA",), expected_shape)
+    sina, _ = _read_2d(ds, ("SINALPHA",), expected_shape)
+    if cosa is None:
+        cosa = np.ones(expected_shape, dtype=np.float64)
+    if sina is None:
+        sina = np.zeros(expected_shape, dtype=np.float64)
+    east_kt = (u * cosa[None, :, :] - v * sina[None, :, :]) * 1.943844
+    north_kt = (v * cosa[None, :, :] + u * sina[None, :, :]) * 1.943844
+
+    # Preserve the vertical-motion diagnostic used by the existing METBR
+    # sounding path when native W exists; missing W is represented as NaN.
+    w = _read_3d(ds, "W", expected_shape)
+    if w is not None and w.shape[0] == p_pa.shape[0] + 1:
+        w_mass = 0.5 * (w[:-1] + w[1:])
+        with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+            density = p_pa / (287.05 * np.maximum(temp_k, 150.0))
+            omega_pa_s = -w_mass * density * 9.80665
+    else:
+        omega_pa_s = np.full(p_pa.shape, np.nan, dtype=np.float64)
+
+    # Match the METBR soundings: a surface row from PSFC/T2/Q2/U10/V10,
+    # followed by native model mass levels above the terrain.
+    t2_c = surface["T2"] - 273.15
+    q2 = np.maximum(surface["Q2"], 1.0e-8)
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        e2 = np.minimum(psfc_hpa * q2 / (0.622 + q2), psfc_hpa * 0.98)
+        l2 = np.log(np.maximum(e2, 1.0e-5) / 6.112)
+        td2_c = np.minimum(t2_c, 243.5 * l2 / (17.67 - l2))
+    u10_grid = surface["U10"]
+    v10_grid = surface["V10"]
+    u10_kt = (u10_grid * cosa - v10_grid * sina) * 1.943844
+    v10_kt = (v10_grid * cosa + u10_grid * sina) * 1.943844
+
+    vertical_valid = (
+        np.isfinite(pressure_hpa) & (pressure_hpa > 0) &
+        np.isfinite(temperature_c) & np.isfinite(dewpoint_c) &
+        np.isfinite(height_m) & (height_m > terrain[None, :, :] + 5.0) &
+        (pressure_hpa < psfc_hpa[None, :, :] - 1.0) &
+        np.isfinite(east_kt) & np.isfinite(north_kt)
+    )
+    surface_valid = (
+        np.isfinite(psfc_hpa) & (psfc_hpa > 0) &
+        np.isfinite(t2_c) & np.isfinite(td2_c) &
+        np.isfinite(terrain) & np.isfinite(u10_kt) & np.isfinite(v10_kt)
+    )
+
+    def clean(a, valid=None):
+        arr = np.asarray(a, dtype=np.float32).copy()
+        if valid is not None:
+            arr[~valid] = np.nan
+        arr[~np.isfinite(arr)] = np.nan
+        return arr
+
+    pressure_all = np.concatenate([psfc_hpa[None, :, :], pressure_hpa], axis=0)
+    temperature_all = np.concatenate([t2_c[None, :, :], temperature_c], axis=0)
+    dewpoint_all = np.concatenate([td2_c[None, :, :], dewpoint_c], axis=0)
+    height_all = np.concatenate([terrain[None, :, :], height_m], axis=0)
+    u_all = np.concatenate([u10_kt[None, :, :], east_kt], axis=0)
+    v_all = np.concatenate([v10_kt[None, :, :], north_kt], axis=0)
+    omega_all = np.concatenate([np.full((1, ny, nx), np.nan), omega_pa_s], axis=0)
+    all_valid = np.concatenate([surface_valid[None, :, :], vertical_valid], axis=0)
+
+    # If a mandatory profile variable is invalid at a level, leave the row
+    # absent as a coherent unit instead of publishing a partially fabricated row.
+    return {
+        "schema_version": np.asarray([1], dtype=np.int16),
+        "grid_nx": np.asarray([nx], dtype=np.int32),
+        "grid_ny": np.asarray([ny], dtype=np.int32),
+        "lat": clean(np.asarray(ds.variables["XLAT"][:])[0] if np.asarray(ds.variables["XLAT"][:]).ndim == 3 else ds.variables["XLAT"][:]),
+        "lon": clean(np.asarray(ds.variables["XLONG"][:])[0] if np.asarray(ds.variables["XLONG"][:]).ndim == 3 else ds.variables["XLONG"][:]),
+        "pressure_hpa": clean(pressure_all, all_valid),
+        "temperature_c": clean(temperature_all, all_valid),
+        "dewpoint_c": clean(dewpoint_all, all_valid),
+        "height_m": clean(height_all, all_valid),
+        "u_kt": clean(u_all, all_valid),
+        "v_kt": clean(v_all, all_valid),
+        "omega_pa_s": clean(omega_all, all_valid),
+        "terrain_m": clean(terrain),
+    }
+
+
 def write_gzip_json(path, payload):
     path.parent.mkdir(parents=True, exist_ok=True)
     body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
@@ -522,6 +659,18 @@ def main():
                 coordinates = native_grid_fields(ds, nx, ny)
             elif (nx, ny) != (x, y):
                 raise RuntimeError("Os WRFOUTs possuem grades diferentes")
+            if index == 0:
+                # The Runner already reads every F000 WRFOUT here. Extract its
+                # native vertical grid once so Render never needs the >100-MB
+                # raw NetCDF during each click.
+                vertical_fields = extract_native_vertical_profile_grid(ds, expected_shape)
+                vertical_path = out / "vertical-f000.npz"
+                np.savez_compressed(vertical_path, **vertical_fields)
+                if vertical_path.stat().st_size >= 95 * 1024 * 1024:
+                    raise RuntimeError(
+                        f"Grade vertical F000 muito grande para publicação GitHub: {vertical_path.stat().st_size} bytes"
+                    )
+                print(f"[METBR][SKEWT] grade vertical F000: {vertical_path.stat().st_size} bytes")
 
             print(f"[METBR][REFL] arquivo={path.name}")
             print(f"[METBR][REFL] shape_original={getattr(ds.variables[source_name], 'shape', ())}")
@@ -602,7 +751,7 @@ def main():
     payload = {
         "schemaVersion": "1.2", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
         "resolutionKm": 4, "grid": {"nx": nx, "ny": ny}, "frames": frames,
-        "gridFile": "grid.json", "framePathTemplate": "frames/f{forecastHour:03d}.json.gz",
+        "gridFile": "grid.json", "framePathTemplate": "frames/f{forecastHour:03d}.json.gz", "verticalProfileFile": "vertical-f000.npz", "verticalProfileForecastHour": 0,
         "frameCount": len(frames), "temporalResolutionMinutes": 60,
         "reflectivitySource": sources, "nativeGrid": True, "initTime": init_time,
         "availableVariables": available_all, "availableVariablesAnyFrame": available_any,
@@ -611,7 +760,7 @@ def main():
     metadata = {
         "schemaVersion": "1.2", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
         "resolutionKm": 4, "grid": {"nx": nx, "ny": ny},
-        "gridFile": "grid.json", "framePathTemplate": "frames/f{forecastHour:03d}.json.gz",
+        "gridFile": "grid.json", "framePathTemplate": "frames/f{forecastHour:03d}.json.gz", "verticalProfileFile": "vertical-f000.npz", "verticalProfileForecastHour": 0,
         "frames": [{
             "file": f["file"], "time": f["time"], "forecastHour": f["forecastHour"],
             "dataFile": f["dataFile"], "availableVariables": f["availableVariables"]
@@ -626,13 +775,24 @@ def main():
     json_path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False), encoding="utf-8")
     metadata_path.write_text(json.dumps(metadata, separators=(",", ":"), allow_nan=False), encoding="utf-8")
 
-    # Validate serialized JSON, native coordinate grid, reflectivity and every
+    # Validate serialized JSON, native coordinate grid, reflectivity, F000 vertical grid and every
     # multi-variable frame. Missing model variables are reported, not faked.
     serialized = json.loads(json_path.read_text(encoding="utf-8"))
     validate_frames(serialized["frames"], nx, ny)
     grid_saved = json.loads(grid_path.read_text(encoding="utf-8"))
     n_grid = nx * ny
     assert len(grid_saved["fields"]["lat"]) == n_grid and len(grid_saved["fields"]["lon"]) == n_grid
+    with np.load(out / "vertical-f000.npz", allow_pickle=False) as vertical:
+        n_levels = vertical["pressure_hpa"].shape[0]
+        assert vertical["pressure_hpa"].shape == (n_levels, ny, nx)
+        assert n_levels >= 10
+        for key in ("temperature_c", "dewpoint_c", "height_m", "u_kt", "v_kt", "omega_pa_s"):
+            assert vertical[key].shape == vertical["pressure_hpa"].shape, (key, vertical[key].shape)
+        assert vertical["lat"].shape == (ny, nx) and vertical["lon"].shape == (ny, nx)
+        assert vertical["terrain_m"].shape == (ny, nx)
+        assert np.isfinite(vertical["pressure_hpa"][0]).any()
+        assert np.isfinite(vertical["temperature_c"][0]).any()
+    print(f"[METBR][SKEWT] grade vertical validada: {n_levels} níveis incluindo superfície, grid={nx}x{ny}")
     native_found = set()
     for frame in frames:
         with gzip.open(out / frame["dataFile"], "rt", encoding="utf-8") as handle:
