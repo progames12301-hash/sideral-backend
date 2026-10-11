@@ -235,22 +235,30 @@ def _interp_vertical(coordinate, values, target, expected_shape):
     """Linear vertical interpolation to one pressure (Pa) or AGL height (m)."""
     if coordinate is None or values is None or coordinate.shape != values.shape:
         return None
-    nz = coordinate.shape[0]
-    result = np.full(expected_shape, np.nan, dtype=np.float64)
-    for k in range(nz - 1):
-        c0, c1 = coordinate[k], coordinate[k + 1]
-        v0, v1 = values[k], values[k + 1]
-        valid = (
-            np.isfinite(c0) & np.isfinite(c1) &
-            np.isfinite(v0) & np.isfinite(v1) &
-            (np.abs(c1 - c0) > 1e-6) &
-            ((c0 - target) * (c1 - target) <= 0)
-        )
-        if not valid.any():
-            continue
-        frac = np.zeros(expected_shape, dtype=np.float64)
-        frac[valid] = (target - c0[valid]) / (c1[valid] - c0[valid])
-        result[valid] = v0[valid] + frac[valid] * (v1[valid] - v0[valid])
+    if coordinate.ndim != 3 or tuple(coordinate.shape[-2:]) != tuple(expected_shape):
+        return None
+    c0, c1 = coordinate[:-1], coordinate[1:]
+    v0, v1 = values[:-1], values[1:]
+    crossing = (
+        np.isfinite(c0) & np.isfinite(c1) &
+        np.isfinite(v0) & np.isfinite(v1) &
+        (np.abs(c1 - c0) > 1e-6) &
+        ((c0 - target) * (c1 - target) <= 0)
+    )
+    has_crossing = crossing.any(axis=0)
+    if not has_crossing.any():
+        return None
+    # One crossing segment per column for normal WRF height/pressure profiles.
+    # Choosing the first keeps interpolation deterministic and avoids a
+    # Python-level loop allocating multiple 2-D arrays for each level/frame.
+    k = np.argmax(crossing, axis=0)[None, :, :]
+    c0k = np.take_along_axis(c0, k, axis=0)[0]
+    c1k = np.take_along_axis(c1, k, axis=0)[0]
+    v0k = np.take_along_axis(v0, k, axis=0)[0]
+    v1k = np.take_along_axis(v1, k, axis=0)[0]
+    frac = (target - c0k) / (c1k - c0k)
+    result = v0k + frac * (v1k - v0k)
+    result[~has_crossing | ~np.isfinite(result)] = np.nan
     return result if np.isfinite(result).any() else None
 
 
