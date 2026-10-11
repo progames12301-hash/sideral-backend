@@ -158,7 +158,7 @@ jobs:
 
           git -C published-metbr-json config user.name 'github-actions[bot]'
           git -C published-metbr-json config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -C published-metbr-json add metadata.json metbr_wrf_4km.json grid.json frames README.md
+          git -C published-metbr-json add -A
           git -C published-metbr-json diff --cached --quiet || git -C published-metbr-json commit -m "METBR 4 km: atualizar JSON"
 
       - name: Publicar branch METBR
