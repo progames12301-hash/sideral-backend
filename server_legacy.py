@@ -2035,8 +2035,8 @@ def _render_wrf_sounding_png(payload: dict[str, Any]) -> bytes:
 
 
 
-def _metbr_latest_completed_checkpoint() -> dict[str, Any]:
-    """Find the newest *completed* METBR 4-km WRF run published by the Runner."""
+def _metbr_latest_f000_checkpoint() -> dict[str, Any]:
+    """Find the newest METBR 4-km run release whose native F000 WRFOUT is published."""
     now = time.monotonic()
     cached = metbr_checkpoint_cache.get("data")
     if cached and now - float(metbr_checkpoint_cache.get("saved_at", 0.0)) < METBR_RELEASE_CACHE_SECONDS:
@@ -2058,65 +2058,56 @@ def _metbr_latest_completed_checkpoint() -> dict[str, Any]:
         if not isinstance(releases, list):
             raise RuntimeError("O catálogo de publicações METBR retornou um formato inválido.")
 
+        # The METBR Runner uploads F000 with the first segment. Later forecast
+        # segments may still be running, which does not invalidate F000.
         candidates = []
+        f000_pattern = re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})\.00\.00$")
         for release in releases:
             if not isinstance(release, dict) or release.get("draft"):
                 continue
             tag = str(release.get("tag_name") or "")
             if not tag.startswith(METBR_CHECKPOINT_PREFIX):
                 continue
-            assets = release.get("assets") or []
-            by_name = {str(asset.get("name") or ""): asset for asset in assets if isinstance(asset, dict)}
-            marker = by_name.get("metbr-publication-F42.txt")
-            if marker and marker.get("browser_download_url"):
-                candidates.append((str(release.get("published_at") or ""), tag, by_name, marker))
-        candidates.sort(reverse=True, key=lambda item: item[0])
-
-        last_error = None
-        for published_at, tag, assets, marker in candidates:
-            try:
-                marker_response = requests.get(
-                    str(marker["browser_download_url"]),
-                    headers={"User-Agent": "SideralMeteorologia/1.0", "Accept": "text/plain"},
-                    timeout=(8, 20),
-                )
-                marker_response.raise_for_status()
-                values = {}
-                for line in marker_response.text.splitlines():
-                    if "=" in line:
-                        key, value = line.split("=", 1)
-                        values[key.strip()] = value.strip()
-                run_date = values.get("run_date", "")
-                run_cycle = values.get("run_cycle", "").rstrip("Z")
-                if not (len(run_date) == 8 and run_date.isdigit() and run_cycle in {"00", "06", "12", "18"}):
-                    raise RuntimeError("O marcador F042 não informa um ciclo METBR válido.")
-                run_time = dt.datetime.strptime(run_date + run_cycle, "%Y%m%d%H")
-                f000_name = f"wrfout_d01_{run_time:%Y-%m-%d_%H}.00.00"
-                f000_asset = assets.get(f000_name)
-                if not f000_asset or not f000_asset.get("browser_download_url"):
-                    raise RuntimeError(f"A publicação concluída {tag} não contém o WRFOUT nativo F000 ({f000_name}).")
-                data = {
+            for asset in release.get("assets") or []:
+                if not isinstance(asset, dict):
+                    continue
+                name = str(asset.get("name") or "")
+                match = f000_pattern.fullmatch(name)
+                if not match or not asset.get("browser_download_url"):
+                    continue
+                try:
+                    run_time = dt.datetime.strptime(
+                        f"{match.group(1)} {match.group(2)}", "%Y-%m-%d %H"
+                    )
+                except ValueError:
+                    continue
+                if run_time.hour not in {0, 6, 12, 18} or int(asset.get("size") or 0) < 1_000_000:
+                    continue
+                candidates.append({
+                    "published_at": str(release.get("published_at") or ""),
                     "tag": tag,
-                    "published_at": published_at,
                     "run_time": run_time,
-                    "run_date": run_date,
-                    "run_cycle": run_cycle,
-                    "f000_name": f000_name,
-                    "f000_url": str(f000_asset["browser_download_url"]),
-                    "f000_size": int(f000_asset.get("size") or 0),
+                    "run_date": run_time.strftime("%Y%m%d"),
+                    "run_cycle": run_time.strftime("%H"),
+                    "f000_name": name,
+                    "f000_url": str(asset["browser_download_url"]),
+                    "f000_size": int(asset.get("size") or 0),
                     "source": "METBR WRF 4 km · ICON · WRFOUT nativo publicado pelo Runner",
-                }
-                metbr_checkpoint_cache["saved_at"] = time.monotonic()
-                metbr_checkpoint_cache["data"] = data
-                print(f"[METBR SKEWT] ciclo completo {tag} · F000={f000_name}", flush=True)
-                return dict(data)
-            except Exception as exc:
-                last_error = exc
-                print(f"[METBR SKEWT] publicação ignorada {tag}: {str(exc)[:300]}", flush=True)
+                })
+        if not candidates:
+            raise FileNotFoundError(
+                "Nenhuma publicação METBR WRF 4 km possui um WRFOUT nativo F000 disponível."
+            )
 
-        if last_error:
-            raise RuntimeError(f"Não encontrei uma publicação METBR 4 km concluída com WRFOUT F000 válido: {str(last_error)[:300]}")
-        raise FileNotFoundError("Ainda não existe uma publicação METBR WRF 4 km concluída com F042 e o WRFOUT F000.")
+        candidates.sort(key=lambda item: (item["published_at"], item["run_time"]), reverse=True)
+        data = candidates[0]
+        metbr_checkpoint_cache["saved_at"] = time.monotonic()
+        metbr_checkpoint_cache["data"] = data
+        print(
+            f"[METBR SKEWT] F000 publicado {data['tag']} · {data['f000_name']}",
+            flush=True,
+        )
+        return dict(data)
 
 def _metbr_download_f000(checkpoint: dict[str, Any]) -> Path:
     """Download one F000 WRFOUT once per Render instance and reuse it for map clicks."""
@@ -2574,7 +2565,7 @@ class Handler(SimpleHTTPRequestHandler):
             model = str(query.get("model", ["metbr_wrf_4km"])[0]).lower().strip()
             if model not in {"metbr_wrf_4km", "metbr"}:
                 self.send_json(400, {"error": "Este teste usa exclusivamente METBR WRF 4 km.", "code": "BAD_WRF_MODEL"}); return
-            checkpoint = _metbr_latest_completed_checkpoint()
+            checkpoint = _metbr_latest_f000_checkpoint()
             result = _metbr_checkpoint_metadata_response(checkpoint)
             self.send_json(200, result)
         except (ValueError, FileNotFoundError, RuntimeError, requests.RequestException) as exc:
@@ -2599,7 +2590,7 @@ class Handler(SimpleHTTPRequestHandler):
             if fh != 0:
                 self.send_json(400, {"error": "O teste click-to-point está limitado à validade F000.", "code": "F000_ONLY"}); return
 
-            checkpoint = _metbr_latest_completed_checkpoint()
+            checkpoint = _metbr_latest_f000_checkpoint()
             cache_key = (round(lat, 3), round(lon, 3), checkpoint["tag"], "metbr-click-skewt-v1")
             cached_png = wrf_sounding_render_cache.get(cache_key)
             if cached_png and time.monotonic() - float(cached_png.get("saved_at", 0.0)) < WRF_SOUNDING_RENDER_CACHE_SECONDS:
