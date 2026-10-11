@@ -65,7 +65,7 @@ jobs:
           node --check /tmp/skewt-capitais.js
           echo "Preflight METBR Skew-T concluído."
   publish:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
     name: Extract native METBR columns and publish Southern Skew-Ts
     runs-on: ubuntu-22.04
     timeout-minutes: 120
