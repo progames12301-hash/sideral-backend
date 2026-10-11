@@ -165,7 +165,6 @@ def compute_temperature_advection(ds, time_index, j, i):
             jj, ii = j + dj, i + di
             p_pa = point_column(ds, "P", time_index, jj, ii) + point_column(ds, "PB", time_index, jj, ii)
             theta_k = point_column(ds, "T", time_index, jj, ii) + 300.0
-            temperature_k = theta_k * np.maximum(p_pa, 1.0) / 100000.0
             # The WRF T variable is potential temperature perturbation; use the
             # Poisson relation to recover environmental temperature.
             temperature_k = theta_k * (np.maximum(p_pa, 1.0) / 100000.0) ** KAPPA
