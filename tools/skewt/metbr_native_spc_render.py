@@ -321,7 +321,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     # Pressure levels below the actual station pressure remain blank: no
     # extrapolated environmental curve or synthetic grid is drawn underground.
     surface_pressure = float(p[0])
-    surface_axis_limit = min(1050.0, surface_pressure + max(1.0, surface_pressure * 0.003))
+    surface_axis_limit = surface_pressure
     ax.set_ylim(surface_axis_limit, 100.0)
     p_ticks = [1050, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]
     p_minor = [
@@ -336,7 +336,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     ax.set_xticks(np.arange(-40, 56, 5), minor=True)
     ax.tick_params(axis="x", which="minor", length=2, color="#777777")
     # Every thermodynamic reference line ends at the true surface pressure.
-    ps = np.geomspace(100.0, max(100.0, min(1050.0, surface_pressure)), 240)
+    ps = np.geomspace(100.0, max(100.0, surface_pressure), 240)
     for pp in p_ticks:
         if pp <= surface_pressure + 0.1:
             ax.axhline(pp, color="#a7a7a7", lw=0.62, zorder=0)
@@ -609,6 +609,14 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
                 ha="center", va="bottom", zorder=1)
         ax.text(1.6, speed, f"{speed}", fontsize=6.2, color="#8694a6",
                 ha="left", va="center", zorder=1)
+    # Subtle radial spokes retain orientation without competing with the wind trace.
+    for angle in range(0, 360, 30):
+        radians = math.radians(angle)
+        ax.plot(
+            [0.0, plot_limit * math.cos(radians)],
+            [0.0, plot_limit * math.sin(radians)],
+            color="#17212e", lw=0.48, zorder=0,
+        )
     ax.axhline(0, color="#465365", lw=0.8, zorder=1)
     ax.axvline(0, color="#465365", lw=0.8, zorder=1)
 
@@ -630,11 +638,15 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
             layer_colors[min(np.searchsorted(layer_bounds, height, side="right"), 3)]
             for height in mid_height
         ]
-        ax.add_collection(LineCollection(segments, colors="#738093", linewidths=4.0, alpha=0.20, zorder=2))
-        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=2.6, zorder=3))
-        ax.plot(uu, vv, linestyle="none", marker="o", markersize=2.5,
+        # Layered, segment-matched glow gives each altitude band the vivid neon look
+        # of the reference while keeping the actual wind trace crisp and readable.
+        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=10.0, alpha=0.045, zorder=2))
+        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=6.0, alpha=0.085, zorder=2))
+        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=3.8, alpha=0.18, zorder=3))
+        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=2.65, alpha=0.98, zorder=4))
+        ax.plot(uu, vv, linestyle="none", marker="o", markersize=3.0,
                 markerfacecolor="#f1f5fa", markeredgecolor="#111821",
-                markeredgewidth=0.45, alpha=0.92, zorder=4)
+                markeredgewidth=0.45, alpha=0.98, zorder=5)
 
     # Height labels are interpolated from the native vertical column. Use
     # point-based offsets and opaque dark tags so low-level labels near 0 km
@@ -643,7 +655,7 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
         0: (-12, -12), 500: (-2, 12), 3000: (11, 8),
         6000: (10, 8), 9000: (9, 8), 12000: (-27, -13),
     }
-    for target, label in [(0, "0"), (500, "0.5"), (3000, "3"), (6000, "6"), (9000, "9"), (12000, "12 km")]:
+    for target, label in [(0, "0 km"), (500, "0,5 km"), (3000, "3 km"), (6000, "6 km"), (9000, "9 km"), (12000, "12 km")]:
         if hh.min() <= target <= hh.max():
             px, py = float(np.interp(target, hh, uu)), float(np.interp(target, hh, vv))
             ax.plot(px, py, "o", ms=3.8 if target in (0, 12000) else 3.2,
@@ -683,9 +695,13 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     ca = "--" if critical_angle is None else f"{critical_angle:.0f}°"
     hemisphere_short = "Sul" if is_southern else "Norte"
     mover_short = "LM" if is_southern else "RM"
+    mean_speed = math.hypot(*mw)
+    rm_speed = math.hypot(*rm)
+    lm_speed = math.hypot(*lm)
     ax.set_title(
-        f"{title_text}\nReferência: {mover_short} ({hemisphere_short}) • Ângulo crítico: {ca}",
-        fontsize=7.8, loc="left", pad=3, color=INK,
+        f"{title_text} • Bunkers 2000: V̄0–6 {mean_speed:.1f} kt | RM {rm_speed:.1f} | LM {lm_speed:.1f} kt\n"
+        f"Referência ciclônica: {mover_short} ({hemisphere_short}) • Ângulo crítico: {ca}",
+        fontsize=6.9, loc="left", pad=3, color=INK,
     )
     legend_handles = [
         plt.Line2D([0], [0], color=layer_colors[0], lw=2.2, label="0–0,5 km"),
@@ -944,7 +960,7 @@ def _parcel_rows(prof, srh01, srh03):
     return rows
 
 
-def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, latitude):
+def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude):
     ax = fig.add_axes([0.035, 0.073, 0.63, 0.115]); ax.axis("off")
     cols = ["", "CAPE [J/kg]", "CIN [J/kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0-1", "EHI 0-3"]
     table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
@@ -1013,11 +1029,13 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
     except Exception:
         dcp_value = "--"
     left = [
-        f"0-1 km SRH: {srh01:.2f} m²/s²" if math.isfinite(srh01) else "0-1 km SRH: --",
-        f"0-1 km Shear: {shear01:.2f} kts" if math.isfinite(shear01) else "0-1 km Shear: --",
-        f"0-3 km SRH: {srh03:.2f} m²/s²" if math.isfinite(srh03) else "0-3 km SRH: --",
-        f"0-3 km Shear: {shear03:.2f} kts" if math.isfinite(shear03) else "0-3 km Shear: --",
-        f"0-6 km Shear: {shear06:.2f} kts" if math.isfinite(shear06) else "0-6 km Shear: --",
+        f"SRH 0-0,5 km: {srh005:.2f} m²/s²" if math.isfinite(srh005) else "SRH 0-0,5 km: --",
+        f"SRH 0-1 km: {srh01:.2f} m²/s²" if math.isfinite(srh01) else "SRH 0-1 km: --",
+        f"SRH 0-3 km: {srh03:.2f} m²/s²" if math.isfinite(srh03) else "SRH 0-3 km: --",
+        f"SRH 0-6 km: {srh06:.2f} m²/s²" if math.isfinite(srh06) else "SRH 0-6 km: --",
+        f"Shear 0-1 km: {shear01:.2f} kt" if math.isfinite(shear01) else "Shear 0-1 km: --",
+        f"Shear 0-3 km: {shear03:.2f} kt" if math.isfinite(shear03) else "Shear 0-3 km: --",
+        f"Shear 0-6 km: {shear06:.2f} kt" if math.isfinite(shear06) else "Shear 0-6 km: --",
     ]
     mid1 = [f"Eff. SRH: {effective_srh}", f"EBWD: {ebwd}", f"PWV: {_fmt(pwat,2)} mm",
             f"Convective Temp: {convt} °C", f"K-index: {_fmt(kidx,2)}"]
@@ -1030,7 +1048,7 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
     columns = [(0.037, left), (0.225, mid1), (0.392, mid2), (0.535, lapse), (0.700, right), (0.835, severe)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.083 - j * 0.016, label, ha="left", va="center", fontsize=7.6, color=INK)
+            fig.text(x, 0.095 - j * 0.013, label, ha="left", va="center", fontsize=7.2, color=INK)
 
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
@@ -1093,6 +1111,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
         critical_angle = _finite(winds.critical_angle(prof, stu=preferred[0], stv=preferred[1]))
     except Exception:
         critical_angle = None
+    srh005 = _srh(prof, 0, 500, preferred)
     srh01 = _srh(prof, 0, 1000, preferred)
     srh03 = _srh(prof, 0, 3000, preferred)
     srh06 = _srh(prof, 0, 6000, preferred)
@@ -1108,11 +1127,19 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
 
     _make_skew_axes(ax_skew, p, t, td, z, u, v, prof, station_label, date_text, elevation)
     _make_theta_axes(ax_theta, p, t, td)
-    _make_hodo(ax_hodo, z, u, v, "Hodógrafa (vento em kt)", motion, elevation, critical_angle, preferred_label)
+    _make_hodo(ax_hodo, z, u, v, "Hodógrafa (kt)", motion, elevation, critical_angle, preferred_label)
+    # Compact formula notes sit between the hodograph and lower diagnostic panels.
+    # The underlying storm motion and SRH values are calculated from the METBR profile.
+    fig.text(0.630, 0.529,
+             "BUNKERS 2000: vento médio 0-6 km ± 7,5 m/s perpendicular ao cisalhamento",
+             ha="left", va="center", fontsize=6.0, color=INK, weight="bold")
+    fig.text(0.630, 0.512,
+             "SRH(h) = ∫₀ʰ (V − C) · [k × dV]  •  Hemisfério Sul: LM ciclônico",
+             ha="left", va="center", fontsize=5.9, color="#303030")
     _make_advection(ax_adv, prof, latitude)
     srw_title = "Vento relativo à tempestade (LM)" if is_southern else "Vento relativo à tempestade (RM)"
     _make_srw(ax_srw, h_agl, u, v, preferred, srw_title)
-    _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, latitude)
+    _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude)
 
     # Use the exact Sideral logo asset supplied for the brand; do not synthesize a text logo.
     logo_path = Path(__file__).resolve().parents[2] / "assets" / "sideral-logo.png"
