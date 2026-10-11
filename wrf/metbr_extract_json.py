@@ -196,7 +196,9 @@ def _read_3d(ds, name, expected_shape):
             a = 0.5 * (a[..., :-1, :] + a[..., 1:, :])
         if tuple(a.shape[-2:]) != tuple(expected_shape):
             return None
-        a[(~np.isfinite(a)) | (a <= -100.0)] = np.nan
+        # Do not discard negative values here: WRF pressure perturbation P
+        # can legitimately be negative and is added to PB to obtain pressure.
+        a[~np.isfinite(a)] = np.nan
         return a
     except Exception as exc:
         print(f"[METBR][VAR] não foi possível ler volume {name}: {exc}")
