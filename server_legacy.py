@@ -187,6 +187,17 @@ WRF_SOUNDING_RENDER_CACHE_MAX = 12
 wrf_sounding_render_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
 wrf_sounding_data_lock = threading.Lock()
 wrf_sounding_render_lock = threading.Lock()
+METBR_CHECKPOINT_RELEASES_URL = "https://api.github.com/repos/progames12301-hash/sideral-backend/releases?per_page=100"
+METBR_CHECKPOINT_PREFIX = "metbr-wrf-4km-checkpoint-"
+METBR_CLICK_CACHE_DIR = Path(os.environ.get(
+    "METBR_SKEWT_CACHE_DIR",
+    "/tmp/sideral_metbr_skewt" if os.environ.get("RENDER", "").lower() == "true" or os.environ.get("RENDER_EXTERNAL_URL") else str(BASE_DIR / "metbr_skewt_cache"),
+))
+METBR_RELEASE_CACHE_SECONDS = 10 * 60
+metbr_checkpoint_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+metbr_checkpoint_lock = threading.Lock()
+metbr_data_lock = threading.Lock()
+
 ECMWF_PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100]
 ECMWF_GRIB_CACHE_SECONDS = 3 * 60 * 60
 ECMWF_SOUNDING_CACHE_DIR = Path(
@@ -2024,6 +2035,279 @@ def _render_wrf_sounding_png(payload: dict[str, Any]) -> bytes:
 
 
 
+def _metbr_latest_completed_checkpoint() -> dict[str, Any]:
+    """Find the newest *completed* METBR 4-km WRF run published by the Runner."""
+    now = time.monotonic()
+    cached = metbr_checkpoint_cache.get("data")
+    if cached and now - float(metbr_checkpoint_cache.get("saved_at", 0.0)) < METBR_RELEASE_CACHE_SECONDS:
+        return dict(cached)
+
+    with metbr_checkpoint_lock:
+        now = time.monotonic()
+        cached = metbr_checkpoint_cache.get("data")
+        if cached and now - float(metbr_checkpoint_cache.get("saved_at", 0.0)) < METBR_RELEASE_CACHE_SECONDS:
+            return dict(cached)
+
+        response = requests.get(
+            METBR_CHECKPOINT_RELEASES_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "SideralMeteorologia/1.0"},
+            timeout=(8, 35),
+        )
+        response.raise_for_status()
+        releases = response.json()
+        if not isinstance(releases, list):
+            raise RuntimeError("O catálogo de publicações METBR retornou um formato inválido.")
+
+        candidates = []
+        for release in releases:
+            if not isinstance(release, dict) or release.get("draft"):
+                continue
+            tag = str(release.get("tag_name") or "")
+            if not tag.startswith(METBR_CHECKPOINT_PREFIX):
+                continue
+            assets = release.get("assets") or []
+            by_name = {str(asset.get("name") or ""): asset for asset in assets if isinstance(asset, dict)}
+            marker = by_name.get("metbr-publication-F42.txt")
+            if marker and marker.get("browser_download_url"):
+                candidates.append((str(release.get("published_at") or ""), tag, by_name, marker))
+        candidates.sort(reverse=True, key=lambda item: item[0])
+
+        last_error = None
+        for published_at, tag, assets, marker in candidates:
+            try:
+                marker_response = requests.get(
+                    str(marker["browser_download_url"]),
+                    headers={"User-Agent": "SideralMeteorologia/1.0", "Accept": "text/plain"},
+                    timeout=(8, 20),
+                )
+                marker_response.raise_for_status()
+                values = {}
+                for line in marker_response.text.splitlines():
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        values[key.strip()] = value.strip()
+                run_date = values.get("run_date", "")
+                run_cycle = values.get("run_cycle", "").rstrip("Z")
+                if not (len(run_date) == 8 and run_date.isdigit() and run_cycle in {"00", "06", "12", "18"}):
+                    raise RuntimeError("O marcador F042 não informa um ciclo METBR válido.")
+                run_time = dt.datetime.strptime(run_date + run_cycle, "%Y%m%d%H")
+                f000_name = f"wrfout_d01_{run_time:%Y-%m-%d_%H}.00.00"
+                f000_asset = assets.get(f000_name)
+                if not f000_asset or not f000_asset.get("browser_download_url"):
+                    raise RuntimeError(f"A publicação concluída {tag} não contém o WRFOUT nativo F000 ({f000_name}).")
+                data = {
+                    "tag": tag,
+                    "published_at": published_at,
+                    "run_time": run_time,
+                    "run_date": run_date,
+                    "run_cycle": run_cycle,
+                    "f000_name": f000_name,
+                    "f000_url": str(f000_asset["browser_download_url"]),
+                    "f000_size": int(f000_asset.get("size") or 0),
+                    "source": "METBR WRF 4 km · ICON · WRFOUT nativo publicado pelo Runner",
+                }
+                metbr_checkpoint_cache["saved_at"] = time.monotonic()
+                metbr_checkpoint_cache["data"] = data
+                print(f"[METBR SKEWT] ciclo completo {tag} · F000={f000_name}", flush=True)
+                return dict(data)
+            except Exception as exc:
+                last_error = exc
+                print(f"[METBR SKEWT] publicação ignorada {tag}: {str(exc)[:300]}", flush=True)
+
+        if last_error:
+            raise RuntimeError(f"Não encontrei uma publicação METBR 4 km concluída com WRFOUT F000 válido: {str(last_error)[:300]}")
+        raise FileNotFoundError("Ainda não existe uma publicação METBR WRF 4 km concluída com F042 e o WRFOUT F000.")
+
+def _metbr_download_f000(checkpoint: dict[str, Any]) -> Path:
+    """Download one F000 WRFOUT once per Render instance and reuse it for map clicks."""
+    METBR_CLICK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    run_time = checkpoint["run_time"]
+    target = METBR_CLICK_CACHE_DIR / f"metbr-wrf-4km-{run_time:%Y%m%d%H}-f000.nc"
+    if target.is_file() and target.stat().st_size > 1_000_000:
+        return target
+
+    with metbr_data_lock:
+        if target.is_file() and target.stat().st_size > 1_000_000:
+            return target
+        temporary = target.with_suffix(".nc.download")
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        total = 0
+        try:
+            expected_size = int(checkpoint.get("f000_size") or 0)
+            if expected_size > 300 * 1024 * 1024:
+                raise RuntimeError(f"WRFOUT F000 excede o limite de segurança de 300 MiB ({expected_size} bytes).")
+            with requests.get(
+                checkpoint["f000_url"],
+                headers={"User-Agent": "SideralMeteorologia/1.0 (METBR Skew-T)", "Accept": "application/octet-stream"},
+                timeout=(12, 240),
+                stream=True,
+            ) as response:
+                response.raise_for_status()
+                announced = int(response.headers.get("Content-Length", "0") or 0)
+                if announced > 300 * 1024 * 1024:
+                    raise RuntimeError("O WRFOUT F000 retornado excede 300 MiB.")
+                with temporary.open("wb") as output:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if total > 300 * 1024 * 1024:
+                            raise RuntimeError("Download do WRFOUT F000 ultrapassou 300 MiB.")
+                        output.write(chunk)
+            if total < 1_000_000 or (expected_size and total != expected_size):
+                raise RuntimeError(f"WRFOUT F000 incompleto: recebido {total} bytes; asset anuncia {expected_size}.")
+            temporary.replace(target)
+        except Exception:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
+    # Keep at most two cached cycles to avoid filling a small Render disk.
+    old_files = sorted(
+        METBR_CLICK_CACHE_DIR.glob("metbr-wrf-4km-*-f000.nc"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old_path in old_files[2:]:
+        try:
+            old_path.unlink()
+        except OSError:
+            pass
+    return target
+
+def _metbr_native_domain(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """Read the WRF F000 coordinates and return its real grid-domain bounding box."""
+    from netCDF4 import Dataset
+    import importlib.util
+
+    wrf_script = BASE_DIR / "wrf" / "metbr_skewt_south.py"
+    spec = importlib.util.spec_from_file_location("sideral_metbr_skewt_source", wrf_script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Extrator nativo METBR Skew-T indisponível no Render.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    wrf_path = _metbr_download_f000(checkpoint)
+    with Dataset(wrf_path) as ds:
+        lat_grid, lon_grid = module.grid_latlon(ds)
+        import numpy as np
+        good = np.isfinite(lat_grid) & np.isfinite(lon_grid)
+        if not good.any():
+            raise RuntimeError("O WRFOUT METBR F000 não contém coordenadas geográficas válidas.")
+        return {
+            "south": round(float(np.nanmin(lat_grid[good])), 4),
+            "north": round(float(np.nanmax(lat_grid[good])), 4),
+            "west": round(float(np.nanmin(lon_grid[good])), 4),
+            "east": round(float(np.nanmax(lon_grid[good])), 4),
+        }
+
+def _metbr_render_click_profile(lat: float, lon: float, checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """Extract a native METBR WRF 4-km column and render the existing METBR SPC-style Skew-T."""
+    import importlib.util
+    import tempfile
+    import numpy as np
+    from netCDF4 import Dataset
+
+    wrf_script = BASE_DIR / "wrf" / "metbr_skewt_south.py"
+    spec = importlib.util.spec_from_file_location("sideral_metbr_skewt_click", wrf_script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Extrator nativo METBR Skew-T indisponível no Render.")
+    metbr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(metbr)
+    wrf_path = _metbr_download_f000(checkpoint)
+
+    city = {
+        "name": "Click-to-point",
+        "slug": "click-to-point",
+        "latitude": float(lat),
+        "longitude": float(lon),
+        "state": "",
+    }
+    with Dataset(wrf_path) as ds:
+        lat_grid, lon_grid = metbr.grid_latlon(ds)
+        good = np.isfinite(lat_grid) & np.isfinite(lon_grid)
+        if not good.any():
+            raise RuntimeError("O WRFOUT METBR F000 não contém coordenadas geográficas válidas.")
+        domain = {
+            "south": float(np.nanmin(lat_grid[good])),
+            "north": float(np.nanmax(lat_grid[good])),
+            "west": float(np.nanmin(lon_grid[good])),
+            "east": float(np.nanmax(lon_grid[good])),
+        }
+        if lat < domain["south"] - 0.02 or lat > domain["north"] + 0.02 or lon < domain["west"] - 0.02 or lon > domain["east"] + 0.02:
+            error = WRFDomainError(
+                f"Ponto fora da cobertura METBR WRF 4 km. Domínio aproximado: "
+                f"{domain['south']:.2f}–{domain['north']:.2f}° lat, {domain['west']:.2f}–{domain['east']:.2f}° lon."
+            )
+            error.domain = {key: round(value, 4) for key, value in domain.items()}
+            raise error
+
+        point = metbr.choose_gridpoint(ds, city)
+        valid_time = metbr.time_at(ds, 0)
+        if valid_time is None:
+            raise RuntimeError("O WRFOUT nativo METBR F000 não contém um horário válido.")
+        if abs((valid_time - checkpoint["run_time"]).total_seconds()) > 180:
+            raise RuntimeError(
+                f"WRFOUT selecionado não corresponde ao F000 do ciclo publicado: "
+                f"{valid_time:%Y-%m-%d %H:%MZ} versus {checkpoint['run_time']:%Y-%m-%d %H:%MZ}."
+            )
+        sounding, rows, terrain, thermal_advection = metbr.make_profile(ds, 0, city, point, valid_time)
+        profile_data = metbr.profile_json(city, point, checkpoint["run_time"], valid_time, 0, rows, terrain)
+        profile_data["model"] = "METBR WRF 4 km"
+        profile_data["model_id"] = "metbr_wrf_4km"
+        profile_data["source"] = checkpoint["source"]
+        profile_data["run"] = checkpoint["run_time"].strftime("%Y-%m-%d")
+        profile_data["run_cycle"] = checkpoint["run_time"].strftime("%HZ")
+        profile_data["domain"] = {key: round(value, 4) for key, value in domain.items()}
+        profile_data["native_grid_spacing_km"] = 4
+        profile_data["checkpoint_tag"] = checkpoint["tag"]
+
+    renderer = metbr.load_renderer()
+    with tempfile.TemporaryDirectory(prefix="sideral-metbr-click-", dir=str(METBR_CLICK_CACHE_DIR)) as temp_dir:
+        output_path = renderer.render_native_spc(
+            sounding,
+            Path(temp_dir),
+            {
+                "model": "METBR WRF 4 km",
+                "source": checkpoint["source"],
+                "location": "Click-to-point",
+                "state": "",
+                "latitude": float(lat),
+                "longitude": float(lon),
+                "elevation": float(terrain),
+                "fh": 0,
+                "valid": valid_time,
+                "run": checkpoint["run_time"].strftime("%Y%m%d%HZ"),
+                "thermal_advection": thermal_advection,
+            },
+        )
+        png_bytes = Path(output_path).read_bytes()
+    if not png_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise RuntimeError("O renderizador METBR não produziu um PNG válido.")
+    profile_data["png_data_uri"] = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
+    return profile_data
+
+def _metbr_checkpoint_metadata_response(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    domain = _metbr_native_domain(checkpoint)
+    return {
+        "status": True,
+        "model": "METBR WRF 4 km",
+        "model_id": "metbr_wrf_4km",
+        "native_grid_spacing_km": 4,
+        "forecast_hour": 0,
+        "run": checkpoint["run_time"].strftime("%Y-%m-%d"),
+        "run_cycle": checkpoint["run_time"].strftime("%HZ"),
+        "valid": checkpoint["run_time"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source": checkpoint["source"],
+        "checkpoint_tag": checkpoint["tag"],
+        "domain": domain,
+    }
+
+
 
 REDEMET_RADAR_CACHE_MANIFEST = "https://raw.githubusercontent.com/progames12301-hash/sideral-backend/radar-pixels/manifest.json"
 REDEMET_RADAR_CACHE_MAX_AGE = 15 * 60
@@ -2184,6 +2468,8 @@ class Handler(SimpleHTTPRequestHandler):
         
         if parsed_path == "/api/wrf/sounding/render":
             self.handle_wrf_sounding_render(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/wrf/sounding/domain":
+            self.handle_metbr_wrf_domain(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/wrf/sounding":
 
         
@@ -2267,72 +2553,75 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
 
-    def handle_wrf_sounding_render(self, query: dict[str, list[str]]) -> None:
-        """Return the native WRF F000 Skew-T PNG and numeric profile for a clicked point.
+    def handle_metbr_wrf_domain(self, query: dict[str, list[str]]) -> None:
+        """Warm the latest completed METBR F000 asset and return its native grid bounds."""
+        try:
+            model = str(query.get("model", ["metbr_wrf_4km"])[0]).lower().strip()
+            if model not in {"metbr_wrf_4km", "metbr"}:
+                self.send_json(400, {"error": "Este teste usa exclusivamente METBR WRF 4 km.", "code": "BAD_WRF_MODEL"}); return
+            checkpoint = _metbr_latest_completed_checkpoint()
+            result = _metbr_checkpoint_metadata_response(checkpoint)
+            self.send_json(200, result)
+        except (ValueError, FileNotFoundError, RuntimeError, requests.RequestException) as exc:
+            _log_sounding_error("METBR WRF F000 coverage", exc)
+            self.send_json(503, {"error": _sanitize_server_error(exc), "code": "METBR_Wrf_F000_UNAVAILABLE"})
+        except Exception as exc:
+            _log_sounding_error("METBR WRF coverage", exc)
+            self.send_json(500, {"error": "Não foi possível carregar o domínio METBR WRF 4 km.", "code": "METBR_DOMAIN_FAILED"})
 
-        The vertical-grid query is the same one used by /api/wrf/sounding. The
-        plot is rendered into a temporary directory and the PNG is returned as a
-        data URI; no permanent PNG or per-click file is published.
-        """
+    def handle_wrf_sounding_render(self, query: dict[str, list[str]]) -> None:
+        """Render METBR WRF 4-km F000 Skew-T for the selected native grid column."""
         started = time.monotonic()
         try:
-            lat = float(query.get("lat", ["-25.43"])[0])
-            lon = float(query.get("lon", ["-49.27"])[0])
-            model = str(query.get("model", ["gfs"])[0]).lower().strip()
+            lat = float(query.get("lat", ["-27.0"])[0])
+            lon = float(query.get("lon", ["-51.0"])[0])
+            model = str(query.get("model", ["metbr_wrf_4km"])[0]).lower().strip()
             fh = int(query.get("fh", ["0"])[0])
             if not (-90 <= lat <= 90 and -180 <= lon <= 180):
                 self.send_json(400, {"error": "Latitude/longitude inválidas.", "code": "BAD_COORDINATES"}); return
+            if model not in {"metbr_wrf_4km", "metbr"}:
+                self.send_json(400, {"error": "Este endpoint de teste atende somente METBR WRF 4 km.", "code": "BAD_WRF_MODEL"}); return
             if fh != 0:
-                self.send_json(400, {"error": "Este teste click-to-point está limitado à validade F000.", "code": "F000_ONLY"}); return
-            if model not in {"gfs", "icon", "ecmwf"}:
-                self.send_json(400, {"error": "Modelo WRF inválido.", "code": "BAD_WRF_MODEL"}); return
+                self.send_json(400, {"error": "O teste click-to-point está limitado à validade F000.", "code": "F000_ONLY"}); return
 
-            cache_key = (round(lat, 3), round(lon, 3), model, fh, "wrf-click-skewt-png-v1")
+            checkpoint = _metbr_latest_completed_checkpoint()
+            cache_key = (round(lat, 3), round(lon, 3), checkpoint["tag"], "metbr-click-skewt-v1")
             cached_png = wrf_sounding_render_cache.get(cache_key)
             if cached_png and time.monotonic() - float(cached_png.get("saved_at", 0.0)) < WRF_SOUNDING_RENDER_CACHE_SECONDS:
-                response = dict(cached_png["data"])
-                response["render_cache"] = True
-                response["render_ms"] = 0
-                self.send_json(200, response); return
-
-            profile_key = (round(lat, 3), round(lon, 3), model, fh, "wrf-native-profile-v1")
-            with wrf_sounding_data_lock:
-                cached_profile = sounding_cache.get(profile_key)
-                if cached_profile and time.monotonic() - float(cached_profile.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
-                    profile_payload = dict(cached_profile["data"])
-                    profile_payload["cache"] = True
-                else:
-                    profile_payload = _wrf_sounding_payload(lat, lon, model, fh)
-                    sounding_cache[profile_key] = {"saved_at": time.monotonic(), "data": dict(profile_payload)}
+                result = dict(cached_png["data"])
+                result["render_cache"] = True
+                result["render_ms"] = 0
+                self.send_json(200, result); return
 
             with wrf_sounding_render_lock:
-                # Another request could have rendered the same point while this
-                # request waited for Matplotlib's thread-safe section.
                 cached_png = wrf_sounding_render_cache.get(cache_key)
                 if cached_png and time.monotonic() - float(cached_png.get("saved_at", 0.0)) < WRF_SOUNDING_RENDER_CACHE_SECONDS:
-                    response = dict(cached_png["data"])
-                    response["render_cache"] = True
-                    response["render_ms"] = 0
-                    self.send_json(200, response); return
+                    result = dict(cached_png["data"])
+                    result["render_cache"] = True
+                    result["render_ms"] = 0
+                    self.send_json(200, result); return
 
-                png = _render_wrf_sounding_png(profile_payload)
-                response = dict(profile_payload)
-                response["png_data_uri"] = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
-                response["render_cache"] = False
-                response["render_ms"] = round((time.monotonic() - started) * 1000)
-                wrf_sounding_render_cache[cache_key] = {"saved_at": time.monotonic(), "data": dict(response)}
+                result = _metbr_render_click_profile(lat, lon, checkpoint)
+                result["render_cache"] = False
+                result["render_ms"] = round((time.monotonic() - started) * 1000)
+                wrf_sounding_render_cache[cache_key] = {"saved_at": time.monotonic(), "data": dict(result)}
                 if len(wrf_sounding_render_cache) > WRF_SOUNDING_RENDER_CACHE_MAX:
                     oldest = sorted(wrf_sounding_render_cache, key=lambda key: wrf_sounding_render_cache[key].get("saved_at", 0.0))
                     for old_key in oldest[:len(wrf_sounding_render_cache) - WRF_SOUNDING_RENDER_CACHE_MAX]:
                         wrf_sounding_render_cache.pop(old_key, None)
-            self.send_json(200, response)
+            self.send_json(200, result)
         except WRFDomainError as exc:
-            self.send_json(422, {"error": str(exc), "code": "WRF_OUTSIDE_DOMAIN"})
-        except (ValueError, FileNotFoundError, RuntimeError) as exc:
-            self.send_json(503, {"error": _sanitize_server_error(exc), "code": "WRF_SOUNDING_UNAVAILABLE"})
+            payload = {"error": str(exc), "code": "WRF_OUTSIDE_DOMAIN"}
+            domain = getattr(exc, "domain", None)
+            if domain:
+                payload["domain"] = domain
+            self.send_json(422, payload)
+        except (ValueError, FileNotFoundError, RuntimeError, requests.RequestException) as exc:
+            _log_sounding_error("METBR WRF Skew-T render", exc)
+            self.send_json(503, {"error": _sanitize_server_error(exc), "code": "METBR_SKEWT_UNAVAILABLE"})
         except Exception as exc:
-            _log_sounding_error("WRF Skew-T render", exc)
-            self.send_json(500, {"error": "Não foi possível renderizar o Skew-T deste ponto agora.", "code": "WRF_SKEWT_RENDER_FAILED"})
+            _log_sounding_error("METBR WRF Skew-T render", exc)
+            self.send_json(500, {"error": "Não foi possível gerar o Skew-T METBR para este ponto.", "code": "METBR_SKEWT_RENDER_FAILED"})
 
     def handle_wrf_sounding(self, query: dict[str, list[str]]) -> None:
         try:
