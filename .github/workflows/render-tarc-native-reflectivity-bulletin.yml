@@ -1,0 +1,93 @@
+name: Render Sideral native TARC reflectivity bulletin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/render-tarc-native-reflectivity-bulletin.yml"
+      - "tools/render_tarc_native_reflectivity_bulletin.py"
+
+permissions:
+  contents: write
+
+jobs:
+  render-native-reflectivity:
+    name: Render from the native NPZ release asset
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      SOURCE_TAG: tarc-wrf-3km-checkpoint-38059861528
+      SOURCE_ASSET: 20261011_000000.npz
+      INIT_TIME: "2026-10-10T06:00:00Z"
+      OUTPUT_TAG: tarc-native-refl-boletim-38059861528
+      OUTPUT_PNG: dist/sideral-tarc-3km-refletividade-nativa-f018.png
+      GH_TOKEN: ${${ github.token §}§}
+    steps:
+      - name: Checkout renderer
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install map-rendering dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy==1.26.4" "matplotlib==3.9.4" "cartopy==0.24.1" "Pillow>=10,<12"
+
+      - name: Download the selected native NPZ from the checkpoint release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p native_input dist
+          gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release download "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$SOURCE_ASSET" --dir native_input --clobber
+          test -s "native_input/$SOURCE_ASSET"
+          echo "Using the native frame $SOURCE_ASSET from $SOURCE_TAG"
+
+      - name: Render the bulletin from native REFL_10CM-derived data
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/render_tarc_native_reflectivity_bulletin.py
+          python tools/render_tarc_native_reflectivity_bulletin.py \
+            --input "native_input/$SOURCE_ASSET" \
+            --output "$OUTPUT_PNG" \
+            --init-time "$INIT_TIME" \
+            --source-tag "$SOURCE_TAG"
+          test -s "$OUTPUT_PNG"
+          test -s "${OUTPUT_PNG%.png}.json"
+          python - "$OUTPUT_PNG" <<'PY'
+          import sys
+          from PIL import Image
+          p=sys.argv[1]
+          with Image.open(p) as im:
+              im.verify()
+          with Image.open(p) as im:
+              assert im.format == "PNG", im.format
+              assert im.width >= 1800 and im.height >= 1100, im.size
+              print(f"PNG validated: {im.width}x{im.height}")
+          PY
+
+      - name: Publish bulletin in its own release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$OUTPUT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$OUTPUT_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
+          gh release create "$OUTPUT_TAG" \
+            "$OUTPUT_PNG" "${OUTPUT_PNG%.png}.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Sideral — Refletividade Nativa TARC 3 km — F018" \
+            --notes "Boletim renderizado a partir do arquivo nativo $SOURCE_ASSET do release $SOURCE_TAG. Campo usado: máximo vertical derivado de REFL_10CM nativa; vento a 10 m proveniente de U10/V10. Válido 00Z de 11/10/2026, inicialização 06Z de 10/10/2026. Não é uma imagem de radar observado." \
+            --prerelease --latest=false
+          gh release view "$OUTPUT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,htmlUrl,assets \
+            --jq '{tag:.tagName,url:.htmlUrl,assets:[.assets[].name]}'
