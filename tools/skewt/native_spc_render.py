@@ -802,7 +802,11 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
     ship = _fmt(getattr(prof, "ship", None), 2)
     scp = _fmt(getattr(prof, "scp", None), 2)
     microburst = _fmt(getattr(prof, "mburst", None), 2, missing="--")
-    dcp_value = _fmt(getattr(prof, "dcp", None), 3)
+    try:
+        from sharppy.sharptab import params
+        dcp_value = _fmt(params.dcp(prof), 3)
+    except Exception:
+        dcp_value = "--"
     left = [
         f"0-1 km SRH: {srh01:.2f} m²/s²" if math.isfinite(srh01) else "0-1 km SRH: --",
         f"0-1 km Shear: {shear01:.2f} kts" if math.isfinite(shear01) else "0-1 km Shear: --",
