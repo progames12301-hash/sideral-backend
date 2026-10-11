@@ -2570,7 +2570,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
     def handle_metbr_wrf_domain(self, query: dict[str, list[str]]) -> None:
-        """Warm the latest completed METBR F000 asset and return its native grid bounds."""
+        """Warm the latest available METBR F000 asset and return its native grid bounds."""
         try:
             model = str(query.get("model", ["metbr_wrf_4km"])[0]).lower().strip()
             if model not in {"metbr_wrf_4km", "metbr"}:
@@ -2580,7 +2580,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(200, result)
         except (ValueError, FileNotFoundError, RuntimeError, requests.RequestException) as exc:
             _log_sounding_error("METBR WRF F000 coverage", exc)
-            self.send_json(503, {"error": _sanitize_server_error(exc), "code": "METBR_Wrf_F000_UNAVAILABLE"})
+            self.send_json(503, {"error": _sanitize_server_error(exc), "code": "METBR_WRF_F000_UNAVAILABLE"})
         except Exception as exc:
             _log_sounding_error("METBR WRF coverage", exc)
             self.send_json(500, {"error": "Não foi possível carregar o domínio METBR WRF 4 km.", "code": "METBR_DOMAIN_FAILED"})
