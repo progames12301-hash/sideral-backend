@@ -572,7 +572,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             p0 = float(np.exp(np.log(p[i]) + frac * (np.log(p[i + 1]) - np.log(p[i]))))
             if 100 <= p0 <= 1050:
                 ax.axhline(p0, color="#5d75a5", lw=0.6, ls=(0, (1, 3)), alpha=0.8, zorder=2)
-                ax.text(36.5, p0, "0°C", fontsize=6.6, color="#526991",
+                ax.text(24.0, p0, "0°C", fontsize=6.6, color="#526991",
                         ha="left", va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=0.25))
 
     # Draw 55 wind staffs at evenly spaced log-pressure levels. The interpolation
