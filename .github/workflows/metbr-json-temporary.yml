@@ -111,6 +111,7 @@ jobs:
           assert grid.get('modelKey') == 'metbr_wrf', grid
           assert int(grid['grid']['nx']) == nx and int(grid['grid']['ny']) == ny
           assert len(grid['fields']['lat']) == nx * ny and len(grid['fields']['lon']) == nx * ny
+          available_from_payload = set()
           for index, item in enumerate(meta['frames']):
               forecast = int(item.get('forecastHour', index))
               file = item.get('dataFile') or f'frames/f{forecast:03d}.json.gz'
@@ -121,8 +122,24 @@ jobs:
               assert int(frame['gridX']) == nx and int(frame['gridY']) == ny, file
               assert len(frame['reflectivityDbz']) == nx * ny, file
               assert frame.get('forecastHour') == forecast, file
-          print(f"METBR JSON OK: {len(meta['frames'])} frames, grid {nx}x{ny}, coordenadas XLAT/XLONG e quadros GZIP")
-          print(f"Fonte nativa: {sources}")
+              fields = frame.get('fields') or {}
+              assert isinstance(fields, dict), (file, fields)
+              for field_name, values in fields.items():
+                  assert isinstance(values, list) and len(values) == nx * ny, (file, field_name)
+                  assert all(value is None or isinstance(value, (int, float)) for value in values), (file, field_name)
+              declared = frame.get('availableVariables') or []
+              assert isinstance(declared, list), (file, declared)
+              available_from_payload.update(
+                  field_name for field_name, values in fields.items()
+                  if any(value is not None for value in values)
+              )
+          detected = set(meta.get('availableVariablesAnyFrame') or [])
+          assert detected <= available_from_payload, (detected, available_from_payload)
+          assert 'reflectivity' in available_from_payload, 'Nenhum frame contém valores de refletividade usáveis'
+          print(f"METBR JSON OK: {len(meta['frames'])} frames, grid {nx}x{ny}, grade nativa e quadros GZIP multifield")
+          print(f"Variáveis disponíveis: {', '.join(sorted(available_from_payload))}")
+          print(f"Inventário WRFOUT: {len(meta.get('nativeVariables') or [])} variáveis")
+          print(f"Fonte nativa de refletividade: {sources}")
           PY
 
       - name: Preparar branch de publicação
@@ -150,8 +167,11 @@ jobs:
 
           - `metadata.json`: horários e contrato de publicação
           - `grid.json`: coordenadas geográficas nativas XLAT/XLONG, uma única vez
-          - `frames/fNNN.json.gz`: refletividade `REFL_10CM` de cada horário, comprimida
-          - `metbr_wrf_4km.json`: índice legado da refletividade nativa
+          - `frames/fNNN.json.gz`: quadros comprimidos com refletividade nativa e demais campos disponíveis
+          - `metadata.json`: inventário das variáveis WRFOUT e campos disponíveis por horário
+          - `metbr_wrf_4km.json`: índice legado compatível, com os horários e a refletividade
+
+          Campos publicados quando presentes/deriváveis no WRFOUT: precipitação acumulada, temperatura a 2 m, umidade relativa a 2 m, vento a 10 m, água precipitável, CAPE, bulk shear 0–6 km e vorticidade relativa em 850 hPa. Cada frame informa `availableVariables` e `fieldSources`; campos ausentes não são substituídos por outros modelos.
 
           Este produto METBR é servido diretamente desta branch, sem proxy Render e sem reutilizar quadros de outros WRF.
           EOF
