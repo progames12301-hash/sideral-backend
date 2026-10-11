@@ -570,8 +570,8 @@ def extract_native_vertical_profile_grid(ds, expected_shape):
         np.isfinite(terrain) & np.isfinite(u10_kt) & np.isfinite(v10_kt)
     )
 
-    def clean(a, valid=None):
-        arr = np.asarray(a, dtype=np.float32).copy()
+    def clean(a, valid=None, dtype=np.float32):
+        arr = np.asarray(a, dtype=dtype).copy()
         if valid is not None:
             arr[~valid] = np.nan
         arr[~np.isfinite(arr)] = np.nan
@@ -595,12 +595,12 @@ def extract_native_vertical_profile_grid(ds, expected_shape):
         "lat": clean(np.asarray(ds.variables["XLAT"][:])[0] if np.asarray(ds.variables["XLAT"][:]).ndim == 3 else ds.variables["XLAT"][:]),
         "lon": clean(np.asarray(ds.variables["XLONG"][:])[0] if np.asarray(ds.variables["XLONG"][:]).ndim == 3 else ds.variables["XLONG"][:]),
         "pressure_hpa": clean(pressure_all, all_valid),
-        "temperature_c": clean(temperature_all, all_valid),
-        "dewpoint_c": clean(dewpoint_all, all_valid),
+        "temperature_c": clean(temperature_all, all_valid, np.float16),
+        "dewpoint_c": clean(dewpoint_all, all_valid, np.float16),
         "height_m": clean(height_all, all_valid),
-        "u_kt": clean(u_all, all_valid),
-        "v_kt": clean(v_all, all_valid),
-        "omega_pa_s": clean(omega_all, all_valid),
+        "u_kt": clean(u_all, all_valid, np.float16),
+        "v_kt": clean(v_all, all_valid, np.float16),
+        "omega_pa_s": clean(omega_all, all_valid, np.float16),
         "terrain_m": clean(terrain),
     }
 
