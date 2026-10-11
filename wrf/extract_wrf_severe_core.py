@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, datetime as dt, gzip, json, math, re, shutil, traceback
+import argparse, datetime as dt, gzip, json, math, os, re, shutil, traceback
 from pathlib import Path
 import numpy as np
 import xarray as xr
