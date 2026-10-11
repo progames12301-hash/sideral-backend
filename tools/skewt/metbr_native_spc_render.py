@@ -540,7 +540,7 @@ def _make_theta_axes(ax, p, t, td):
     ax.set_yticks([1000, 900, 800, 700, 600, 500, 400, 300, 200, 100])
     ax.tick_params(axis="y", labelleft=False, left=False)
     surface_pressure = float(p[0])
-    surface_axis_limit = min(1050.0, surface_pressure + max(1.0, surface_pressure * 0.003))
+    surface_axis_limit = surface_pressure
     ax.set_ylim(surface_axis_limit, 100.0)
     for pp in [1000,900,800,700,600,500,400,300,200,100]:
         if pp <= surface_pressure + 0.1:
@@ -845,7 +845,7 @@ def _make_advection(ax, prof, latitude):
     surface_pressure = _finite(prof.pres[prof.sfc])
     if surface_pressure is None:
         raise RuntimeError("Pressão de superfície ausente no perfil de advecção inferida.")
-    surface_axis_limit = min(1050.0, surface_pressure + max(1.0, surface_pressure * 0.003))
+    surface_axis_limit = surface_pressure
     ax.set_ylim(surface_axis_limit, 100.0)
     for pp in [1000,800,600,400,200,100]:
         if pp <= surface_pressure + 0.1:
