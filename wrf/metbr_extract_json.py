@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import gzip
 import json
 from pathlib import Path
 
@@ -116,6 +117,32 @@ def validate_frames(frames, nx, ny):
     print(f"[METBR][VALID] {len(frames)} frames validados: {expected} valores/frame ({ny}x{nx})")
 
 
+def native_grid_fields(ds, nx, ny):
+    """Preserva as coordenadas XLAT/XLONG reais da grade METBR uma única vez."""
+    result = {}
+    for source_name, output_name in (("XLAT", "lat"), ("XLONG", "lon")):
+        variable = ds.variables.get(source_name)
+        if variable is None:
+            raise RuntimeError(f"{source_name} ausente no WRFOUT METBR")
+        values = np.asarray(variable[:], dtype=np.float64)
+        while values.ndim > 2:
+            values = values[0]
+        if values.shape != (ny, nx):
+            raise RuntimeError(f"{source_name} tem grade {values.shape}; esperada {(ny, nx)}")
+        if not np.isfinite(values).all():
+            raise RuntimeError(f"{source_name} contém coordenadas não finitas")
+        result[output_name] = np.round(values, 5).reshape(-1).tolist()
+    return result
+
+
+def write_gzip_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+    with path.open("wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as compressed:
+            compressed.write(body)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -132,6 +159,7 @@ def main():
     nx = ny = None
     init_time = ""
     source_descriptions = set()
+    coordinates = None
 
     for index, path in enumerate(files):
         with Dataset(path) as ds:
@@ -148,6 +176,7 @@ def main():
                 raise RuntimeError(f"Grade inesperada em {path.name}: {refl.shape}, esperado {expected_shape}")
             if nx is None:
                 nx, ny = x, y
+                coordinates = native_grid_fields(ds, nx, ny)
             elif (nx, ny) != (x, y):
                 raise RuntimeError("Os WRFOUTs possuem grades diferentes")
 
@@ -161,25 +190,60 @@ def main():
             t = read_time(ds)
             if not init_time:
                 init_time = t
-            frames.append({
+            reflectivity_values = clean_array(refl, expected_size)
+            data_file = f"frames/f{index:03d}.json.gz"
+            frame_entry = {
                 "file": path.name,
                 "time": t,
                 "forecastHour": index,
-                "reflectivityDbz": clean_array(refl, expected_size),
+                "dataFile": data_file,
+                "reflectivityDbz": reflectivity_values,
+            }
+            frames.append(frame_entry)
+            write_gzip_json(out / data_file, {
+                "schema": "sideral-metbr-reflectivity-frame-v1",
+                "model": "METBR WRF 4 km",
+                "modelKey": "metbr_wrf",
+                "resolutionKm": 4,
+                "grid": {"nx": nx, "ny": ny},
+                "gridX": nx,
+                "gridY": ny,
+                "reflectivitySource": "REFL_10CM_NATIVE",
+                "nativeGrid": True,
+                "initTime": init_time,
+                "forecastHour": index,
+                "validTime": t,
+                "reflectivityDbz": reflectivity_values,
             })
 
     validate_frames(frames, nx, ny)
     sources = sorted(source_descriptions)
+    grid_payload = {
+        "schema": "sideral-metbr-grid-v1",
+        "model": "METBR WRF 4 km",
+        "modelKey": "metbr_wrf",
+        "resolutionKm": 4,
+        "nativeGrid": True,
+        "grid": {"nx": nx, "ny": ny},
+        "initTime": init_time,
+        "fields": coordinates,
+    }
+    grid_path = out / "grid.json"
+    grid_path.write_text(json.dumps(grid_payload, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+
     payload = {
-        "schemaVersion": "1.0", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
+        "schemaVersion": "1.1", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
         "resolutionKm": 4, "grid": {"nx": nx, "ny": ny}, "frames": frames,
+        "gridFile": "grid.json", "framePathTemplate": "frames/f{forecastHour:03d}.json.gz",
         "frameCount": len(frames), "temporalResolutionMinutes": 60,
         "reflectivitySource": sources, "nativeGrid": True, "initTime": init_time,
     }
     metadata = {
-        "schemaVersion": "1.0", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
+        "schemaVersion": "1.1", "model": "METBR WRF 4 km", "modelKey": "metbr_wrf",
         "resolutionKm": 4, "grid": {"nx": nx, "ny": ny},
-        "frames": [{"file": f["file"], "time": f["time"], "forecastHour": f["forecastHour"]} for f in frames],
+        "gridFile": "grid.json", "framePathTemplate": "frames/f{forecastHour:03d}.json.gz",
+        "frames": [{"file": f["file"], "time": f["time"], "forecastHour": f["forecastHour"],
+                    "dataFile": f["dataFile"]} for f in frames],
         "frameCount": len(frames), "temporalResolutionMinutes": 60,
         "reflectivitySource": sources, "nativeGrid": True, "initTime": init_time,
     }
@@ -188,10 +252,19 @@ def main():
     json_path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False), encoding="utf-8")
     metadata_path.write_text(json.dumps(metadata, separators=(",", ":"), allow_nan=False), encoding="utf-8")
 
-    # Validate the serialized JSON too, before publication.
+    # Validate the serialized root JSON, native coordinate grid and hourly GZIPs.
     serialized = json.loads(json_path.read_text(encoding="utf-8"))
     validate_frames(serialized["frames"], nx, ny)
-    print(f"METBR JSON pronto: {len(frames)} frames, grade {nx}x{ny}")
+    grid_saved = json.loads(grid_path.read_text(encoding="utf-8"))
+    n_grid = nx * ny
+    assert len(grid_saved["fields"]["lat"]) == n_grid and len(grid_saved["fields"]["lon"]) == n_grid
+    for frame in frames:
+        with gzip.open(out / frame["dataFile"], "rt", encoding="utf-8") as handle:
+            hourly = json.load(handle)
+        assert hourly["modelKey"] == "metbr_wrf"
+        assert hourly["reflectivitySource"] == "REFL_10CM_NATIVE"
+        assert len(hourly["reflectivityDbz"]) == n_grid
+    print(f"METBR JSON pronto: {len(frames)} frames, grade {nx}x{ny}, grid.json + quadros GZIP nativos")
     print(f"[METBR] fontes nativas usadas: {', '.join(sources)}")
 
 
