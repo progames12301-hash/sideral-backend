@@ -21,7 +21,7 @@ jobs:
       INIT_TIME: "2026-10-10T06:00:00Z"
       OUTPUT_TAG: tarc-native-refl-boletim-38059861528
       OUTPUT_PNG: dist/sideral-tarc-3km-refletividade-nativa-f018.png
-      GH_TOKEN: ${${ github.token §}§}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout renderer
         uses: actions/checkout@v4
