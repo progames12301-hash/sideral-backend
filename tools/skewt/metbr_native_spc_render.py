@@ -1134,7 +1134,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
              "BUNKERS 2000: vento médio 0-6 km ± 7,5 m/s perpendicular ao cisalhamento",
              ha="left", va="center", fontsize=6.0, color=INK, weight="bold")
     fig.text(0.630, 0.512,
-             "SRH(h) = ∫₀ʰ (V − C) · [k × dV]  •  Hemisfério Sul: LM ciclônico",
+             "SRH(h) = ∫₀ʰ (V − C) · [(dV/dz) × k] dz  •  Hemisfério Sul: LM ciclônico",
              ha="left", va="center", fontsize=5.9, color="#303030")
     _make_advection(ax_adv, prof, latitude)
     srw_title = "Vento relativo à tempestade (LM)" if is_southern else "Vento relativo à tempestade (RM)"
