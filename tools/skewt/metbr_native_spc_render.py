@@ -455,43 +455,114 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                                  linewidth=0, zorder=1)
         ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35,
                 ls="--", zorder=5, label="Parcela SFC")
-    # The plotted parcel path is surface-based, so LCL/LFC/EL markers must all
-    # come from that same parcel. Never mix pressure levels from different parcel
-    # definitions or draw a marker below the actual surface.
+    # LCL/LFC/EL must all refer to the same surface parcel as the plotted parcel path.
+    # SHARPpy heights are AGL; use them to cross-check pressure levels and avoid
+    # displaying stale or physically inverted values from a malformed parcel object.
     surface_parcel = getattr(pcl, "sfcpcl", None)
-    markers = (
-        ("lclpres", "LCL", "#178447", 43.0),
-        ("lfcpres", "LFC", "#b8860b", 47.4),
-        ("elpres", "EL", "#8147a8", 51.8),
+    top_pressure = float(np.nanmin(p))
+    level_specs = (
+        ("LCL", "lclpres", "lclhght", "#178447"),
+        ("LFC", "lfcpres", "lfchght", "#b8860b"),
+        ("EL", "elpres", "elhght", "#8147a8"),
     )
-    for attr, short, marker_color, label_x in markers:
-        pressure_value = _finite(getattr(surface_parcel, attr, None)) if surface_parcel is not None else None
-        if pressure_value is None and short == "LCL":
-            try:
-                from sharppy.sharptab import thermo
-                pressure_value = float(thermo.drylift(float(p[0]), float(t[0]), float(td[0]))[0])
-            except Exception:
-                pressure_value = None
-        if pressure_value is None or not (100.0 <= pressure_value <= np.nanmax(p) + 0.1):
+    parcel_levels = {}
+    for short, pressure_attr, height_attr, marker_color in level_specs:
+        pressure_value = _finite(getattr(surface_parcel, pressure_attr, None)) if surface_parcel is not None else None
+        height_value = _finite(getattr(surface_parcel, height_attr, None)) if surface_parcel is not None else None
+
+        # Prefer a valid native pressure, but if it disagrees severely with the
+        # corresponding SHARPpy AGL height, recover pressure from the plotted column.
+        pressure_from_height = np.nan
+        if height_value is not None and 0.0 <= height_value <= float(np.nanmax(h_agl)):
+            pressure_from_height = _interp_height(p, h_agl, height_value)
+        pressure_ok = (
+            pressure_value is not None
+            and top_pressure - 0.1 <= pressure_value <= surface_pressure + 0.1
+        )
+        height_pressure_ok = math.isfinite(pressure_from_height) and (
+            top_pressure - 0.1 <= pressure_from_height <= surface_pressure + 0.1
+        )
+        if not pressure_ok and height_pressure_ok:
+            pressure_value = float(pressure_from_height)
+        elif pressure_ok and height_pressure_ok:
+            height_at_pressure = _interp_pressure(h_agl, p, pressure_value)
+            if math.isfinite(height_at_pressure) and height_value is not None:
+                if abs(height_at_pressure - height_value) > 500.0:
+                    pressure_value = float(pressure_from_height)
+
+        if pressure_value is None or not (top_pressure - 0.1 <= pressure_value <= surface_pressure + 0.1):
+            pressure_value = None
+        if pressure_value is not None:
+            resolved_height = _interp_pressure(h_agl, p, pressure_value)
+            if not math.isfinite(resolved_height):
+                resolved_height = height_value if height_value is not None else np.nan
+            if math.isfinite(resolved_height) and resolved_height >= -100.0:
+                parcel_levels[short] = {
+                    "pressure": float(pressure_value),
+                    "height_agl_m": max(0.0, float(resolved_height)),
+                    "color": marker_color,
+                }
+
+    # Compute LCL from the surface thermodynamics if SHARPpy did not provide
+    # a usable level; do not invent LFC or EL when the parcel has no valid buoyancy layer.
+    if "LCL" not in parcel_levels:
+        try:
+            from sharppy.sharptab import thermo
+            lcl_pressure = _finite(thermo.drylift(float(p[0]), float(t[0]), float(td[0]))[0])
+            if lcl_pressure is not None and top_pressure - 0.1 <= lcl_pressure <= surface_pressure + 0.1:
+                lcl_height = _interp_pressure(h_agl, p, lcl_pressure)
+                parcel_levels["LCL"] = {
+                    "pressure": float(lcl_pressure),
+                    "height_agl_m": max(0.0, float(lcl_height)) if math.isfinite(lcl_height) else np.nan,
+                    "color": "#178447",
+                }
+        except Exception:
+            pass
+
+    # Enforce the physical order with pressure decreasing upward: SFC ≥ LCL ≥ LFC ≥ EL.
+    lcl = parcel_levels.get("LCL")
+    lfc = parcel_levels.get("LFC")
+    el = parcel_levels.get("EL")
+    if lcl is None:
+        parcel_levels.pop("LFC", None)
+        parcel_levels.pop("EL", None)
+    else:
+        if lfc is not None and lfc["pressure"] > lcl["pressure"] + 1.0:
+            parcel_levels.pop("LFC", None)
+            parcel_levels.pop("EL", None)
+            lfc = None
+        if lfc is None:
+            parcel_levels.pop("EL", None)
+        elif el is not None and el["pressure"] > lfc["pressure"] + 1.0:
+            parcel_levels.pop("EL", None)
+
+    # Use one label column and small leader lines so close LCL/LFC/EL values
+    # cannot collide or stick together on the thermodynamic curves.
+    marker_offsets = {"LCL": 12, "LFC": 0, "EL": -12}
+    marker_x = 36.0
+    for short in ("LCL", "LFC", "EL"):
+        level = parcel_levels.get(short)
+        if level is None:
             continue
-        if pressure_value < np.nanmin(p) - 0.1 or pressure_value > surface_pressure + 0.1:
-            # A parcel level below the local ground is physically outside this
-            # sounding; never draw its marker in the blank sub-surface region.
-            continue
-        if pressure_value >= surface_pressure - 0.75:
-            # A genuinely surface-based LCL is identified at the surface line,
-            # not as a long dashed line inside the below-ground plotting area.
-            ax.text(label_x, surface_pressure, f"{short}≈SFC", fontsize=6.3,
-                    weight="bold", ha="left", va="bottom", color=marker_color,
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.84, pad=0.35),
-                    clip_on=True, zorder=9)
-            continue
-        ax.axhline(pressure_value, color=marker_color, lw=0.85,
-                   ls=(0, (3, 2)), alpha=0.92, zorder=3)
-        ax.text(label_x, pressure_value, short, fontsize=7.0, weight="bold",
-                ha="left", va="center", color=marker_color,
-                bbox=dict(facecolor="white", edgecolor="none", alpha=0.86, pad=0.5),
-                clip_on=False, zorder=9)
+        pressure_value = level["pressure"]
+        marker_color = level["color"]
+        height_agl = level["height_agl_m"]
+        if not math.isfinite(height_agl):
+            label = short
+        elif height_agl < 50.0:
+            label = f"{short} 0 km"
+        else:
+            label = f"{short} {height_agl / 1000.0:.1f} km"
+        ax.axhline(pressure_value, color=marker_color, lw=0.8,
+                   ls=(0, (3, 2)), alpha=0.88, zorder=3)
+        ax.annotate(
+            label, xy=(marker_x, pressure_value), xycoords="data",
+            xytext=(7, marker_offsets[short]), textcoords="offset points",
+            fontsize=6.2, color=marker_color, weight="bold",
+            ha="left", va="center", clip_on=True, zorder=9,
+            bbox=dict(facecolor="white", edgecolor="#dce2e9", alpha=0.96, pad=0.25),
+            arrowprops=dict(arrowstyle="-", color=marker_color, lw=0.55, alpha=0.8),
+        )
 
     # Freezing level, a common sounding reference mark.
     freeze_idx = np.where(np.isfinite(t[:-1]) & np.isfinite(t[1:]) & (t[:-1] * t[1:] <= 0))[0]
@@ -585,43 +656,42 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     radius = max(60, int(math.ceil((max_speed + 8.0) / 10.0) * 10))
     plot_limit = radius + 9.0
 
-    # Only the hodograph is dark; preserve the existing overall Skew-T layout.
-    ax.set_facecolor("#060a11")
+    # White, print-friendly hodograph; the black panel background is removed.
+    ax.set_facecolor("white")
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlim(-plot_limit, plot_limit)
     ax.set_ylim(-plot_limit, plot_limit)
     for spine in ax.spines.values():
-        spine.set_color("#26313f")
-        spine.set_linewidth(0.9)
+        spine.set_color("#d5dbe3")
+        spine.set_linewidth(0.8)
     ax.set_xticks([])
     ax.set_yticks([])
 
-    # Concentric circles represent wind speed in knots.
+    # Concentric wind-speed rings and radial guides remain subtle on white.
     for speed in range(10, radius + 1, 10):
         major = speed % 20 == 0
         ax.add_patch(plt.Circle(
             (0, 0), speed, fill=False,
             lw=0.78 if major else 0.48,
-            edgecolor="#354253" if major else "#1d2734",
+            edgecolor="#c9d1dc" if major else "#e7ebf0",
             zorder=0,
         ))
-        ax.text(-speed, 1.4, f"{speed}", fontsize=6.2, color="#8694a6",
+        ax.text(-speed, 1.4, f"{speed}", fontsize=6.2, color="#7d8795",
                 ha="center", va="bottom", zorder=1)
-        ax.text(1.6, speed, f"{speed}", fontsize=6.2, color="#8694a6",
+        ax.text(1.6, speed, f"{speed}", fontsize=6.2, color="#7d8795",
                 ha="left", va="center", zorder=1)
-    # Subtle radial spokes retain orientation without competing with the wind trace.
     for angle in range(0, 360, 30):
         radians = math.radians(angle)
         ax.plot(
             [0.0, plot_limit * math.cos(radians)],
             [0.0, plot_limit * math.sin(radians)],
-            color="#17212e", lw=0.48, zorder=0,
+            color="#edf0f4", lw=0.48, zorder=0,
         )
-    ax.axhline(0, color="#465365", lw=0.8, zorder=1)
-    ax.axvline(0, color="#465365", lw=0.8, zorder=1)
+    ax.axhline(0, color="#bcc5d1", lw=0.8, zorder=1)
+    ax.axvline(0, color="#bcc5d1", lw=0.8, zorder=1)
 
     # Earth-relative components: +U east/right, +V north/up.
-    compass_style = dict(fontsize=7.2, color="#d2dbe7", weight="bold", zorder=7)
+    compass_style = dict(fontsize=7.2, color="#354154", weight="bold", zorder=7)
     ax.text(0, plot_limit - 2.0, "N", ha="center", va="top", **compass_style)
     ax.text(plot_limit - 2.0, 0, "E", ha="right", va="center", **compass_style)
     ax.text(0, -plot_limit + 2.0, "S", ha="center", va="bottom", **compass_style)
@@ -662,9 +732,9 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
             ax.annotate(
                 label, xy=(px, py), xycoords="data",
                 xytext=(dx, dy), textcoords="offset points",
-                fontsize=6.5, color="#edf2f8", weight="bold",
+                fontsize=6.5, color="#273244", weight="bold",
                 ha="center", va="center", zorder=7,
-                bbox=dict(facecolor="#060a11", edgecolor="none", alpha=0.88, pad=0.25),
+                bbox=dict(facecolor="white", edgecolor="#dbe1e8", alpha=0.94, pad=0.30),
             )
 
     # SHARPpy supplies Bunkers RM/LM vectors. The preferred cyclonic mover in
@@ -673,7 +743,7 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     is_southern = "sul" in preferred_label.lower()
     markers = [
         ("LM", lm, "#ff4777", (3.2, 5.0), "o"),
-        ("MW", mw, "#dce4ef", (3.0, -7.0), "s"),
+        ("MW", mw, "#52657d", (3.0, -7.0), "s"),
         ("RM", rm, "#ffc247", (-4.0, 5.0), "o"),
     ]
     for label, (sx, sy), color, (dx, dy), marker in markers:
@@ -697,9 +767,9 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     rm_speed = math.hypot(*rm)
     lm_speed = math.hypot(*lm)
     ax.set_title(
-        f"{title_text} • Bunkers 2000: V̄0–6 {mean_speed:.1f} kt | RM {rm_speed:.1f} | LM {lm_speed:.1f} kt\n"
-        f"Referência ciclônica: {mover_short} ({hemisphere_short}) • Ângulo crítico: {ca}",
-        fontsize=6.9, loc="left", pad=3, color=INK,
+        f"{title_text}\nV̄ 0–6 km {mean_speed:.1f} kt · RM {rm_speed:.1f} kt · LM {lm_speed:.1f} kt · "
+        f"Ciclônico {mover_short} ({hemisphere_short}) · Ângulo {ca}",
+        fontsize=5.9, loc="left", pad=3, color=INK,
     )
     legend_handles = [
         plt.Line2D([0], [0], color=layer_colors[0], lw=2.2, label="0–0,5 km"),
@@ -710,79 +780,6 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     ax.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, -0.04),
               ncol=4, fontsize=5.7, frameon=False, labelcolor=INK,
               handlelength=1.05, handletextpad=0.35, columnspacing=0.8)
-
-def _inferred_temp_advection(prof, latitude):
-    """SHARPpy-style geostrophic thermal-advection estimate with corrected layer mean.
-
-    This is an inferred sounding diagnostic, not the WRF model's horizontal
-    temperature-advection field. SHARPpy's upstream routine multiplies the
-    temperature sum by 2 instead of computing the arithmetic mean.
-    """
-    from sharppy.sharptab import interp, thermo, utils, winds
-
-    pressure_profile = _arr(getattr(prof, "pres", []))
-    sfc_pressure = _finite(prof.pres[prof.sfc])
-    available = pressure_profile[np.isfinite(pressure_profile) & (pressure_profile >= 100.0)]
-    if sfc_pressure is None or len(available) < 2:
-        return np.asarray([]), np.empty((0, 2), dtype=float)
-
-    top_pressure = float(available[-1])
-    pressure = np.arange(float(sfc_pressure), top_pressure, -100.0, dtype=float)
-    if len(pressure) < 2:
-        return np.asarray([]), np.empty((0, 2), dtype=float)
-
-    temperature_k = _arr(thermo.ctok(interp.temp(prof, pressure)))
-    height_m = _arr(interp.hght(prof, pressure))
-    direction = _arr(interp.vec(prof, pressure)[0])
-    n = min(len(pressure), len(temperature_k), len(height_m), len(direction))
-    pressure, temperature_k, height_m, direction = (
-        arr[:n] for arr in (pressure, temperature_k, height_m, direction)
-    )
-    if n < 2:
-        return np.asarray([]), np.empty((0, 2), dtype=float)
-
-    coriolis_frequency = 2.0 * (2.0 * math.pi / 86164.0) * math.sin(math.radians(float(latitude)))
-    multiplier = (coriolis_frequency / 9.81) * (math.pi / 180.0)
-    values = np.full(n - 1, np.nan, dtype=float)
-    bounds = np.full((n - 1, 2), np.nan, dtype=float)
-
-    for i in range(1, n):
-        p_bottom, p_top = float(pressure[i - 1]), float(pressure[i])
-        z_bottom, z_top = float(height_m[i - 1]), float(height_m[i])
-        t_bottom, t_top = float(temperature_k[i - 1]), float(temperature_k[i])
-        d_bottom, d_top = float(direction[i - 1]), float(direction[i])
-        bounds[i - 1] = (p_bottom, p_top)
-        if not all(math.isfinite(v) for v in (
-            p_bottom, p_top, z_bottom, z_top, t_bottom, t_top, d_bottom, d_top
-        )):
-            continue
-        if z_top <= z_bottom:
-            continue
-
-        # Preserve SHARPpy's directional-angle unwrap and geostrophic-wind
-        # estimate, but use the true arithmetic mean temperature for the layer.
-        d_bottom %= 360.0
-        d_top %= 360.0
-        adjusted_top_direction = d_top + (180.0 - d_bottom)
-        if adjusted_top_direction < 0.0:
-            adjusted_top_direction += 360.0
-        elif adjusted_top_direction >= 360.0:
-            adjusted_top_direction -= 360.0
-        directional_change = adjusted_top_direction - 180.0
-
-        mean_u, mean_v = winds.mean_wind(prof, pbot=p_bottom, ptop=p_top)
-        mean_speed_kt = _finite(utils.comp2vec(mean_u, mean_v)[1])
-        if mean_speed_kt is None:
-            continue
-        mean_speed_ms = float(utils.KTS2MS(mean_speed_kt))
-        mean_temperature_k = 0.5 * (t_bottom + t_top)
-        values[i - 1] = (
-            multiplier * mean_speed_ms ** 2 * mean_temperature_k
-            * (directional_change / (z_top - z_bottom)) * 3600.0
-        )
-
-    return values, bounds
-
 
 def _sweat_index_hemispheric(prof, latitude):
     """Miller/Nascimento SWEAT with mirrored directional criteria in the Southern Hemisphere."""
@@ -831,72 +828,68 @@ def _sweat_index_hemispheric(prof, latitude):
     return float(value + direction_term)
 
 
-def _make_advection(ax, prof, latitude):
-    ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_xlim(-0.25, 0.25)
-    ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
-    ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
-    ax.set_xlabel("Advecção térmica inferida\n(estimativa, °C/h)", fontsize=6.4, labelpad=2)
-    ax.set_xticks([-2, -1, 0, 1, 2])
-    ax.set_yticks([1000,900,800,700,600,500,400,300,200,100])
+def _make_advection(ax, thermal_advection, surface_pressure):
+    """Render WRF's horizontal temperature advection, -V·grad(T), on pressure levels."""
+    ax.set_facecolor("white")
+    ax.set_yscale("log")
+    ax.spines[:].set_color("#d5dbe3")
+    ax.spines[:].set_linewidth(0.8)
+    ax.tick_params(axis="both", labelsize=6.2, colors=INK, direction="out", length=2.5, pad=2)
+    ax.set_title("Advecção térmica WRF", fontsize=7.1, loc="left", pad=4, color=INK)
+    ax.set_xlabel("Horizontal, °C/h\n(+ quente / − frio)", fontsize=5.8, labelpad=2)
+    ax.set_yticks([1000, 800, 600, 400, 200, 100])
     ax.tick_params(axis="y", labelleft=False, left=False)
-    ax.axvline(0, color=INK, lw=0.9)
-    surface_pressure = _finite(prof.pres[prof.sfc])
-    if surface_pressure is None:
-        raise RuntimeError("Pressão de superfície ausente no perfil de advecção inferida.")
-    surface_axis_limit = surface_pressure
-    ax.set_ylim(surface_axis_limit, 100.0)
-    for pp in [1000,800,600,400,200,100]:
+    ax.set_ylim(float(surface_pressure), 100.0)
+    for pp in [1000, 800, 600, 400, 200, 100]:
         if pp <= surface_pressure + 0.1:
-            ax.axhline(pp, color="#e3e3e3", lw=0.45, zorder=0)
+            ax.axhline(pp, color="#e5e9ee", lw=0.42, zorder=0)
 
-    try:
-        adv_values, pressure_bounds = _inferred_temp_advection(prof, latitude)
-        adv_values = _arr(adv_values)
-        pressure_bounds = np.asarray(np.ma.asarray(pressure_bounds).filled(np.nan), dtype=float)
-    except Exception as exc:
-        raise RuntimeError(f"Falha ao calcular advecção térmica inferida: {exc}") from exc
-
-    if pressure_bounds.ndim != 2 or pressure_bounds.shape[1] != 2:
-        return
-    n = min(len(adv_values), len(pressure_bounds))
-    layers = []
-    for value, (p_bottom, p_top) in zip(adv_values[:n], pressure_bounds[:n]):
-        if not (math.isfinite(float(value)) and math.isfinite(float(p_bottom))
-                and math.isfinite(float(p_top)) and 100 <= p_top < p_bottom <= 1050):
+    ax.axvline(0.0, color="#576273", lw=0.75, zorder=1)
+    levels = thermal_advection.get("levels", []) if isinstance(thermal_advection, dict) else []
+    pairs = []
+    for row in levels:
+        pressure = _finite(row.get("pressure_hpa"))
+        value = _finite(row.get("advection_c_h"))
+        if pressure is None or value is None or not (100.0 <= pressure <= surface_pressure + 0.1):
             continue
-        value = float(value)
-        p_mid = math.sqrt(float(p_bottom) * float(p_top))
-        layers.append((p_mid, value, float(p_bottom), float(p_top)))
-    if not layers:
-        ax.text(0.5, 0.5, "Sem dados válidos", transform=ax.transAxes, ha="center", va="center",
-                fontsize=7.2, color="#555555")
+        pairs.append((pressure, value))
+    pairs.sort(key=lambda item: item[0], reverse=True)
+    if len(pairs) < 2:
+        ax.text(0.5, 0.52,
+                "Campo horizontal\nindisponível",
+                transform=ax.transAxes, ha="center", va="center",
+                fontsize=6.2, color="#626d7b")
+        ax.text(0.5, 0.43, "requer gradiente T + vento",
+                transform=ax.transAxes, ha="center", va="center",
+                fontsize=5.0, color="#7c8795")
         return
 
-    layers.sort(key=lambda item: item[0], reverse=True)
-    mid_pressure = np.asarray([row[0] for row in layers], dtype=float)
-    values = np.asarray([row[1] for row in layers], dtype=float)
-    # A thin profile trace is easier to read than opaque 100-hPa blocks.
-    # Very light signed shading preserves warming/cooling polarity without
-    # implying more vertical resolution than SHARPpy's layers provide.
-    for p_mid, value, p_bottom, p_top in layers:
-        color = "#c94c4c" if value > 0 else "#3266c5"
-        ax.fill_betweenx([p_top, p_bottom], 0, value, color=color, alpha=0.12, linewidth=0, zorder=1)
-    points = np.column_stack((values, mid_pressure)).reshape(-1, 1, 2)
+    pressures = np.asarray([row[0] for row in pairs], dtype=float)
+    values = np.asarray([row[1] for row in pairs], dtype=float)
+    # Warming advection is positive, cold advection negative; the values come
+    # from the WRF horizontal field, not vertical turning in a single sounding.
+    for idx in range(len(pairs) - 1):
+        p0, p1 = pressures[idx], pressures[idx + 1]
+        v0, v1 = values[idx], values[idx + 1]
+        color = "#bd4b4b" if 0.5 * (v0 + v1) >= 0.0 else "#3767b4"
+        ax.fill_betweenx([p0, p1], [0.0, 0.0], [v0, v1],
+                         color=color, alpha=0.13, linewidth=0, zorder=1)
+    points = np.column_stack((values, pressures)).reshape(-1, 1, 2)
     if len(points) >= 2:
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
         segment_colors = [
-            "#c94c4c" if (values[k] + values[k + 1]) / 2.0 > 0 else "#3266c5"
+            "#bd4b4b" if 0.5 * (values[k] + values[k + 1]) >= 0.0 else "#3767b4"
             for k in range(len(values) - 1)
         ]
-        ax.add_collection(LineCollection(segments, colors=segment_colors, linewidths=1.35, zorder=3))
-    point_colors = ["#c94c4c" if value > 0 else "#3266c5" for value in values]
-    ax.scatter(values, mid_pressure, c=point_colors, s=12, edgecolors="white", linewidths=0.25, zorder=4)
-    # Scale from the actual values; never clip or discard valid layers merely
-    # because they are outside a fixed +/-2 C/h plotting window.
+        ax.add_collection(LineCollection(segments, colors=segment_colors, linewidths=1.15, zorder=3))
+    ax.scatter(values, pressures,
+               c=["#bd4b4b" if value >= 0.0 else "#3767b4" for value in values],
+               s=8, edgecolors="white", linewidths=0.25, zorder=4)
     max_abs = float(np.nanmax(np.abs(values))) if len(values) else 0.0
-    limit = max(0.25, math.ceil(max_abs * 1.10 * 4.0) / 4.0)
+    limit = max(0.1, math.ceil(max_abs * 1.15 * 4.0) / 4.0)
     ax.set_xlim(-limit, limit)
     ax.set_xticks(np.linspace(-limit, limit, 5))
+    ax.grid(axis="x", color="#edf0f4", lw=0.4, zorder=0)
 
 
 def _make_srw(ax, h_agl, u, v, storm, title_text):
@@ -1126,15 +1119,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     _make_skew_axes(ax_skew, p, t, td, z, u, v, prof, station_label, date_text, elevation)
     _make_theta_axes(ax_theta, p, t, td)
     _make_hodo(ax_hodo, z, u, v, "Hodógrafa (kt)", motion, elevation, critical_angle, preferred_label)
-    # Compact formula notes sit between the hodograph and lower diagnostic panels.
-    # The underlying storm motion and SRH values are calculated from the METBR profile.
-    fig.text(0.630, 0.529,
-             "BUNKERS 2000: vento médio 0-6 km ± 7,5 m/s perpendicular ao cisalhamento",
-             ha="left", va="center", fontsize=6.0, color=INK, weight="bold")
-    fig.text(0.630, 0.512,
-             "SRH(h) = ∫₀ʰ (V − C) · [(dV/dz) × k] dz  •  Hemisfério Sul: LM ciclônico",
-             ha="left", va="center", fontsize=5.9, color="#303030")
-    _make_advection(ax_adv, prof, latitude)
+    _make_advection(ax_adv, meta.get("thermal_advection"), float(p[0]))
     srw_title = "Vento relativo à tempestade (LM)" if is_southern else "Vento relativo à tempestade (RM)"
     _make_srw(ax_srw, h_agl, u, v, preferred, srw_title)
     _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude)
