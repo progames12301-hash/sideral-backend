@@ -310,7 +310,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     ax.set_yscale("log")
     # Vertical limits are set after reading the actual surface pressure below.
     # Reserve enough right margin for large wind barbs and separated parcel labels.
-    ax.set_xlim(-43, 72)
+    ax.set_xlim(-43, 79)
     ax.set_facecolor("white")
     ax.spines[:].set_color(INK)
     ax.spines[:].set_linewidth(0.85)
@@ -514,17 +514,14 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     barb_good = np.isfinite(barb_u) & np.isfinite(barb_v)
     if int(barb_good.sum()) < 50:
         raise RuntimeError(f"Somente {int(barb_good.sum())} barbelas de vento válidas; esperadas pelo menos 50.")
-    ax.barbs(np.full(int(barb_good.sum()), 58.0), barb_pressure[barb_good],
-             barb_u[barb_good], barb_v[barb_good], length=7.0,
-             linewidth=0.95, barb_increments={"half": 5, "full": 10, "flag": 50},
-             pivot="middle", color=INK, zorder=7)
-    # Keep both header lines inside the canvas and outside the plotting frame.
-    # A compact legend uses an otherwise clear upper-right pocket; labels make
-    # the physical traces distinguishable without changing the panel layout.
-    ax.legend(loc="upper center", bbox_to_anchor=(0.68, 0.985), ncol=2,
-              fontsize=5.8, frameon=True, framealpha=0.88,
-              borderpad=0.25, handlelength=1.5, handletextpad=0.35,
-              labelspacing=0.2, columnspacing=0.65)
+    ax.barbs(np.full(int(barb_good.sum()), 66.0), barb_pressure[barb_good],
+             barb_u[barb_good], barb_v[barb_good], length=5.8,
+             linewidth=0.78, sizes={"spacing": 0.12, "height": 0.28,
+                                    "width": 0.22, "emptybarb": 0.15},
+             barb_increments={"half": 5, "full": 10, "flag": 50},
+             pivot="middle", color=INK, clip_on=True, zorder=7)
+    # Trace identification uses standard Skew-T colours; no legend is drawn
+    # over the thermodynamic curves, avoiding the overlap reported by the user.
     ax.text(0.0, 1.050, f"Skew-T | {station}", transform=ax.transAxes,
             fontsize=9.0, weight="bold", ha="left", va="bottom",
             color=INK, clip_on=False)
@@ -639,20 +636,26 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
                 markerfacecolor="#f1f5fa", markeredgecolor="#111821",
                 markeredgewidth=0.45, alpha=0.92, zorder=4)
 
-    # Height labels are interpolated from the native vertical column.
+    # Height labels are interpolated from the native vertical column. Use
+    # point-based offsets and opaque dark tags so low-level labels near 0 km
+    # don't collapse on top of one another when the wind vector is weak.
+    offsets = {
+        0: (-12, -12), 500: (-2, 12), 3000: (11, 8),
+        6000: (10, 8), 9000: (9, 8), 12000: (-27, -13),
+    }
     for target, label in [(0, "0"), (500, "0.5"), (3000, "3"), (6000, "6"), (9000, "9"), (12000, "12 km")]:
         if hh.min() <= target <= hh.max():
             px, py = float(np.interp(target, hh, uu)), float(np.interp(target, hh, vv))
             ax.plot(px, py, "o", ms=3.8 if target in (0, 12000) else 3.2,
                     color="#ffffff", markeredgecolor="#101720", markeredgewidth=0.7, zorder=6)
-            if target == 12000:
-                dx, dy, align = -3.0, -3.0, "right"
-            elif px > plot_limit * 0.68:
-                dx, dy, align = -3.0, 3.0, "right"
-            else:
-                dx, dy, align = 3.0, 3.0, "left"
-            ax.text(px + dx, py + dy, label, fontsize=6.5, color="#edf2f8",
-                    weight="bold", ha=align, va="center", zorder=7)
+            dx, dy = offsets[target]
+            ax.annotate(
+                label, xy=(px, py), xycoords="data",
+                xytext=(dx, dy), textcoords="offset points",
+                fontsize=6.5, color="#edf2f8", weight="bold",
+                ha="center", va="center", zorder=7,
+                bbox=dict(facecolor="#060a11", edgecolor="none", alpha=0.88, pad=0.25),
+            )
 
     # SHARPpy supplies Bunkers RM/LM vectors. The preferred cyclonic mover in
     # the Brazilian/Southern Hemisphere is LM; do not apply a Northern-Hemisphere
