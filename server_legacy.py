@@ -2058,42 +2058,52 @@ def _metbr_latest_f000_checkpoint() -> dict[str, Any]:
         if not isinstance(releases, list):
             raise RuntimeError("O catálogo de publicações METBR retornou um formato inválido.")
 
-        # The METBR Runner uploads F000 with the first segment. Later forecast
-        # segments may still be running, which does not invalidate F000.
         candidates = []
-        f000_pattern = re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})\.00\.00$")
+        asset_pattern = re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})\.00\.00$")
         for release in releases:
             if not isinstance(release, dict) or release.get("draft"):
                 continue
             tag = str(release.get("tag_name") or "")
             if not tag.startswith(METBR_CHECKPOINT_PREFIX):
                 continue
+
+            # One release accumulates hourly forecast WRFOUTs as later segments
+            # finish. Its earliest timestamp, not the next 00/06/12/18 frame,
+            # is F000 and defines the initialization cycle for this release.
+            run_assets = []
             for asset in release.get("assets") or []:
                 if not isinstance(asset, dict):
                     continue
-                name = str(asset.get("name") or "")
-                match = f000_pattern.fullmatch(name)
+                match = asset_pattern.fullmatch(str(asset.get("name") or ""))
                 if not match or not asset.get("browser_download_url"):
                     continue
+                if int(asset.get("size") or 0) < 1_000_000:
+                    continue
                 try:
-                    run_time = dt.datetime.strptime(
+                    stamp = dt.datetime.strptime(
                         f"{match.group(1)} {match.group(2)}", "%Y-%m-%d %H"
                     )
                 except ValueError:
                     continue
-                if run_time.hour not in {0, 6, 12, 18} or int(asset.get("size") or 0) < 1_000_000:
-                    continue
-                candidates.append({
-                    "published_at": str(release.get("published_at") or ""),
-                    "tag": tag,
-                    "run_time": run_time,
-                    "run_date": run_time.strftime("%Y%m%d"),
-                    "run_cycle": run_time.strftime("%H"),
-                    "f000_name": name,
-                    "f000_url": str(asset["browser_download_url"]),
-                    "f000_size": int(asset.get("size") or 0),
-                    "source": "METBR WRF 4 km · ICON · WRFOUT nativo publicado pelo Runner",
-                })
+                run_assets.append((stamp, asset))
+            if not run_assets:
+                continue
+
+            run_time, f000_asset = min(run_assets, key=lambda row: row[0])
+            if run_time.hour not in {0, 6, 12, 18}:
+                continue
+            candidates.append({
+                "published_at": str(release.get("published_at") or ""),
+                "tag": tag,
+                "run_time": run_time,
+                "run_date": run_time.strftime("%Y%m%d"),
+                "run_cycle": run_time.strftime("%H"),
+                "f000_name": str(f000_asset["name"]),
+                "f000_url": str(f000_asset["browser_download_url"]),
+                "f000_size": int(f000_asset.get("size") or 0),
+                "source": "METBR WRF 4 km · ICON · WRFOUT nativo publicado pelo Runner",
+            })
+
         if not candidates:
             raise FileNotFoundError(
                 "Nenhuma publicação METBR WRF 4 km possui um WRFOUT nativo F000 disponível."
