@@ -110,7 +110,11 @@ def render(args):
 
     # Show geographic context around the native 3-km TARC grid, without resizing
     # or fabricating pixels in the field itself.
-    extent = [lon_min - 4.5, lon_max + 4.5, lat_min - 0.45, lat_max + 0.45]
+    # Use the complete native model footprint, with a small proportional margin.
+    # Never substitute the geographic extent from another model's bulletin.
+    lon_pad = max(0.15, (lon_max - lon_min) * 0.015)
+    lat_pad = max(0.15, (lat_max - lat_min) * 0.015)
+    extent = [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad]
     projection = ccrs.PlateCarree()
     cmap = ListedColormap(DBZ_COLORS, name="sideral_native_dbz")
     norm = BoundaryNorm(BOUNDS, cmap.N, clip=True)
@@ -229,6 +233,12 @@ def render(args):
         "nativeField": "REFL_10CM",
         "reflectivityProduct": field_name,
         "nativeGrid": {"nx": int(nx), "ny": int(ny)},
+        "nativeCoordinateBounds": {
+            "west": round(lon_min, 5),
+            "east": round(lon_max, 5),
+            "south": round(lat_min, 5),
+            "north": round(lat_max, 5),
+        },
         "initializationUTC": init.isoformat(),
         "validUTC": valid.isoformat(),
         "forecastHour": forecast_hour,
