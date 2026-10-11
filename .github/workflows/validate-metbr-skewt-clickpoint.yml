@@ -1,0 +1,32 @@
+name: Validate METBR Skew-T Click-to-Point
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server_legacy.py'
+      - 'wrf/metbr_skewt_south.py'
+      - 'tools/skewt/metbr_native_spc_render.py'
+      - '.github/workflows/validate-metbr-skewt-clickpoint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Validate backend Python syntax
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile the Render endpoint and native METBR Skew-T modules
+        run: |
+          python -m py_compile \
+            server_legacy.py \
+            wrf/metbr_skewt_south.py \
+            tools/skewt/metbr_native_spc_render.py
