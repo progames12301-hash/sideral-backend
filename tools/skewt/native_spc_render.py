@@ -565,17 +565,21 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     all_speeds = np.r_[wind_speeds, motion_speeds[np.isfinite(motion_speeds)]]
     max_radius = float(np.max(all_speeds)) if all_speeds.size else 0.0
     # Hodograph rings are radial wind-speed distances (kt), not component limits.
-    radius = max(60, int(math.ceil((max_radius + 5.0) / 10.0) * 10))
+    # Keep the outer speed ring inside the frame with a 10-kt visual margin,
+    # as on operational hodographs.
+    radius = max(60, int(math.ceil((max_radius + 10.0) / 10.0) * 10))
+    plot_limit = radius + 10
     ax.set_facecolor("white"); ax.set_aspect("equal", adjustable="box")
-    ax.set_xlim(-radius, radius); ax.set_ylim(-radius, radius)
+    ax.set_xlim(-plot_limit, plot_limit); ax.set_ylim(-plot_limit, plot_limit)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.9)
     ax.set_xticks([]); ax.set_yticks([])
     for r in range(10, radius + 1, 10):
         ax.add_patch(plt.Circle((0, 0), r, fill=False, lw=0.8 if r % 20 == 0 else 0.45,
                                 edgecolor="#4c4c4c" if r % 20 == 0 else "#c9c9c9", zorder=0))
-        if r % 20 == 10:
-            ax.text(-r, 1.5, f"{r}", fontsize=7, color="#bdbdbd", ha="center", va="bottom")
-            ax.text(1.8, r, f"{r}", fontsize=7, color="#bdbdbd", ha="left", va="center")
+        # Label every 10-kt ring on both axes, matching the Sigma-style
+        # polar hodograph reference instead of omitting alternate values.
+        ax.text(-r, 1.5, f"{r}", fontsize=6.5, color="#a9a9a9", ha="center", va="bottom")
+        ax.text(1.8, r, f"{r}", fontsize=6.5, color="#a9a9a9", ha="left", va="center")
     ax.axhline(0, color="#5c5c5c", lw=0.9, zorder=1); ax.axvline(0, color="#5c5c5c", lw=0.9, zorder=1)
     # Filter missing or duplicate heights before connecting wind vectors.
     valid = np.isfinite(hh) & np.isfinite(uu) & np.isfinite(vv) & (hh >= 0)
