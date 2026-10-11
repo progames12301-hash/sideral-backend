@@ -85,6 +85,7 @@ jobs:
           test -s metbr_json/metadata.json
           test -s metbr_json/metbr_wrf_4km.json
           test -s metbr_json/grid.json
+          test -s metbr_json/vertical-f000.npz
           test -d metbr_json/frames
 
       - name: Validar JSON
@@ -98,6 +99,19 @@ jobs:
           meta = json.loads((root / 'metadata.json').read_text())
           data = json.loads((root / 'metbr_wrf_4km.json').read_text())
           grid = json.loads((root / 'grid.json').read_text())
+          assert meta.get('verticalProfileFile') == 'vertical-f000.npz', meta
+          assert int(meta.get('verticalProfileForecastHour', -1)) == 0, meta
+          import numpy as np
+          with np.load(root / 'vertical-f000.npz', allow_pickle=False) as vertical:
+              shape = vertical['pressure_hpa'].shape
+              assert len(shape) == 3 and shape[0] >= 10
+              assert shape[1:] == (int(meta['grid']['ny']), int(meta['grid']['nx']))
+              for name in ('temperature_c', 'dewpoint_c', 'height_m', 'u_kt', 'v_kt', 'omega_pa_s'):
+                  assert vertical[name].shape == shape, (name, vertical[name].shape)
+              assert vertical['lat'].shape == shape[1:] and vertical['lon'].shape == shape[1:]
+              assert vertical['terrain_m'].shape == shape[1:]
+              assert np.isfinite(vertical['pressure_hpa'][0]).any()
+          print(f"METBR Skew-T F000 vertical profile grid: {shape}, file={ (root / 'vertical-f000.npz').stat().st_size } bytes")
           source = meta.get('reflectivitySource')
           sources = [source] if isinstance(source, str) else source if isinstance(source, list) else []
           assert meta.get('modelKey') == 'metbr_wrf', meta
@@ -160,6 +174,7 @@ jobs:
           cp -f metbr_json/metadata.json published-metbr-json/metadata.json
           cp -f metbr_json/metbr_wrf_4km.json published-metbr-json/metbr_wrf_4km.json
           cp -f metbr_json/grid.json published-metbr-json/grid.json
+          cp -f metbr_json/vertical-f000.npz published-metbr-json/vertical-f000.npz
           rm -rf published-metbr-json/frames
           cp -a metbr_json/frames published-metbr-json/frames
           cat > published-metbr-json/README.md <<'EOF'
@@ -167,6 +182,7 @@ jobs:
 
           - `metadata.json`: horários e contrato de publicação
           - `grid.json`: coordenadas geográficas nativas XLAT/XLONG, uma única vez
+          - `vertical-f000.npz`: grade vertical nativa completa F000 (pressão, temperatura, ponto de orvalho, altura, vento e omega) para Skew-T click-to-point; não contém PNGs nem valores interpolados de outro modelo
           - `frames/fNNN.json.gz`: quadros comprimidos com refletividade nativa e demais campos disponíveis
           - `metadata.json`: inventário das variáveis WRFOUT e campos disponíveis por horário
           - `metbr_wrf_4km.json`: índice legado compatível, com os horários e a refletividade
@@ -193,5 +209,6 @@ jobs:
         run: |
           echo "METBR JSON: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/metadata.json"
           echo "METBR grade: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/grid.json"
+          echo "METBR Skew-T F000: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/vertical-f000.npz"
           echo "METBR quadros: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/frames/fNNN.json.gz"
           echo "METBR índice legado: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${METBR_JSON_BRANCH}/metbr_wrf_4km.json"
