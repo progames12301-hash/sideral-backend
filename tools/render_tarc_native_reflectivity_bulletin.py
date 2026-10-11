@@ -110,11 +110,9 @@ def render(args):
 
     # Show geographic context around the native 3-km TARC grid, without resizing
     # or fabricating pixels in the field itself.
-    # Use the complete native model footprint, with a small proportional margin.
-    # Never substitute the geographic extent from another model's bulletin.
-    lon_pad = max(0.15, (lon_max - lon_min) * 0.015)
-    lat_pad = max(0.15, (lat_max - lat_min) * 0.015)
-    extent = [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad]
+    # Continental context for evaluating how much of South America the native
+    # TARC grid actually covers. Echoes remain strictly inside native data cells.
+    extent = [-76.0, -32.0, -45.0, 7.0]
     projection = ccrs.PlateCarree()
     cmap = ListedColormap(DBZ_COLORS, name="sideral_native_dbz")
     norm = BoundaryNorm(BOUNDS, cmap.N, clip=True)
@@ -132,7 +130,7 @@ def render(args):
     fig.text(0.062, 0.936, "BOLETIM DE REFLETIVIDADE NATIVA", fontsize=17.5,
              weight="bold", color=INK, ha="left", va="center")
     fig.text(0.062, 0.907,
-             f"WRF TARC 3 km  •  {field_name}  •  Vento a 10 m [km/h]",
+             f"WRF TARC 3 km  •  {field_name}  •  CONTEXTO REGIONAL / COBERTURA NATIVA",
              fontsize=9.3, color=MUTED, ha="left", va="center")
     fig.text(0.966, 0.966, f"F{forecast_hour:03d}", fontsize=17, weight="bold",
              color=MODEL_BLUE, ha="right", va="center")
@@ -168,6 +166,20 @@ def render(args):
         transform=projection, rasterized=True, antialiased=False, zorder=2,
     )
 
+    # Mark the perimeter from the outermost native grid coordinates. The outline
+    # makes the actual model footprint obvious against the continental context.
+    edge_lon = np.concatenate((lon[0, :], lon[1:, -1], lon[-1, -2::-1], lon[-2:0:-1, 0]))
+    edge_lat = np.concatenate((lat[0, :], lat[1:, -1], lat[-1, -2::-1], lat[-2:0:-1, 0]))
+    ax.plot(edge_lon, edge_lat, transform=projection, color="white",
+            linewidth=2.8, linestyle="-", zorder=7)
+    ax.plot(edge_lon, edge_lat, transform=projection, color="#17212a",
+            linewidth=1.35, linestyle=(0, (5, 2)), zorder=8)
+    ax.text(0.015, 0.965, "CONTORNO: DOMÍNIO NATIVO TARC 3 km",
+            transform=ax.transAxes, ha="left", va="top", fontsize=8.0,
+            color="#18202a", weight="bold",
+            bbox={"facecolor":"white","edgecolor":"#bec7d2","alpha":0.95,"pad":3.0},
+            zorder=9)
+
     ax.coastlines(resolution="10m", color="#24282e", linewidth=0.65, zorder=4)
     ax.add_feature(cfeature.BORDERS.with_scale("10m"), edgecolor="#202329",
                    linewidth=0.72, zorder=4)
@@ -198,10 +210,11 @@ def render(args):
                 barb_increments={"half": 5, "full": 10, "flag": 50},
             )
 
-    ax.text(0.012, 0.016, f"Grade nativa: {nx} × {ny}  •  Pico: {dbz_max:.1f} dBZ",
+    ax.text(0.012, 0.016,
+            f"Grade real: {nx} × {ny}  •  {lon_min:.2f}°–{lon_max:.2f}°W / {abs(lat_max):.2f}°–{abs(lat_min):.2f}°S  •  Pico {dbz_max:.1f} dBZ",
             transform=ax.transAxes, ha="left", va="bottom", fontsize=7.4, color="#3f4853",
-            bbox={"facecolor": "white", "edgecolor": "#d8dee6", "alpha": 0.92, "pad": 3.0},
-            zorder=8)
+            bbox={"facecolor": "white", "edgecolor": "#d8dee6", "alpha": 0.94, "pad": 3.0},
+            zorder=9)
 
     cax = fig.add_axes([0.075, 0.070, 0.70, 0.027])
     cb = fig.colorbar(mesh, cax=cax, orientation="horizontal", ticks=BOUNDS, spacing="proportional")
@@ -212,7 +225,7 @@ def render(args):
 
     fig.text(0.966, 0.082, "WRF TARC 3 km", ha="right", va="center",
              fontsize=10, color=INK, weight="bold")
-    fig.text(0.966, 0.060, f"Min/Máx exibidos: 5 / 87,5 dBZ • máximo do campo: {dbz_max:.1f} dBZ",
+    fig.text(0.966, 0.060, f"Mapa regional; ecos somente dentro do domínio demarcado",
              ha="right", va="center", fontsize=6.8, color=MUTED)
     fig.text(0.966, 0.040, "REFL_10CM do modelo — não é radar observado",
              ha="right", va="center", fontsize=6.8, color=MUTED)
@@ -239,6 +252,8 @@ def render(args):
             "south": round(lat_min, 5),
             "north": round(lat_max, 5),
         },
+        "contextMapBounds": {"west": -76.0, "east": -32.0, "south": -45.0, "north": 7.0},
+        "nativeGridFootprintOutlined": True,
         "initializationUTC": init.isoformat(),
         "validUTC": valid.isoformat(),
         "forecastHour": forecast_hour,
