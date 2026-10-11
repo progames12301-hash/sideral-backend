@@ -428,33 +428,6 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 ls="-", zorder=5, label="Tw")
     parcel = _parcel_curve(pcl, p, t, td)
     parcel_good = np.isfinite(parcel) & np.isfinite(t_virtual) & np.isfinite(p)
-    surface_parcel = getattr(pcl, "sfcpcl", None)
-    lfc_for_shading = _finite(getattr(surface_parcel, "lfcpres", None)) if surface_parcel is not None else None
-    el_for_shading = _finite(getattr(surface_parcel, "elpres", None)) if surface_parcel is not None else None
-    env_x = _xskew(t_virtual, p)
-    parcel_x = _xskew(parcel, p)
-    # CAPE/CIN shading compares the virtual temperature of the SHARPpy surface
-    # parcel with the environmental virtual temperature, limited to the LFC/EL
-    # pressure interval. Missing LFC/EL values intentionally suppress shading.
-    if np.isfinite(parcel_x).sum() > 3:
-        cin_layer = parcel_good & (parcel < t_virtual)
-        if lfc_for_shading is not None:
-            cin_layer &= p >= lfc_for_shading
-        else:
-            cin_layer[:] = False
-        if cin_layer.sum() > 1:
-            ax.fill_betweenx(p, env_x, parcel_x, where=cin_layer,
-                             interpolate=True, color="#3b6fd8", alpha=0.17,
-                             linewidth=0, zorder=1)
-        if lfc_for_shading is not None and el_for_shading is not None:
-            cape_layer = (parcel_good & (parcel > t_virtual)
-                          & (p <= lfc_for_shading) & (p >= el_for_shading))
-            if cape_layer.sum() > 1:
-                ax.fill_betweenx(p, env_x, parcel_x, where=cape_layer,
-                                 interpolate=True, color="#d64545", alpha=0.16,
-                                 linewidth=0, zorder=1)
-        ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35,
-                ls="--", zorder=5, label="Parcela SFC")
     # LCL/LFC/EL must all refer to the same surface parcel as the plotted parcel path.
     # SHARPpy heights are AGL; use them to cross-check pressure levels and avoid
     # displaying stale or physically inverted values from a malformed parcel object.
@@ -564,6 +537,32 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             arrowprops=dict(arrowstyle="-", color=marker_color, lw=0.55, alpha=0.8),
         )
 
+    lfc_for_shading = parcel_levels.get("LFC", {}).get("pressure")
+    el_for_shading = parcel_levels.get("EL", {}).get("pressure")
+    env_x = _xskew(t_virtual, p)
+    parcel_x = _xskew(parcel, p)
+    # CAPE/CIN shading compares the virtual temperature of the SHARPpy surface
+    # parcel with the environmental virtual temperature, limited to the LFC/EL
+    # pressure interval. Missing LFC/EL values intentionally suppress shading.
+    if np.isfinite(parcel_x).sum() > 3:
+        cin_layer = parcel_good & (parcel < t_virtual)
+        if lfc_for_shading is not None:
+            cin_layer &= p >= lfc_for_shading
+        else:
+            cin_layer[:] = False
+        if cin_layer.sum() > 1:
+            ax.fill_betweenx(p, env_x, parcel_x, where=cin_layer,
+                             interpolate=True, color="#3b6fd8", alpha=0.17,
+                             linewidth=0, zorder=1)
+        if lfc_for_shading is not None and el_for_shading is not None:
+            cape_layer = (parcel_good & (parcel > t_virtual)
+                          & (p <= lfc_for_shading) & (p >= el_for_shading))
+            if cape_layer.sum() > 1:
+                ax.fill_betweenx(p, env_x, parcel_x, where=cape_layer,
+                                 interpolate=True, color="#d64545", alpha=0.16,
+                                 linewidth=0, zorder=1)
+        ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35,
+                ls="--", zorder=5, label="Parcela SFC")
     # Freezing level, a common sounding reference mark.
     freeze_idx = np.where(np.isfinite(t[:-1]) & np.isfinite(t[1:]) & (t[:-1] * t[1:] <= 0))[0]
     if len(freeze_idx):
