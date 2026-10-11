@@ -328,8 +328,15 @@ def extract_available_fields(ds, expected_shape, reflectivity):
     # Precipitation accumulation since model initialization: RAINC + RAINNC.
     rain_parts = []
     rain_names = []
-    for name in ("RAINC", "RAINNC", "RAINSH"):
+    for name in ("RAINC", "RAINNC"):
         arr, found = _read_2d(ds, (name,), native_shape)
+        if arr is not None:
+            rain_parts.append(np.nan_to_num(arr, nan=0.0))
+            rain_names.append(found)
+    # RAINSH is used only as a fallback when the usual convective/nonconvective
+    # accumulators are both absent; do not silently add it to RAINC+RAINNC.
+    if not rain_parts:
+        arr, found = _read_2d(ds, ("RAINSH",), native_shape)
         if arr is not None:
             rain_parts.append(np.nan_to_num(arr, nan=0.0))
             rain_names.append(found)
