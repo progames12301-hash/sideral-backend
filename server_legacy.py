@@ -2246,7 +2246,17 @@ def _metbr_render_click_profile(lat: float, lon: float, checkpoint: dict[str, An
             error.domain = {key: round(value, 4) for key, value in domain.items()}
             raise error
 
-        point = metbr.choose_gridpoint(ds, city)
+        try:
+            point = metbr.choose_gridpoint(ds, city)
+        except RuntimeError as exc:
+            if "ponto mais próximo está a" in str(exc):
+                error = WRFDomainError(
+                    f"Ponto fora da malha METBR WRF 4 km. Domínio aproximado: "
+                    f"{domain['south']:.2f}–{domain['north']:.2f}° lat, {domain['west']:.2f}–{domain['east']:.2f}° lon."
+                )
+                error.domain = {key: round(value, 4) for key, value in domain.items()}
+                raise error from exc
+            raise
         valid_time = metbr.time_at(ds, 0)
         if valid_time is None:
             raise RuntimeError("O WRFOUT nativo METBR F000 não contém um horário válido.")
