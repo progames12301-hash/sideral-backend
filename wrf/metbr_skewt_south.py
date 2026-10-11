@@ -119,6 +119,125 @@ def point_column(ds, key, time_index, j, i):
     return col
 
 
+def _interp_log_pressure(pressure_hpa, values, target_hpa):
+    """Interpolate one native WRF column at a pressure level without extrapolation."""
+    pressure = np.asarray(pressure_hpa, dtype=float)
+    values = np.asarray(values, dtype=float)
+    good = np.isfinite(pressure) & (pressure > 0) & np.isfinite(values)
+    if good.sum() < 2:
+        return np.nan
+    pp, vv = pressure[good], values[good]
+    order = np.argsort(pp)
+    pp, vv = pp[order], vv[order]
+    if target_hpa < pp[0] or target_hpa > pp[-1]:
+        return np.nan
+    return float(np.interp(np.log(target_hpa), np.log(pp), vv))
+
+
+def compute_temperature_advection(ds, time_index, j, i):
+    """Compute horizontal WRF temperature advection, -V·grad(T), on pressure levels.
+
+    A 3x3 mass-grid neighbourhood is fitted in local east/north coordinates, so
+    the gradient is horizontal rather than inferred from vertical wind turning.
+    """
+    required = ("P", "PB", "T", "U", "V", "COSALPHA", "SINALPHA", "XLAT", "XLONG")
+    missing = [name for name in required if name not in ds.variables]
+    if missing:
+        return {"method": "WRF -V·grad(T), pressure-level 3x3 fit", "units": "°C/h", "levels": []}
+    ny = len(ds.dimensions.get("south_north", []))
+    nx = len(ds.dimensions.get("west_east", []))
+    if ny < 3 or nx < 3 or not (1 <= j < ny - 1 and 1 <= i < nx - 1):
+        return {"method": "WRF -V·grad(T), pressure-level 3x3 fit", "units": "°C/h", "levels": []}
+
+    lat_patch = as_float_array(ds.variables["XLAT"][time_index, j - 1:j + 2, i - 1:i + 2])
+    lon_patch = as_float_array(ds.variables["XLONG"][time_index, j - 1:j + 2, i - 1:i + 2])
+    if lat_patch.shape != (3, 3) or lon_patch.shape != (3, 3):
+        return {"method": "WRF -V·grad(T), pressure-level 3x3 fit", "units": "°C/h", "levels": []}
+    lat0, lon0 = float(lat_patch[1, 1]), float(lon_patch[1, 1])
+    if not (math.isfinite(lat0) and math.isfinite(lon0)):
+        return {"method": "WRF -V·grad(T), pressure-level 3x3 fit", "units": "°C/h", "levels": []}
+
+    radius_earth = 6371000.0
+    cos_lat = math.cos(math.radians(lat0))
+    profiles = {}
+    for dj in (-1, 0, 1):
+        for di in (-1, 0, 1):
+            jj, ii = j + dj, i + di
+            p_pa = point_column(ds, "P", time_index, jj, ii) + point_column(ds, "PB", time_index, jj, ii)
+            theta_k = point_column(ds, "T", time_index, jj, ii) + 300.0
+            temperature_k = theta_k * np.maximum(p_pa, 1.0) / 100000.0
+            # The WRF T variable is potential temperature perturbation; use the
+            # Poisson relation to recover environmental temperature.
+            temperature_k = theta_k * (np.maximum(p_pa, 1.0) / 100000.0) ** KAPPA
+            temperature_c = temperature_k - 273.15
+            profiles[(dj, di)] = (p_pa / 100.0, temperature_c)
+
+    # Destagger the wind at the centre mass point and rotate it to east/north.
+    u_pair = as_float_array(ds.variables["U"][time_index, :, j, i:i + 2])
+    v_pair = as_float_array(ds.variables["V"][time_index, :, j:j + 2, i])
+    if u_pair.ndim != 2 or v_pair.ndim != 2 or u_pair.shape[-1] != 2 or v_pair.shape[-2] != 2:
+        return {"method": "WRF -V·grad(T), pressure-level 3x3 fit", "units": "°C/h", "levels": []}
+    u_grid = 0.5 * (u_pair[:, 0] + u_pair[:, 1])
+    v_grid = 0.5 * (v_pair[:, 0] + v_pair[:, 1])
+    cosalpha = point_value(ds, "COSALPHA", time_index, j, i)
+    sinalpha = point_value(ds, "SINALPHA", time_index, j, i)
+    u_east = u_grid * cosalpha - v_grid * sinalpha
+    v_north = v_grid * cosalpha + u_grid * sinalpha
+
+    lat_flat = lat_patch.ravel()
+    lon_flat = lon_patch.ravel()
+    dx = radius_earth * cos_lat * np.radians(((lon_flat - lon0 + 180.0) % 360.0) - 180.0)
+    dy = radius_earth * np.radians(lat_flat - lat0)
+    coords = {(dj, di): (dx[(dj + 1) * 3 + di + 1], dy[(dj + 1) * 3 + di + 1])
+              for dj in (-1, 0, 1) for di in (-1, 0, 1)}
+
+    levels = []
+    for pressure_hpa in np.arange(1000.0, 99.0, -25.0):
+        centre_p, centre_t = profiles[(0, 0)]
+        t0 = _interp_log_pressure(centre_p, centre_t, pressure_hpa)
+        ue = _interp_log_pressure(centre_p, u_east, pressure_hpa)
+        vn = _interp_log_pressure(centre_p, v_north, pressure_hpa)
+        if not all(math.isfinite(value) for value in (t0, ue, vn)):
+            continue
+        design, delta_t = [], []
+        for dj in (-1, 0, 1):
+            for di in (-1, 0, 1):
+                if dj == 0 and di == 0:
+                    continue
+                lat_n = float(lat_patch[dj + 1, di + 1])
+                lon_n = float(lon_patch[dj + 1, di + 1])
+                if not (math.isfinite(lat_n) and math.isfinite(lon_n)):
+                    continue
+                pn, tn = profiles[(dj, di)]
+                neighbour_t = _interp_log_pressure(pn, tn, pressure_hpa)
+                if not math.isfinite(neighbour_t):
+                    continue
+                east_m, north_m = coords[(dj, di)]
+                if not (math.isfinite(float(east_m)) and math.isfinite(float(north_m))):
+                    continue
+                if math.hypot(east_m, north_m) < 100.0:
+                    continue
+                design.append([east_m, north_m])
+                delta_t.append(neighbour_t - t0)
+        if len(design) < 4:
+            continue
+        matrix = np.asarray(design, dtype=float)
+        if np.linalg.matrix_rank(matrix) < 2:
+            continue
+        grad_east, grad_north = np.linalg.lstsq(matrix, np.asarray(delta_t), rcond=None)[0]
+        advection_c_h = -(ue * grad_east + vn * grad_north) * 3600.0
+        if math.isfinite(float(advection_c_h)):
+            levels.append({
+                "pressure_hpa": float(pressure_hpa),
+                "advection_c_h": float(advection_c_h),
+            })
+    return {
+        "method": "WRF native -V·grad(T), 3x3 horizontal fit at constant pressure",
+        "units": "°C/h",
+        "levels": levels,
+    }
+
+
 def dewpoint_from_mixing_ratio(mixing_ratio, pressure_hpa):
     q = max(1.0e-8, float(mixing_ratio))
     p = max(1.0, float(pressure_hpa))
@@ -220,7 +339,8 @@ def make_profile(ds, time_index, city, point, valid_time):
         omeg=np.ma.masked_invalid(omega_array), strictQC=False,
         latitude=city["latitude"], date=valid_time, location=city["name"],
     )
-    return sounding, clean, terrain
+    thermal_advection = compute_temperature_advection(ds, time_index, j, i)
+    return sounding, clean, terrain, thermal_advection
 
 
 def load_renderer():
@@ -323,8 +443,10 @@ def main():
                 print(f"[METBR Skew-T] {path.name}: F{forecast_hour:03d}", flush=True)
                 for city in CITIES:
                     point = points[city["slug"]]
-                    sounding, rows, terrain = make_profile(ds, ti, city, point, valid_time)
-                    frames_by_city[city["slug"]][forecast_hour] = (sounding, rows, terrain, valid_time)
+                    sounding, rows, terrain, thermal_advection = make_profile(ds, ti, city, point, valid_time)
+                    frames_by_city[city["slug"]][forecast_hour] = (
+                        sounding, rows, terrain, valid_time, thermal_advection
+                    )
 
     manifest = {
         "schema": "sideral-metbr-wrf-skewt-publication-v1",
@@ -349,7 +471,7 @@ def main():
             raise RuntimeError(f"{city['name']}: faltam frames METBR {missing}")
         manifest["cities"].append({**city, "grid_point": point, "native_grid_spacing_km": 4})
         for forecast_hour in FORECAST_HOURS:
-            sounding, rows, terrain, valid_time = frames_by_city[city["slug"]][forecast_hour]
+            sounding, rows, terrain, valid_time, thermal_advection = frames_by_city[city["slug"]][forecast_hour]
             frame = f"f{forecast_hour:03d}"
             meta = {
                 "location": city["name"], "state": city["state"],
@@ -358,6 +480,7 @@ def main():
                 "latitude": city["latitude"], "longitude": city["longitude"],
                 "elevation": terrain, "fh": forecast_hour, "valid": valid_time, "run": run_time,
                 "model": "METBR WRF 4 km", "source": "native WRFOUT",
+                "thermal_advection": thermal_advection,
             }
             temp_dir = city_root / (".tmp-" + frame)
             temp_dir.mkdir(parents=True, exist_ok=True)
