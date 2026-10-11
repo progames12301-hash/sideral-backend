@@ -14,7 +14,7 @@ import numpy as np
 from netCDF4 import Dataset
 
 ROOT = Path(__file__).resolve().parents[1]
-RENDERER = ROOT / "tools" / "skewt" / "native_spc_render.py"
+RENDERER = ROOT / "tools" / "skewt" / "metbr_native_spc_render.py"
 KAPPA = 0.2854
 RD = 287.05
 G = 9.80665
@@ -357,6 +357,7 @@ def main():
                 "station": city["name"] + " / METBR WRF 4 km",
                 "latitude": city["latitude"], "longitude": city["longitude"],
                 "elevation": terrain, "fh": forecast_hour, "valid": valid_time, "run": run_time,
+                "model": "METBR WRF 4 km", "source": "native WRFOUT",
             }
             temp_dir = city_root / (".tmp-" + frame)
             temp_dir.mkdir(parents=True, exist_ok=True)
