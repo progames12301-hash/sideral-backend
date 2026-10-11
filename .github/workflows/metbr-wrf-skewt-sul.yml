@@ -15,7 +15,7 @@ on:
     paths:
       - '.github/workflows/metbr-wrf-skewt-sul.yml'
       - 'wrf/metbr_skewt_south.py'
-      - 'tools/skewt/native_spc_render.py'
+      - 'tools/skewt/metbr_native_spc_render.py'
       - 'skewt.html'
       - 'skewt-capitais.html'
 
@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pyyaml
-          python -m py_compile wrf/metbr_skewt_south.py tools/skewt/native_spc_render.py
+          python -m py_compile wrf/metbr_skewt_south.py tools/skewt/metbr_native_spc_render.py
           python - <<'PY'
           import re
           from pathlib import Path
@@ -128,7 +128,7 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'matplotlib>=3.8,<4' \
             'Pillow>=10,<11' 'SHARPpy @ git+https://github.com/sharppy/SHARPpy.git@main'
-          python -m py_compile wrf/metbr_skewt_south.py tools/skewt/native_spc_render.py
+          python -m py_compile wrf/metbr_skewt_south.py tools/skewt/metbr_native_spc_render.py
           test -s assets/sideral-logo.png
 
       - name: Download METBR F042 publication marker
