@@ -877,7 +877,7 @@ jobs:
   complete:
     name: TARC 3 KM F000-F048 completo e pós-processado
     runs-on: ubuntu-22.04
-    needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07]
+    needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07, seg08, seg09, seg10, seg11, seg12, seg13, seg14, seg15]
     timeout-minutes: 478
     steps:
       - name: Checkout TARC
