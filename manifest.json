@@ -1,0 +1,53 @@
+{
+  "schema": "sideral-sdcsc-chapeco-ppi-z-v6",
+  "provider": "Defesa Civil de Santa Catarina / SIFAP",
+  "radar": {
+    "id": "sc-chapeco",
+    "code": "CHP",
+    "name": "Defesa Civil SC — Chapecó/SC",
+    "latitude": -27.1,
+    "longitude": -52.62,
+    "rangeKm": 240
+  },
+  "product": "PPI Z / Reflectivity",
+  "source": {
+    "mode": "sifap-direct",
+    "upstream": "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar",
+    "listEndpoint": "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar/getUltimasImagens",
+    "imageEndpoint": "https://sifap.defesacivil.sc.gov.br/radarsc/rest/radar/getImagem",
+    "productCode": "0",
+    "radarCode": "CHP",
+    "file": "2026101023540400dBZ.cappi_top.png",
+    "tlsVerification": false
+  },
+  "sourceImage": {
+    "file": "chapeco-ppi-z-source.png",
+    "width": 859,
+    "height": 758,
+    "contentType": "image/png"
+  },
+  "output": {
+    "file": "chapeco-ppi-z-uhd.png",
+    "width": 3840,
+    "height": 2160,
+    "format": "PNG"
+  },
+  "superResolution": {
+    "file": "chapeco-ppi-z-superres.png",
+    "width": 3840,
+    "height": 2160,
+    "format": "PNG",
+    "model": "Radar Scope polar gates",
+    "method": "reconstrução polar com gates no estilo REDEMET",
+    "inventedDbz": false,
+    "inventedCells": false,
+    "note": "A Super-Res reconstrói o desenho dos ecos em gates polares usando somente as cores presentes no PPI oficial; nenhum dBZ, célula ou precipitação é inventado."
+  },
+  "processing": {
+    "mode": "official-radar-image-plus-radar-scope-superres",
+    "inventedDbz": false,
+    "inventedCells": false,
+    "note": "A fonte é o PPI de refletividade do SIFAP/Defesa Civil SC. A Super-Res usa gates polares no estilo Radar Scope da REDEMET."
+  },
+  "generatedAt": "2026-10-11T00:27:53.402910Z"
+}
