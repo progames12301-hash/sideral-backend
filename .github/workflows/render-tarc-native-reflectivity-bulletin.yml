@@ -89,5 +89,5 @@ jobs:
             --notes "Boletim renderizado a partir do arquivo nativo $SOURCE_ASSET do release $SOURCE_TAG. Campo usado: máximo vertical derivado de REFL_10CM nativa; vento a 10 m proveniente de U10/V10. Válido 00Z de 11/10/2026, inicialização 06Z de 10/10/2026. Não é uma imagem de radar observado." \
             --prerelease --latest=false
           gh release view "$OUTPUT_TAG" --repo "$GITHUB_REPOSITORY" \
-            --json tagName,htmlUrl,assets \
-            --jq '{tag:.tagName,url:.htmlUrl,assets:[.assets[].name]}'
+            --json tagName,url,assets \
+            --jq '{tag:.tagName,url:.url,assets:[.assets[].name]}'
