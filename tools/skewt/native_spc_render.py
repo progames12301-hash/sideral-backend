@@ -617,11 +617,131 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     )
 
 
+def _inferred_temp_advection(prof, latitude):
+    """SHARPpy-style geostrophic thermal-advection estimate with corrected layer mean.
+
+    This is an inferred sounding diagnostic, not the WRF model's horizontal
+    temperature-advection field. SHARPpy's upstream routine multiplies the
+    temperature sum by 2 instead of computing the arithmetic mean.
+    """
+    from sharppy.sharptab import interp, thermo, utils, winds
+
+    pressure_profile = _arr(getattr(prof, "pres", []))
+    sfc_pressure = _finite(prof.pres[prof.sfc])
+    available = pressure_profile[np.isfinite(pressure_profile) & (pressure_profile >= 100.0)]
+    if sfc_pressure is None or len(available) < 2:
+        return np.asarray([]), np.empty((0, 2), dtype=float)
+
+    top_pressure = float(available[-1])
+    pressure = np.arange(float(sfc_pressure), top_pressure, -100.0, dtype=float)
+    if len(pressure) < 2:
+        return np.asarray([]), np.empty((0, 2), dtype=float)
+
+    temperature_k = _arr(thermo.ctok(interp.temp(prof, pressure)))
+    height_m = _arr(interp.hght(prof, pressure))
+    direction = _arr(interp.vec(prof, pressure)[0])
+    n = min(len(pressure), len(temperature_k), len(height_m), len(direction))
+    pressure, temperature_k, height_m, direction = (
+        arr[:n] for arr in (pressure, temperature_k, height_m, direction)
+    )
+    if n < 2:
+        return np.asarray([]), np.empty((0, 2), dtype=float)
+
+    coriolis_frequency = 2.0 * (2.0 * math.pi / 86164.0) * math.sin(math.radians(float(latitude)))
+    multiplier = (coriolis_frequency / 9.81) * (math.pi / 180.0)
+    values = np.full(n - 1, np.nan, dtype=float)
+    bounds = np.full((n - 1, 2), np.nan, dtype=float)
+
+    for i in range(1, n):
+        p_bottom, p_top = float(pressure[i - 1]), float(pressure[i])
+        z_bottom, z_top = float(height_m[i - 1]), float(height_m[i])
+        t_bottom, t_top = float(temperature_k[i - 1]), float(temperature_k[i])
+        d_bottom, d_top = float(direction[i - 1]), float(direction[i])
+        bounds[i - 1] = (p_bottom, p_top)
+        if not all(math.isfinite(v) for v in (
+            p_bottom, p_top, z_bottom, z_top, t_bottom, t_top, d_bottom, d_top
+        )):
+            continue
+        if z_top <= z_bottom:
+            continue
+
+        # Preserve SHARPpy's directional-angle unwrap and geostrophic-wind
+        # estimate, but use the true arithmetic mean temperature for the layer.
+        d_bottom %= 360.0
+        d_top %= 360.0
+        adjusted_top_direction = d_top + (180.0 - d_bottom)
+        if adjusted_top_direction < 0.0:
+            adjusted_top_direction += 360.0
+        elif adjusted_top_direction >= 360.0:
+            adjusted_top_direction -= 360.0
+        directional_change = adjusted_top_direction - 180.0
+
+        mean_u, mean_v = winds.mean_wind(prof, pbot=p_bottom, ptop=p_top)
+        mean_speed_kt = _finite(utils.comp2vec(mean_u, mean_v)[1])
+        if mean_speed_kt is None:
+            continue
+        mean_speed_ms = float(utils.KTS2MS(mean_speed_kt))
+        mean_temperature_k = 0.5 * (t_bottom + t_top)
+        values[i - 1] = (
+            multiplier * mean_speed_ms ** 2 * mean_temperature_k
+            * (directional_change / (z_top - z_bottom)) * 3600.0
+        )
+
+    return values, bounds
+
+
+def _sweat_index_hemispheric(prof, latitude):
+    """Miller/Nascimento SWEAT with mirrored directional criteria in the Southern Hemisphere."""
+    from sharppy.sharptab import interp, params
+
+    td850 = _finite(interp.dwpt(prof, 850.0))
+    vec850, vec500 = interp.vec(prof, 850.0), interp.vec(prof, 500.0)
+    dir850, speed850 = _finite(vec850[0]), _finite(vec850[1])
+    dir500, speed500 = _finite(vec500[0]), _finite(vec500[1])
+    tt = _finite(getattr(prof, "totals_totals", None))
+    if tt is None:
+        tt = _finite(params.t_totals(prof))
+    if any(value is None for value in (td850, dir850, speed850, dir500, speed500, tt)):
+        return None
+
+    value = (12.0 * td850 if td850 > 0.0 else 0.0)
+    value += (20.0 * (tt - 49.0) if tt >= 49.0 else 0.0)
+    value += 2.0 * speed850 + speed500
+    dir850 %= 360.0
+    dir500 %= 360.0
+    direction_term = 0.0
+
+    if latitude < 0.0:
+        # Nascimento's Southern Hemisphere adaptation:
+        # 850-hPa direction 290–360/0–50°, 500-hPa direction 230–330°,
+        # and a negative (wrapped) 500-minus-850 direction difference.
+        dir850_for_difference = dir850 + 360.0 if dir850 <= 50.0 else dir850
+        difference = dir500 - dir850_for_difference
+        direction_ok = (
+            (dir850 >= 290.0 or dir850 <= 50.0)
+            and 230.0 <= dir500 <= 330.0
+            and difference < 0.0
+        )
+        angle = abs(difference)
+    else:
+        difference = dir500 - dir850
+        direction_ok = (
+            130.0 <= dir850 <= 250.0
+            and 210.0 <= dir500 <= 310.0
+            and difference > 0.0
+        )
+        angle = abs(difference)
+
+    if direction_ok and speed850 >= 15.0 and speed500 >= 15.0 and angle <= 180.0:
+        direction_term = 125.0 * (math.sin(math.radians(angle)) + 0.2)
+    return float(value + direction_term)
+
+
 def _make_advection(ax, prof, latitude):
     ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_ylim(1050, 100); ax.set_xlim(-2, 2)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
-    ax.set_xlabel("Advecção térmica inferida\n(SHARPpy, °C/h)", fontsize=6.4, labelpad=2)
+    ax.set_xlabel("Advecção térmica inferida\n(estimativa, °C/h)", fontsize=6.4, labelpad=2)
     ax.set_xticks([-2, -1, 0, 1, 2])
     ax.set_yticks([1000,900,800,700,600,500,400,300,200,100])
     ax.tick_params(axis="y", labelleft=False, left=False)
@@ -634,12 +754,11 @@ def _make_advection(ax, prof, latitude):
             ax.axhline(pp, color="#e3e3e3", lw=0.45, zorder=0)
 
     try:
-        from sharppy.sharptab import params
-        adv_values, pressure_bounds = params.inferred_temp_adv(prof, lat=latitude)
+        adv_values, pressure_bounds = _inferred_temp_advection(prof, latitude)
         adv_values = _arr(adv_values)
         pressure_bounds = np.asarray(np.ma.asarray(pressure_bounds).filled(np.nan), dtype=float)
     except Exception as exc:
-        raise RuntimeError(f"Falha ao calcular advecção térmica inferida SHARPpy: {exc}") from exc
+        raise RuntimeError(f"Falha ao calcular advecção térmica inferida: {exc}") from exc
 
     if pressure_bounds.ndim != 2 or pressure_bounds.shape[1] != 2:
         return
@@ -782,8 +901,8 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
         if all(math.isfinite(x) for x in (t850,t700,t500,td850,td700)):
             kidx = t850 - t500 + td850 - t700 + td700
     try:
-        from sharppy.sharptab import params
-        sweat = _fmt(params.sweat(prof), 1)
+        sweat_value = _sweat_index_hemispheric(prof, latitude)
+        sweat = _fmt(sweat_value, 1)
     except Exception:
         sweat = "--"
     convt_f = _finite(getattr(prof, "convT", None))
@@ -823,7 +942,8 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
     mid2 = [f"STP(fix): {stp_fixed}", f"STP(cin): {stp_cin}", f"SHIP: {ship}", f"SCP: {scp}"]
     lapse = [f"Γ 0-3km: {_fmt(lapse03,2)} °C/km", f"Γ 3-6km: {_fmt(lapse36,2)} °C/km",
              f"Γ 850-500mb: {_fmt(lapse8505,2)} °C/km", f"Γ 700-500mb: {_fmt(lapse7005,2)} °C/km"]
-    right = [f"DCAPE: {dcape} J/kg", f"SWEAT: {sweat}", f"µburst: {microburst}", f"dcp: {dcp_value}"]
+    sweat_label = "SWEAT-S" if latitude < 0 else "SWEAT"
+    right = [f"DCAPE: {dcape} J/kg", f"{sweat_label}: {sweat}", f"µburst: {microburst}", f"DCP: {dcp_value}"]
     severe = [f"SigSevere: {sig} m³/s³", f"Wndg: {wndg}"]
     columns = [(0.037, left), (0.225, mid1), (0.392, mid2), (0.535, lapse), (0.700, right), (0.835, severe)]
     for x, items in columns:
