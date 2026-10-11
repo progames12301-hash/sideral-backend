@@ -248,7 +248,11 @@ def render(args):
         "output": output.name,
     }
     output.with_suffix(".json").write_text(__import__("json").dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[BULLETIN] {output} {output.stat().st_size} bytes; grade={nx}x{ny}; max dBZ={dbz_max:.1f}; F{forecast_hour:03d}")
+    print(
+        f"[BULLETIN] {output} {output.stat().st_size} bytes; grade={nx}x{ny}; "
+        f"lon={lon_min:.4f}..{lon_max:.4f}; lat={lat_min:.4f}..{lat_max:.4f}; "
+        f"max dBZ={dbz_max:.1f}; F{forecast_hour:03d}"
+    )
 
 
 def main():
