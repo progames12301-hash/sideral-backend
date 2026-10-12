@@ -73,7 +73,8 @@ def get_hail_frames(algorithm="gr02", cycle="00", domain="csa"):
     row_text = ""
     for row in parser.rows:
         text = " ".join(c["text"] for c in row).lower()
-        if target not in text and algorithm not in text:
+        references = " ".join(url for cell in row for url in cell["urls"]).lower()
+        if target not in (text + " " + references) and algorithm not in (text + " " + references):
             continue
         row_text = text
         # WPC algorithm table: label, GFS 00Z cell, GFS 12Z cell.
