@@ -400,7 +400,7 @@ def parse_run_meta(path):
     if not values.get("run_date") or not values.get("run_cycle"):
         raise RuntimeError(f"Metadados de inicialização ausentes em {path}")
     cycle = values["run_cycle"].rstrip("Z")
-    if len(values["run_date"]) != 8 or cycle not in {"00", "06", "12", "18"}:
+    if len(values["run_date"]) != 8 or cycle not in {"00", "06", "12", "18", "21"}:
         raise RuntimeError(f"Metadados METBR inválidos: {values}")
     return dt.datetime.strptime(values["run_date"] + cycle, "%Y%m%d%H")
 
