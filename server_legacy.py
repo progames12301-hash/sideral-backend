@@ -2498,25 +2498,26 @@ def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
 
 
 def _metbr_download_raw_wrfout(metadata: dict[str, Any], asset_name: str) -> Path:
-    """Download only the requested hourly NetCDF file; keep at most one raw file on disk."""
+    """Download only the requested hourly NetCDF file, retaining one cycle-tagged file on disk."""
     if not re.fullmatch(r"wrfout_d01_\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}", asset_name):
         raise ValueError("Nome de WRFOUT inválido na publicação METBR.")
+    tag = _metbr_source_release_tag(metadata, asset_name)
     METBR_CLICK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     raw_dir = METBR_CLICK_CACHE_DIR / "raw-click"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    target = raw_dir / asset_name
-    # Keep only one large source file in the temporary cache. This prevents a
-    # long GIF export from accumulating hundreds of MB of WRFOUTs on Render.
+    # Include the exact checkpoint tag in the local filename. WRFOUT timestamps
+    # can repeat in different model cycles, so a date-only cache key is unsafe.
+    target = raw_dir / f"{tag}__{asset_name}"
     for old in raw_dir.iterdir():
         if old != target and old.is_file():
             try:
                 old.unlink()
             except OSError:
                 pass
+    # Keep only one large raw file at a time during a multi-frame export.
     if target.is_file() and target.stat().st_size > 5 * 1024 * 1024:
         return target
 
-    tag = _metbr_source_release_tag(metadata, asset_name)
     url = (
         "https://github.com/progames12301-hash/sideral-backend/releases/download/"
         f"{tag}/{quote(asset_name, safe='')}"
