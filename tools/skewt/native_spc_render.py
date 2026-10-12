@@ -274,6 +274,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     try:
         from sharppy.sharptab import thermo
         pp_grid = np.geomspace(1000, 100, 100)
+        visible_moist = pp_grid <= surface_pressure + 0.01
         for start_t in np.arange(-35, 56, 5):
             # SHARPpy's vectorized satlift requires the initial parcel
             # temperature array to have the same shape as the target pressures.
@@ -281,7 +282,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
             curve = _arr(thermo.wetlift(1000.0, start_profile, pp_grid))
             if len(curve) == len(pp_grid):
                 major = (int(start_t) % 10 == 0)
-                ax.plot(_xskew(curve, pp_grid), pp_grid,
+                ax.plot(_xskew(curve[visible_moist], pp_grid[visible_moist]), pp_grid[visible_moist],
                         color="#45935c" if major else "#98c4a0",
                         ls=(0, (2, 3)), lw=0.60 if major else 0.40,
                         alpha=0.82 if major else 0.67, zorder=0)
@@ -298,6 +299,11 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
                 ls=(0, (1, 3)), lw=0.56 if major else 0.38,
                 alpha=0.78 if major else 0.62, zorder=0)
     h_agl = z - z[0]
+    ax.axhline(surface_pressure, color="#555555", lw=0.95, ls=(0, (4, 2)), alpha=0.95, zorder=3)
+    ax.text(-41.8, surface_pressure, f"SFC {surface_pressure:.0f} hPa / 0 m AGL",
+            ha="left", va="bottom", fontsize=6.5, weight="bold",
+            color="#303030", clip_on=True,
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=0.2))
     for pp in [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]:
         height = _interp_pressure(h_agl, p, pp)
         if math.isfinite(height) and pp <= surface_pressure + 0.1:
