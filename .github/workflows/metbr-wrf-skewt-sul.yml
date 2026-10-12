@@ -150,9 +150,10 @@ jobs:
           RUN_DATE="$(sed -n 's/^run_date=//p' metbr_meta/metbr-publication-F42.txt | head -1)"
           RUN_CYCLE="$(sed -n 's/^run_cycle=//p' metbr_meta/metbr-publication-F42.txt | head -1 | tr -d 'Z')"
           [[ "$RUN_DATE" =~ ^[0-9]{8}$ ]] || { echo "run_date inválido: $RUN_DATE" >&2; exit 11; }
-          [[ "$RUN_CYCLE" =~ ^(00|06|12|18)$ ]] || { echo "run_cycle inválido: $RUN_CYCLE" >&2; exit 12; }
+          [[ "$RUN_CYCLE" =~ ^(00|06|12|18|21)$ ]] || { echo "run_cycle inválido: $RUN_CYCLE" >&2; exit 12; }
           echo "METBR_RUN_DATE=$RUN_DATE" >> "$GITHUB_ENV"
           echo "METBR_RUN_CYCLE=$RUN_CYCLE" >> "$GITHUB_ENV"
+          echo "SKEWT_RELEASE_TAG=skewt-metbr-sul-live-$RUN_CYCLE" >> "$GITHUB_ENV"
 
       - name: Select only F000/F003/.../F042 native WRFOUTs
         shell: bash
@@ -251,23 +252,63 @@ jobs:
           (root/"publication.json").write_text(json.dumps(item,ensure_ascii=False,indent=2),encoding="utf-8")
           PY
 
-      - name: Publish separate METBR South Skew-T release
+      - name: Publish separate METBR Skew-T release for the selected cycle
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           tag="$SKEWT_RELEASE_TAG"
+          title="METBR WRF 4 km — Skew-T Sul — ${METBR_RUN_CYCLE}Z — $(date -u +%Y-%m-%d)"
+          notes="Sondagens extraídas de colunas nativas do METBR WRF 4 km inicializado pelo ICON. Ciclo ${METBR_RUN_CYCLE}Z. Curitiba, Florianópolis e Porto Alegre; F000-F042 a cada 3 horas. Não roda um WRF adicional. Cada perfil representa a coluna da grade WRF mais próxima da capital."
           count="$(find build/skewt-metbr-sul -mindepth 2 -maxdepth 2 -type f \( -name '*.png' -o -name '*.json' \) | wc -l)"
           test "$count" -eq 90
-          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
-            --title "METBR WRF 4 km — Skew-T Sul — $(date -u +%Y-%m-%d)" \
-            --notes "Sondagens extraídas de colunas nativas do METBR WRF 4 km inicializado pelo ICON. Curitiba, Florianópolis e Porto Alegre; F000-F042 a cada 3 horas. Não roda um WRF adicional. Cada perfil representa a coluna da grade WRF mais próxima da capital." \
-            --latest=false $(find build/skewt-metbr-sul -mindepth 2 -maxdepth 2 -type f \( -name '*.png' -o -name '*.json' \) | sort) \
-            build/skewt-metbr-sul/manifest.json build/skewt-metbr-sul/publication.json
+
+          mapfile -d '' products < <(find build/skewt-metbr-sul -mindepth 2 -maxdepth 2 -type f \( -name '*.png' -o -name '*.json' \) -print0 | sort -z)
+          files=("${products[@]}" build/skewt-metbr-sul/manifest.json build/skewt-metbr-sul/publication.json)
+          test "${#products[@]}" -eq 90
+          test "${#files[@]}" -eq 92
+
+          # Keep one stable release per init cycle. Do not delete the tag first:
+          # a transient 5xx during deletion can strand the existing release.
+          release_state="unknown"
+          for attempt in 1 2 3 4 5; do
+            if response="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" 2>&1)"; then
+              release_state="present"
+              break
+            elif grep -Eqi 'HTTP 404|404 Not Found|Not Found' <<< "$response"; then
+              release_state="missing"
+              break
+            else
+              echo "Consulta da release falhou (tentativa $attempt/5): $response"
+              sleep $((attempt * 5))
+            fi
+          done
+          if [[ "$release_state" == "unknown" ]]; then
+            echo "Não foi possível determinar o estado da release; sem apagar a publicação existente."
+            exit 1
+          fi
+
+          if [[ "$release_state" == "missing" ]]; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$title" --notes "$notes" --latest=false
+          else
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "$title" --notes "$notes"
+          fi
+
+          upload_ok=false
+          for attempt in 1 2 3; do
+            if gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"; then
+              upload_ok=true
+              break
+            fi
+            echo "Upload da release falhou (tentativa $attempt/3); repetindo."
+            sleep $((attempt * 10))
+          done
+          [[ "$upload_ok" == "true" ]] || { echo "Não foi possível publicar todos os arquivos da rodada ${METBR_RUN_CYCLE}Z."; exit 1; }
+
           png_count="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')"
           json_count="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name | select(endswith(".json"))] | length')"
+          echo "Ciclo: ${METBR_RUN_CYCLE}Z; PNGs: $png_count; JSON: $json_count"
           test "$png_count" -eq 45
           test "$json_count" -eq 47
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'
