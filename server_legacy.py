@@ -196,6 +196,11 @@ METBR_PROFILE_CACHE_SECONDS = 10 * 60
 metbr_profile_grid_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
 metbr_profile_grid_lock = threading.Lock()
 metbr_data_lock = threading.Lock()
+METBR_PUBLICATION_METADATA_CACHE_SECONDS = 90
+metbr_publication_metadata_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+metbr_source_release_cache: dict[str, Any] = {"saved_at": 0.0, "assets": {}}
+metbr_source_release_lock = threading.Lock()
+metbr_native_click_module: Any = None
 
 ECMWF_PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100]
 ECMWF_GRIB_CACHE_SECONDS = 3 * 60 * 60
@@ -2407,6 +2412,265 @@ def _metbr_render_click_profile(lat: float, lon: float, grid: dict[str, Any]) ->
     return profile_data
 
 
+def _metbr_publication_metadata() -> dict[str, Any]:
+    """Read the current JSON publication metadata without unpacking the large F000 grid."""
+    cached = metbr_publication_metadata_cache.get("data")
+    if cached and time.monotonic() - float(metbr_publication_metadata_cache.get("saved_at", 0.0)) < METBR_PUBLICATION_METADATA_CACHE_SECONDS:
+        return cached
+    response = requests.get(
+        f"{METBR_JSON_BRANCH_BASE}/metadata.json",
+        headers={"User-Agent": "SideralMeteorologia/1.0 (METBR Skew-T temporal profiles)", "Accept": "application/json"},
+        timeout=(8, 25),
+    )
+    response.raise_for_status()
+    metadata = response.json()
+    if metadata.get("modelKey") != "metbr_wrf" or int(metadata.get("resolutionKm", 0)) != 4:
+        raise RuntimeError("A publicação consultada não é METBR WRF 4 km.")
+    if not metadata.get("initTime") or not isinstance(metadata.get("frames"), list):
+        raise RuntimeError("A publicação METBR não contém o ciclo e os horários disponíveis.")
+    metbr_publication_metadata_cache["data"] = metadata
+    metbr_publication_metadata_cache["saved_at"] = time.monotonic()
+    return metadata
+
+
+def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
+    """Resolve the checkpoint release containing one exact, metadata-declared WRFOUT asset."""
+    declared_tag = str(metadata.get("sourceReleaseTag") or "").strip()
+    if declared_tag and re.fullmatch(r"metbr-wrf-4km-checkpoint-\d+", declared_tag):
+        return declared_tag
+
+    now = time.monotonic()
+    with metbr_source_release_lock:
+        cache = metbr_source_release_cache.get("assets") or {}
+        if asset_name in cache and now - float(metbr_source_release_cache.get("saved_at", 0.0)) < 1800:
+            return str(cache[asset_name])
+
+        response = requests.get(
+            "https://api.github.com/repos/progames12301-hash/sideral-backend/releases?per_page=50",
+            headers={
+                "User-Agent": "SideralMeteorologia/1.0 (METBR Skew-T source lookup)",
+                "Accept": "application/vnd.github+json",
+            },
+            timeout=(8, 30),
+        )
+        response.raise_for_status()
+        releases = response.json()
+        for release in releases if isinstance(releases, list) else []:
+            tag = str(release.get("tag_name") or "")
+            if not re.fullmatch(r"metbr-wrf-4km-checkpoint-\d+", tag):
+                continue
+            assets = release.get("assets") or []
+            if any(str(asset.get("name") or "") == asset_name for asset in assets):
+                known = dict(cache)
+                known[asset_name] = tag
+                metbr_source_release_cache["assets"] = known
+                metbr_source_release_cache["saved_at"] = now
+                return tag
+        raise FileNotFoundError(
+            f"Não encontrei o WRFOUT {asset_name} nos releases de checkpoint METBR. "
+            "A publicação pode estar desatualizada ou o checkpoint já não estar disponível."
+        )
+
+
+def _metbr_download_raw_wrfout(metadata: dict[str, Any], asset_name: str) -> Path:
+    """Download only the requested hourly NetCDF file; keep at most one raw file on disk."""
+    if not re.fullmatch(r"wrfout_d01_\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}", asset_name):
+        raise ValueError("Nome de WRFOUT inválido na publicação METBR.")
+    METBR_CLICK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    raw_dir = METBR_CLICK_CACHE_DIR / "raw-click"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    target = raw_dir / asset_name
+    # Keep only one large source file in the temporary cache. This prevents a
+    # long GIF export from accumulating hundreds of MB of WRFOUTs on Render.
+    for old in raw_dir.iterdir():
+        if old != target and old.is_file():
+            try:
+                old.unlink()
+            except OSError:
+                pass
+    if target.is_file() and target.stat().st_size > 5 * 1024 * 1024:
+        return target
+
+    tag = _metbr_source_release_tag(metadata, asset_name)
+    url = (
+        "https://github.com/progames12301-hash/sideral-backend/releases/download/"
+        f"{tag}/{quote(asset_name, safe='')}"
+    )
+    temporary = target.with_name(target.name + ".part")
+    temporary.unlink(missing_ok=True)
+    limit = 220 * 1024 * 1024
+    total = 0
+    try:
+        with requests.get(
+            url,
+            headers={"User-Agent": "SideralMeteorologia/1.0 (METBR Skew-T)", "Accept": "application/octet-stream"},
+            timeout=(12, 240),
+            stream=True,
+            allow_redirects=True,
+        ) as response:
+            response.raise_for_status()
+            final = urlparse(response.url)
+            allowed_hosts = {
+                "github.com", "release-assets.githubusercontent.com",
+                "objects.githubusercontent.com", "github-releases.githubusercontent.com",
+            }
+            if final.scheme != "https" or (final.hostname or "").lower() not in allowed_hosts:
+                raise RuntimeError("O checkpoint METBR redirecionou para uma origem não permitida.")
+            announced = int(response.headers.get("Content-Length", "0") or 0)
+            if announced > limit:
+                raise RuntimeError(f"O WRFOUT solicitado excede o limite operacional de 220 MiB ({announced} bytes).")
+            with temporary.open("wb") as output:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > limit:
+                        raise RuntimeError("O download do WRFOUT excedeu 220 MiB.")
+                    output.write(chunk)
+        if total < 5 * 1024 * 1024 or (announced and total != announced):
+            raise RuntimeError(f"Download WRFOUT incompleto: recebido {total} bytes, informado {announced}.")
+        temporary.replace(target)
+        return target
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _metbr_load_native_click_module():
+    global metbr_native_click_module
+    if metbr_native_click_module is not None:
+        return metbr_native_click_module
+    import importlib.util
+    module_path = BASE_DIR / "wrf" / "metbr_skewt_south.py"
+    spec = importlib.util.spec_from_file_location("sideral_metbr_click_native", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Módulo de extração nativa METBR indisponível.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    metbr_native_click_module = module
+    return module
+
+
+def _metbr_render_click_profile_hour(
+    lat: float, lon: float, forecast_hour: int, metadata: dict[str, Any]
+) -> dict[str, Any]:
+    """Render one selected-hour sounding by reading only one native WRFOUT column and its 3x3 stencil."""
+    import numpy as np
+    from netCDF4 import Dataset
+    from datetime import datetime as datetime_type, timedelta
+    from PIL import Image
+    import tempfile
+
+    frames = metadata.get("frames") or []
+    frame = next(
+        (row for row in frames if int(row.get("forecastHour", -1)) == forecast_hour),
+        None,
+    )
+    if frame is None:
+        available = sorted(int(row.get("forecastHour")) for row in frames if row.get("forecastHour") is not None)
+        raise FileNotFoundError(
+            f"O METBR não publicou {forecast_hour:03d} h nesta rodada. "
+            f"Validades disponíveis: {available[0]:03d}–{available[-1]:03d}."
+            if available else "A publicação METBR não informa validades disponíveis."
+        )
+    asset_name = str(frame.get("file") or "")
+    if not re.fullmatch(r"wrfout_d01_\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}", asset_name):
+        raise RuntimeError("Nome do WRFOUT por validade ausente ou inválido na publicação METBR.")
+    run_text = str(metadata.get("initTime") or "")
+    run_time = datetime_type.fromisoformat(run_text.replace("Z", "+00:00")).replace(tzinfo=None)
+    valid_text = str(frame.get("time") or "")
+    valid_time = datetime_type.fromisoformat(valid_text.replace("Z", "+00:00")).replace(tzinfo=None)
+
+    raw_path = _metbr_download_raw_wrfout(metadata, asset_name)
+    native = _metbr_load_native_click_module()
+    city = {
+        "name": f"Ponto selecionado ({lat:.4f}, {lon:.4f})",
+        "state": "",
+        "latitude": float(lat),
+        "longitude": float(lon),
+    }
+    with Dataset(str(raw_path), "r") as dataset:
+        time_count = native.read_time_count(dataset)
+        matches = [
+            index for index in range(time_count)
+            if abs((native.time_at(dataset, index) - valid_time).total_seconds()) <= 60
+        ]
+        if not matches:
+            raise RuntimeError(f"O WRFOUT não contém o horário {valid_time:%Y-%m-%d %H:%MZ}.")
+        time_index = matches[0]
+        lat_grid, lon_grid = native.grid_latlon(dataset)
+        lat_r = np.radians(lat_grid)
+        lon_r = np.radians(lon_grid)
+        lat0 = math.radians(float(lat))
+        lon0 = math.radians(float(lon))
+        dlat = lat_r - lat0
+        dlon = lon_r - lon0
+        a = np.sin(dlat / 2.0) ** 2 + np.cos(lat0) * np.cos(lat_r) * np.sin(dlon / 2.0) ** 2
+        distance = 6371.0 * 2.0 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+        distance[~np.isfinite(distance)] = np.inf
+        j, i = np.unravel_index(int(np.argmin(distance)), distance.shape)
+        distance_km = float(distance[j, i])
+        ny, nx = lat_grid.shape
+        domain = {
+            "south": float(np.nanmin(lat_grid)), "north": float(np.nanmax(lat_grid)),
+            "west": float(np.nanmin(lon_grid)), "east": float(np.nanmax(lon_grid)),
+        }
+        if lat < domain["south"] - 0.02 or lat > domain["north"] + 0.02 or lon < domain["west"] - 0.02 or lon > domain["east"] + 0.02:
+            error = WRFDomainError("Ponto fora da cobertura METBR WRF 4 km.")
+            error.domain = domain
+            raise error
+        if not math.isfinite(distance_km) or distance_km > 8.0:
+            error = WRFDomainError("O clique está muito distante da grade nativa METBR WRF 4 km.")
+            error.domain = domain
+            raise error
+        if not (1 <= j < ny - 1 and 1 <= i < nx - 1):
+            error = WRFDomainError("O ponto selecionado está perto demais da borda da grade METBR.")
+            error.domain = domain
+            raise error
+        point = {
+            "i": int(i), "j": int(j), "distance_km": distance_km,
+            "grid_latitude": float(lat_grid[j, i]), "grid_longitude": float(lon_grid[j, i]),
+            "grid_shape": {"ny": int(ny), "nx": int(nx)},
+        }
+        sounding, rows, terrain, thermal_advection = native.make_profile(
+            dataset, time_index, city, point, valid_time
+        )
+        renderer = native.load_renderer()
+        meta = {
+            "location": city["name"], "state": "", "model": "METBR WRF 4 km",
+            "station": city["name"] + " / METBR WRF 4 km",
+            "latitude": float(lat), "longitude": float(lon), "elevation": terrain,
+            "fh": forecast_hour, "valid": valid_time, "run": run_time,
+            "source": "native WRFOUT", "thermal_advection": thermal_advection,
+        }
+        with tempfile.TemporaryDirectory(prefix="click-f", dir=str(METBR_CLICK_CACHE_DIR)) as output_dir:
+            result_path = renderer.render_native_spc(sounding, Path(output_dir), meta)
+            png_path = Path(result_path) if result_path is not None else Path(output_dir) / "full.png"
+            if not png_path.is_file() or png_path.stat().st_size < 10000:
+                fallback = Path(output_dir) / "full.png"
+                if fallback.is_file() and fallback.stat().st_size >= 10000:
+                    png_path = fallback
+                else:
+                    raise RuntimeError(f"O renderizador nativo não produziu PNG válido para F{forecast_hour:03d}.")
+            png_bytes = png_path.read_bytes()
+
+    payload = native.profile_json(city, point, run_time, valid_time, forecast_hour, rows, terrain)
+    payload.update({
+        "model": "METBR WRF 4 km",
+        "model_id": "metbr_wrf_4km",
+        "latitude": float(lat), "longitude": float(lon),
+        "grid_latitude": point["grid_latitude"], "grid_longitude": point["grid_longitude"],
+        "run": run_time.strftime("%Y-%m-%d"), "run_cycle": run_time.strftime("%HZ"),
+        "valid": valid_time.strftime("%Y-%m-%d %H:%MZ"),
+        "surface_elevation_m": float(terrain),
+        "terrain_elevation_m": float(terrain),
+        "forecast_hour": forecast_hour,
+        "render_cache": False,
+        "png_data_uri": "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii"),
+    })
+    return payload
+
+
 def _metbr_checkpoint_metadata_response(grid: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": True,
@@ -2778,7 +3042,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(500, {"error": "Não foi possível carregar o domínio METBR WRF 4 km.", "code": "METBR_DOMAIN_FAILED"})
 
     def handle_wrf_sounding_render(self, query: dict[str, list[str]]) -> None:
-        """Render METBR WRF 4-km F000 Skew-T for the selected native grid column."""
+        """Render the selected native METBR WRF 4-km forecast hour for a map-clicked column."""
         started = time.monotonic()
         try:
             lat = float(query.get("lat", ["-27.0"])[0])
@@ -2789,11 +3053,30 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(400, {"error": "Latitude/longitude inválidas.", "code": "BAD_COORDINATES"}); return
             if model not in {"metbr_wrf_4km", "metbr"}:
                 self.send_json(400, {"error": "Este endpoint atende somente METBR WRF 4 km.", "code": "BAD_WRF_MODEL"}); return
-            if fh != 0:
-                self.send_json(400, {"error": "O teste click-to-point está limitado à validade F000.", "code": "F000_ONLY"}); return
+            if fh < 0 or fh > 42:
+                self.send_json(400, {"error": "O METBR WRF 4 km disponibiliza F000–F042 em passos de 1 hora nesta publicação.", "code": "BAD_FORECAST_HOUR"}); return
 
-            grid = _metbr_load_processed_vertical_grid()
-            cache_key = (round(lat, 3), round(lon, 3), grid["init_time"], "metbr-click-skewt-v2")
+            # Include the selected forecast hour in the key: without it, an F003
+            # request could accidentally reuse the previous F000 PNG for the same point.
+            if fh == 0:
+                grid = _metbr_load_processed_vertical_grid()
+                init_key = str(grid["init_time"])
+            else:
+                publication = _metbr_publication_metadata()
+                published_hours = {
+                    int(row.get("forecastHour"))
+                    for row in publication.get("frames", [])
+                    if row.get("forecastHour") is not None
+                }
+                if fh not in published_hours:
+                    self.send_json(404, {
+                        "error": f"F{fh:03d} não está publicado nesta rodada METBR.",
+                        "code": "METBR_FORECAST_HOUR_UNAVAILABLE",
+                        "available_hours": sorted(published_hours),
+                    }); return
+                init_key = str(publication.get("initTime"))
+
+            cache_key = (round(lat, 3), round(lon, 3), init_key, fh, "metbr-click-skewt-v3")
             cached_png = wrf_sounding_render_cache.get(cache_key)
             if cached_png and time.monotonic() - float(cached_png.get("saved_at", 0.0)) < WRF_SOUNDING_RENDER_CACHE_SECONDS:
                 result = dict(cached_png["data"])
@@ -2809,7 +3092,11 @@ class Handler(SimpleHTTPRequestHandler):
                     result["render_ms"] = 0
                     self.send_json(200, result); return
 
-                result = _metbr_render_click_profile(lat, lon, grid)
+                if fh == 0:
+                    result = _metbr_render_click_profile(lat, lon, grid)
+                    result["forecast_hour"] = 0
+                else:
+                    result = _metbr_render_click_profile_hour(lat, lon, fh, publication)
                 result["render_cache"] = False
                 result["render_ms"] = round((time.monotonic() - started) * 1000)
                 wrf_sounding_render_cache[cache_key] = {"saved_at": time.monotonic(), "data": dict(result)}
