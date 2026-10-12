@@ -3024,7 +3024,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "Validade METBR inválida.", "code": "BAD_FORECAST_HOUR"}); return
 
         allowed_cities = {"curitiba", "florianopolis", "porto-alegre"}
-        allowed_cycles = {"00", "12", "18", "21"}
+        allowed_cycles = {"00", "06", "12", "18", "21"}
         if city not in allowed_cities or cycle not in allowed_cycles or fh not in range(0, 43, 3):
             self.send_json(400, {
                 "error": "Capital pré-gerada, ciclo ou validade METBR inválidos.",
@@ -3183,7 +3183,7 @@ class Handler(SimpleHTTPRequestHandler):
             if model not in {"metbr_wrf_4km", "metbr"}:
                 self.send_json(400, {"error": "Este teste usa exclusivamente METBR WRF 4 km.", "code": "BAD_WRF_MODEL"}); return
             cycle = str(query.get("cycle", [""])[0]).strip()
-            if cycle and cycle not in {"00", "12", "18", "21"}:
+            if cycle and cycle not in {"00", "06", "12", "18", "21"}:
                 self.send_json(400, {"error": "Selecione uma rodada METBR válida: 00Z, 12Z, 18Z ou 21Z.", "code": "BAD_METBR_CYCLE"}); return
             grid = _metbr_load_processed_vertical_grid(cycle or None)
             payload = _metbr_checkpoint_metadata_response(grid)
@@ -3207,7 +3207,7 @@ class Handler(SimpleHTTPRequestHandler):
             model = str(query.get("model", ["metbr_wrf_4km"])[0]).lower().strip()
             fh = int(query.get("fh", ["0"])[0])
             cycle = str(query.get("cycle", [""])[0]).strip()
-            if cycle and cycle not in {"00", "12", "18", "21"}:
+            if cycle and cycle not in {"00", "06", "12", "18", "21"}:
                 self.send_json(400, {"error": "Selecione uma rodada METBR válida: 00Z, 12Z, 18Z ou 21Z.", "code": "BAD_METBR_CYCLE"}); return
             if not (-90 <= lat <= 90 and -180 <= lon <= 180):
                 self.send_json(400, {"error": "Latitude/longitude inválidas.", "code": "BAD_COORDINATES"}); return
