@@ -434,9 +434,9 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     surface_parcel = getattr(pcl, "sfcpcl", None)
     top_pressure = float(np.nanmin(p))
     level_specs = (
-        ("LCL", "lclpres", "lclhght", "#178447"),
-        ("LFC", "lfcpres", "lfchght", "#b8860b"),
-        ("EL", "elpres", "elhght", "#8147a8"),
+        ("LCL", "lclpres", "lclhght", "#087443"),
+        ("LFC", "lfcpres", "lfchght", "#8a4b00"),
+        ("EL", "elpres", "elhght", "#68249a"),
     )
     parcel_levels = {}
     for short, pressure_attr, height_attr, marker_color in level_specs:
@@ -487,7 +487,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                 parcel_levels["LCL"] = {
                     "pressure": float(lcl_pressure),
                     "height_agl_m": max(0.0, float(lcl_height)) if math.isfinite(lcl_height) else np.nan,
-                    "color": "#178447",
+                    "color": "#087443",
                 }
         except Exception:
             pass
@@ -509,9 +509,10 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
         elif el is not None and el["pressure"] > lfc["pressure"] + 1.0:
             parcel_levels.pop("EL", None)
 
-    # Use one label column and small leader lines so close LCL/LFC/EL values
-    # cannot collide or stick together on the thermodynamic curves.
+    # Use a single label column with offset leaders; LCL/LFC/EL remain distinct
+    # even where their pressure levels are close together.
     marker_offsets = {"LCL": 12, "LFC": 0, "EL": -12}
+    marker_fills = {"LCL": "#e2f4ea", "LFC": "#fff0d6", "EL": "#f0e5fa"}
     marker_x = 36.0
     for short in ("LCL", "LFC", "EL"):
         level = parcel_levels.get(short)
@@ -526,15 +527,19 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             label = f"{short} 0 km"
         else:
             label = f"{short} {height_agl / 1000.0:.1f} km"
-        ax.axhline(pressure_value, color=marker_color, lw=0.8,
-                   ls=(0, (3, 2)), alpha=0.88, zorder=3)
+        # White casing plus a saturated foreground line improves legibility.
+        ax.axhline(pressure_value, color="white", lw=3.2,
+                   ls=(0, (5, 2)), alpha=1.0, zorder=7)
+        ax.axhline(pressure_value, color=marker_color, lw=1.6,
+                   ls=(0, (5, 2)), alpha=1.0, zorder=8)
         ax.annotate(
             label, xy=(marker_x, pressure_value), xycoords="data",
             xytext=(7, marker_offsets[short]), textcoords="offset points",
-            fontsize=6.2, color=marker_color, weight="bold",
-            ha="left", va="center", clip_on=True, zorder=9,
-            bbox=dict(facecolor="white", edgecolor="#dce2e9", alpha=0.96, pad=0.25),
-            arrowprops=dict(arrowstyle="-", color=marker_color, lw=0.55, alpha=0.8),
+            fontsize=7.4, color=marker_color, weight="bold",
+            ha="left", va="center", clip_on=True, zorder=10,
+            bbox=dict(facecolor=marker_fills[short], edgecolor=marker_color,
+                      linewidth=0.95, alpha=0.99, pad=0.65),
+            arrowprops=dict(arrowstyle="-", color=marker_color, lw=0.9, alpha=1.0),
         )
 
     lfc_for_shading = parcel_levels.get("LFC", {}).get("pressure")
@@ -955,12 +960,22 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh0
     cols = ["", "CAPE [J/kg]", "CIN [J/kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0-1", "EHI 0-3"]
     table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
                      colWidths=[0.07,0.13,0.13,0.12,0.12,0.12,0.08,0.10,0.10])
-    table.auto_set_font_size(False); table.set_fontsize(7.3); table.scale(1, 1.26)
+    table.auto_set_font_size(False); table.set_fontsize(7.7); table.scale(1, 1.30)
+    level_styles = {
+        3: ("#e2f4ea", "#00643b"),  # LCL
+        4: ("#fff0d6", "#804000"),  # LFC
+        5: ("#f0e5fa", "#581b86"),  # EL
+    }
     for (r,c), cell in table.get_celld().items():
-        cell.set_edgecolor("white"); cell.set_linewidth(0.0); cell.set_facecolor("white")
-        cell.get_text().set_color(INK)
-        if r == 0:
-            cell.get_text().set_fontweight("bold")
+        cell.set_edgecolor("#aeb8c4"); cell.set_linewidth(0.45)
+        cell.set_facecolor("#e8edf3" if r == 0 else "#ffffff")
+        cell.get_text().set_color("#101010")
+        cell.get_text().set_fontweight("bold" if r == 0 else "normal")
+        if c in level_styles:
+            fill, ink = level_styles[c]
+            cell.set_facecolor(fill)
+            cell.set_edgecolor(ink); cell.set_linewidth(0.9)
+            cell.get_text().set_color(ink); cell.get_text().set_fontweight("bold")
 
     ground_m = _finite(getattr(prof, "hght", [0])[getattr(prof, "sfc", 0)])
     if ground_m is None:
@@ -1038,7 +1053,8 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh0
     columns = [(0.037, left), (0.225, mid1), (0.392, mid2), (0.535, lapse), (0.700, right), (0.835, severe)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.095 - j * 0.013, label, ha="left", va="center", fontsize=7.2, color=INK)
+            fig.text(x, 0.095 - j * 0.013, label, ha="left", va="center",
+                     fontsize=7.8, color="#080808", fontweight="bold")
 
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
