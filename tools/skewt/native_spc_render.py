@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-from matplotlib.ticker import FixedLocator, FuncFormatter
+from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
 
 W, H, DPI = 1344, 1152, 100
 SKEW = 15.5
@@ -226,7 +226,8 @@ def _pwat_mm(p, td):
 
 def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     ax.set_yscale("log")
-    ax.set_ylim(1050, 100)
+    surface_pressure = float(p[0])
+    ax.set_ylim(surface_pressure, 100)
     ax.set_xlim(-43, 79)
     ax.set_facecolor("white")
     ax.spines[:].set_color(INK)
@@ -237,16 +238,19 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
 
     # Pressure grid: major every 100 hPa, supporting levels every 25 hPa.
     p_ticks = [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]
-    p_minor = [float(pp) for pp in np.arange(125, 1050, 25) if pp not in p_ticks]
+    p_minor = [float(pp) for pp in np.arange(125, 1050, 25)
+               if pp not in p_ticks and pp <= surface_pressure]
     ax.yaxis.set_major_locator(FixedLocator(p_ticks))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f"{int(val)}" if any(abs(val-x)<0.5 for x in p_ticks) else ""))
     ax.yaxis.set_minor_locator(FixedLocator(p_minor))
+    ax.yaxis.set_minor_formatter(NullFormatter())
     ax.set_xticks(np.arange(-40, 56, 10))
     ax.set_xticks(np.arange(-40, 56, 5), minor=True)
     ax.tick_params(axis="x", which="minor", length=2, color="#777777")
-    ps = np.geomspace(100, 1050, 240)
+    ps = np.geomspace(100, max(100.0, surface_pressure), 240)
     for pp in p_ticks:
-        ax.axhline(pp, color="#a7a7a7", lw=0.62, zorder=0)
+        if pp <= surface_pressure + 0.1:
+            ax.axhline(pp, color="#a7a7a7", lw=0.62, zorder=0)
     for pp in p_minor:
         ax.axhline(pp, color="#e4e4e4", lw=0.34, zorder=0)
 
@@ -296,8 +300,8 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     h_agl = z - z[0]
     for pp in [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]:
         height = _interp_pressure(h_agl, p, pp)
-        if math.isfinite(height):
-            ax.text(-41.8, pp, f"{height:.1f} m", ha="left", va="center", fontsize=6.6, color="#303030", clip_on=True)
+        if math.isfinite(height) and pp <= surface_pressure + 0.1:
+            ax.text(-41.8, pp, f"{height:.1f} m AGL", ha="left", va="center", fontsize=6.6, color="#303030", clip_on=True)
     from sharppy.sharptab import thermo
     t_virtual = np.asarray([float(thermo.virtemp(float(pi), float(ti), float(di)))
                             for pi, ti, di in zip(p, t, td)], dtype=float)
@@ -378,15 +382,18 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
 
 def _make_theta_axes(ax, p, t, td):
     theta, thetae, thetaes = _theta_profiles(p, t, td)
-    ax.set_yscale("log"); ax.set_ylim(1050, 100); ax.set_xlim(245, 380)
+    surface_pressure = float(p[0])
+    ax.set_yscale("log"); ax.set_ylim(surface_pressure, 100); ax.set_xlim(245, 380)
     ax.set_facecolor("white")
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
     ax.set_xticks([245, 270, 295, 320, 345, 370])
     ax.set_yticks([1000, 900, 800, 700, 600, 500, 400, 300, 200, 100])
     ax.set_yticklabels(["1000", "900", "800", "700", "600", "500", "400", "300", "200", "100"])
+    ax.yaxis.set_minor_formatter(NullFormatter())
     for pp in [1000,900,800,700,600,500,400,300,200,100]:
-        ax.axhline(pp, color="#dddddd", lw=0.48, zorder=0)
+        if pp <= surface_pressure + 0.1:
+            ax.axhline(pp, color="#dddddd", lw=0.48, zorder=0)
     ax.plot(theta, p, color=GREEN, lw=1.3, label=r"$\theta$")
     ax.plot(thetae, p, color=RED, lw=1.2, label=r"$\theta_e$")
     ax.plot(thetaes, p, color=BLUE, lw=1.2, label=r"$\theta_{es}$")
@@ -433,7 +440,8 @@ def _make_hodo(ax, z, u, v, station_text, motion):
 
 
 def _make_advection(ax, p, t, omega):
-    ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_ylim(1050, 100); ax.set_xlim(-5, 5)
+    surface_pressure = float(p[0])
+    ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_ylim(surface_pressure, 100); ax.set_xlim(-5, 5)
     ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
     ax.set_xlabel("Inf. Temp.\nAdvec. (C/hr)", fontsize=8.5, labelpad=3)
@@ -442,7 +450,8 @@ def _make_advection(ax, p, t, omega):
     ax.set_yticklabels(["1000","900","800","700","600","500","400","300","200","100"])
     ax.axvline(0, color=INK, lw=1.0)
     for pp in [1000,800,600,400,200,100]:
-        ax.axhline(pp, color="#e3e3e3", lw=0.45, zorder=0)
+        if pp <= surface_pressure + 0.1:
+            ax.axhline(pp, color="#e3e3e3", lw=0.45, zorder=0)
     valid = np.isfinite(p) & np.isfinite(t) & np.isfinite(omega)
     if valid.sum() >= 4:
         pp, tt, om = p[valid], t[valid], omega[valid]
@@ -503,7 +512,7 @@ def _parcel_rows(prof, srh01, srh03):
 
 
 def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, hodo_motion):
-    ax = fig.add_axes([0.035, 0.073, 0.63, 0.115]); ax.axis("off")
+    ax = fig.add_axes([0.035, 0.103, 0.63, 0.115]); ax.axis("off")
     cols = ["", "CAPE [J/Kg]", "CINe [J/Kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0-1", "EHI 0-3"]
     table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
                      colWidths=[0.07,0.13,0.13,0.12,0.12,0.12,0.08,0.10,0.10])
