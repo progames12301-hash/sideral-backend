@@ -83,6 +83,7 @@ def render_smn_wrf_map(cycle="00", field="PSFC", fh=24):
             if field=="PSFC" and np.nanmedian(val)>2000: val=val/100.0
             if field=="T2" and np.nanmedian(val)>100: val=val-273.15
             if field=="HR2" and np.nanmax(val)<=1.5: val=val*100.0
+            if field=="PP" and np.nanpercentile(val[np.isfinite(val)],99)<0.1: val=val*1000.0
         except SmnMapError: raise
         except Exception as exc: raise SmnMapError("Falha ao ler NetCDF do SMN: "+str(exc)[:200]) from exc
         valid=np.isfinite(lon)&np.isfinite(lat)&np.isfinite(val)&(lon>-180)&(lon<180)&(lat>-90)&(lat<90)
