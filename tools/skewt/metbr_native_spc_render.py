@@ -956,7 +956,7 @@ def _parcel_rows(prof, srh01, srh03):
 
 
 def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude):
-    ax = fig.add_axes([0.035, 0.073, 0.63, 0.115]); ax.axis("off")
+    ax = fig.add_axes([0.035, 0.103, 0.63, 0.115]); ax.axis("off")
     cols = ["", "CAPE [J/kg]", "CIN [J/kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0-1", "EHI 0-3"]
     table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
                      colWidths=[0.07,0.13,0.13,0.12,0.12,0.12,0.08,0.10,0.10])
