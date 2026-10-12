@@ -2451,24 +2451,40 @@ def _metbr_render_click_profile(lat: float, lon: float, grid: dict[str, Any]) ->
     return profile_data
 
 
-def _metbr_publication_metadata() -> dict[str, Any]:
-    """Read the current JSON publication metadata without unpacking the large F000 grid."""
+def _metbr_publication_metadata(cycle: str | None = None) -> dict[str, Any]:
+    """Read the metadata for the selected METBR initialization cycle."""
+    json_base, branch_key = _metbr_json_branch_base(cycle)
     cached = metbr_publication_metadata_cache.get("data")
-    if cached and time.monotonic() - float(metbr_publication_metadata_cache.get("saved_at", 0.0)) < METBR_PUBLICATION_METADATA_CACHE_SECONDS:
+    if (
+        cached and metbr_publication_metadata_cache.get("branch") == branch_key
+        and time.monotonic() - float(metbr_publication_metadata_cache.get("saved_at", 0.0)) < METBR_PUBLICATION_METADATA_CACHE_SECONDS
+    ):
         return cached
     response = requests.get(
-        f"{METBR_JSON_BRANCH_BASE}/metadata.json",
+        f"{json_base}/metadata.json",
         headers={"User-Agent": "SideralMeteorologia/1.0 (METBR Skew-T temporal profiles)", "Accept": "application/json"},
         timeout=(8, 25),
     )
+    if response.status_code == 404 and cycle:
+        raise METBRCycleUnavailableError(
+            f"A rodada METBR {cycle}Z ainda não foi publicada no GitHub."
+        )
     response.raise_for_status()
     metadata = response.json()
     if metadata.get("modelKey") != "metbr_wrf" or int(metadata.get("resolutionKm", 0)) != 4:
         raise RuntimeError("A publicação consultada não é METBR WRF 4 km.")
     if not metadata.get("initTime") or not isinstance(metadata.get("frames"), list):
         raise RuntimeError("A publicação METBR não contém o ciclo e os horários disponíveis.")
+    if cycle:
+        init_time = dt.datetime.fromisoformat(str(metadata["initTime"]).replace("Z", "+00:00"))
+        if init_time.strftime("%H") != cycle:
+            raise RuntimeError(
+                f"A branch METBR escolhida como {cycle}Z contém dados de {init_time:%HZ}; "
+                "a consulta foi interrompida para evitar misturar rodadas."
+            )
     metbr_publication_metadata_cache["data"] = metadata
     metbr_publication_metadata_cache["saved_at"] = time.monotonic()
+    metbr_publication_metadata_cache["branch"] = branch_key
     return metadata
 
 
@@ -3102,8 +3118,15 @@ class Handler(SimpleHTTPRequestHandler):
             model = str(query.get("model", ["metbr_wrf_4km"])[0]).lower().strip()
             if model not in {"metbr_wrf_4km", "metbr"}:
                 self.send_json(400, {"error": "Este teste usa exclusivamente METBR WRF 4 km.", "code": "BAD_WRF_MODEL"}); return
-            grid = _metbr_load_processed_vertical_grid()
-            self.send_json(200, _metbr_checkpoint_metadata_response(grid))
+            cycle = str(query.get("cycle", [""])[0]).strip()
+            if cycle and cycle not in {"00", "12", "18", "21"}:
+                self.send_json(400, {"error": "Selecione uma rodada METBR válida: 00Z, 12Z, 18Z ou 21Z.", "code": "BAD_METBR_CYCLE"}); return
+            grid = _metbr_load_processed_vertical_grid(cycle or None)
+            payload = _metbr_checkpoint_metadata_response(grid)
+            payload["selected_cycle"] = grid["run_time"].strftime("%H")
+            self.send_json(200, payload)
+        except METBRCycleUnavailableError as exc:
+            self.send_json(404, {"error": str(exc), "code": "METBR_CYCLE_UNAVAILABLE"})
         except (ValueError, FileNotFoundError, RuntimeError, requests.RequestException, zipfile.BadZipFile) as exc:
             _log_sounding_error("METBR processed F000 coverage", exc)
             self.send_json(503, {"error": _sanitize_server_error(exc), "code": "METBR_Wrf_F000_UNAVAILABLE"})
@@ -3119,6 +3142,9 @@ class Handler(SimpleHTTPRequestHandler):
             lon = float(query.get("lon", ["-51.0"])[0])
             model = str(query.get("model", ["metbr_wrf_4km"])[0]).lower().strip()
             fh = int(query.get("fh", ["0"])[0])
+            cycle = str(query.get("cycle", [""])[0]).strip()
+            if cycle and cycle not in {"00", "12", "18", "21"}:
+                self.send_json(400, {"error": "Selecione uma rodada METBR válida: 00Z, 12Z, 18Z ou 21Z.", "code": "BAD_METBR_CYCLE"}); return
             if not (-90 <= lat <= 90 and -180 <= lon <= 180):
                 self.send_json(400, {"error": "Latitude/longitude inválidas.", "code": "BAD_COORDINATES"}); return
             if model not in {"metbr_wrf_4km", "metbr"}:
@@ -3129,10 +3155,10 @@ class Handler(SimpleHTTPRequestHandler):
             # Include the selected forecast hour in the key: without it, an F003
             # request could accidentally reuse the previous F000 PNG for the same point.
             if fh == 0:
-                grid = _metbr_load_processed_vertical_grid()
+                grid = _metbr_load_processed_vertical_grid(cycle or None)
                 init_key = str(grid["init_time"])
             else:
-                publication = _metbr_publication_metadata()
+                publication = _metbr_publication_metadata(cycle or None)
                 published_hours = {
                     int(row.get("forecastHour"))
                     for row in publication.get("frames", [])
@@ -3181,6 +3207,8 @@ class Handler(SimpleHTTPRequestHandler):
             if domain:
                 payload["domain"] = domain
             self.send_json(422, payload)
+        except METBRCycleUnavailableError as exc:
+            self.send_json(404, {"error": str(exc), "code": "METBR_CYCLE_UNAVAILABLE"})
         except (ValueError, FileNotFoundError, RuntimeError, requests.RequestException, zipfile.BadZipFile) as exc:
             _log_sounding_error("METBR WRF Skew-T render", exc)
             self.send_json(503, {"error": _sanitize_server_error(exc), "code": "METBR_SKEWT_UNAVAILABLE"})
