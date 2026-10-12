@@ -1053,8 +1053,8 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh0
     columns = [(0.037, left), (0.225, mid1), (0.392, mid2), (0.535, lapse), (0.700, right), (0.835, severe)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.095 - j * 0.013, label, ha="left", va="center",
-                     fontsize=7.8, color="#080808", fontweight="bold")
+            fig.text(x, 0.080 - j * 0.013, label, ha="left", va="center",
+                     fontsize=7.8, color="#080808", fontweight="bold", zorder=30)
 
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
