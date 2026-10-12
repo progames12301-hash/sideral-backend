@@ -42,7 +42,7 @@ def _fetch(cycle, fh):
             try:
                 response=session.get(base+path, timeout=(5,18))
                 if response.status_code==404:
-                    errors.append(f"{ymd}:404"); continue
+                    errors.append(f"{ymd}:404"); break
                 response.raise_for_status(); data=response.content
                 sig=data[:8]
                 if len(data)<100000 or not (sig.startswith(b"\x89HDF\r\n\x1a\n") or sig.startswith((b"CDF\x01",b"CDF\x02",b"CDF\x05"))):
