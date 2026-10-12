@@ -2686,6 +2686,11 @@ def _metbr_checkpoint_metadata_response(grid: dict[str, Any]) -> dict[str, Any]:
         "grid_nx": grid["grid_nx"],
         "grid_ny": grid["grid_ny"],
         "vertical_levels": grid["n_levels"],
+        "available_forecast_hours": sorted({
+            int(frame.get("forecastHour"))
+            for frame in (grid.get("metadata", {}).get("frames") or [])
+            if frame.get("forecastHour") is not None
+        }),
     }
 
 
