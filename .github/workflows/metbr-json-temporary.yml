@@ -88,6 +88,27 @@ jobs:
           test -s metbr_json/vertical-f000.npz
           test -d metbr_json/frames
 
+      - name: Selecionar branch da rodada METBR
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_CYCLE="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          from datetime import datetime
+          meta=json.loads(Path("metbr_json/metadata.json").read_text(encoding="utf-8"))
+          text=str(meta.get("initTime") or "")
+          if not text:
+              raise SystemExit("metadata.json não informa initTime")
+          stamp=datetime.fromisoformat(text.replace("Z","+00:00"))
+          print(stamp.strftime("%H"))
+          PY
+          )"
+          [[ "$RUN_CYCLE" =~ ^(00|06|12|18|21)$ ]] || { echo "Ciclo METBR não suportado: $RUN_CYCLE" >&2; exit 20; }
+          echo "METBR_RUN_CYCLE=$RUN_CYCLE" >> "$GITHUB_ENV"
+          echo "METBR_JSON_BRANCH=metbr-json-data-$RUN_CYCLE" >> "$GITHUB_ENV"
+          echo "A publicação desta execução irá para metbr-json-data-$RUN_CYCLE e também atualizará metbr-json-data."
+
       - name: Validar JSON
         run: |
           set -euo pipefail
@@ -203,7 +224,10 @@ jobs:
           git -C published-metbr-json remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" 2>/dev/null || true
           git -C published-metbr-json remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git"
           git -C published-metbr-json push --force origin HEAD:"$METBR_JSON_BRANCH"
-          echo "METBR JSON publicado com sucesso em $METBR_JSON_BRANCH"
+          if [[ "$METBR_JSON_BRANCH" != "metbr-json-data" ]]; then
+            git -C published-metbr-json push --force origin HEAD:metbr-json-data
+          fi
+          echo "METBR JSON publicado com sucesso no ciclo $METBR_RUN_CYCLE (branch $METBR_JSON_BRANCH) e no alias metbr-json-data."
 
       - name: Resumo
         run: |
