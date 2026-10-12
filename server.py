@@ -5,6 +5,7 @@ from urllib.parse import urlparse, parse_qs
 import server_legacy as legacy
 import stations_sideral
 from PIL import Image, ImageFilter
+from smn_wrf_map import render_smn_wrf_map, SmnMapError
 
 ROOT = Path(__file__).resolve().parent
 
@@ -49,6 +50,24 @@ class Handler(legacy.Handler):
                 'provider': 'METBR',
                 'error': 'METBR movido para a publicação JSON temporária; use a branch metbr-json-data.'
             })
+        if p.path == '/api/smn/wrf-map':
+            query = parse_qs(p.query)
+            cycle = str(query.get('cycle', ['00'])[0])
+            field = str(query.get('field', ['PSFC'])[0])
+            fh = str(query.get('fh', ['24'])[0])
+            try:
+                png, source_date = render_smn_wrf_map(cycle=cycle, field=field, fh=fh)
+                return send_binary(self, 200, png, 'image/png', {
+                    'X-Sideral-Provider': 'SMN Argentina WRF',
+                    'X-SMN-Run-Date': source_date,
+                    'X-SMN-Cycle': cycle,
+                    'X-SMN-Field': field,
+                    'X-SMN-Forecast-Hour': fh,
+                })
+            except SmnMapError as exc:
+                return send_json(self, 503, {'status': False, 'provider': 'SMN Argentina WRF', 'error': str(exc)[:600]})
+            except Exception as exc:
+                return send_json(self, 502, {'status': False, 'provider': 'SMN Argentina WRF', 'error': 'Falha ao gerar o mapa.', 'details': str(exc)[:400]})
         if p.path == '/api/redemet/radar':
             return self._redemet_radar(parse_qs(p.query))
         if p.path == '/api/redemet/image':
