@@ -227,7 +227,7 @@ def _pwat_mm(p, td):
 def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     ax.set_yscale("log")
     ax.set_ylim(1050, 100)
-    ax.set_xlim(-43, 64)
+    ax.set_xlim(-43, 79)
     ax.set_facecolor("white")
     ax.spines[:].set_color(INK)
     ax.spines[:].set_linewidth(0.85)
@@ -298,11 +298,25 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
         height = _interp_pressure(h_agl, p, pp)
         if math.isfinite(height):
             ax.text(-41.8, pp, f"{height:.1f} m", ha="left", va="center", fontsize=6.6, color="#303030", clip_on=True)
-    ax.plot(_xskew(t, p), p, color=INK, lw=1.65, zorder=5, label="T")
-    ax.plot(_xskew(td, p), p, color=BLUE, lw=1.85, zorder=6, label="Td")
+    from sharppy.sharptab import thermo
+    t_virtual = np.asarray([float(thermo.virtemp(float(pi), float(ti), float(di)))
+                            for pi, ti, di in zip(p, t, td)], dtype=float)
+    tw_values = []
+    for pi, ti, di in zip(p, t, td):
+        try:
+            tw_values.append(float(thermo.wetbulb(float(pi), float(ti), float(di))))
+        except Exception:
+            tw_values.append(np.nan)
+    t_wet = np.asarray(tw_values, dtype=float)
+    # Trace colours follow the METBR operational chart convention.
+    ax.plot(_xskew(t, p), p, color="#d62728", lw=1.8, zorder=6, label="T")
+    ax.plot(_xskew(td, p), p, color="#238b45", lw=1.8, zorder=7, label="Td")
+    ax.plot(_xskew(t_virtual, p), p, color="#bf3b3b", lw=1.0, ls="--", zorder=5, label="Tv")
+    if np.isfinite(t_wet).sum() >= 3:
+        ax.plot(_xskew(t_wet, p), p, color="#13a6ac", lw=1.15, zorder=5, label="Tw")
     parcel = _parcel_curve(p, t, td)
     if np.isfinite(parcel).sum() > 3:
-        ax.plot(_xskew(parcel, p), p, color=RED, lw=1.25, ls="--", zorder=4)
+        ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35, ls="--", zorder=5, label="Parcela SFC")
     # Mark LCL/LFC/EL using whichever SHARPpy parcel contains each value.
     parcel_objects = [getattr(pcl, n, None) for n in ("sfcpcl", "mlpcl", "mupcl", "fcstpcl")]
     markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
@@ -347,9 +361,18 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
 
     # Frequent wind barbs, as in an operational sounding.
     idx = np.unique(np.linspace(0, len(p) - 1, min(50, len(p))).round().astype(int))
-    ax.barbs(np.full(len(idx), 53.5), p[idx], u[idx], v[idx], length=4.4,
-             linewidth=0.55, barb_increments={"half": 5, "full": 10, "flag": 50},
-             pivot="middle", color=INK, zorder=7)
+    barb_pressure = np.geomspace(float(p[0]), float(p[-1]), 55)
+    barb_u = np.asarray([_interp_pressure(u, p, value) for value in barb_pressure])
+    barb_v = np.asarray([_interp_pressure(v, p, value) for value in barb_pressure])
+    barb_good = np.isfinite(barb_u) & np.isfinite(barb_v)
+    if int(barb_good.sum()) < 50:
+        raise RuntimeError(f"Somente {int(barb_good.sum())} barbelas de vento válidas; esperadas pelo menos 50.")
+    ax.barbs(np.full(int(barb_good.sum()), 66.0), barb_pressure[barb_good],
+             barb_u[barb_good], barb_v[barb_good], length=5.8,
+             linewidth=0.78, sizes={"spacing": 0.12, "height": 0.28,
+                                    "width": 0.22, "emptybarb": 0.15},
+             barb_increments={"half": 5, "full": 10, "flag": 50},
+             pivot="middle", color=INK, clip_on=True, zorder=7)
     ax.set_title(f"Station: {station}\nDate: {date_text}", fontsize=10.5, loc="left", pad=6, color=INK)
 
 
@@ -543,8 +566,8 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
     columns = [(0.037, left), (0.225, mid1), (0.392, mid2), (0.535, lapse), (0.700, right), (0.835, severe)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.083 - j * 0.016, label, ha="left", va="center",
-                     fontsize=8.8, color="#080808", fontweight="bold")
+            fig.text(x, 0.075 - j * 0.014, label, ha="left", va="center",
+                     fontsize=8.4, color="#080808", fontweight="bold", zorder=30)
 
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
@@ -604,7 +627,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
         raise FileNotFoundError(f"Logo oficial Sideral ausente: {logo_path}")
     with Image.open(logo_path) as source_logo:
         logo = source_logo.convert("RGBA")
-    logo_ax = fig.add_axes([0.855, 0.012, 0.135, 0.075], zorder=20)
+    logo_ax = fig.add_axes([0.862, 0.008, 0.112, 0.046], zorder=20)
     logo_ax.imshow(logo, interpolation="lanczos")
     logo_ax.set_axis_off()
     fig.savefig(out_dir / "full.png", dpi=DPI, facecolor="white", bbox_inches=None)
