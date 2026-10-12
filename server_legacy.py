@@ -2434,16 +2434,23 @@ def _metbr_publication_metadata() -> dict[str, Any]:
 
 
 def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
-    """Resolve the checkpoint release containing one exact, metadata-declared WRFOUT asset."""
+    """Resolve checkpoint releases once per cache window for the full forecast sequence."""
     declared_tag = str(metadata.get("sourceReleaseTag") or "").strip()
     if declared_tag and re.fullmatch(r"metbr-wrf-4km-checkpoint-\d+", declared_tag):
         return declared_tag
 
     now = time.monotonic()
     with metbr_source_release_lock:
-        cache = metbr_source_release_cache.get("assets") or {}
-        if asset_name in cache and now - float(metbr_source_release_cache.get("saved_at", 0.0)) < 1800:
-            return str(cache[asset_name])
+        cache_time = float(metbr_source_release_cache.get("saved_at", 0.0))
+        cache = dict(metbr_source_release_cache.get("assets") or {})
+        if now - cache_time < 1800:
+            if asset_name in cache:
+                return str(cache[asset_name])
+            # A complete recent scan has already checked the newest 50 releases.
+            raise FileNotFoundError(
+                f"Não encontrei o WRFOUT {asset_name} nos releases de checkpoint METBR consultados. "
+                "A publicação pode estar desatualizada ou o checkpoint já não estar disponível."
+            )
 
         response = requests.get(
             "https://api.github.com/repos/progames12301-hash/sideral-backend/releases?per_page=50",
@@ -2455,17 +2462,23 @@ def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
         )
         response.raise_for_status()
         releases = response.json()
+        # GitHub returns releases newest first. Fill the map with setdefault so
+        # a repeated filename resolves consistently to the newest checkpoint.
+        known: dict[str, str] = {}
         for release in releases if isinstance(releases, list) else []:
             tag = str(release.get("tag_name") or "")
             if not re.fullmatch(r"metbr-wrf-4km-checkpoint-\d+", tag):
                 continue
-            assets = release.get("assets") or []
-            if any(str(asset.get("name") or "") == asset_name for asset in assets):
-                known = dict(cache)
-                known[asset_name] = tag
-                metbr_source_release_cache["assets"] = known
-                metbr_source_release_cache["saved_at"] = now
-                return tag
+            for asset in release.get("assets") or []:
+                name = str(asset.get("name") or "")
+                if name.startswith("wrfout_d01_") and re.fullmatch(
+                    r"wrfout_d01_\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}", name
+                ):
+                    known.setdefault(name, tag)
+        metbr_source_release_cache["assets"] = known
+        metbr_source_release_cache["saved_at"] = now
+        if asset_name in known:
+            return known[asset_name]
         raise FileNotFoundError(
             f"Não encontrei o WRFOUT {asset_name} nos releases de checkpoint METBR. "
             "A publicação pode estar desatualizada ou o checkpoint já não estar disponível."
