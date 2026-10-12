@@ -2582,6 +2582,12 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
         if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
         
+        if parsed_path == "/api/skewt/frame":
+            self.handle_skewt_frame(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/skewt/gif.js":
+            self.handle_skewt_gif_asset("gif.js"); return
+        if parsed_path == "/api/skewt/gif-worker.js":
+            self.handle_skewt_gif_asset("gif.worker.js"); return
         if parsed_path == "/api/wrf/sounding/render":
             self.handle_wrf_sounding_render(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/wrf/sounding/domain":
@@ -2599,6 +2605,93 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/mapa_estacoes_inmet_com_dados.html":
             self.path = "/mapa_estacoes_inmet_corrigido.html"
         super().do_GET()
+
+    def handle_skewt_frame(self, query: dict[str, list[str]]) -> None:
+        """CORS-safe proxy for published ECMWF Skew-T PNGs, restricted to known assets."""
+        city = str(query.get("city", [""])[0]).lower().strip()
+        cycle = str(query.get("cycle", [""])[0]).strip()
+        try:
+            fh = int(query.get("fh", ["-1"])[0])
+        except (TypeError, ValueError):
+            self.send_json(400, {"error": "Validade inválida."}); return
+
+        allowed_cities = {
+            "rio-branco", "maceio", "macapa", "manaus", "salvador", "fortaleza",
+            "brasilia", "vitoria", "goiania", "sao-luis", "cuiaba", "campo-grande",
+            "belo-horizonte", "belem", "joao-pessoa", "curitiba", "recife", "teresina",
+            "rio-de-janeiro", "natal", "porto-alegre", "porto-velho", "boa-vista",
+            "florianopolis", "sao-paulo", "aracaju", "palmas",
+        }
+        if city not in allowed_cities or cycle not in {"06", "12", "18"} or fh not in range(0, 49, 3):
+            self.send_json(400, {"error": "Capital, ciclo ou validade ECMWF inválidos."}); return
+
+        asset_url = (
+            f"https://github.com/progames12301-hash/sideral-backend/releases/download/"
+            f"skewt-live-{cycle}/{city}-f{fh:03d}.png"
+        )
+        try:
+            with requests.get(
+                asset_url,
+                headers={"User-Agent": "SideralMeteorologia/2.0", "Accept": "image/png"},
+                timeout=(10, 55),
+                allow_redirects=True,
+            ) as response:
+                if response.status_code == 404:
+                    self.send_json(404, {"error": f"PNG ECMWF não publicado: {city} F{fh:03d} ciclo {cycle}Z."}); return
+                response.raise_for_status()
+                final_url = urlparse(response.url)
+                allowed_hosts = {
+                    "github.com", "release-assets.githubusercontent.com",
+                    "objects.githubusercontent.com", "github-releases.githubusercontent.com",
+                }
+                if final_url.scheme != "https" or (final_url.hostname or "").lower() not in allowed_hosts:
+                    self.send_json(502, {"error": "O endereço do arquivo redirecionou para uma origem não permitida."}); return
+                body = response.content
+                if len(body) > 15 * 1024 * 1024:
+                    self.send_json(413, {"error": "O PNG excede o limite permitido."}); return
+                if not body.startswith(b"\x89PNG\r\n\x1a\n"):
+                    self.send_json(502, {"error": "A origem não retornou um PNG válido."}); return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=900")
+            self.end_headers()
+            self.wfile.write(body)
+        except requests.RequestException as exc:
+            self.send_json(502, {"error": "PNG ECMWF temporariamente indisponível para exportação.", "details": str(exc)})
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    def handle_skewt_gif_asset(self, filename: str) -> None:
+        """Serve the fixed gif.js encoder files through this backend to avoid CDN CORS."""
+        if filename not in {"gif.js", "gif.worker.js"}:
+            self.send_json(404, {"error": "Arquivo de codificação não permitido."}); return
+        source_url = f"https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/{filename}"
+        try:
+            with requests.get(
+                source_url,
+                headers={"User-Agent": "SideralMeteorologia/2.0", "Accept": "application/javascript,text/javascript,*/*"},
+                timeout=(10, 30),
+                allow_redirects=True,
+            ) as response:
+                response.raise_for_status()
+                final_url = urlparse(response.url)
+                if final_url.scheme != "https" or (final_url.hostname or "").lower() != "cdnjs.cloudflare.com":
+                    self.send_json(502, {"error": "O codificador redirecionou para uma origem não permitida."}); return
+                body = response.content
+                if not body or len(body) > 5 * 1024 * 1024:
+                    self.send_json(502, {"error": "O arquivo do codificador é inválido."}); return
+                content_type = response.headers.get("Content-Type", "application/javascript").split(";", 1)[0]
+            self.send_response(200)
+            self.send_header("Content-Type", content_type + "; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(body)
+        except requests.RequestException as exc:
+            self.send_json(502, {"error": "O codificador GIF está temporariamente indisponível.", "details": str(exc)})
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def handle_radar_v2_image(self, query: dict[str, list[str]]) -> None:
         """Proxy CORS restrito para imagens usadas na correlação do BrazilScope V2."""
