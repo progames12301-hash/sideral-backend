@@ -2934,6 +2934,8 @@ class Handler(SimpleHTTPRequestHandler):
         
         if parsed_path == "/api/skewt/frame":
             self.handle_skewt_frame(parse_qs(urlparse(self.path).query)); return
+        if parsed_path == "/api/skewt/metbr-frame":
+            self.handle_skewt_metbr_frame(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/skewt/gif.js":
             self.handle_skewt_gif_asset("gif.js"); return
         if parsed_path == "/api/skewt/gif-worker.js":
@@ -3009,6 +3011,68 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
         except requests.RequestException as exc:
             self.send_json(502, {"error": "PNG ECMWF temporariamente indisponível para exportação.", "details": str(exc)})
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    def handle_skewt_metbr_frame(self, query: dict[str, list[str]]) -> None:
+        """CORS-safe proxy for a pre-generated native METBR Skew-T capital PNG."""
+        city = str(query.get("city", [""])[0]).lower().strip()
+        cycle = str(query.get("cycle", [""])[0]).strip()
+        try:
+            fh = int(query.get("fh", ["-1"])[0])
+        except (TypeError, ValueError):
+            self.send_json(400, {"error": "Validade METBR inválida.", "code": "BAD_FORECAST_HOUR"}); return
+
+        allowed_cities = {"curitiba", "florianopolis", "porto-alegre"}
+        allowed_cycles = {"00", "12", "18", "21"}
+        if city not in allowed_cities or cycle not in allowed_cycles or fh not in range(0, 43, 3):
+            self.send_json(400, {
+                "error": "Capital pré-gerada, ciclo ou validade METBR inválidos.",
+                "code": "BAD_METBR_PREBUILT_QUERY",
+            }); return
+
+        tag = f"skewt-metbr-sul-live-{cycle}"
+        asset_url = (
+            "https://github.com/progames12301-hash/sideral-backend/releases/download/"
+            f"{tag}/{city}-f{fh:03d}.png"
+        )
+        try:
+            with requests.get(
+                asset_url,
+                headers={"User-Agent": "SideralMeteorologia/2.0", "Accept": "image/png"},
+                timeout=(10, 55),
+                allow_redirects=True,
+            ) as response:
+                if response.status_code == 404:
+                    self.send_json(404, {
+                        "error": f"Skew-T pré-gerado de {city} F{fh:03d} para a rodada {cycle}Z ainda não foi publicado.",
+                        "code": "METBR_PREBUILT_CYCLE_UNAVAILABLE",
+                        "city": city,
+                        "cycle": cycle,
+                        "forecast_hour": fh,
+                    }); return
+                response.raise_for_status()
+                final_url = urlparse(response.url)
+                allowed_hosts = {
+                    "github.com", "release-assets.githubusercontent.com",
+                    "objects.githubusercontent.com", "github-releases.githubusercontent.com",
+                }
+                if final_url.scheme != "https" or (final_url.hostname or "").lower() not in allowed_hosts:
+                    self.send_json(502, {"error": "O PNG METBR redirecionou para uma origem não permitida."}); return
+                body = response.content
+                if len(body) > 15 * 1024 * 1024:
+                    self.send_json(413, {"error": "O PNG METBR excede o limite permitido."}); return
+                if not body.startswith(b"\x89PNG\r\n\x1a\n"):
+                    self.send_json(502, {"error": "A origem não retornou um PNG válido."}); return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=900")
+            self.end_headers()
+            self.wfile.write(body)
+        except requests.RequestException as exc:
+            _log_sounding_error("METBR pre-generated Skew-T proxy", exc)
+            self.send_json(502, {"error": "PNG METBR pré-gerado temporariamente indisponível.", "code": "METBR_PREBUILT_FETCH_FAILED"})
         except (BrokenPipeError, ConnectionResetError):
             return
 
