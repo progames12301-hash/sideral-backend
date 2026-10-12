@@ -306,6 +306,8 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     # Mark LCL/LFC/EL using whichever SHARPpy parcel contains each value.
     parcel_objects = [getattr(pcl, n, None) for n in ("sfcpcl", "mlpcl", "mupcl", "fcstpcl")]
     markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
+    marker_colors = {"LCL": "#007546", "LFC": "#964b00", "EL": "#68249a"}
+    marker_fills = {"LCL": "#e2f4ea", "LFC": "#fff0d6", "EL": "#f0e5fa"}
     marker_pressures = {}
     for attr, short in markers:
         pressure_value = next((_finite(getattr(parcel, attr, None))
@@ -319,12 +321,17 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
                 pressure_value = None
         marker_pressures[short] = pressure_value
         if pressure_value is not None and 100 <= pressure_value <= 1050:
-            ax.axhline(pressure_value, color="#2c2c2c", lw=0.72,
-                       ls=(0, (3, 3)), alpha=0.84, zorder=3)
-            ax.text(57.0, pressure_value, short, fontsize=7.2, weight="bold",
-                    ha="left", va="center", color="#303030",
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.76, pad=0.5),
-                    clip_on=False, zorder=9)
+            marker_color = marker_colors[short]
+            # White underlay keeps the level visible over temperature/dewpoint curves.
+            ax.axhline(pressure_value, color="white", lw=3.2,
+                       ls=(0, (5, 2)), alpha=1.0, zorder=7)
+            ax.axhline(pressure_value, color=marker_color, lw=1.65,
+                       ls=(0, (5, 2)), alpha=1.0, zorder=8)
+            ax.text(57.0, pressure_value, f" {short} ", fontsize=8.0, weight="bold",
+                    ha="left", va="center", color=marker_color,
+                    bbox=dict(facecolor=marker_fills[short], edgecolor=marker_color,
+                              linewidth=0.9, alpha=0.99, pad=1.2),
+                    clip_on=False, zorder=10)
 
     # Freezing level, a common sounding reference mark.
     freeze_idx = np.where(np.isfinite(t[:-1]) & np.isfinite(t[1:]) & (t[:-1] * t[1:] <= 0))[0]
@@ -477,12 +484,22 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
     cols = ["", "CAPE [J/Kg]", "CINe [J/Kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0-1", "EHI 0-3"]
     table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
                      colWidths=[0.07,0.13,0.13,0.12,0.12,0.12,0.08,0.10,0.10])
-    table.auto_set_font_size(False); table.set_fontsize(7.3); table.scale(1, 1.26)
+    table.auto_set_font_size(False); table.set_fontsize(7.7); table.scale(1, 1.30)
+    level_styles = {
+        3: ("#e2f4ea", "#00643b"),  # LCL
+        4: ("#fff0d6", "#804000"),  # LFC
+        5: ("#f0e5fa", "#581b86"),  # EL
+    }
     for (r,c), cell in table.get_celld().items():
-        cell.set_edgecolor("white"); cell.set_linewidth(0.0); cell.set_facecolor("white")
-        cell.get_text().set_color(INK)
-        if r == 0:
-            cell.get_text().set_fontweight("bold")
+        cell.set_edgecolor("#aeb8c4"); cell.set_linewidth(0.45)
+        cell.set_facecolor("#e8edf3" if r == 0 else "#ffffff")
+        cell.get_text().set_color("#101010")
+        cell.get_text().set_fontweight("bold" if r == 0 else "normal")
+        if c in level_styles:
+            fill, ink = level_styles[c]
+            cell.set_facecolor(fill)
+            cell.set_edgecolor(ink); cell.set_linewidth(0.9)
+            cell.get_text().set_color(ink); cell.get_text().set_fontweight("bold")
 
     h_agl = z - z[0]
     lapse03, lapse36 = _lapse_height(t, h_agl, 0, 3000), _lapse_height(t, h_agl, 3000, 6000)
@@ -526,7 +543,8 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
     columns = [(0.037, left), (0.225, mid1), (0.392, mid2), (0.535, lapse), (0.700, right), (0.835, severe)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.083 - j * 0.016, label, ha="left", va="center", fontsize=8.4, color=INK)
+            fig.text(x, 0.083 - j * 0.016, label, ha="left", va="center",
+                     fontsize=8.8, color="#080808", fontweight="bold")
 
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
