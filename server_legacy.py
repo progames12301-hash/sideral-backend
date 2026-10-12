@@ -193,11 +193,12 @@ METBR_CLICK_CACHE_DIR = Path(os.environ.get(
     "/tmp/sideral_metbr_skewt" if os.environ.get("RENDER", "").lower() == "true" or os.environ.get("RENDER_EXTERNAL_URL") else str(BASE_DIR / "metbr_skewt_cache"),
 ))
 METBR_PROFILE_CACHE_SECONDS = 10 * 60
-metbr_profile_grid_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+metbr_profile_grid_cache: dict[str, Any] = {"saved_at": 0.0, "data": None, "branch": ""}
 metbr_profile_grid_lock = threading.Lock()
 metbr_data_lock = threading.Lock()
 METBR_PUBLICATION_METADATA_CACHE_SECONDS = 90
-metbr_publication_metadata_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
+metbr_publication_metadata_cache: dict[str, Any] = {"saved_at": 0.0, "data": None, "branch": ""}
+METBR_ALLOWED_CYCLES = {"00", "06", "12", "18", "21"}
 metbr_source_release_cache: dict[str, Any] = {"saved_at": 0.0, "assets": {}, "init_time": ""}
 metbr_source_release_lock = threading.Lock()
 metbr_native_click_module: Any = None
@@ -2039,7 +2040,21 @@ def _render_wrf_sounding_png(payload: dict[str, Any]) -> bytes:
 
 
 
-def _metbr_load_processed_vertical_grid() -> dict[str, Any]:
+def _metbr_json_branch_base(cycle: str | None = None) -> tuple[str, str]:
+    """Return the proper per-cycle JSON branch, or the legacy latest branch."""
+    requested = str(cycle or "").strip()
+    if not requested:
+        return METBR_JSON_BRANCH_BASE, "latest"
+    if requested not in METBR_ALLOWED_CYCLES:
+        raise ValueError("Ciclo METBR inválido. Use 00Z, 06Z, 12Z, 18Z ou 21Z.")
+    return f"{METBR_JSON_BRANCH_BASE}-{requested}", requested
+
+
+class METBRCycleUnavailableError(FileNotFoundError):
+    """The user selected a METBR run cycle not yet published to GitHub."""
+
+
+def _metbr_load_processed_vertical_grid(cycle: str | None = None) -> dict[str, Any]:
     """Load the preprocessed native METBR F000 column grid published by the Runner.
 
     Render consumes metbr-json-data/vertical-f000.npz, not the raw 100+ MB
@@ -2048,20 +2063,34 @@ def _metbr_load_processed_vertical_grid() -> dict[str, Any]:
     """
     import numpy as np
 
+    json_base, branch_key = _metbr_json_branch_base(cycle)
+
     cached = metbr_profile_grid_cache.get("data")
-    if cached and time.monotonic() - float(metbr_profile_grid_cache.get("saved_at", 0.0)) < METBR_PROFILE_CACHE_SECONDS:
+    if (
+        cached and metbr_profile_grid_cache.get("branch") == branch_key
+        and time.monotonic() - float(metbr_profile_grid_cache.get("saved_at", 0.0)) < METBR_PROFILE_CACHE_SECONDS
+    ):
         return cached
 
     with metbr_profile_grid_lock:
         cached = metbr_profile_grid_cache.get("data")
-        if cached and time.monotonic() - float(metbr_profile_grid_cache.get("saved_at", 0.0)) < METBR_PROFILE_CACHE_SECONDS:
+        if (
+            cached and metbr_profile_grid_cache.get("branch") == branch_key
+            and time.monotonic() - float(metbr_profile_grid_cache.get("saved_at", 0.0)) < METBR_PROFILE_CACHE_SECONDS
+        ):
             return cached
 
+        metadata_url = f"{json_base}/metadata.json"
         metadata_response = requests.get(
-            f"{METBR_JSON_BRANCH_BASE}/metadata.json",
+            metadata_url,
             headers={"User-Agent": "SideralMeteorologia/1.0 (METBR click-to-point)", "Accept": "application/json"},
             timeout=(8, 25),
         )
+        if metadata_response.status_code == 404 and cycle:
+            raise METBRCycleUnavailableError(
+                f"A rodada METBR {cycle}Z ainda não foi publicada no GitHub. "
+                "Selecione uma rodada disponível ou aguarde a publicação do ciclo."
+            )
         metadata_response.raise_for_status()
         metadata = metadata_response.json()
         if metadata.get("modelKey") != "metbr_wrf" or int(metadata.get("resolutionKm", 0)) != 4:
@@ -2076,10 +2105,18 @@ def _metbr_load_processed_vertical_grid() -> dict[str, Any]:
         if not init_text:
             raise RuntimeError("A publicação METBR não informa o horário de inicialização.")
         run_time = dt.datetime.fromisoformat(init_text.replace("Z", "+00:00")).replace(tzinfo=None)
+        if cycle and run_time.strftime("%H") != cycle:
+            raise RuntimeError(
+                f"A branch METBR selecionada como {cycle}Z contém dados de {run_time:%HZ}; "
+                "a consulta foi interrompida para evitar misturar rodadas."
+            )
 
         # A metadata check notices new cycles; don't redownload if this instance
         # already mapped the same native vertical grid.
-        if cached and str(cached.get("init_time")) == init_text:
+        if (
+            cached and metbr_profile_grid_cache.get("branch") == branch_key
+            and str(cached.get("init_time")) == init_text
+        ):
             metbr_profile_grid_cache["saved_at"] = time.monotonic()
             return cached
 
@@ -2095,7 +2132,7 @@ def _metbr_load_processed_vertical_grid() -> dict[str, Any]:
             total = 0
             try:
                 with requests.get(
-                    f"{METBR_JSON_BRANCH_BASE}/{archive_name}",
+                    f"{json_base}/{archive_name}",
                     headers={"User-Agent": "SideralMeteorologia/1.0 (METBR click-to-point)", "Accept": "application/octet-stream"},
                     timeout=(12, 180),
                     stream=True,
@@ -2172,8 +2209,10 @@ def _metbr_load_processed_vertical_grid() -> dict[str, Any]:
             "domain": domain,
             "source": "METBR WRF 4 km · ICON · grade vertical nativa F000 pré-processada pelo Runner",
             "cache_dir": str(run_dir),
+            "source_branch": branch_key,
         }
         metbr_profile_grid_cache["saved_at"] = time.monotonic()
+        metbr_profile_grid_cache["branch"] = branch_key
         metbr_profile_grid_cache["data"] = data
 
         # Retain only the two most recent cycle directories on ephemeral disk.
