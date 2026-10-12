@@ -5,8 +5,6 @@ from urllib.parse import urlparse, parse_qs
 import server_legacy as legacy
 import stations_sideral
 from PIL import Image, ImageFilter
-from smn_wrf_map import render_smn_wrf_map, SmnMapError
-from wpc_hail import get_hail_frames
 
 ROOT = Path(__file__).resolve().parent
 
@@ -51,46 +49,6 @@ class Handler(legacy.Handler):
                 'provider': 'METBR',
                 'error': 'METBR movido para a publicação JSON temporária; use a branch metbr-json-data.'
             })
-        if p.path == '/api/noaa/wpc-hail/frames':
-            query = parse_qs(p.query)
-            try:
-                frames = get_hail_frames(query.get('algorithm', ['gr02'])[0], query.get('cycle', ['00'])[0], query.get('domain', ['csa'])[0])
-                return send_json(self, 200, {'status': True, 'provider': 'NOAA/WPC', 'frames': frames})
-            except Exception as exc:
-                return send_json(self, 503, {'status': False, 'provider': 'NOAA/WPC', 'error': str(exc)[:500], 'frames': []})
-        if p.path == '/api/noaa/wpc-hail/image':
-            query = parse_qs(p.query)
-            raw = str(query.get('url', [''])[0]).strip()
-            parsed = urlparse(raw)
-            if parsed.scheme != 'https' or parsed.hostname != 'www.wpc.ncep.noaa.gov' or not parsed.path.startswith('/international/wng/') or not parsed.path.lower().endswith(('.gif', '.png', '.jpg', '.jpeg', '.webp')):
-                return send_json(self, 400, {'status': False, 'error': 'URL de imagem NOAA/WPC inválida.'})
-            try:
-                response = legacy.requests.get(raw, headers={'User-Agent': 'Mozilla/5.0 SideralMeteorologia/1.0', 'Referer': 'https://www.wpc.ncep.noaa.gov/international/wng/', 'Accept': 'image/gif,image/png,image/jpeg,image/webp,*/*'}, timeout=(7, 25))
-                response.raise_for_status()
-                ctype = response.headers.get('Content-Type', 'image/gif').split(';', 1)[0].lower()
-                if ctype not in {'image/gif', 'image/png', 'image/jpeg', 'image/webp'}:
-                    return send_json(self, 502, {'status': False, 'error': 'O WPC não retornou uma imagem.'})
-                return send_binary(self, 200, response.content, ctype, {'Cache-Control': 'public, max-age=90'})
-            except Exception as exc:
-                return send_json(self, 502, {'status': False, 'provider': 'NOAA/WPC', 'error': 'Não foi possível obter a imagem oficial do WPC.', 'details': str(exc)[:300]})
-        if p.path == '/api/smn/wrf-map':
-            query = parse_qs(p.query)
-            cycle = str(query.get('cycle', ['00'])[0])
-            field = str(query.get('field', ['PSFC'])[0])
-            fh = str(query.get('fh', ['24'])[0])
-            try:
-                png, source_date = render_smn_wrf_map(cycle=cycle, field=field, fh=fh)
-                return send_binary(self, 200, png, 'image/png', {
-                    'X-Sideral-Provider': 'SMN Argentina WRF',
-                    'X-SMN-Run-Date': source_date,
-                    'X-SMN-Cycle': cycle,
-                    'X-SMN-Field': field,
-                    'X-SMN-Forecast-Hour': fh,
-                })
-            except SmnMapError as exc:
-                return send_json(self, 503, {'status': False, 'provider': 'SMN Argentina WRF', 'error': str(exc)[:600]})
-            except Exception as exc:
-                return send_json(self, 502, {'status': False, 'provider': 'SMN Argentina WRF', 'error': 'Falha ao gerar o mapa.', 'details': str(exc)[:400]})
         if p.path == '/api/redemet/radar':
             return self._redemet_radar(parse_qs(p.query))
         if p.path == '/api/redemet/image':
