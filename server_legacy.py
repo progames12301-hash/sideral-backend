@@ -198,7 +198,7 @@ metbr_profile_grid_lock = threading.Lock()
 metbr_data_lock = threading.Lock()
 METBR_PUBLICATION_METADATA_CACHE_SECONDS = 90
 metbr_publication_metadata_cache: dict[str, Any] = {"saved_at": 0.0, "data": None}
-metbr_source_release_cache: dict[str, Any] = {"saved_at": 0.0, "assets": {}}
+metbr_source_release_cache: dict[str, Any] = {"saved_at": 0.0, "assets": {}, "init_time": ""}
 metbr_source_release_lock = threading.Lock()
 metbr_native_click_module: Any = None
 
@@ -2434,26 +2434,30 @@ def _metbr_publication_metadata() -> dict[str, Any]:
 
 
 def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
-    """Resolve checkpoint releases once per cache window for the full forecast sequence."""
+    """Resolve all hourly files to one checkpoint release matching this published cycle."""
     declared_tag = str(metadata.get("sourceReleaseTag") or "").strip()
     if declared_tag and re.fullmatch(r"metbr-wrf-4km-checkpoint-\d+", declared_tag):
         return declared_tag
 
+    run_key = str(metadata.get("initTime") or "")
     now = time.monotonic()
     with metbr_source_release_lock:
         cache_time = float(metbr_source_release_cache.get("saved_at", 0.0))
+        cached_run = str(metbr_source_release_cache.get("init_time") or "")
         cache = dict(metbr_source_release_cache.get("assets") or {})
-        if now - cache_time < 1800:
-            if asset_name in cache:
-                return str(cache[asset_name])
-            # A complete recent scan has already checked the newest 50 releases.
-            raise FileNotFoundError(
-                f"Não encontrei o WRFOUT {asset_name} nos releases de checkpoint METBR consultados. "
-                "A publicação pode estar desatualizada ou o checkpoint já não estar disponível."
-            )
+        if cached_run == run_key and now - cache_time < 1800 and asset_name in cache:
+            return str(cache[asset_name])
+
+        required_assets = {
+            str(frame.get("file") or "")
+            for frame in (metadata.get("frames") or [])
+            if isinstance(frame, dict) and frame.get("file")
+        }
+        if not required_assets or asset_name not in required_assets:
+            raise FileNotFoundError("O horário METBR solicitado não pertence à publicação ativa.")
 
         response = requests.get(
-            "https://api.github.com/repos/progames12301-hash/sideral-backend/releases?per_page=50",
+            "https://api.github.com/repos/progames12301-hash/sideral-backend/releases?per_page=100",
             headers={
                 "User-Agent": "SideralMeteorologia/1.0 (METBR Skew-T source lookup)",
                 "Accept": "application/vnd.github+json",
@@ -2462,27 +2466,35 @@ def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
         )
         response.raise_for_status()
         releases = response.json()
-        # GitHub returns releases newest first. Fill the map with setdefault so
-        # a repeated filename resolves consistently to the newest checkpoint.
-        known: dict[str, str] = {}
+        # Prefer the checkpoint that contains the *entire* frame list from this
+        # metadata publication. A valid timestamp filename can recur in another
+        # cycle; per-file newest matches could silently combine different runs.
+        matching: list[tuple[str, set[str]]] = []
         for release in releases if isinstance(releases, list) else []:
             tag = str(release.get("tag_name") or "")
             if not re.fullmatch(r"metbr-wrf-4km-checkpoint-\d+", tag):
                 continue
-            for asset in release.get("assets") or []:
-                name = str(asset.get("name") or "")
-                if name.startswith("wrfout_d01_") and re.fullmatch(
-                    r"wrfout_d01_\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}", name
-                ):
-                    known.setdefault(name, tag)
+            names = {
+                str(asset.get("name") or "")
+                for asset in release.get("assets") or []
+                if str(asset.get("name") or "").startswith("wrfout_d01_")
+            }
+            matching.append((tag, names))
+        selected_tag = next(
+            (tag for tag, names in matching if required_assets.issubset(names)),
+            None,
+        )
+        if selected_tag is None:
+            raise FileNotFoundError(
+                "Não encontrei um único checkpoint METBR contendo todas as validades da publicação ativa. "
+                "A sondagem foi interrompida para evitar misturar ciclos WRF diferentes."
+            )
+
+        known = {name: selected_tag for name in required_assets}
         metbr_source_release_cache["assets"] = known
         metbr_source_release_cache["saved_at"] = now
-        if asset_name in known:
-            return known[asset_name]
-        raise FileNotFoundError(
-            f"Não encontrei o WRFOUT {asset_name} nos releases de checkpoint METBR. "
-            "A publicação pode estar desatualizada ou o checkpoint já não estar disponível."
-        )
+        metbr_source_release_cache["init_time"] = run_key
+        return selected_tag
 
 
 def _metbr_download_raw_wrfout(metadata: dict[str, Any], asset_name: str) -> Path:
