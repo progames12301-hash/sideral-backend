@@ -21,6 +21,7 @@ jobs:
       INIT_TIME: "2026-10-10T06:00:00Z"
       OUTPUT_TAG: tarc-native-refl-boletim-38059861528
       OUTPUT_PNG: dist/sideral-tarc-3km-refletividade-nativa-f018.png
+      OUTPUT_MP4: dist/sideral-tarc-3km-refletividade-nativa.mp4
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout renderer
@@ -46,10 +47,13 @@ jobs:
           set -euo pipefail
           mkdir -p native_input dist
           gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          # Grab the complete native NPZ sequence already published by checkpoint segments.
           gh release download "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern "$SOURCE_ASSET" --dir native_input --clobber
+            --pattern '*.npz' --dir native_input --clobber
           test -s "native_input/$SOURCE_ASSET"
-          echo "Using the native frame $SOURCE_ASSET from $SOURCE_TAG"
+          count="$(find native_input -maxdepth 1 -type f -name '*.npz' -size +0c | wc -l)"
+          test "$count" -ge 2
+          echo "Using $count native NPZ frames from $SOURCE_TAG"
 
       - name: Render the bulletin from native REFL_10CM-derived data
         shell: bash
@@ -75,6 +79,35 @@ jobs:
               print(f"PNG validated: {im.width}x{im.height}")
           PY
 
+      - name: Render fast MP4 from all available native reflectivity frames
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m py_compile tools/render_tarc_native_reflectivity_mp4.py
+          python tools/render_tarc_native_reflectivity_mp4.py \
+            --input-dir native_input \
+            --output "$OUTPUT_MP4" \
+            --init-time "$INIT_TIME" \
+            --source-tag "$SOURCE_TAG" \
+            --fps 8
+          test -s "$OUTPUT_MP4"
+          test -s "${OUTPUT_MP4%.mp4}.png"
+          test -s "${OUTPUT_MP4%.mp4}.json"
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,r_frame_rate \
+            -show_entries format=duration,size -of json "$OUTPUT_MP4" > dist/mp4-validation.json
+          python - "$OUTPUT_MP4" <<'PY'
+          import json, pathlib, sys
+          p=pathlib.Path(sys.argv[1])
+          data=json.loads(pathlib.Path('dist/mp4-validation.json').read_text())
+          stream=data['streams'][0]
+          assert stream['codec_name']=='h264', stream
+          assert (stream['width'],stream['height'])==(1280,800), stream
+          assert float(data['format']['duration']) > 1, data
+          print(f"MP4 validated: {stream['width']}x{stream['height']}, {data['format']['duration']} s, {p.stat().st_size} bytes")
+          PY
+
       - name: Publish bulletin in its own release
         shell: bash
         run: |
@@ -84,10 +117,22 @@ jobs:
           fi
           gh release create "$OUTPUT_TAG" \
             "$OUTPUT_PNG" "${OUTPUT_PNG%.png}.json" \
+            "$OUTPUT_MP4" "${OUTPUT_MP4%.mp4}.png" "${OUTPUT_MP4%.mp4}.json" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Sideral — Refletividade Nativa TARC 3 km — F018" \
-            --notes "Boletim renderizado a partir do arquivo nativo $SOURCE_ASSET do release $SOURCE_TAG. Campo usado: máximo vertical derivado de REFL_10CM nativa; vento a 10 m proveniente de U10/V10. Válido 00Z de 11/10/2026, inicialização 06Z de 10/10/2026. Não é uma imagem de radar observado." \
+            --title "Sideral — Boletim MP4 de Refletividade Nativa TARC 3 km" \
+            --notes "MP4 renderizado a partir de todos os NPZ nativos disponíveis no release $SOURCE_TAG no momento da geração. Campo: máximo vertical derivado de REFL_10CM nativa; cada quadro mantém a grade do modelo e o perímetro do domínio. Não representa radar observado." \
             --prerelease --latest=false
           gh release view "$OUTPUT_TAG" --repo "$GITHUB_REPOSITORY" \
             --json tagName,url,assets \
             --jq '{tag:.tagName,url:.url,assets:[.assets[].name]}'
+
+      - name: Upload MP4 for direct download
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarc-native-reflectivity-mp4
+          path: |
+            dist/sideral-tarc-3km-refletividade-nativa.mp4
+            dist/sideral-tarc-3km-refletividade-nativa.png
+            dist/sideral-tarc-3km-refletividade-nativa.json
+          if-no-files-found: error
+          retention-days: 7
