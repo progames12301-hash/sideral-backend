@@ -19,7 +19,7 @@ on:
         required: true
         type: choice
         default: all
-        options: [all, icon, ecmwf-hybrid, ukmo10km]
+        options: [all, icon, ecmwf-hybrid, ukmo10km, nems10]
       cycle:
         description: 'Rodada de previsão'
         required: true
@@ -43,14 +43,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
-      group: skewt-multimodel-${{ matrix.model }}-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'schedule' && github.event.schedule == '55 19 * * *' && '12') || (github.event_name == 'schedule' && github.event.schedule == '55 1 * * *' && '18') || 'auto' }}
+      group: skewt-multimodel-${{ matrix.model }}-${{ matrix.model == 'nems10' && 'live' || (github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'schedule' && github.event.schedule == '55 19 * * *' && '12') || (github.event_name == 'schedule' && github.event.schedule == '55 1 * * *' && '18') || 'auto') }}
       cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
         # job.if é avaliado antes da expansão da matriz e não pode usar matrix.model.
         # No dispatch, cria somente o job selecionado; all e gatilhos automáticos executam os três.
-        model: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.model != 'all' && format('["{0}"]', inputs.model) || '["icon","ecmwf-hybrid","ukmo10km"]') }}
+        model: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.model != 'all' && format('["{0}"]', inputs.model) || '["icon","ecmwf-hybrid","ukmo10km","nems10"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,6 +105,9 @@ jobs:
           PY
 
       - name: Gerar 27 capitais × F000–F048
+        env:
+          # Usada apenas para NEMS10 e nunca armazenada nos PNGs/manifests.
+          METEOBLUE_APIKEY: ${{ secrets.METEOBLUE_APIKEY }}
         run: |
           set -euo pipefail
           rm -rf "build/skewt-models/$MODELE"
@@ -141,11 +144,18 @@ jobs:
             icon) tag_base='skewt-icon-global'; title_base='DWD ICON Global ~11 km' ;;
             ecmwf-hybrid) tag_base='skewt-ecmwf-hres9km-hybrid'; title_base='ECMWF HRES ~9 km híbrido + IFS 0.25° níveis de pressão' ;;
             ukmo10km) tag_base='skewt-ukmo-global10km'; title_base='UK Met Office Global 10 km' ;;
+            nems10) tag_base='skewt-nems10-nemssa-live'; title_base='meteoblue NEMS10 NEMSSA 10 km — previsão mais recente' ;;
             *) echo "Modelo inválido"; exit 1 ;;
           esac
-          tag="${tag_base}-${CYCLE}"
+          if [[ "$MODELE" == "nems10" ]]; then
+            tag="$tag_base"
+            title="$title_base — 27 capitais"
+          else
+            tag="${tag_base}-${CYCLE}"
+            title="$title_base ${CYCLE}Z — 27 capitais"
+          fi
           echo "TAG=$tag" >> "$GITHUB_ENV"
-          echo "TITLE=$title_base ${CYCLE}Z — 27 capitais" >> "$GITHUB_ENV"
+          echo "TITLE=$title" >> "$GITHUB_ENV"
 
       - name: Construir índice público dos assets
         shell: bash
@@ -180,6 +190,8 @@ jobs:
           root="build/skewt-models/$MODELE"
           if [[ "$MODELE" == "ecmwf-hybrid" ]]; then
             notes="Perfil híbrido deliberado: superfície ECMWF IFS HRES nativa (~9 km); temperaturas, umidade, vento, geopotencial e omega em níveis de pressão do ECMWF IFS 0.25°. Não representa uma coluna vertical integral de 9 km."
+          elif [[ "$MODELE" == "nems10" ]]; then
+            notes="meteoblue NEMS10 NEMSSA ~10 km sobre a América do Sul. Perfil vertical do próprio NEMSSA, com temperatura, umidade relativa, vento U/V e geopotencial até os níveis disponibilizados pela API. Previsão mais recente por validade horária; chave da API não faz parte dos assets."
           else
             notes="Skew-T SHARPpy pré-gerado para 27 capitais e F000–F048 em passos de 3 horas. Fonte: Open-Meteo Single Runs; modelo e resolução descritos no manifest.json."
           fi
