@@ -40,7 +40,6 @@ env:
 
 jobs:
   render:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.model == 'all' || inputs.model == matrix.model }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
@@ -49,7 +48,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [icon, ecmwf-hybrid, ukmo10km]
+        # job.if é avaliado antes da expansão da matriz e não pode usar matrix.model.
+        # No dispatch, cria somente o job selecionado; all e gatilhos automáticos executam os três.
+        model: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.model != 'all' && format('["{0}"]', inputs.model) || '["icon","ecmwf-hybrid","ukmo10km"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
