@@ -43,7 +43,7 @@ else
 fi
 cp -f "$ROOT/wrf/Vtable.GFS_SOIL" "$WORK/Vtable.soil"
 
-python3 "$ROOT/wrf/fetch_gfs_land_support.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --max-hour "$BOUNDARY_END_HOUR" --output-dir "$WORK/soil"
+python3 "$ROOT/wrf/fetch_gfs_land_support.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --start-hour "$WRF_START_HOUR" --max-hour "$BOUNDARY_END_HOUR" --output-dir "$WORK/soil"
 
 START_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_START_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
 END_ISO="$(date -u -d "$RUN_DATE $RUN_CYCLE:00 UTC +$WRF_END_HOUR hours" +%Y-%m-%d_%H:%M:%S)"
@@ -211,7 +211,7 @@ EOF
 
 chmod -R a+rwX "$WORK"
 
-docker run --rm --entrypoint /bin/bash -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -v "$WORK:/work" "$IMAGE" -lc '
+docker run --rm --entrypoint /bin/bash -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -e WRF_BOUNDARY_ONLY="${WRF_BOUNDARY_ONLY:-0}" -v "$WORK:/work" "$IMAGE" -lc '
 set -euo pipefail
 cd /work
 LETTERS=(AAA AAB AAC AAD AAE AAF AAG AAH AAI AAJ AAK AAL AAM AAN AAO AAP AAQ AAR AAS AAT AAU AAV AAW AAX AAY AAZ)
