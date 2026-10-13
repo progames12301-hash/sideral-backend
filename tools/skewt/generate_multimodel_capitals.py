@@ -19,7 +19,7 @@ spec.loader.exec_module(base)
 # Model identifiers used by the Open-Meteo Single Runs API.
 MODELS = {
     "icon": {
-        "api_model": "dwd_icon",
+        "api_model": "icon_global",
         "label": "DWD ICON Global ~11 km",
         "tag": "skewt-icon-global",
         "resolution": "0.1° (~11 km)",
