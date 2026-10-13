@@ -26,6 +26,11 @@ def main() -> None:
     ap.add_argument("--catalog", default="wrf/cbr_variable_catalog.json")
     ap.add_argument("--expected-start", type=int, default=0)
     ap.add_argument("--expected-end", type=int, default=42)
+    ap.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="aceita metadados parciais, validando os horários ausentes em vez de exigir o ciclo inteiro",
+    )
     args = ap.parse_args()
 
     if args.expected_start < 0 or args.expected_end < args.expected_start:
@@ -60,20 +65,39 @@ def main() -> None:
         )
     if metadata.get("forecastHours") != [args.expected_start, args.expected_end]:
         fail(f"forecastHours inválido: {metadata.get('forecastHours')!r}")
-    if metadata.get("missingForecastHours") != []:
-        fail(f"horários faltantes: {metadata.get('missingForecastHours')!r}")
-
     entries = metadata.get("frames")
     if not isinstance(entries, list):
         fail("metadata.frames não é uma lista")
-    actual_hours = [entry.get("forecastHour") for entry in entries if isinstance(entry, dict)]
-    if actual_hours != expected_hours:
-        fail(f"sequência de frames inválida: observado={actual_hours}, esperado={expected_hours}")
-    if metadata.get("frameCount") != expected_count or len(entries) != expected_count:
+    if any(not isinstance(entry, dict) for entry in entries):
+        fail("metadata.frames contém itens que não são objetos")
+    actual_hours = [entry.get("forecastHour") for entry in entries]
+    if any(not isinstance(hour, int) for hour in actual_hours):
+        fail(f"horários de frames inválidos: {actual_hours!r}")
+    if actual_hours != sorted(set(actual_hours)):
+        fail(f"horários duplicados ou fora de ordem: {actual_hours!r}")
+    outside = [hour for hour in actual_hours if hour < args.expected_start or hour > args.expected_end]
+    if outside:
+        fail(f"frames fora do intervalo declarado: {outside!r}")
+
+    actual_set = set(actual_hours)
+    missing_expected = [hour for hour in expected_hours if hour not in actual_set]
+    if metadata.get("missingForecastHours") != missing_expected:
         fail(
-            f"contagem de frames inválida: metadata={metadata.get('frameCount')!r}, "
-            f"lista={len(entries)}, esperado={expected_count}"
+            f"lista de horários faltantes inconsistente: metadata={metadata.get('missingForecastHours')!r}, "
+            f"calculado={missing_expected!r}"
         )
+    if missing_expected and not args.allow_partial:
+        fail(f"horários faltantes: {missing_expected!r}")
+    expected_status = "partial" if missing_expected else "complete"
+    if metadata.get("status") != expected_status:
+        fail(f"status de metadata divergente: observado={metadata.get('status')!r}, esperado={expected_status!r}")
+    if metadata.get("frameCount") != len(entries):
+        fail(
+            f"frameCount divergente: metadata={metadata.get('frameCount')!r}, "
+            f"lista={len(entries)}"
+        )
+    if not entries:
+        fail("não há frames para validar")
 
     try:
         init_text = str(metadata["initTime"])
@@ -144,8 +168,10 @@ def main() -> None:
                 )
 
     print(
-        f"[CBR][VALIDAÇÃO] OK: {expected_count} frames F{args.expected_start:03d}-F{args.expected_end:03d}, "
-        f"grade de massa {expected_grid['nx']}x{expected_grid['ny']}, REFL_10CM nativa e horários alinhados."
+        f"[CBR][VALIDAÇÃO] OK: {len(entries)}/{expected_count} frames disponíveis, "
+        f"F{actual_hours[0]:03d}-F{actual_hours[-1]:03d}, ausentes={len(missing_expected)}, "
+        f"grade de massa {expected_grid['nx']}x{expected_grid['ny']}, "
+        "REFL_10CM nativa e horários alinhados."
     )
 
 
