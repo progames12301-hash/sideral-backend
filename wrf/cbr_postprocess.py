@@ -23,7 +23,9 @@ def native_reflectivity(ds):
         a = np.asarray(ds.variables["REFL_10CM"][0], dtype=np.float32)
     elif "REFL_10CM_MAX" in ds.variables:
         a = np.asarray(ds.variables["REFL_10CM_MAX"][0], dtype=np.float32)
-        return a
+        while a.ndim > 2:
+            a = a[0]
+        return (a, a) if a.ndim == 2 else None
     else:
         return None
     while a.ndim > 3:
@@ -55,6 +57,7 @@ def main():
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     index = []
+    grid_shape = None
 
     for path in sorted(args.files):
         with Dataset(path) as ds:
@@ -67,6 +70,19 @@ def main():
 
             lat = read2d(ds, "XLAT")
             lon = read2d(ds, "XLONG")
+            if lat is None or lon is None:
+                raise RuntimeError(f"XLAT/XLONG ausentes em {Path(path).name}")
+            if lat.shape != lon.shape:
+                raise RuntimeError(
+                    f"grade XLAT/XLONG divergente em {Path(path).name}: {lat.shape} vs {lon.shape}"
+                )
+            if grid_shape is None:
+                grid_shape = lat.shape
+            elif lat.shape != grid_shape:
+                raise RuntimeError(
+                    f"dimensões WRF inconsistentes: {Path(path).name} tem {lat.shape}, "
+                    f"esperado {grid_shape}"
+                )
             t2 = read2d(ds, "T2")
             q2 = read2d(ds, "Q2")
             psfc = read2d(ds, "PSFC")
@@ -125,6 +141,11 @@ def main():
         "resolutionKm": 4,
         "nativeReflectivity": "REFL_10CM",
         "projection": "WRF Lambert",
+        "grid": (
+            {"nx": int(grid_shape[1]), "ny": int(grid_shape[0])}
+            if grid_shape is not None else None
+        ),
+        "gridDefinition": "WRF mass points (unstaggered); e_we-1 by e_sn-1",
         "domain": {"e_we": 401, "e_sn": 501, "approxLon": [-50.1, -29.9], "approxLat": [-21.2, 0.9]},
         "frames": index,
         "products": {
