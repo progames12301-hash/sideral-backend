@@ -23,7 +23,7 @@
 <main class="frame">
 <section id="viewer" class="viewer"><div class="empty">Carregando sondagens...</div></section>
 <section class="meta">
-<div><div class="k">MODELO</div><div class="v" id="modelText">ECMWF IFS 0.25°</div></div>
+<div><div class="k">MODELO</div><div class="v" id="modelText">ECMWF IFS HRES 9 km</div></div>
 <div><div class="k">FONTE</div><div class="v" id="sourceText">GitHub / Sideral</div></div>
 <div><div class="k">FRAME</div><div class="v" id="frame">--</div></div>
 </section>
@@ -46,7 +46,7 @@ function setStatus(text,cls=''){$('status').textContent=text;$('status').classNa
 function updateModelMeta(){
  const metbr=isMetbr();
  $('cycleField').style.display=metbr?'none':'';
- $('modelText').textContent=metbr?'WRF METBR 4 km':'ECMWF IFS 0.25°';
+ $('modelText').textContent=metbr?'WRF METBR 4 km':'ECMWF IFS HRES 9 km';
  $('sourceText').textContent=metbr?'METBR WRFOUT nativo':'Open-Meteo Single Runs';
  $('viewer').setAttribute('aria-label',metbr?'Sondagem WRF METBR do Sul':'Sondagem ECMWF IFS');
  document.title=metbr?'Sideral — Skew-T WRF METBR Sul':'Sideral — Skew-T SHARPpy';
