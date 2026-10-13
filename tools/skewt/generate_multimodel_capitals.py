@@ -166,11 +166,11 @@ def _nems_fetch_json(api_key: str, body: dict) -> dict | list:
 
 
 def request_nems10() -> tuple[list[dict], dt.datetime]:
-    api_key = os.environ.get("METEOBLUE_APIKEY", "").strip()
+    api_key = os.environ.get("METEOBLUE_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError(
             "NEMS10 não iniciado: configure a chave da meteoblue em GitHub Actions Secrets "
-            "com o nome METEOBLUE_APIKEY. A chave não deve ficar no código nem no HTML."
+            "com o nome METEOBLUE_API_KEY. A chave não deve ficar no código nem no HTML."
         )
 
     # The Dataset API exposes the current NEMSSA forecast by valid time, not
