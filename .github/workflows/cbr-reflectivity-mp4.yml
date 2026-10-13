@@ -1,0 +1,144 @@
+name: CBR — vídeo acelerado de refletividade nativa
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cbr-reflectivity-mp4.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-38300164789
+      VIDEO_NAME: cbr-refletividade-rapida-38300164789.mp4
+    steps:
+      - name: Baixar os frames compactos publicados no checkpoint
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p cbr_npz frames
+          gh release download "$CHECKPOINT_TAG" --repo "$GH_REPO" --pattern '*.npz' --dir cbr_npz
+          count=$(find cbr_npz -maxdepth 1 -type f -name '*.npz' | wc -l)
+          test "$count" -ge 2
+          echo "NPZ_COUNT=$count" >> "$GITHUB_ENV"
+          ls -lh cbr_npz
+
+      - name: Instalar renderizador de vídeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install numpy matplotlib
+
+      - name: Renderizar refletividade composta nativa do WRF
+        run: |
+          cat > render_cbr.py <<'PY'
+          from pathlib import Path
+          from datetime import datetime
+          import re
+          import numpy as np
+          import matplotlib
+          matplotlib.use("Agg")
+          import matplotlib.pyplot as plt
+          from matplotlib.colors import BoundaryNorm, ListedColormap
+
+          inp = Path("cbr_npz")
+          out = Path("frames")
+          files = sorted(inp.glob("*.npz"))
+          if len(files) < 2:
+              raise SystemExit("Checkpoint sem pelo menos dois frames NPZ.")
+
+          colors = [
+              "#1846a3", "#087ff5", "#00cfff", "#00d58a",
+              "#39c522", "#c6e51d", "#ffed32", "#ffb21b",
+              "#ff7417", "#f43124", "#d50032", "#ed36c7",
+              "#f5f5f5", "#ffffff"
+          ]
+          levels = np.arange(5, 80, 5)
+          cmap = ListedColormap(colors, name="sideral_reflectivity")
+          cmap.set_under((0, 0, 0, 0))
+          cmap.set_bad((0, 0, 0, 0))
+          norm = BoundaryNorm(levels, cmap.N, clip=True)
+
+          times = []
+          loaded = []
+          for f in files:
+              m = re.search(r"(\d{8})_(\d{6})", f.stem)
+              if not m:
+                  continue
+              dt = datetime.strptime(m.group(1)+m.group(2), "%Y%m%d%H%M%S")
+              with np.load(f) as z:
+                  required = {"lat", "lon", "reflectivity_composite_dbz"}
+                  if not required.issubset(set(z.files)):
+                      raise SystemExit(f"{f.name}: faltam variáveis {sorted(required-set(z.files))}")
+                  lat = np.asarray(z["lat"], dtype=np.float32)
+                  lon = np.asarray(z["lon"], dtype=np.float32)
+                  refl = np.asarray(z["reflectivity_composite_dbz"], dtype=np.float32)
+              if refl.shape != lat.shape or refl.shape != lon.shape:
+                  raise SystemExit(f"{f.name}: grades de refletividade/lat/lon incompatíveis")
+              refl = np.where(np.isfinite(refl) & (refl >= 5) & (refl <= 90), refl, np.nan)
+              times.append(dt)
+              loaded.append((dt, lat, lon, refl, f.name))
+
+          if len(loaded) < 2:
+              raise SystemExit("Não há frames válidos para o vídeo.")
+          init = loaded[0][0]
+          for idx, (dt, lat, lon, refl, filename) in enumerate(loaded):
+              fh = int(round((dt-init).total_seconds()/3600))
+              fig = plt.figure(figsize=(13.2, 8.0), dpi=110, facecolor="#050a14")
+              ax = fig.add_axes([0.065, 0.105, 0.82, 0.755], facecolor="#050a14")
+              mesh = ax.pcolormesh(lon, lat, refl, cmap=cmap, norm=norm, shading="auto", rasterized=True)
+              ax.set_xlim(float(np.nanmin(lon)), float(np.nanmax(lon)))
+              ax.set_ylim(float(np.nanmin(lat)), float(np.nanmax(lat)))
+              ax.set_aspect(1.015, adjustable="box")
+              ax.set_xlabel("Longitude", color="#d8e2f0", fontsize=10)
+              ax.set_ylabel("Latitude", color="#d8e2f0", fontsize=10)
+              ax.tick_params(colors="#aebbd0", labelsize=9)
+              ax.grid(True, color="#5b6b82", alpha=0.30, linewidth=0.55, linestyle=":")
+              for spine in ax.spines.values():
+                  spine.set_color("#334155")
+              fig.text(0.065, 0.94, "WRF CBR 4 KM  /  REFLETIVIDADE", color="white",
+                       fontsize=17, fontweight="bold", ha="left")
+              fig.text(0.065, 0.895, "REFL_10CM · máximo vertical nativo · grade WRF 401 × 501",
+                       color="#9fb2cb", fontsize=10, ha="left")
+              fig.text(0.885, 0.94, f"F{fh:03d}", color="#f5f8ff",
+                       fontsize=20, fontweight="bold", ha="right")
+              fig.text(0.885, 0.895, dt.strftime("%d/%m/%Y %H:%M UTC"),
+                       color="#a9bdd8", fontsize=10, ha="right")
+              cax = fig.add_axes([0.90, 0.16, 0.018, 0.64])
+              cb = fig.colorbar(mesh, cax=cax, ticks=[5,10,20,30,40,50,60,70])
+              cb.set_label("dBZ", color="#e4ecf8", fontsize=10)
+              cb.ax.tick_params(colors="#d6e0ef", labelsize=8, length=3)
+              cb.outline.set_edgecolor("#536277")
+              fig.text(0.065, 0.045, "SIDERAL METEOROLOGIA  ·  CAMPOS NATIVOS DO WRF  ·  CHECKPOINT 38300164789",
+                       color="#8192aa", fontsize=8.2, ha="left")
+              fig.savefig(out / f"frame_{idx:03d}.png", facecolor=fig.get_facecolor(),
+                          dpi=110, bbox_inches=None)
+              plt.close(fig)
+          print(f"Frames renderizados: {len(loaded)}; período {loaded[0][0]} até {loaded[-1][0]} UTC")
+          PY
+          python render_cbr.py
+          count=$(find frames -maxdepth 1 -name 'frame_*.png' | wc -l)
+          test "$count" -ge 2
+          ffmpeg -hide_banner -loglevel error -y -framerate 8 -i frames/frame_%03d.png \
+            -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p \
+            -vf "scale=1440:-2:flags=lanczos" -movflags +faststart "$VIDEO_NAME"
+          test -s "$VIDEO_NAME"
+          echo "Video size: $(du -h "$VIDEO_NAME" | cut -f1)"
+          echo "VIDEO_NAME=$VIDEO_NAME" >> "$GITHUB_ENV"
+
+      - name: Publicar MP4 junto ao checkpoint
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release upload "$CHECKPOINT_TAG" "$VIDEO_NAME" --repo "$GH_REPO" --clobber
+          echo "MP4 publicado: https://github.com/$GH_REPO/releases/download/$CHECKPOINT_TAG/$VIDEO_NAME"
