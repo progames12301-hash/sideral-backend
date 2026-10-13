@@ -143,7 +143,23 @@ def profile_at(obj: dict, index: int, lat: float, lon: float, location: str, val
         uu.append(u); vv.append(v); omg.append(finite(warr[index]) if warr else np.nan)
 
     if len(pres) < 6:
-        raise RuntimeError(f"Perfil insuficiente para {location}: {len(pres)} níveis")
+        # Diagnostic guard: show the actual HRES field names returned by Single Runs.
+        # HRES 9 km uses different availability from the legacy IFS 0.25° endpoint;
+        # never silently substitute coarse-grid data when pressure fields are absent.
+        expected = []
+        for level in LEVELS[:4]:
+            keys = [
+                hourly_name("temperature", level),
+                hourly_name("relative_humidity", level),
+                hourly_name("wind_speed", level),
+                hourly_name("wind_direction", level),
+                hourly_name("geopotential_height", level),
+            ]
+            expected.append({key: (len(as_series(hourly, key)), as_series(hourly, key)[index] if index < len(as_series(hourly, key)) else None) for key in keys})
+        print(f"[HRES 9 km diagnostic] {location}: hourly keys={sorted(hourly.keys())}", flush=True)
+        print(f"[HRES 9 km diagnostic] {location}: pressure samples={expected}", flush=True)
+        raise RuntimeError(f"Perfil insuficiente para {location}: {len(pres)} níveis");
+
 
     # SHARPpy interpolation and parcel routines require one strictly ordered
     # pressure coordinate. Remove duplicate pressure levels before creating
