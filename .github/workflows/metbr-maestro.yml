@@ -90,10 +90,102 @@ jobs:
           set -euo pipefail
           rm -rf metbr_publish
           python wrf/metbr_extract_json.py --run-dir metbr_work/run --output-dir metbr_publish
-          test -s metbr_publish/metbr_wrf_4km.json
-          test -s metbr_publish/metadata.json
+          for file in metadata.json metbr_wrf_4km.json grid.json vertical-f000.npz; do
+            test -s "metbr_publish/$file" || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
+          done
+          test -d metbr_publish/frames
+          test "$(find metbr_publish/frames -maxdepth 1 -type f -name 'f*.json.gz' -size +0c | wc -l)" -eq 43
 
-      - name: Publicar METBR na branch metbr-json-data
+      - name: Validar publicação METBR completa
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip, json
+          from pathlib import Path
+          import numpy as np
+
+          root = Path("metbr_publish")
+          meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
+          data = json.loads((root / "metbr_wrf_4km.json").read_text(encoding="utf-8"))
+          grid = json.loads((root / "grid.json").read_text(encoding="utf-8"))
+          assert meta.get("modelKey") == "metbr_wrf", meta.get("modelKey")
+          assert int(meta.get("resolutionKm", 0)) == 4
+          assert meta.get("gridFile") == "grid.json"
+          assert meta.get("verticalProfileFile") == "vertical-f000.npz"
+          frames = meta.get("frames") or []
+          assert len(frames) == 43, f"Esperados F000-F042; recebidos {len(frames)}"
+          assert data.get("modelKey") == "metbr_wrf"
+          assert len(data.get("frames", [])) == len(frames)
+          nx, ny = int(meta["grid"]["nx"]), int(meta["grid"]["ny"])
+          expected = nx * ny
+          assert grid.get("schema") == "sideral-metbr-grid-v1"
+          assert grid.get("modelKey") == "metbr_wrf"
+          assert int(grid["grid"]["nx"]) == nx and int(grid["grid"]["ny"]) == ny
+          assert len(grid["fields"]["lat"]) == expected
+          assert len(grid["fields"]["lon"]) == expected
+
+          with np.load(root / "vertical-f000.npz", allow_pickle=False) as vertical:
+              shape = vertical["pressure_hpa"].shape
+              assert len(shape) == 3 and shape[0] >= 10, shape
+              assert shape[1:] == (ny, nx), shape
+              for name in ("temperature_c", "dewpoint_c", "height_m", "u_kt", "v_kt", "omega_pa_s"):
+                  assert vertical[name].shape == shape, (name, vertical[name].shape)
+              assert vertical["lat"].shape == (ny, nx)
+              assert vertical["lon"].shape == (ny, nx)
+              assert vertical["terrain_m"].shape == (ny, nx)
+
+          available_from_payload = set()
+          actual_hours = set()
+          for item in frames:
+              forecast = int(item["forecastHour"])
+              actual_hours.add(forecast)
+              file = item.get("dataFile") or f"frames/f{forecast:03d}.json.gz"
+              with gzip.open(root / file, "rt", encoding="utf-8") as handle:
+                  frame = json.load(handle)
+              assert frame.get("modelKey") == "metbr_wrf", file
+              assert frame.get("reflectivitySource") == "REFL_10CM_NATIVE", file
+              assert int(frame["gridX"]) == nx and int(frame["gridY"]) == ny, file
+              assert int(frame["forecastHour"]) == forecast, file
+              assert len(frame.get("reflectivityDbz", [])) == expected, file
+              fields = frame.get("fields") or {}
+              assert isinstance(fields, dict), (file, fields)
+              for field_name, values in fields.items():
+                  assert isinstance(values, list) and len(values) == expected, (file, field_name)
+                  assert all(value is None or isinstance(value, (int, float)) for value in values), (file, field_name)
+                  if any(value is not None for value in values):
+                      available_from_payload.add(field_name)
+          assert actual_hours == set(range(43)), f"Horas ausentes: {sorted(set(range(43)) - actual_hours)}"
+          sources = meta.get("reflectivitySource")
+          sources = [sources] if isinstance(sources, str) else sources if isinstance(sources, list) else []
+          assert any("REFL_10CM" in str(item).upper() for item in sources), sources
+          assert "reflectivity" in available_from_payload, "Refletividade ausente nos frames"
+          declared = set(meta.get("availableVariablesAnyFrame") or [])
+          assert declared <= available_from_payload, (declared, available_from_payload)
+          print(f"METBR validado: {len(frames)} frames F000-F042, grade nativa {nx}x{ny}, NPZ vertical e REFL_10CM nativa.")
+
+          PY
+
+      - name: Selecionar branch do ciclo METBR
+        run: |
+          set -euo pipefail
+          RUN_CYCLE="$(python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+          meta = json.loads(Path("metbr_publish/metadata.json").read_text(encoding="utf-8"))
+          init_time = str(meta.get("initTime") or "")
+          if not init_time:
+              raise SystemExit("metadata.json não informa initTime")
+          stamp = datetime.fromisoformat(init_time.replace("Z", "+00:00"))
+          print(stamp.strftime("%H"))
+          PY
+          )"
+          [[ "$RUN_CYCLE" =~ ^(00|06|12|18|21)$ ]] || { echo "Ciclo METBR não suportado: $RUN_CYCLE" >&2; exit 20; }
+          echo "METBR_RUN_CYCLE=$RUN_CYCLE" >> "$GITHUB_ENV"
+          echo "METBR_JSON_BRANCH=metbr-json-data-$RUN_CYCLE" >> "$GITHUB_ENV"
+          echo "METBR ciclo $RUN_CYCLE Z validado; publicarei a branch por ciclo e metbr-json-data."
+
+      - name: Publicar pacote METBR completo
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -102,15 +194,29 @@ jobs:
           rm -rf /tmp/metbr-json-publication
           git worktree add --detach /tmp/metbr-json-publication origin/metbr-json-data
           find /tmp/metbr-json-publication -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
-          cp -f metbr_publish/metadata.json /tmp/metbr-json-publication/metadata.json
-          cp -f metbr_publish/metbr_wrf_4km.json /tmp/metbr-json-publication/metbr_wrf_4km.json
+          cp -a metbr_publish/. /tmp/metbr-json-publication/
+          cat > /tmp/metbr-json-publication/README.md <<'EOF'
+          # METBR WRF 4 km — publicação JSON nativa
+
+          - metadata.json: horários, variáveis e contrato de publicação
+          - grid.json: coordenadas nativas XLAT/XLONG
+          - vertical-f000.npz: grade vertical nativa para o Skew-T click-to-point
+          - frames/fNNN.json.gz: refletividade REFL_10CM nativa e demais campos disponíveis
+          - metbr_wrf_4km.json: índice compatível com a interface legada
+
+          A publicação só é atualizada após validar os 43 frames F000-F042, a grade, os perfis verticais e a refletividade nativa.
+          EOF
           cd /tmp/metbr-json-publication
-          git add metadata.json metbr_wrf_4km.json
-          git commit -m "publish: METBR WRF 4 km JSON $(date -u +%Y-%m-%dT%H:%M:%SZ)" || exit 0
-          git push origin HEAD:metbr-json-data
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "publish: METBR WRF 4 km ciclo $METBR_RUN_CYCLE Z $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fi
+          git push --force origin HEAD:"$METBR_JSON_BRANCH"
+          git push --force origin HEAD:metbr-json-data
           cd - >/dev/null
           git worktree remove --force /tmp/metbr-json-publication
-          echo "METBR JSON publicado em branch metbr-json-data."
+          echo "METBR publicado integralmente em $METBR_JSON_BRANCH e metbr-json-data."
+
 
   publish-tarc-json:
     if: >-
