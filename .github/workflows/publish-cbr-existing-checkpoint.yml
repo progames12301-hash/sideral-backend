@@ -65,7 +65,6 @@ jobs:
               sys.exit("[CBR] o checkpoint não contém WRFOUTs para publicar")
           print(f"[CBR] WRFOUTs disponíveis recuperados: {count}")
           PY
-          echo "CHECKPOINT_W​​RFOUT_COUNT=$(find cbr_all_wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)" >> "$GITHUB_ENV"
 
       - name: Extrair os horários disponíveis com o extrator corrigido
         shell: bash
