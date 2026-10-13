@@ -12,7 +12,7 @@
 <body>
 <header class="bar">
 <div class="brand">SIDERAL / SKEW-T</div>
-<div class="field"><label>MODELO</label><select id="model"><option value="ecmwf" selected>ECMWF IFS 0,25° — 27 capitais</option><option value="icon">DWD ICON Global ~11 km</option><option value="ecmwf-hybrid">ECMWF HRES 9 km + pressão IFS 0,25°</option><option value="ukmo10km">UK Met Office Global 10 km</option><option value="metbr">WRF METBR 4 km — Sul</option></select></div>
+<div class="field"><label>MODELO</label><select id="model"><option value="ecmwf" selected>ECMWF IFS 0,25° — 27 capitais</option><option value="icon">DWD ICON Global ~11 km</option><option value="ecmwf-hybrid">ECMWF HRES 9 km + pressão IFS 0,25°</option><option value="ukmo10km">UK Met Office Global 10 km</option><option value="nems10">meteoblue NEMS10 — América do Sul 10 km</option><option value="metbr">WRF METBR 4 km — Sul</option></select></div>
 <div class="field"><label>CAPITAL</label><select id="city"></select></div>
 <div class="field" id="cycleField"><label>CICLO ECMWF</label><select id="cycle"><option value="06">06Z</option><option value="12" selected>12Z</option><option value="18">18Z</option></select></div>
 <div class="field"><label>PREVISÃO</label><select id="fh"></select></div>
@@ -38,19 +38,19 @@ const $=id=>document.getElementById(id);
 let current='',available=[];
 function isMetbr(){return $('model').value==='metbr'}
 function cities(){return isMetbr()?SOUTH_CAPITALS:CAPITALS}
-function modelInfo(){return ({ecmwf:{label:'ECMWF IFS 0,25°',tag:'skewt-live'},icon:{label:'DWD ICON Global ~11 km',tag:'skewt-icon-global'},'ecmwf-hybrid':{label:'ECMWF HRES ~9 km híbrido + IFS 0,25°',tag:'skewt-ecmwf-hres9km-hybrid'},ukmo10km:{label:'UK Met Office Global 10 km',tag:'skewt-ukmo-global10km'},metbr:{label:'WRF METBR 4 km',tag:'skewt-metbr-sul-live'}})[$('model').value]||{label:'ECMWF IFS 0,25°',tag:'skewt-live'};} 
+function modelInfo(){return ({ecmwf:{label:'ECMWF IFS 0,25°',tag:'skewt-live'},icon:{label:'DWD ICON Global ~11 km',tag:'skewt-icon-global'},'ecmwf-hybrid':{label:'ECMWF HRES ~9 km híbrido + IFS 0,25°',tag:'skewt-ecmwf-hres9km-hybrid'},ukmo10km:{label:'UK Met Office Global 10 km',tag:'skewt-ukmo-global10km'},nems10:{label:'meteoblue NEMS10 NEMSSA 10 km',tag:'skewt-nems10-nemssa-live'},metbr:{label:'WRF METBR 4 km',tag:'skewt-metbr-sul-live'}})[$('model').value]||{label:'ECMWF IFS 0,25°',tag:'skewt-live'};} 
 function asset(slug,cycle,fh){
  const frame=slug+'-f'+String(fh).padStart(3,'0')+'.png';
  const info=modelInfo();
- const tag=isMetbr()?info.tag:info.tag+'-'+cycle;
+ const tag=(isMetbr()||$('model').value==='nems10')?info.tag:info.tag+'-'+cycle;
  return BASE+'/'+tag+'/'+frame;
 }
 function setStatus(text,cls=''){$('status').textContent=text;$('status').className='status '+cls}
 function updateModelMeta(){
  const metbr=isMetbr(),info=modelInfo();
- $('cycleField').style.display=metbr?'none':'';
+ $('cycleField').style.display=(metbr||$('model').value==='nems10')?'none':'';
  $('modelText').textContent=info.label;
- $('sourceText').textContent=metbr?'METBR WRFOUT nativo':$('model').value==='ecmwf-hybrid'?'HRES ~9 km + IFS 0,25° em pressão':'Open-Meteo Single Runs';
+ $('sourceText').textContent=metbr?'METBR WRFOUT nativo':$('model').value==='ecmwf-hybrid'?'HRES ~9 km + IFS 0,25° em pressão':$('model').value==='nems10'?'meteoblue Dataset API · NEMSSA':'Open-Meteo Single Runs';
  $('viewer').setAttribute('aria-label','Sondagem '+info.label);
  document.title='Sideral — Skew-T '+info.label;
 }
@@ -87,12 +87,12 @@ async function check(){
  fillCities();
  $('busy').style.display='none';
  if(!available.length){
-  const label=isMetbr()?'WRF METBR do Sul':modelInfo().label+' '+cycle+'Z';
+  const label=isMetbr()?'WRF METBR do Sul':modelInfo().label+' '+($('model').value==='nems10'?'previsão mais recente':cycle+'Z');
   setStatus('Nenhuma sondagem publicada para '+label+'.','err');
   $('viewer').innerHTML='<div class="empty">Nenhuma rodada disponível nesta fonte. O ECMWF continua independente da publicação WRF.</div>';
   return;
  }
- setStatus(isMetbr()?available.length+'/3 capitais do Sul disponíveis no METBR WRF 4 km.':available.length+'/27 capitais disponíveis · '+modelInfo().label+' '+cycle+'Z.','ok');
+ setStatus(isMetbr()?available.length+'/3 capitais do Sul disponíveis no METBR WRF 4 km.':available.length+'/27 capitais disponíveis · '+modelInfo().label+' '+($('model').value==='nems10'?'(previsão mais recente)':cycle+'Z')+'.','ok');
  load();
 }
 function load(){
