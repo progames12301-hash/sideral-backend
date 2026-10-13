@@ -30,10 +30,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: skewt-multimodel-${{ matrix.model }}-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'schedule' && github.event.schedule == '55 19 * * *' && '12') || (github.event_name == 'schedule' && github.event.schedule == '55 1 * * *' && '18') || 'auto' }}
-  cancel-in-progress: true
-
 env:
   QT_QPA_PLATFORM: offscreen
   SIDERAL_QT_COMPAT: '1'
@@ -47,6 +43,9 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.model == 'all' || inputs.model == matrix.model }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    concurrency:
+      group: skewt-multimodel-${{ matrix.model }}-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'schedule' && github.event.schedule == '55 19 * * *' && '12') || (github.event_name == 'schedule' && github.event.schedule == '55 1 * * *' && '18') || 'auto' }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
