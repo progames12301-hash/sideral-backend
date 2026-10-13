@@ -1,4 +1,4 @@
-name: Sideral Skew-T — ICON, ECMWF HRES híbrido e UKMO 10 km
+name: Sideral Skew-T — ECMWF, ICON, UKMO e meteoblue NEMS10
 
 on:
   push:
@@ -107,7 +107,7 @@ jobs:
       - name: Gerar 27 capitais × F000–F048
         env:
           # Usada apenas para NEMS10 e nunca armazenada nos PNGs/manifests.
-          METEOBLUE_APIKEY: ${{ secrets.METEOBLUE_APIKEY }}
+          METEOBLUE_API_KEY: ${{ secrets.METEOBLUE_API_KEY }}
         run: |
           set -euo pipefail
           rm -rf "build/skewt-models/$MODELE"
