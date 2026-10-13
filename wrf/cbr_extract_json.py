@@ -71,7 +71,7 @@ def read_run_init(path: Path):
 
     run_date = values.get("RUN_DATE", "").replace("-", "")
     run_cycle = values.get("RUN_CYCLE", "")
-    if not re.fullmatch(r"\\d{8}", run_date) or not re.fullmatch(r"\\d{2}", run_cycle):
+    if not re.fullmatch(r"\d{8}", run_date) or not re.fullmatch(r"\d{2}", run_cycle):
         raise SystemExit(
             f"[CBR] cbr-run.env inválido: RUN_DATE={run_date!r}, RUN_CYCLE={run_cycle!r}"
         )
@@ -129,7 +129,7 @@ def frame_payload(path):
 
         refl, comp = native_reflectivity(ds)
         if refl is None or comp is None:
-            raise RuntimeError(f\"REFL_10CM/REFL_10CM_MAX ausente em {path.name}\")
+            raise RuntimeError(f"REFL_10CM/REFL_10CM_MAX ausente em {path.name}")
         u10, v10 = arr2d(ds, "U10"), arr2d(ds, "V10")
         t2, q2, psfc = arr2d(ds, "T2"), arr2d(ds, "Q2"), arr2d(ds, "PSFC")
         slp = arr2d(ds, "SLP")
