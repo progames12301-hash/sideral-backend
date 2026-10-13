@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import gzip
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -55,6 +56,35 @@ def read_time(ds):
         return None
 
 
+def read_run_init(path: Path):
+    """Read the authoritative initialization time from the checkpoint's cbr-run.env."""
+    if not path.exists():
+        return None
+
+    values = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+
+    run_date = values.get("RUN_DATE", "").replace("-", "")
+    run_cycle = values.get("RUN_CYCLE", "")
+    if not re.fullmatch(r"\\d{8}", run_date) or not re.fullmatch(r"\\d{2}", run_cycle):
+        raise SystemExit(
+            f"[CBR] cbr-run.env inválido: RUN_DATE={run_date!r}, RUN_CYCLE={run_cycle!r}"
+        )
+    if run_cycle not in {"00", "06", "12", "18"}:
+        raise SystemExit(f"[CBR] ciclo inválido em cbr-run.env: {run_cycle!r}")
+    try:
+        return dt.datetime.strptime(run_date + run_cycle, "%Y%m%d%H").replace(
+            tzinfo=dt.timezone.utc
+        )
+    except ValueError as exc:
+        raise SystemExit(f"[CBR] data/ciclo inválido em cbr-run.env: {exc}") from exc
+
+
 def native_reflectivity(ds):
     if "REFL_10CM" in ds.variables:
         a = np.asarray(ds.variables["REFL_10CM"][0], dtype=np.float32)
@@ -98,6 +128,8 @@ def frame_payload(path):
             raise RuntimeError(f"XLAT/XLONG ausentes em {path.name}")
 
         refl, comp = native_reflectivity(ds)
+        if refl is None or comp is None:
+            raise RuntimeError(f\"REFL_10CM/REFL_10CM_MAX ausente em {path.name}\")
         u10, v10 = arr2d(ds, "U10"), arr2d(ds, "V10")
         t2, q2, psfc = arr2d(ds, "T2"), arr2d(ds, "Q2"), arr2d(ds, "PSFC")
         slp = arr2d(ds, "SLP")
@@ -151,6 +183,14 @@ def frame_payload(path):
         if valid is None:
             raise RuntimeError(f"Tempo Times ausente/invalido em {path.name}")
 
+        cell_count = int(lat.size)
+        for key, value in fields.items():
+            if value is not None and len(value) != cell_count:
+                raise RuntimeError(
+                    f"Campo {key} com {len(value)} células em {path.name}; "
+                    f"XLAT/XLONG possuem {cell_count}"
+                )
+
         return {
             "file": path.name,
             "time": valid.isoformat().replace("+00:00", "Z"),
@@ -176,39 +216,111 @@ def main():
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--expected-start", type=int, default=0)
     ap.add_argument("--expected-end", type=int, default=42)
+    ap.add_argument("--run-env", default="cbr-run.env")
+    ap.add_argument("--catalog", default="wrf/cbr_variable_catalog.json")
+    ap.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="falha se algum horário previsto estiver ausente",
+    )
     args = ap.parse_args()
+
+    if args.expected_start < 0 or args.expected_end < args.expected_start:
+        raise SystemExit(
+            f"[CBR] intervalo de previsão inválido: F{args.expected_start}-F{args.expected_end}"
+        )
+
+    catalog_path = Path(args.catalog)
+    try:
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        domain = catalog["domain"]
+        e_we, e_sn = int(domain["e_we"]), int(domain["e_sn"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SystemExit(f"[CBR] catálogo WRF inválido em {catalog_path}: {exc}") from exc
+
+    if e_we < 2 or e_sn < 2:
+        raise SystemExit(f"[CBR] dimensões e_we/e_sn inválidas no catálogo: {e_we} x {e_sn}")
+
+    # WRF's e_we/e_sn include staggered points. Scalar fields (XLAT/XLONG, REFL_10CM)
+    # live on the unstaggered mass grid, whose dimensions are e_we-1 by e_sn-1.
+    expected_grid = {"nx": e_we - 1, "ny": e_sn - 1}
 
     run_dir = Path(args.run_dir)
     out = Path(args.output_dir)
     frames_dir = out / "frames"
     out.mkdir(parents=True, exist_ok=True)
     frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in frames_dir.glob("f*.json.gz"):
+        stale.unlink()
 
     files = sorted(run_dir.glob("wrfout_d01_*"))
     if not files:
-        raise SystemExit("Nenhum WRFOUT encontrado")
+        raise SystemExit(f"[CBR] nenhum WRFOUT encontrado em {run_dir}")
 
     unique = {}
     for path in files:
-        with Dataset(path) as ds:
-            valid = read_time(ds)
+        try:
+            with Dataset(path) as ds:
+                valid = read_time(ds)
+        except Exception as exc:
+            print(f"[CBR][SKIP] NetCDF ilegível {path.name}: {exc}")
+            continue
         if valid is None:
-            print(f"[CBR][SKIP] tempo invalido: {path.name}")
+            print(f"[CBR][SKIP] tempo Times ausente/inválido: {path.name}")
+            continue
+        if valid in unique:
+            print(
+                f"[CBR][DUPLICADO] {path.name} e {unique[valid].name} têm o mesmo horário; "
+                "mantendo o primeiro arquivo em ordem lexical"
+            )
             continue
         unique[valid] = path
 
     selected = sorted(unique.items())
-    init = selected[0][0]
+    if not selected:
+        raise SystemExit(f"[CBR] nenhum WRFOUT legível com variável Times em {run_dir}")
+
+    init = read_run_init(Path(args.run_env))
+    if init is None:
+        if args.expected_start != 0:
+            raise SystemExit(
+                f"[CBR] {args.run_env} ausente: não é seguro calcular F{args.expected_start}+ "
+                "a partir do primeiro arquivo de um segmento. Forneça RUN_DATE/RUN_CYCLE."
+            )
+        init = selected[0][0]
+        print(
+            "[CBR][AVISO] cbr-run.env ausente; usando o primeiro WRFOUT como F000. "
+            "A completude do ciclo será verificada."
+        )
+
     frames = []
 
     for valid, path in selected:
-        fh = int(round((valid - init).total_seconds() / 3600.0))
+        delta_hours = (valid - init).total_seconds() / 3600.0
+        fh = int(round(delta_hours))
+        if abs(delta_hours - fh) > 1e-6:
+            raise SystemExit(
+                f"[CBR] horário WRF fora da cadência horária: {path.name}, "
+                f"init={init.isoformat()}, diferença={delta_hours:.4f} h"
+            )
+        if fh < 0:
+            raise SystemExit(
+                f"[CBR] WRFOUT anterior ao ciclo selecionado: {path.name}; "
+                f"init={init.isoformat()}, validade={valid.isoformat()}"
+            )
         if fh < args.expected_start or fh > args.expected_end:
             continue
+
         payload = frame_payload(path)
+        if payload["grid"] != expected_grid:
+            raise SystemExit(
+                f"[CBR] grade inválida em {path.name}: observado {payload['grid']}, "
+                f"esperado {expected_grid} a partir de e_we={e_we}, e_sn={e_sn} "
+                "(grade de massa WRF = e_we-1 x e_sn-1)"
+            )
         payload["model"] = "WRF CBR 4 KM"
         payload["modelKey"] = "cbr_wrf_4km"
-        payload["resolutionKm"] = 3
+        payload["resolutionKm"] = 4
         payload["forecastHour"] = fh
         payload["nativeReflectivity"] = "REFL_10CM"
         payload["nativeGrid"] = True
@@ -240,7 +352,12 @@ def main():
         "forecastHours": [args.expected_start, args.expected_end],
         "temporalResolutionMinutes": 60,
         "initTime": init.isoformat().replace("+00:00", "Z"),
-        "grid": first_grid or {"nx": 401, "ny": 501},
+        "grid": first_grid or expected_grid,
+        "namelistGrid": {
+            "e_we": e_we,
+            "e_sn": e_sn,
+            "description": "dimensions include staggered points; scalar fields use e_we-1 by e_sn-1",
+        },
         "domain": {"west": -50.0, "east": -30.0, "south": -21.0, "north": 1.0},
         "projection": "Lambert Conformal",
         "nativeReflectivity": "REFL_10CM",
@@ -265,7 +382,15 @@ def main():
         encoding="utf-8",
     )
 
-    print(f"[CBR] JSON publicado em {frames_dir}: {len(frames)} frames; faltantes={missing}")
+    print(
+        f"[CBR] JSON publicado em {frames_dir}: {len(frames)} frames; "
+        f"faltantes={missing}; grade de massa={metadata['grid']['nx']}x{metadata['grid']['ny']}"
+    )
+    if missing and args.require_complete:
+        raise SystemExit(
+            f"[CBR] extração incompleta: ausentes F{missing[0]:03d}..; "
+            f"{len(missing)} horários faltando no intervalo F{args.expected_start}-F{args.expected_end}"
+        )
 
 
 if __name__ == "__main__":
