@@ -4,7 +4,7 @@ on:
   workflow_run:
     workflows:
       - "METBR WRF 4 KM - ICON"
-      - "WRF TARC 3 KM - ICON"
+      - "WRF TARC 3 KM — fallback ICON → ECMWF → GFS"
     types: [completed]
   schedule:
     - cron: '30 12 * * *'
@@ -31,7 +31,7 @@ permissions:
 jobs:
   publish-metbr-json:
     if: >-
-      github.event_name == 'schedule' || (github.event_name == 'workflow_run' && github.event.workflow_run.workflow.name == 'METBR WRF 4 KM - ICON' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && (inputs.model == 'both' || inputs.model == 'metbr'))
+      github.event_name == 'schedule' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'METBR WRF 4 KM - ICON' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && (inputs.model == 'both' || inputs.model == 'metbr'))
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     steps:
@@ -48,7 +48,7 @@ jobs:
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_RUN_ID: ${{ inputs.run_id }}
           INPUT_MODEL: ${{ inputs.model }}
-          EVENT_WORKFLOW: ${{ github.event.workflow_run.workflow.name }}
+          EVENT_WORKFLOW: ${{ github.event.workflow_run.name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -110,7 +110,7 @@ jobs:
 
   publish-tarc-json:
     if: >-
-      github.event_name == 'schedule' || (github.event_name == 'workflow_run' && github.event.workflow_run.workflow.name == 'WRF TARC 3 KM - ICON' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && (inputs.model == 'both' || inputs.model == 'tarc'))
+      github.event_name == 'schedule' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'WRF TARC 3 KM — fallback ICON → ECMWF → GFS' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && (inputs.model == 'both' || inputs.model == 'tarc'))
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -127,13 +127,13 @@ jobs:
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_RUN_ID: ${{ inputs.run_id }}
           INPUT_MODEL: ${{ inputs.model }}
-          EVENT_WORKFLOW: ${{ github.event.workflow_run.workflow.name }}
+          EVENT_WORKFLOW: ${{ github.event.workflow_run.name }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$INPUT_MODEL" == "tarc" && -n "$INPUT_RUN_ID" ]]; then
             RUN_ID="$INPUT_RUN_ID"
-          elif [[ "$EVENT_WORKFLOW" == "WRF TARC 3 KM - ICON" && -n "$EVENT_RUN_ID" ]]; then
+          elif [[ "$EVENT_WORKFLOW" == "WRF TARC 3 KM — fallback ICON → ECMWF → GFS" && -n "$EVENT_RUN_ID" ]]; then
             RUN_ID="$EVENT_RUN_ID"
           else
             RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow wrf-tarc-3km.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
