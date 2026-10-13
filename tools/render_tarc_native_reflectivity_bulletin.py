@@ -108,11 +108,16 @@ def render(args):
     lon_min, lon_max = float(np.nanmin(lon[finite_coords])), float(np.nanmax(lon[finite_coords]))
     lat_min, lat_max = float(np.nanmin(lat[finite_coords])), float(np.nanmax(lat[finite_coords]))
 
-    # Show geographic context around the native 3-km TARC grid, without resizing
-    # or fabricating pixels in the field itself.
-    # Continental context for evaluating how much of South America the native
-    # TARC grid actually covers. Echoes remain strictly inside native data cells.
-    extent = [-76.0, -32.0, -45.0, 7.0]
+    # Zoom to the native TARC footprint with only a small geographic margin.
+    # No continental overview and no reflectivity is fabricated outside the native grid.
+    pad_lon = max(0.8, (lon_max - lon_min) * 0.08)
+    pad_lat = max(0.7, (lat_max - lat_min) * 0.08)
+    extent = [
+        max(-180.0, lon_min - pad_lon),
+        min(180.0, lon_max + pad_lon),
+        max(-90.0, lat_min - pad_lat),
+        min(90.0, lat_max + pad_lat),
+    ]
     projection = ccrs.PlateCarree()
     cmap = ListedColormap(DBZ_COLORS, name="sideral_native_dbz")
     norm = BoundaryNorm(BOUNDS, cmap.N, clip=True)
@@ -130,7 +135,7 @@ def render(args):
     fig.text(0.062, 0.936, "BOLETIM DE REFLETIVIDADE NATIVA", fontsize=17.5,
              weight="bold", color=INK, ha="left", va="center")
     fig.text(0.062, 0.907,
-             f"WRF TARC 3 km  •  {field_name}  •  CONTEXTO REGIONAL / COBERTURA NATIVA",
+             f"WRF TARC 3 km  •  {field_name}  •  ZOOM REGIONAL / DOMÍNIO NATIVO TARC",
              fontsize=9.3, color=MUTED, ha="left", va="center")
     fig.text(0.966, 0.966, f"F{forecast_hour:03d}", fontsize=17, weight="bold",
              color=MODEL_BLUE, ha="right", va="center")
@@ -252,7 +257,7 @@ def render(args):
             "south": round(lat_min, 5),
             "north": round(lat_max, 5),
         },
-        "contextMapBounds": {"west": -76.0, "east": -32.0, "south": -45.0, "north": 7.0},
+        "contextMapBounds": {"west": round(extent[0], 5), "east": round(extent[1], 5), "south": round(extent[2], 5), "north": round(extent[3], 5)},
         "nativeGridFootprintOutlined": True,
         "initializationUTC": init.isoformat(),
         "validUTC": valid.isoformat(),

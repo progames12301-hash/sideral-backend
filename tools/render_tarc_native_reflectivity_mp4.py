@@ -115,7 +115,7 @@ def render(args):
     fig.text(0.062, 0.936, "BOLETIM ANIMADO DE REFLETIVIDADE NATIVA", fontsize=16,
              weight="bold", color=INK, ha="left", va="center")
     fig.text(0.062, 0.906,
-             f"WRF TARC 3 km  •  {frames[0]['field']}  •  QUADROS DO CHECKPOINT",
+             f"WRF TARC 3 km  •  {frames[0]['field']}  •  ZOOM REGIONAL / COBERTURA NATIVA",
              fontsize=9, color=MUTED, ha="left", va="center")
     cycle_text = fig.text(0.966, 0.966, "", fontsize=17, weight="bold",
                           color=BLUE, ha="right", va="center")
@@ -130,7 +130,16 @@ def render(args):
     projection = ccrs.PlateCarree()
     ax = fig.add_axes([0.035, 0.145, 0.93, 0.725], projection=projection)
     ax.set_facecolor("#f7f9fc")
-    ax.set_extent([-76.0, -32.0, -45.0, 7.0], crs=projection)
+    # Close-up regional framing derived from the true native TARC grid bounds.
+    pad_lon = max(0.8, (lon_max - lon_min) * 0.08)
+    pad_lat = max(0.7, (lat_max - lat_min) * 0.08)
+    extent = [
+        max(-180.0, lon_min - pad_lon),
+        min(180.0, lon_max + pad_lon),
+        max(-90.0, lat_min - pad_lat),
+        min(90.0, lat_max + pad_lat),
+    ]
+    ax.set_extent(extent, crs=projection)
     ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#fffefb", edgecolor="none", zorder=0)
     ax.add_feature(cfeature.OCEAN.with_scale("10m"), facecolor="#f7f9fc", edgecolor="none", zorder=0)
     try:
@@ -219,6 +228,7 @@ def render(args):
         "nativeField": "REFL_10CM",
         "reflectivityProduct": frames[0]["field"],
         "nativeGrid": {"nx": nx, "ny": ny},
+        "viewBounds": {"west": round(extent[0], 5), "east": round(extent[1], 5), "south": round(extent[2], 5), "north": round(extent[3], 5)},
         "initializationUTC": init.isoformat(),
         "firstValidUTC": frames[0]["valid"].isoformat(),
         "lastValidUTC": frames[-1]["valid"].isoformat(),

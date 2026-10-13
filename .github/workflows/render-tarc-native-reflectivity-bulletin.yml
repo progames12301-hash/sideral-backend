@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/render-tarc-native-reflectivity-bulletin.yml"
       - "tools/render_tarc_native_reflectivity_bulletin.py"
+      - "tools/render_tarc_native_reflectivity_mp4.py"
 
 permissions:
   contents: write
