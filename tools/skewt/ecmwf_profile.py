@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 # Open-Meteo is the ONLY upstream used by this provider.
-# Pressure-level IFS 0.25° fields are requested from Open-Meteo's ECMWF API.
+# Pressure-level fields use ECMWF IFS HRES native ~9 km through Open-Meteo's ECMWF API.
 # No direct ECMWF OpenData/eccodes retrieval is used by the Skew-T provider.
 
 PRESSURE_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 50]
@@ -206,8 +206,8 @@ def main():
         "schema": "sideral-skewt-openmeteo-ecmwf-v3",
         "provider": "Open-Meteo",
         "provider_url": "https://open-meteo.com/",
-        "model": "ECMWF IFS 0.25°",
-        "resolution": "0.25°",
+        "model": "ECMWF IFS HRES native 9 km",
+        "resolution": "9 km (native O1280)",
         "renderer": "browser-canvas",
         "browser_rendering": True,
         "latitude": args.lat,
