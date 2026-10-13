@@ -2980,6 +2980,7 @@ class Handler(SimpleHTTPRequestHandler):
             "icon": ("DWD ICON Global ~11 km", f"skewt-icon-global-{cycle}"),
             "ecmwf-hybrid": ("ECMWF HRES ~9 km híbrido + IFS 0.25°", f"skewt-ecmwf-hres9km-hybrid-{cycle}"),
             "ukmo10km": ("UK Met Office Global 10 km", f"skewt-ukmo-global10km-{cycle}"),
+            "nems10": ("meteoblue NEMS10 NEMSSA 10 km", "skewt-nems10-nemssa-live"),
         }
         if model not in products or city not in allowed_cities or cycle not in {"06", "12", "18"} or fh not in range(0, 49, 3):
             self.send_json(400, {"error": "Modelo, capital, ciclo ou validade inválidos."}); return
