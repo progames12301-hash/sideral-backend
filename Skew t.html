@@ -13,7 +13,7 @@
 <body>
 <div class="toolbar">
   <h1>Sideral Skew-T</h1>
-  <div class="g"><label>MODELO</label><select id="model"><option value="ecmwf" selected>ECMWF IFS 0,25°</option><option value="icon">DWD ICON Global ~11 km</option><option value="ecmwf-hybrid">ECMWF HRES 9 km + IFS 0,25° pressão</option><option value="ukmo10km">UK Met Office Global 10 km</option></select></div>
+  <div class="g"><label>MODELO</label><select id="model"><option value="ecmwf" selected>ECMWF IFS 0,25°</option><option value="icon">DWD ICON Global ~11 km</option><option value="ecmwf-hybrid">ECMWF HRES 9 km + IFS 0,25° pressão</option><option value="ukmo10km">UK Met Office Global 10 km</option><option value="nems10">meteoblue NEMS10 — América do Sul 10 km</option></select></div>
   <div class="g city"><label>CAPITAL</label><select id="city"></select></div>
   <div class="g"><label>CICLO ECMWF</label><select id="cycle"><option value="06">06Z</option><option value="12" selected>12Z</option><option value="18">18Z</option></select></div>
   <div class="g"><label>FORECAST</label><select id="fh"></select></div>
@@ -26,7 +26,7 @@
 <div class="board">
   <div class="image-wrap" id="viewer"><div class="empty">Carregando publicação SHARPpy...</div></div>
   <div class="meta">
-    <div class="panel"><div class="title">MODELO</div><div class="body">ECMWF IFS 0.25°</div></div>
+    <div class="panel"><div class="title">MODELO</div><div class="body" id="modelName">ECMWF IFS 0.25°</div></div>
     <div class="panel"><div class="title">RENDERIZADOR</div><div class="body">SHARPpy — PNG pré-renderizado</div></div>
     <div class="panel"><div class="title">VALIDADE</div><div class="body" id="valid">--</div></div>
     <div class="panel"><div class="title">PUBLICAÇÃO</div><div class="body" id="source">GitHub Release — --</div></div>
@@ -51,8 +51,16 @@ for(let h=0;h<=48;h+=3){const o=document.createElement('option');o.value=h;o.tex
 function setStatus(t,cls=''){$('status').textContent=t;$('status').className='status '+cls}
 function assetName(slug,fh){return `${slug}-f${String(fh).padStart(3,'0')}.png`}
 function releaseTag(cycle){
-  const prefix=({ecmwf:'skewt-live',icon:'skewt-icon-global','ecmwf-hybrid':'skewt-ecmwf-hres9km-hybrid',ukmo10km:'skewt-ukmo-global10km'})[$('model').value]||'skewt-live';
+  const model=$('model').value;
+  if(model==='nems10')return 'skewt-nems10-nemssa-live';
+  const prefix=({ecmwf:'skewt-live',icon:'skewt-icon-global','ecmwf-hybrid':'skewt-ecmwf-hres9km-hybrid',ukmo10km:'skewt-ukmo-global10km'})[model]||'skewt-live';
   return prefix+'-'+cycle;
+}
+function modelLabel(){return $('model').selectedOptions[0]?.textContent||'ECMWF IFS';}
+function cycleLabel(){return $('model').value==='nems10'?'previsão mais recente':$('cycle').value+'Z';}
+function syncModelDisplay(){
+  $('cycle').parentElement.style.display=$('model').value==='nems10'?'none':'';
+  $('modelName').textContent=modelLabel();
 }
 function assetUrl(name){
   if(publication?.download_base) return publication.download_base+encodeURIComponent(name);
@@ -80,7 +88,8 @@ async function fetchPublication(cycle){
   return {schema:'legacy-release',repository:`${OWNER}/${REPO}`,tag,asset_count:assets.length,download_base:`${RELEASE_BASE}/${tag}/`,assets};
 }
 async function refreshAvailability(){
-  $('loading').style.display='flex';setStatus('Localizando publicação do ciclo '+$('cycle').value+'Z...');publication=null;fillCities();
+  syncModelDisplay();
+  $('loading').style.display='flex';setStatus('Localizando publicação '+cycleLabel()+'...');publication=null;fillCities();
   try{
     publication=await fetchPublication($('cycle').value);
     fillCities();
@@ -95,7 +104,7 @@ async function refreshAvailability(){
     else $('viewer').innerHTML='<div class="empty">Nenhuma capital encontrada no índice desta publicação.</div>';
   }catch(e){
     $('loading').style.display='none';
-    $('viewer').innerHTML=`<div class="empty">Não foi possível localizar a publicação ${$('cycle').value}Z.<br><br>${e.message}</div>`;
+    $('viewer').innerHTML=`<div class="empty">Não foi possível localizar a publicação ${cycleLabel()}.<br><br>${e.message}</div>`;
     setStatus('Publicação não localizada para este ciclo.','error');
     $('pub').textContent='PUBLICAÇÃO: indisponível';
   }
@@ -108,8 +117,8 @@ function openImage(){
   }
   const src=assetUrl(name);$('loading').style.display='flex';$('viewer').innerHTML='';
   const im=new Image();
-  im.alt=`Sideral Skew-T ${$('model').selectedOptions[0]?.textContent||'ECMWF'} — ${cap?cap[0]:slug} — ${$('cycle').value}Z — F${String(fh).padStart(3,'0')}`;
-  im.onload=()=>{$('loading').style.display='none';$('viewer').appendChild(im);currentUrl=src;$('download').disabled=false;$('valid').textContent=`Ciclo ${$('cycle').value}Z • F${String(fh).padStart(3,'0')}`};
+  im.alt=`Sideral Skew-T ${modelLabel()} — ${cap?cap[0]:slug} — ${cycleLabel()} — F${String(fh).padStart(3,'0')}`;
+  im.onload=()=>{$('loading').style.display='none';$('viewer').appendChild(im);currentUrl=src;$('download').disabled=false;$('valid').textContent=`${cycleLabel()} • F${String(fh).padStart(3,'0')}`};
   im.onerror=()=>{$('loading').style.display='none';$('download').disabled=true;$('viewer').innerHTML='<div class="empty">O PNG está no índice, mas o asset não pôde ser aberto.</div>';setStatus('Asset localizado, porém não abriu.', 'error')};
   im.src=src;
 }
