@@ -24,8 +24,9 @@ env:
   WRF_STAND_LON: -53.5
 
 jobs:
+
   seg00:
-    name: TARC fallback F000-F003
+    name: TARC fallback F000-F006
     runs-on: ubuntu-22.04
     timeout-minutes: 478
     steps:
@@ -54,9 +55,9 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/select_tarc_icon_run.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/select_tarc_icon_run.py wrf/fetch_gfs_land_support.py
           echo "ShellCheck e sintaxe Python dos fallbacks validados."
-      - name: Executar F000-F003
+      - name: Executar F000-F006
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -66,7 +67,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 0 3 0 1
+          bash wrf/run_tarc_checkpoint_segment.sh 0 6 0 1
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,7 +80,7 @@ jobs:
           retention-days: 7
 
   seg01:
-    name: TARC fallback F003-F006
+    name: TARC fallback F006-F012
     runs-on: ubuntu-22.04
     needs: seg00
     timeout-minutes: 478
@@ -109,7 +110,7 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F003-F006
+      - name: Executar F006-F012
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -119,7 +120,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 3 6 1 0
+          bash wrf/run_tarc_checkpoint_segment.sh 6 12 1 0
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -132,7 +133,7 @@ jobs:
           retention-days: 7
 
   seg02:
-    name: TARC fallback F006-F009
+    name: TARC fallback F012-F018
     runs-on: ubuntu-22.04
     needs: seg01
     timeout-minutes: 478
@@ -162,7 +163,7 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F006-F009
+      - name: Executar F012-F018
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -172,7 +173,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 6 9 2 0
+          bash wrf/run_tarc_checkpoint_segment.sh 12 18 2 0
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -185,7 +186,7 @@ jobs:
           retention-days: 7
 
   seg03:
-    name: TARC fallback F009-F012
+    name: TARC fallback F018-F024
     runs-on: ubuntu-22.04
     needs: seg02
     timeout-minutes: 478
@@ -215,7 +216,7 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F009-F012
+      - name: Executar F018-F024
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -225,7 +226,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 9 12 3 0
+          bash wrf/run_tarc_checkpoint_segment.sh 18 24 3 0
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -238,7 +239,7 @@ jobs:
           retention-days: 7
 
   seg04:
-    name: TARC fallback F012-F015
+    name: TARC fallback F024-F030
     runs-on: ubuntu-22.04
     needs: seg03
     timeout-minutes: 478
@@ -268,7 +269,7 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F012-F015
+      - name: Executar F024-F030
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -278,7 +279,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 12 15 4 0
+          bash wrf/run_tarc_checkpoint_segment.sh 24 30 4 0
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -291,7 +292,7 @@ jobs:
           retention-days: 7
 
   seg05:
-    name: TARC fallback F015-F018
+    name: TARC fallback F030-F036
     runs-on: ubuntu-22.04
     needs: seg04
     timeout-minutes: 478
@@ -321,7 +322,7 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F015-F018
+      - name: Executar F030-F036
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -331,7 +332,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 15 18 5 0
+          bash wrf/run_tarc_checkpoint_segment.sh 30 36 5 0
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -344,7 +345,7 @@ jobs:
           retention-days: 7
 
   seg06:
-    name: TARC fallback F018-F021
+    name: TARC fallback F036-F042
     runs-on: ubuntu-22.04
     needs: seg05
     timeout-minutes: 478
@@ -374,7 +375,7 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F018-F021
+      - name: Executar F036-F042
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -384,7 +385,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 18 21 6 0
+          bash wrf/run_tarc_checkpoint_segment.sh 36 42 6 0
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -397,7 +398,7 @@ jobs:
           retention-days: 7
 
   seg07:
-    name: TARC fallback F021-F024
+    name: TARC fallback F042-F048
     runs-on: ubuntu-22.04
     needs: seg06
     timeout-minutes: 478
@@ -427,7 +428,7 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F021-F024
+      - name: Executar F042-F048
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
@@ -437,7 +438,7 @@ jobs:
           FORCE_RUN_CYCLE: ''
         run: |
           chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 21 24 7 0
+          bash wrf/run_tarc_checkpoint_segment.sh 42 48 7 0
       - name: Salvar diagnósticos
         if: always()
         uses: actions/upload-artifact@v4
@@ -449,435 +450,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  seg08:
-    name: TARC fallback F024-F027
-    runs-on: ubuntu-22.04
-    needs: seg07
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F024-F027
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 24 27 8 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg08
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  seg09:
-    name: TARC fallback F027-F030
-    runs-on: ubuntu-22.04
-    needs: seg08
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F027-F030
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 27 30 9 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg09
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  seg10:
-    name: TARC fallback F030-F033
-    runs-on: ubuntu-22.04
-    needs: seg09
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F030-F033
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 30 33 10 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg10
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  seg11:
-    name: TARC fallback F033-F036
-    runs-on: ubuntu-22.04
-    needs: seg10
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F033-F036
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 33 36 11 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg11
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  seg12:
-    name: TARC fallback F036-F039
-    runs-on: ubuntu-22.04
-    needs: seg11
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F036-F039
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 36 39 12 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg12
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  seg13:
-    name: TARC fallback F039-F042
-    runs-on: ubuntu-22.04
-    needs: seg12
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F039-F042
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 39 42 13 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg13
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  seg14:
-    name: TARC fallback F042-F045
-    runs-on: ubuntu-22.04
-    needs: seg13
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F042-F045
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 42 45 14 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg14
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  seg15:
-    name: TARC fallback F045-F048
-    runs-on: ubuntu-22.04
-    needs: seg14
-    timeout-minutes: 478
-    steps:
-      - name: Checkout TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pré-validar scripts Bash e ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t scripts < <(find wrf -maxdepth 1 -type f -name '*.sh' -print | sort)
-          test "${#scripts[@]}" -gt 0
-          if grep -nIl $'\r' "${scripts[@]}"; then
-            echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
-            exit 1
-          fi
-          for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
-            bash -n "$f"
-          done
-          shellcheck -S error -s bash "${scripts[@]}"
-      - name: Executar F045-F048
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHECKPOINT_TAG: tarc-wrf-3km-checkpoint-${{ github.run_id }}
-          RUN_DATE: ''
-          RUN_CYCLE: ''
-          FORCE_RUN_DATE: ''
-          FORCE_RUN_CYCLE: ''
-        run: |
-          chmod +x wrf/run_tarc_checkpoint_segment.sh
-          bash wrf/run_tarc_checkpoint_segment.sh 45 48 15 0
-      - name: Salvar diagnósticos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tarc-diagnostics-seg15
-          path: |
-            tarc_diagnostics/
-            tarc_segment_output/rsl.*
-          if-no-files-found: ignore
-          retention-days: 7
-
-
   complete:
     name: TARC 3 KM F000-F048 completo e pós-processado
     runs-on: ubuntu-22.04
-    needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07, seg08, seg09, seg10, seg11, seg12, seg13, seg14, seg15]
+    needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07]
     timeout-minutes: 478
     steps:
       - name: Checkout TARC
