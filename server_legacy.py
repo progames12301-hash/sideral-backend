@@ -1292,8 +1292,8 @@ def _ecmwf_build_sounding_payload(
     modules: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Obtém um ponto do ECMWF IFS 0.25° via Open-Meteo Single Runs e
-    processa o perfil com SHARPpy. Não usa MARS e não requer chave ECMWF.
+    Obtém o perfil completo do ECMWF IFS HRES nativo de 9 km via Open-Meteo Single Runs
+    e processa a sondagem com SHARPpy, sem misturar níveis de modelos diferentes.
     """
     np = modules["np"]
     shp_profile = modules["shp_profile"]
@@ -1319,7 +1319,7 @@ def _ecmwf_build_sounding_payload(
         "latitude": f"{lat:.5f}",
         "longitude": f"{lon:.5f}",
         "run": run_dt.strftime("%Y-%m-%dT%H:00"),
-        "models": "ecmwf_ifs025",  # níveis de pressão; superfície é substituída pelo HRES ~9 km abaixo
+        "models": "ecmwf_ifs",  # perfil completo ECMWF IFS HRES nativo ~9 km (O1280)
         "forecast_hours": str(max(6, fh + 6)),
         "timezone": "GMT",
         "temporal_resolution": "native",
@@ -1348,26 +1348,6 @@ def _ecmwf_build_sounding_payload(
     data = response.json()
     hourly = data.get("hourly") or {}
     times = hourly.get("time") or []
-    # HRES O1280 (~9 km) fornece a superfície; os níveis de pressão vêm do
-    # IFS 0.25°, pois a API não expõe a coluna de pressão do HRES.
-    hres_data: dict[str, Any] = {}
-    try:
-        hres_params = {
-            "latitude": f"{lat:.5f}", "longitude": f"{lon:.5f}",
-            "run": run_dt.strftime("%Y-%m-%dT%H:00"), "models": "ecmwf_ifs",
-            "forecast_hours": str(max(6, fh + 6)), "timezone": "GMT",
-            "temporal_resolution": "native", "cell_selection": "nearest",
-            "elevation": "nan", "wind_speed_unit": "kn",
-            "hourly": "temperature_2m,dew_point_2m,surface_pressure,wind_speed_10m,wind_direction_10m",
-        }
-        hres_response = requests.get(
-            "https://single-runs-api.open-meteo.com/v1/forecast",
-            params=hres_params, headers={"User-Agent": "SideralMeteorologia/1.0"}, timeout=45,
-        )
-        if hres_response.status_code == 200:
-            hres_data = hres_response.json()
-    except requests.RequestException as exc:
-        _log_sounding_error("IFS HRES 9 km superfície", exc)
     target_dt = run_dt + dt.timedelta(hours=fh)
     target_iso = target_dt.strftime("%Y-%m-%dT%H:%M")
 
@@ -1391,27 +1371,14 @@ def _ecmwf_build_sounding_payload(
             return None
         return _safe_float(values[idx])
 
-    hres_hourly = hres_data.get("hourly") or {}
-    hres_times = hres_hourly.get("time") or []
-    try:
-        hres_idx = hres_times.index(target_iso)
-    except ValueError:
-        hres_idx = next((i for i, value in enumerate(hres_times) if str(value).startswith(target_dt.strftime("%Y-%m-%dT%H"))), -1)
-
-    def hres_hv(name: str) -> float | None:
-        values = hres_hourly.get(name)
-        if hres_idx < 0 or not isinstance(values, list) or hres_idx >= len(values):
-            return None
-        return _safe_float(values[hres_idx])
-
-    surface_pressure = hres_hv("surface_pressure") or hv("surface_pressure")
-    surface_temp = hres_hv("temperature_2m") if hres_hv("temperature_2m") is not None else hv("temperature_2m")
-    surface_dewpoint = hres_hv("dew_point_2m") if hres_hv("dew_point_2m") is not None else hv("dew_point_2m")
-    surface_wind_speed = hres_hv("wind_speed_10m") if hres_hv("wind_speed_10m") is not None else hv("wind_speed_10m")
-    surface_wind_dir = hres_hv("wind_direction_10m") if hres_hv("wind_direction_10m") is not None else hv("wind_direction_10m")
+    surface_pressure = hv("surface_pressure")
+    surface_temp = hv("temperature_2m")
+    surface_dewpoint = hv("dew_point_2m")
+    surface_wind_speed = hv("wind_speed_10m")
+    surface_wind_dir = hv("wind_direction_10m")
     surface_height = _safe_float(data.get("elevation"))
-    grid_lat = _safe_float(hres_data.get("latitude")) or _safe_float(data.get("latitude"))
-    grid_lon = _safe_float(hres_data.get("longitude")) or _safe_float(data.get("longitude"))
+    grid_lat = _safe_float(data.get("latitude"))
+    grid_lon = _safe_float(data.get("longitude"))
 
     if None in (
         surface_pressure,
@@ -1768,8 +1735,8 @@ def _ecmwf_build_sounding_payload(
 
     valid_dt = run_dt + dt.timedelta(hours=fh)
     return {
-        "model": "ECMWF IFS HRES ~9 km + níveis IFS",
-        "model_id": "ecmwf_ifs_hres9km_surface_ifs025_pressure",
+        "model": "ECMWF IFS HRES nativo 9 km (O1280)",
+        "model_id": "ecmwf_ifs_hres9km_native_pressure_sharppy_v4",
         "latitude": lat,
         "longitude": lon,
         "grid_latitude": r(grid_lat, 3),
@@ -1849,7 +1816,7 @@ def _ecmwf_build_sounding_payload(
             "sars_hail_count": hail_sars["quality_count"], "sars_supercell_count": supercell_sars["quality_count"],
             "database_scope": "SARS/SHARPpy (base calibrada com casos dos EUA; usar apenas como analogia fora do CONUS)",
         },
-        "source": "ECMWF IFS HRES O1280 ~9 km (superfície) + IFS 0.25° (níveis de pressão) via Open-Meteo + SHARPpy",
+        "source": "ECMWF IFS HRES nativo O1280 ~9 km (superfície e níveis de pressão) via Open-Meteo + SHARPpy",
         "attribution": "ECMWF / Open-Meteo",
         "cache": False,
     }
@@ -3307,7 +3274,7 @@ class Handler(SimpleHTTPRequestHandler):
             if fh < 0 or fh > 144 or fh % 3 != 0:
                 self.send_json(400, {"error": "Use forecast hours de F000 a F144 em intervalos de 3 horas.", "code": "BAD_FORECAST_HOUR"}); return
 
-            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-hres9km-sfc-ifs025-pl-sharppy-sh-v3")
+            cache_key = (round(lat, 2), round(lon, 2), run_requested, fh, "ecmwf-ifs-hres9km-native-o1280-sharppy-v4")
             cached = sounding_cache.get(cache_key)
             if cached and time.monotonic() - float(cached.get("saved_at", 0.0)) < SOUNDING_CACHE_SECONDS:
                 payload = dict(cached["data"])
@@ -3336,7 +3303,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(
                     502,
                     {
-                        "error": "Não foi possível obter o perfil ECMWF IFS 0.25° agora. Tente outra rodada ou novamente em alguns minutos.",
+                        "error": "Não foi possível obter o perfil ECMWF IFS HRES 9 km agora. Tente outra rodada ou novamente em alguns minutos.",
                         "code": "ECMWF_RETRIEVAL_FAILED",
                     },
                 )
