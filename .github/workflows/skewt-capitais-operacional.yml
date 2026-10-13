@@ -153,7 +153,7 @@ jobs:
           set -euo pipefail
           tag="skewt-live-${CYCLE}"
           title="Sideral Skew-T ECMWF ${CYCLE}Z — 27 capitais"
-          notes="PNG pré-renderizado pelo SHARPpy. ECMWF IFS HRES nativo 9 km (O1280) via Open-Meteo Single Runs. F000–F048 em passos de 3h. 459 PNGs: 27 capitais × 17 frames."
+          notes="PNG pré-renderizado pelo SHARPpy. ECMWF IFS 0.25° via Open-Meteo Single Runs; HRES 9 km não expõe campos de pressão nesta API. F000–F048 em passos de 3h. 459 PNGs: 27 capitais × 17 frames."
 
           mapfile -d '' png_files < <(find build/skewt-capitals -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
           test "${#png_files[@]}" -eq 459
