@@ -2959,9 +2959,10 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def handle_skewt_frame(self, query: dict[str, list[str]]) -> None:
-        """CORS-safe proxy for published ECMWF Skew-T PNGs, restricted to known assets."""
+        """CORS-safe proxy for approved pre-generated model-specific Skew-T assets."""
         city = str(query.get("city", [""])[0]).lower().strip()
         cycle = str(query.get("cycle", [""])[0]).strip()
+        model = str(query.get("model", ["ecmwf"])[0]).lower().strip()
         try:
             fh = int(query.get("fh", ["-1"])[0])
         except (TypeError, ValueError):
@@ -2974,12 +2975,19 @@ class Handler(SimpleHTTPRequestHandler):
             "rio-de-janeiro", "natal", "porto-alegre", "porto-velho", "boa-vista",
             "florianopolis", "sao-paulo", "aracaju", "palmas",
         }
-        if city not in allowed_cities or cycle not in {"06", "12", "18"} or fh not in range(0, 49, 3):
-            self.send_json(400, {"error": "Capital, ciclo ou validade ECMWF inválidos."}); return
+        products = {
+            "ecmwf": ("ECMWF IFS 0.25°", f"skewt-live-{cycle}"),
+            "icon": ("DWD ICON Global ~11 km", f"skewt-icon-global-{cycle}"),
+            "ecmwf-hybrid": ("ECMWF HRES ~9 km híbrido + IFS 0.25°", f"skewt-ecmwf-hres9km-hybrid-{cycle}"),
+            "ukmo10km": ("UK Met Office Global 10 km", f"skewt-ukmo-global10km-{cycle}"),
+        }
+        if model not in products or city not in allowed_cities or cycle not in {"06", "12", "18"} or fh not in range(0, 49, 3):
+            self.send_json(400, {"error": "Modelo, capital, ciclo ou validade inválidos."}); return
 
+        label, tag = products[model]
         asset_url = (
-            f"https://github.com/progames12301-hash/sideral-backend/releases/download/"
-            f"skewt-live-{cycle}/{city}-f{fh:03d}.png"
+            "https://github.com/progames12301-hash/sideral-backend/releases/download/"
+            f"{tag}/{city}-f{fh:03d}.png"
         )
         try:
             with requests.get(
@@ -2989,7 +2997,7 @@ class Handler(SimpleHTTPRequestHandler):
                 allow_redirects=True,
             ) as response:
                 if response.status_code == 404:
-                    self.send_json(404, {"error": f"PNG ECMWF não publicado: {city} F{fh:03d} ciclo {cycle}Z."}); return
+                    self.send_json(404, {"error": f"PNG {label} ainda não publicado: {city} F{fh:03d} ciclo {cycle}Z.", "model": model, "cycle": cycle, "city": city, "forecast_hour": fh}); return
                 response.raise_for_status()
                 final_url = urlparse(response.url)
                 allowed_hosts = {
@@ -3010,7 +3018,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         except requests.RequestException as exc:
-            self.send_json(502, {"error": "PNG ECMWF temporariamente indisponível para exportação.", "details": str(exc)})
+            self.send_json(502, {"error": f"PNG {label} temporariamente indisponível para exportação.", "details": str(exc)})
         except (BrokenPipeError, ConnectionResetError):
             return
 
