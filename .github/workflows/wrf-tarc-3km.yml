@@ -55,6 +55,10 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
+          grep -Fq ' -e WRF_BOUNDARY_ONLY="${WRF_BOUNDARY_ONLY:-0}"' wrf/run_tarc_wrf_with_source.sh || { echo "ERRO: WRF_BOUNDARY_ONLY nao esta sendo passado ao container; isso executa WRF duplicado." >&2; exit 1; }
+          grep -Fq 'if [[ "${WRF_BOUNDARY_ONLY:-0}" == "1" ]]; then' wrf/run_tarc_wrf_with_source.sh || { echo "ERRO: guarda de boundary-only ausente." >&2; exit 1; }
+          grep -Fq -- '--start-hour "$WRF_START_HOUR" --max-hour "$BOUNDARY_END_HOUR"' wrf/run_tarc_wrf_with_source.sh || { echo "ERRO: suporte de solo ainda baixa horas repetidas." >&2; exit 1; }
+          grep -Fq 'p.add_argument("--start-hour", type=int, default=0' wrf/fetch_gfs_land_support.py || { echo "ERRO: seletor de horas GFS ausente." >&2; exit 1; }
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/select_tarc_icon_run.py wrf/fetch_gfs_land_support.py
           echo "ShellCheck e sintaxe Python dos fallbacks validados."
       - name: Executar F000-F006
