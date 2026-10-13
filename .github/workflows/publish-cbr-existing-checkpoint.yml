@@ -1,0 +1,143 @@
+name: Publicar JSON do checkpoint CBR existente
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-cbr-existing-checkpoint.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cbr-json-data-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Recuperar saída existente e publicar JSON CBR
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-38300164789
+    steps:
+      - name: Checkout do extrator corrigido
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Baixar WRFOUTs já calculados no checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf cbr_raw_wrfout cbr_all_wrfout cbr_json
+          mkdir -p cbr_raw_wrfout cbr_all_wrfout
+          gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'cbr-wrfout-*' --dir cbr_raw_wrfout --clobber
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'cbr-run.env' --dir . --clobber
+          test -s cbr-run.env
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil, sys
+          raw = Path("cbr_raw_wrfout")
+          out = Path("cbr_all_wrfout")
+          pattern = re.compile(
+              r"^cbr-wrfout-\d+-(wrfout_d01_\d{4}-\d{2}-\d{2}_\d{2})\.(\d{2})\.(\d{2})$"
+          )
+          count = 0
+          for source in sorted(raw.glob("cbr-wrfout-*")):
+              match = pattern.fullmatch(source.name)
+              if not match or not source.is_file() or source.stat().st_size == 0:
+                  print(f"[CBR] arquivo de checkpoint inesperado/vazio: {source.name}", file=sys.stderr)
+                  sys.exit(2)
+              target = out / f"{match.group(1)}:{match.group(2)}:{match.group(3)}"
+              if target.exists():
+                  print(f"[CBR] arquivo repetido no checkpoint: {target.name}", file=sys.stderr)
+                  sys.exit(3)
+              shutil.copy2(source, target)
+              count += 1
+          if count == 0:
+              sys.exit("[CBR] o checkpoint não contém WRFOUTs para publicar")
+          print(f"[CBR] WRFOUTs disponíveis recuperados: {count}")
+          PY
+          echo "CHECKPOINT_W​​RFOUT_COUNT=$(find cbr_all_wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)" >> "$GITHUB_ENV"
+
+      - name: Extrair os horários disponíveis com o extrator corrigido
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -q 'numpy>=1.24,<3' 'netCDF4>=1.6,<2'
+          python3 -m py_compile wrf/cbr_extract_json.py wrf/validate_cbr_extraction.py wrf/cbr_postprocess.py
+          python3 wrf/cbr_extract_json.py \
+            --run-dir cbr_all_wrfout \
+            --output-dir cbr_json \
+            --run-env cbr-run.env \
+            --catalog wrf/cbr_variable_catalog.json \
+            --expected-start 0 --expected-end 42
+          test -s cbr_json/metadata.json
+          python3 wrf/validate_cbr_extraction.py \
+            --metadata cbr_json/metadata.json \
+            --catalog wrf/cbr_variable_catalog.json \
+            --expected-start 0 --expected-end 42 --allow-partial
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path("cbr_json/metadata.json").read_text(encoding="utf-8"))
+          print(
+              "[CBR] extração validada:",
+              f"{m['frameCount']} frames disponíveis",
+              f"F{m['frames'][0]['forecastHour']:03d}-F{m['frames'][-1]['forecastHour']:03d}",
+              f"status={m['status']}",
+              f"faltantes={len(m['missingForecastHours'])}",
+              f"init={m['initTime']}",
+          )
+          if m["frameCount"] != len(list(Path("cbr_json/frames").glob("f*.json.gz"))):
+              raise SystemExit("[CBR] frameCount não confere com os arquivos produzidos")
+          PY
+
+      - name: Publicar JSON no branch cbr-json-data
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf cbr_json_data_checkout
+          git clone --depth 1 --branch cbr-json-data \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            cbr_json_data_checkout
+          rm -rf cbr_json_data_checkout/frames
+          mkdir -p cbr_json_data_checkout/frames
+          cp -f cbr_json/metadata.json cbr_json_data_checkout/metadata.json
+          cp -f cbr_json/frames/*.json.gz cbr_json_data_checkout/frames/
+          cp -f wrf/cbr_variable_catalog.json cbr_json_data_checkout/variable_catalog.json
+          cd cbr_json_data_checkout
+          git config user.name "sideral-cbr-bot"
+          git config user.email "sideralmeteorologia@gmail.com"
+          git add metadata.json variable_catalog.json frames/
+          if git diff --cached --quiet; then
+            echo "Branch cbr-json-data já contém exatamente estes dados."
+            exit 0
+          fi
+          git commit -m "CBR: publicar JSON do checkpoint existente"
+          git push origin cbr-json-data
+
+      - name: Salvar resumo da publicação
+        if: always()
+        run: |
+          {
+            echo "## Publicação do JSON CBR"
+            echo "- Checkpoint: $CHECKPOINT_TAG"
+            if [[ -s cbr_json/metadata.json ]]; then
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path("cbr_json/metadata.json").read_text())
+          print(f"- Status dos dados: {m['status']}")
+          print(f"- Frames: {m['frameCount']}")
+          print(f"- Horários faltantes: {len(m['missingForecastHours'])}")
+          PY
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
