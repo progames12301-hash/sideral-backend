@@ -1,0 +1,218 @@
+name: Sideral Skew-T — ICON, ECMWF HRES híbrido e UKMO 10 km
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/skewt/generate_multimodel_capitals.py'
+      - 'tools/skewt/generate_capitals_sharppy.py'
+      - 'tools/skewt/native_spc_render.py'
+      - '.github/workflows/skewt-multimodel-operacional.yml'
+  schedule:
+    - cron: '55 13 * * *' # ciclo 06Z
+    - cron: '55 19 * * *' # ciclo 12Z
+    - cron: '55 1 * * *'  # ciclo 18Z
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Produto multimodelo'
+        required: true
+        type: choice
+        default: all
+        options: [all, icon, ecmwf-hybrid, ukmo10km]
+      cycle:
+        description: 'Rodada de previsão'
+        required: true
+        type: choice
+        default: '06'
+        options: ['06', '12', '18']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: skewt-multimodel-${{ matrix.model }}-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'schedule' && github.event.schedule == '55 19 * * *' && '12') || (github.event_name == 'schedule' && github.event.schedule == '55 1 * * *' && '18') || 'auto' }}
+  cancel-in-progress: true
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  SIDERAL_QT_COMPAT: '1'
+  MPLBACKEND: Agg
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: ${{ github.workspace }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  render:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.model == 'all' || inputs.model == matrix.model }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [icon, ecmwf-hybrid, ukmo10km]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Selecionar rodada
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            cycle="${{ inputs.cycle }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            hour=$(date -u +%H)
+            if (( 10#$hour >= 21 )); then cycle='12'
+            elif (( 10#$hour >= 15 )); then cycle='06'
+            else cycle='18'; fi
+          else
+            case "${{ github.event.schedule }}" in
+              '55 13 * * *') cycle='06' ;;
+              '55 19 * * *') cycle='12' ;;
+              '55 1 * * *') cycle='18' ;;
+              *) echo "Cron desconhecido"; exit 1 ;;
+            esac
+          fi
+          echo "CYCLE=$cycle" >> "$GITHUB_ENV"
+          echo "MODELE=${{ matrix.model }}" >> "$GITHUB_ENV"
+          echo "Rodada $cycle Z; produto ${{ matrix.model }}"
+
+      - name: Sistema gráfico Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libglib2.0-0 libxkbcommon-x11-0 libxcb-xinerama0
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Dependências meteorológicas
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+
+      - name: Verificar Qt/SHARPpy
+        run: |
+          python - <<'PY'
+          import os, sitecustomize
+          sitecustomize.enable_qt_compat()
+          from PyQt5 import QtCore
+          print('PYTHONPATH=', os.environ.get('PYTHONPATH'))
+          print('QRect compatibility:', QtCore.QRect(1, 2, 3, 4.7).width())
+          PY
+
+      - name: Gerar 27 capitais × F000–F048
+        run: |
+          set -euo pipefail
+          rm -rf "build/skewt-models/$MODELE"
+          python tools/skewt/generate_multimodel_capitals.py --model "$MODELE" --cycle "$CYCLE" --out "build/skewt-models/$MODELE"
+
+      - name: Validar os 459 PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="build/skewt-models/$MODELE"
+          count=$(find "$root" -type f -name '*.png' | wc -l)
+          echo "PNG encontrados: $count"
+          test "$count" -eq 459
+          capitals=(rio-branco maceio macapa manaus salvador fortaleza brasilia vitoria goiania sao-luis cuiaba campo-grande belo-horizonte belem joao-pessoa curitiba recife teresina rio-de-janeiro natal porto-alegre porto-velho boa-vista florianopolis sao-paulo aracaju palmas)
+          for city in "${capitals[@]}"; do
+            dir="$root/$city"
+            test -d "$dir" || { echo "Diretório ausente: $dir"; exit 1; }
+            city_count=$(find "$dir" -maxdepth 1 -type f -name '*.png' | wc -l)
+            test "$city_count" -eq 17 || { echo "$city: $city_count PNG"; exit 1; }
+            for fh in 000 003 006 009 012 015 018 021 024 027 030 033 036 039 042 045 048; do
+              file="$dir/$city-f$fh.png"
+              test -s "$file" || { echo "PNG ausente: $file"; exit 1; }
+              size=$(stat -c '%s' "$file")
+              (( size >= 10000 )) || { echo "PNG suspeito: $file ($size bytes)"; exit 1; }
+            done
+          done
+          test -s "$root/manifest.json"
+
+      - name: Preparar nome da publicação
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$MODELE" in
+            icon) tag_base='skewt-icon-global'; title_base='DWD ICON Global ~11 km' ;;
+            ecmwf-hybrid) tag_base='skewt-ecmwf-hres9km-hybrid'; title_base='ECMWF HRES ~9 km híbrido + IFS 0.25° níveis de pressão' ;;
+            ukmo10km) tag_base='skewt-ukmo-global10km'; title_base='UK Met Office Global 10 km' ;;
+            *) echo "Modelo inválido"; exit 1 ;;
+          esac
+          tag="${tag_base}-${CYCLE}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "TITLE=$title_base ${CYCLE}Z — 27 capitais" >> "$GITHUB_ENV"
+
+      - name: Construir índice público dos assets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(f"build/skewt-models/{os.environ['MODELE']}")
+          assets=sorted(p.name for p in root.glob('*/*.png'))
+          if len(assets)!=459: raise SystemExit(f"Esperados 459 PNG, encontrados {len(assets)}")
+          publication={
+            "schema":"sideral-skewt-publication-v1",
+            "repository":os.environ["GH_REPO"],
+            "tag":os.environ["TAG"],
+            "model_id":os.environ["MODELE"],
+            "asset_count":459,
+            "cities":27,
+            "frames_per_city":17,
+            "cycles":["06","12","18"],
+            "download_base":f"https://github.com/{os.environ['GH_REPO']}/releases/download/{os.environ['TAG']}/",
+            "assets":assets
+          }
+          (root/"publication.json").write_text(json.dumps(publication,ensure_ascii=False,indent=2),encoding="utf-8")
+          PY
+
+      - name: Publicar release operacional
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          root="build/skewt-models/$MODELE"
+          if [[ "$MODELE" == "ecmwf-hybrid" ]]; then
+            notes="Perfil híbrido deliberado: superfície ECMWF IFS HRES nativa (~9 km); temperaturas, umidade, vento, geopotencial e omega em níveis de pressão do ECMWF IFS 0.25°. Não representa uma coluna vertical integral de 9 km."
+          else
+            notes="Skew-T SHARPpy pré-gerado para 27 capitais e F000–F048 em passos de 3 horas. Fonte: Open-Meteo Single Runs; modelo e resolução descritos no manifest.json."
+          fi
+          release_state=unknown
+          for attempt in 1 2 3 4 5; do
+            if response="$(gh api "repos/$GH_REPO/releases/tags/$TAG" 2>&1)"; then
+              release_state=present; break
+            elif grep -Eqi 'HTTP 404|404 Not Found|Not Found' <<< "$response"; then
+              release_state=missing; break
+            else
+              echo "Consulta da release falhou (tentativa $attempt/5): $response"; sleep $((attempt * 5))
+            fi
+          done
+          [[ "$release_state" != unknown ]] || { echo "Estado da release desconhecido; não será apagada."; exit 1; }
+          if [[ "$release_state" == missing ]]; then
+            gh release create "$TAG" --repo "$GH_REPO" --title "$TITLE" --notes "$notes"
+          else
+            gh release edit "$TAG" --repo "$GH_REPO" --title "$TITLE" --notes "$notes"
+          fi
+          mapfile -d '' png_files < <(find "$root" -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
+          test "${#png_files[@]}" -eq 459
+          files=("${png_files[@]}" "$root/manifest.json" "$root/publication.json")
+          upload_ok=false
+          for attempt in 1 2 3; do
+            if gh release upload "$TAG" --repo "$GH_REPO" --clobber "${files[@]}"; then upload_ok=true; break; fi
+            echo "Upload falhou, tentativa $attempt/3"; sleep $((attempt * 10))
+          done
+          [[ "$upload_ok" == true ]] || { echo "Falha ao publicar assets."; exit 1; }
+
+      - name: Verificar publicação
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')" -eq 459
+          test "$(gh release view "$TAG" --repo "$GH_REPO" --json assets --jq '.assets|map(.name)|map(select(.=="publication.json"))|length')" -eq 1
