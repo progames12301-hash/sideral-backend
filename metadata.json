@@ -644,13 +644,103 @@
           "max": 1017.572509765625
         }
       }
+    },
+    {
+      "forecastHour": 19,
+      "time": "2026-10-13T13:00:00Z",
+      "file": "frames/f019.json.gz",
+      "grid": {
+        "nx": 400,
+        "ny": 500
+      },
+      "ranges": {
+        "reflectivityDbz": {
+          "min": -35.0,
+          "max": 45.07973098754883
+        },
+        "reflectivityCompositeDbz": {
+          "min": -35.0,
+          "max": 47.97708511352539
+        },
+        "wind10Ms": {
+          "min": 0.01359595451503992,
+          "max": 15.03946590423584
+        },
+        "t2C": {
+          "min": 21.989349365234375,
+          "max": 35.611541748046875
+        },
+        "psfcHpa": {
+          "min": 859.591796875,
+          "max": 1017.2840576171875
+        }
+      }
+    },
+    {
+      "forecastHour": 20,
+      "time": "2026-10-13T14:00:00Z",
+      "file": "frames/f020.json.gz",
+      "grid": {
+        "nx": 400,
+        "ny": 500
+      },
+      "ranges": {
+        "reflectivityDbz": {
+          "min": -35.0,
+          "max": 41.77699661254883
+        },
+        "reflectivityCompositeDbz": {
+          "min": -35.0,
+          "max": 45.086090087890625
+        },
+        "wind10Ms": {
+          "min": 0.020341571420431137,
+          "max": 14.574003219604492
+        },
+        "t2C": {
+          "min": 23.156463623046875,
+          "max": 37.0145263671875
+        },
+        "psfcHpa": {
+          "min": 859.0201416015625,
+          "max": 1016.90673828125
+        }
+      }
+    },
+    {
+      "forecastHour": 21,
+      "time": "2026-10-13T15:00:00Z",
+      "file": "frames/f021.json.gz",
+      "grid": {
+        "nx": 400,
+        "ny": 500
+      },
+      "ranges": {
+        "reflectivityDbz": {
+          "min": -35.0,
+          "max": 44.324493408203125
+        },
+        "reflectivityCompositeDbz": {
+          "min": -35.0,
+          "max": 46.562076568603516
+        },
+        "wind10Ms": {
+          "min": 0.005665963515639305,
+          "max": 14.234107971191406
+        },
+        "t2C": {
+          "min": 24.24444580078125,
+          "max": 38.76904296875
+        },
+        "psfcHpa": {
+          "min": 858.9893188476562,
+          "max": 1016.565673828125
+        }
+      }
     }
   ],
-  "frameCount": 19,
+  "frameCount": 22,
   "missingForecastHours": [
-    19,
-    20,
-    21,
     22,
     23,
     24,
