@@ -4,8 +4,14 @@ import argparse
 import datetime as dt
 import importlib.util
 import json
+import math
+import os
 import sys
+import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE_SCRIPT = ROOT / "tools" / "skewt" / "generate_capitals_sharppy.py"
@@ -36,7 +42,24 @@ MODELS = {
         "tag": "skewt-ecmwf-hres9km-hybrid",
         "resolution": "Superfície HRES nativo ~9 km + coluna vertical IFS 0.25°",
     },
+    "nems10": {
+        "api_model": None,
+        "label": "meteoblue NEMS10 NEMSSA 10 km",
+        "tag": "skewt-nems10-nemssa-live",
+        "resolution": "10 km; domínio NEMSSA; previsão horária até 180 h",
+    },
 }
+
+NEMS_LEVELS = [1000, 950, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200, 150]
+NEMS_API_URL = "https://my.meteoblue.com/dataset/query"
+NEMS_LEVEL_KEYS = {
+    "temperature": 11,
+    "relative_humidity": 52,
+    "wind_u": 33,
+    "wind_v": 34,
+    "geopotential_height": 7,
+}
+
 
 SURFACE_VARIABLES = [
     "surface_pressure", "temperature_2m", "dew_point_2m",
@@ -82,6 +105,224 @@ def request_model(model: str, run: dt.datetime, variables: list[str]):
     if len(locations) != len(base.CAPITALS):
         raise RuntimeError(f"{model}: API retornou {len(locations)} locais; esperados {len(base.CAPITALS)}")
     return locations
+
+
+def _nems_level(level: int) -> str:
+    return f"{level} mb"
+
+
+def _nems_datetime(raw: str) -> dt.datetime:
+    text = str(raw).strip()
+    for fmt in ("%Y%m%dT%H%M", "%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return dt.datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+    try:
+        return dt.datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError as exc:
+        raise RuntimeError(f"Data/hora NEMSSA desconhecida: {raw!r}") from exc
+
+
+def _nems_code(code: int, level: str) -> dict:
+    return {"code": code, "level": level}
+
+
+def _nems_fetch_json(api_key: str, body: dict) -> dict | list:
+    # API key is sent only as a query credential and must never be printed.
+    url = NEMS_API_URL + "?" + urlencode({"apikey": api_key})
+    request = Request(
+        url,
+        data=json.dumps(body, separators=(",", ":")).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    last_error = None
+    for attempt in range(4):
+        try:
+            with urlopen(request, timeout=180) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if isinstance(payload, dict) and (payload.get("error_message") or payload.get("error")):
+                message = str(payload.get("error_message") or payload.get("error"))
+                raise RuntimeError(message.replace(api_key, "[redacted]"))
+            return payload
+        except HTTPError as exc:
+            detail = ""
+            try:
+                raw = exc.read().decode("utf-8", errors="replace")
+                parsed = json.loads(raw)
+                detail = str(parsed.get("error_message") or parsed.get("message") or parsed.get("error") or "")
+            except Exception:
+                detail = ""
+            last_error = f"HTTP {exc.code}" + (f": {detail.replace(api_key, '[redacted]')}" if detail else "")
+            if exc.code not in (408, 429, 500, 502, 503, 504) or attempt == 3:
+                break
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+            last_error = str(exc).replace(api_key, "[redacted]")
+            if attempt == 3:
+                break
+        time.sleep(3 * (attempt + 1))
+    raise RuntimeError(f"Falha ao consultar meteoblue Dataset API (chave ocultada): {last_error}")
+
+
+def request_nems10() -> tuple[list[dict], dt.datetime]:
+    api_key = os.environ.get("METEOBLUE_APIKEY", "").strip()
+    if not api_key:
+        raise RuntimeError(
+            "NEMS10 não iniciado: configure a chave da meteoblue em GitHub Actions Secrets "
+            "com o nome METEOBLUE_APIKEY. A chave não deve ficar no código nem no HTML."
+        )
+
+    # The Dataset API exposes the current NEMSSA forecast by valid time, not
+    # the fixed ECMWF 06/12/18Z cycle selectors used by the other generators.
+    start_utc = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0) + dt.timedelta(hours=1)
+    end_utc = start_utc + dt.timedelta(hours=max(base.HOURS) + 1)
+    time_interval = (
+        start_utc.strftime("%Y-%m-%dT%H:%M+00:00") + "/" +
+        end_utc.strftime("%Y-%m-%dT%H:%M+00:00")
+    )
+    coordinates = [[capital[3], capital[2]] for capital in base.CAPITALS]
+    location_names = [capital[0] for capital in base.CAPITALS]
+
+    codes = [
+        _nems_code(1, "sfc"),
+        _nems_code(11, "2 m above gnd"),
+        _nems_code(17, "2 m above gnd"),
+        _nems_code(33, "10 m above gnd"),
+        _nems_code(34, "10 m above gnd"),
+    ]
+    for level in NEMS_LEVELS:
+        lev = _nems_level(level)
+        for code in (7, 11, 33, 34, 52):
+            codes.append(_nems_code(code, lev))
+
+    body = {
+        "units": {"temperature": "C", "velocity": "kn", "length": "metric", "energy": "watts"},
+        "geometry": {"type": "MultiPoint", "coordinates": coordinates, "locationNames": location_names},
+        "format": "json",
+        "timeIntervals": [time_interval],
+        "timeIntervalsAlignment": "none",
+        "queries": [{
+            "domain": "NEMSSA",
+            "gapFillDomain": None,
+            "timeResolution": "hourly",
+            "allowForecast": True,
+            "allowHistory": False,
+            "codes": codes,
+        }],
+    }
+    print(
+        f"[meteoblue] Consulta NEMSSA: 27 capitais, {len(codes)} campos, "
+        f"{start_utc:%Y-%m-%d %HZ} a {end_utc:%Y-%m-%d %HZ}; chave ocultada",
+        flush=True,
+    )
+    payload = _nems_fetch_json(api_key, body)
+    if isinstance(payload, dict):
+        if payload.get("requiresJobQueue"):
+            raise RuntimeError("NEMSSA pediu fila de processamento; reduzir o tamanho da consulta ou usar a fila Dataset API.")
+        if payload.get("error_message") or payload.get("error"):
+            raise RuntimeError(str(payload.get("error_message") or payload.get("error")).replace(api_key, "[redacted]"))
+        raise RuntimeError(f"Resposta inesperada do Dataset API: chaves={sorted(payload.keys())}")
+    if not isinstance(payload, list):
+        raise RuntimeError("Resposta NEMSSA não é uma lista JSON.")
+
+    domain = next((item for item in payload if isinstance(item, dict) and item.get("domain") == "NEMSSA"), None)
+    if domain is None:
+        raise RuntimeError("A meteoblue não retornou o domínio NEMSSA.")
+    interval_groups = domain.get("timeIntervals") or []
+    if not interval_groups or not isinstance(interval_groups[0], list):
+        raise RuntimeError("A resposta NEMSSA não trouxe o eixo temporal esperado.")
+    raw_times = interval_groups[0]
+    times = [_nems_datetime(t).strftime("%Y-%m-%dT%H:%M") for t in raw_times]
+    start_naive = start_utc.replace(tzinfo=None)
+    if len(times) < max(base.HOURS) + 1:
+        raise RuntimeError(f"NEMSSA retornou apenas {len(times)} horários; são necessários pelo menos {max(base.HOURS) + 1}.")
+
+    # Exact code/level matching prevents silent field substitution.
+    lookup = {}
+    for item in domain.get("codes") or []:
+        try:
+            key = (int(item.get("code")), str(item.get("level", "")).strip().lower())
+        except (TypeError, ValueError):
+            continue
+        lookup[key] = item
+
+    def series(code: int, level: str, city_index: int) -> list:
+        item = lookup.get((code, level.strip().lower()))
+        if item is None:
+            raise RuntimeError(f"NEMSSA sem campo vertical code={code}, level={level}")
+        groups = item.get("dataPerTimeInterval") or []
+        if not groups or not isinstance(groups[0].get("data"), list):
+            raise RuntimeError(f"NEMSSA sem série para code={code}, level={level}")
+        data = groups[0]["data"]
+        if len(data) != len(base.CAPITALS):
+            raise RuntimeError(
+                f"NEMSSA retornou {len(data)} células para code={code}, level={level}; esperadas 27."
+            )
+        values = data[city_index]
+        if len(values) < len(times):
+            raise RuntimeError(f"NEMSSA série curta para code={code}, level={level}: {len(values)} de {len(times)}.")
+        return values
+
+    def finite_series(values: list, divisor: float = 1.0) -> list:
+        output = []
+        for value in values[:len(times)]:
+            number = base.finite(value)
+            if number is not None:
+                number /= divisor
+                output.append(number)
+            else:
+                output.append(None)
+        return output
+
+    def wind_from_uv(u: float | None, v: float | None):
+        if u is None or v is None:
+            return None, None
+        speed = math.hypot(u, v)
+        direction = math.degrees(math.atan2(-u, -v)) % 360.0
+        return speed, direction
+
+    hourly_by_city = []
+    coords = (domain.get("geometry") or {}).get("coordinates") or []
+    for city_index, capital in enumerate(base.CAPITALS):
+        hourly = {"time": times}
+        sp = finite_series(series(1, "sfc", city_index))
+        # Some Dataset API units may report pressure in Pa; normalize to hPa.
+        if any(v is not None and v > 2000 for v in sp):
+            sp = finite_series(series(1, "sfc", city_index), 100.0)
+        hourly["surface_pressure"] = sp
+        hourly["temperature_2m"] = finite_series(series(11, "2 m above gnd", city_index))
+        hourly["dew_point_2m"] = finite_series(series(17, "2 m above gnd", city_index))
+        u10 = finite_series(series(33, "10 m above gnd", city_index))
+        v10 = finite_series(series(34, "10 m above gnd", city_index))
+        wind10 = [wind_from_uv(u, v) for u, v in zip(u10, v10)]
+        hourly["wind_speed_10m"] = [pair[0] for pair in wind10]
+        hourly["wind_direction_10m"] = [pair[1] for pair in wind10]
+
+        for level in NEMS_LEVELS:
+            lev = _nems_level(level)
+            hourly[base.hourly_name("temperature", level)] = finite_series(series(11, lev, city_index))
+            hourly[base.hourly_name("relative_humidity", level)] = finite_series(series(52, lev, city_index))
+            hourly[base.hourly_name("geopotential_height", level)] = finite_series(series(7, lev, city_index))
+            u = finite_series(series(33, lev, city_index))
+            v = finite_series(series(34, lev, city_index))
+            winds = [wind_from_uv(uu, vv) for uu, vv in zip(u, v)]
+            hourly[base.hourly_name("wind_speed", level)] = [pair[0] for pair in winds]
+            hourly[base.hourly_name("wind_direction", level)] = [pair[1] for pair in winds]
+            # NEMSSA does not publish vertical velocity in this API domain.
+            hourly[base.hourly_name("vertical_velocity", level)] = [None] * len(times)
+
+        coord = coords[city_index] if city_index < len(coords) else []
+        elevation = base.finite(coord[2]) if len(coord) >= 3 else (base.finite(coord[2]) if len(coord) > 2 else 0.0)
+        hourly_by_city.append({
+            "latitude": base.finite(coord[1]) if len(coord) > 1 else capital[2],
+            "longitude": base.finite(coord[0]) if len(coord) > 0 else capital[3],
+            "elevation": elevation or 0.0,
+            "hourly": hourly,
+        })
+
+    print(f"[meteoblue] Recebidas {len(times)} horas válidas de NEMSSA; início {start_naive:%Y-%m-%d %HZ}", flush=True)
+    return hourly_by_city, start_naive
 
 
 def merge_hybrid(surface_obj: dict, pressure_obj: dict, city: str) -> dict:
@@ -164,34 +405,48 @@ def main():
     args = parser.parse_args()
 
     config = MODELS[args.model]
-    run = base.run_datetime(args.cycle)
-    surface_names = SURFACE_VARIABLES.copy()
-    pressure_names = pressure_variables()
-
-    if args.model == "ecmwf-hybrid":
-        surface_locations = request_model("ecmwf_ifs", run, surface_names)
-        pressure_locations = request_model("ecmwf_ifs025", run, pressure_names)
-        locations = [
-            merge_hybrid(sfc, upper, capital[0])
-            for capital, sfc, upper in zip(base.CAPITALS, surface_locations, pressure_locations)
-        ]
+    if args.model == "nems10":
+        # NEMSSA is selected by valid-time window, not by the ECMWF run-cycle selector.
+        base.LEVELS = NEMS_LEVELS
+        locations, run = request_nems10()
+        provider = "meteoblue Dataset API"
+        manifest_cycle = "latest"
     else:
-        locations = request_model(config["api_model"], run, surface_names + pressure_names)
+        run = base.run_datetime(args.cycle)
+        surface_names = SURFACE_VARIABLES.copy()
+        pressure_names = pressure_variables()
+        if args.model == "ecmwf-hybrid":
+            surface_locations = request_model("ecmwf_ifs", run, surface_names)
+            pressure_locations = request_model("ecmwf_ifs025", run, pressure_names)
+            locations = [
+                merge_hybrid(sfc, upper, capital[0])
+                for capital, sfc, upper in zip(base.CAPITALS, surface_locations, pressure_locations)
+            ]
+        else:
+            locations = request_model(config["api_model"], run, surface_names + pressure_names)
+        provider = "Open-Meteo Single Runs"
+        manifest_cycle = args.cycle
 
     renderer = base.load_renderer()
     out_root = Path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)
     manifest = {
         "schema": "sideral-capitals-skewt-multimodel-v1",
-        "provider": "Open-Meteo Single Runs",
+        "provider": provider,
         "model_id": args.model,
         "model": config["label"],
         "resolution": config["resolution"],
-        "surface_source": "ECMWF IFS HRES nativo ~9 km" if args.model == "ecmwf-hybrid" else config["label"],
-        "pressure_source": "ECMWF IFS 0.25° (níveis de pressão)" if args.model == "ecmwf-hybrid" else config["label"],
+        "surface_source": (
+            "ECMWF IFS HRES nativo ~9 km" if args.model == "ecmwf-hybrid"
+            else config["label"]
+        ),
+        "pressure_source": (
+            "ECMWF IFS 0.25° (níveis de pressão)" if args.model == "ecmwf-hybrid"
+            else config["label"]
+        ),
         "renderer": "SHARPpy",
         "run_utc": run.strftime("%Y-%m-%d %H:%MZ"),
-        "cycle": args.cycle,
+        "cycle": manifest_cycle,
         "forecast_hours": base.HOURS,
         "cities": [],
     }
