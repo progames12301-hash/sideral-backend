@@ -143,23 +143,7 @@ def profile_at(obj: dict, index: int, lat: float, lon: float, location: str, val
         uu.append(u); vv.append(v); omg.append(finite(warr[index]) if warr else np.nan)
 
     if len(pres) < 6:
-        # Diagnostic guard: show the actual HRES field names returned by Single Runs.
-        # HRES 9 km uses different availability from the legacy IFS 0.25° endpoint;
-        # never silently substitute coarse-grid data when pressure fields are absent.
-        expected = []
-        for level in LEVELS[:4]:
-            keys = [
-                hourly_name("temperature", level),
-                hourly_name("relative_humidity", level),
-                hourly_name("wind_speed", level),
-                hourly_name("wind_direction", level),
-                hourly_name("geopotential_height", level),
-            ]
-            expected.append({key: (len(as_series(hourly, key)), as_series(hourly, key)[index] if index < len(as_series(hourly, key)) else None) for key in keys})
-        print(f"[HRES 9 km diagnostic] {location}: hourly keys={sorted(hourly.keys())}", flush=True)
-        print(f"[HRES 9 km diagnostic] {location}: pressure samples={expected}", flush=True)
-        raise RuntimeError(f"Perfil insuficiente para {location}: {len(pres)} níveis");
-
+        raise RuntimeError(f"Perfil insuficiente para {location}: {len(pres)} níveis")
 
     # SHARPpy interpolation and parcel routines require one strictly ordered
     # pressure coordinate. Remove duplicate pressure levels before creating
@@ -226,22 +210,22 @@ def main():
     latitudes = [c[2] for c in CAPITALS]; longitudes = [c[3] for c in CAPITALS]
     variables = ["surface_pressure", "temperature_2m", "dew_point_2m", "wind_speed_10m", "wind_direction_10m"]
     for level in LEVELS:
-        variables += [hourly_name("temperature", level), hourly_name("relative_humidity", level),
+        variables += [hourly_name("temperature", level), hourly_name("dew_point", level), hourly_name("relative_humidity", level),
                       hourly_name("wind_speed", level), hourly_name("wind_direction", level), hourly_name("geopotential_height", level), hourly_name("vertical_velocity", level)]
     # Open-Meteo expects multi-location coordinates as comma-separated
     # values, not repeated latitude=/longitude= query parameters. Keep this request
     # shape explicit so the generated 27-capital product stays a single ordered batch.
     params = {"latitude": ",".join(map(str, latitudes)), "longitude": ",".join(map(str, longitudes)),
-              "hourly": ",".join(variables), "models": "ecmwf_ifs",
+              "hourly": ",".join(variables), "models": "ecmwf_ifs025",
               "run": run.strftime("%Y-%m-%dT%H:%M"), "forecast_hours": "49", "wind_speed_unit": "kn",
               "temperature_unit": "celsius", "timeformat": "iso8601", "timezone": "UTC", "cell_selection": "nearest"}
-    print(f"[Sideral] ECMWF IFS HRES nativo 9 km (O1280) via Open-Meteo Single Runs: {run:%Y-%m-%d %HZ}", flush=True)
+    print(f"[Sideral] ECMWF IFS 0.25° via Open-Meteo Single Runs: {run:%Y-%m-%d %HZ}", flush=True)
     payload = get_json(params)
     locations = [payload] if isinstance(payload, dict) else payload if isinstance(payload, list) else None
     if locations is None: raise RuntimeError("Resposta Open-Meteo inesperada")
     if len(locations) != len(CAPITALS): raise RuntimeError(f"Open-Meteo retornou {len(locations)} locais; esperado {len(CAPITALS)}")
     renderer = load_renderer(); out_root = Path(args.out); out_root.mkdir(parents=True, exist_ok=True)
-    manifest = {"schema": "sideral-capitals-skewt-sharppy-v2", "provider": "Open-Meteo Single Runs", "model": "ECMWF IFS HRES native 9 km", "resolution": "9 km (native O1280 grid)", "renderer": "SHARPpy", "run_utc": run.strftime("%Y-%m-%d %H:%MZ"), "cycle": args.cycle, "forecast_hours": HOURS, "cities": []}
+    manifest = {"schema": "sideral-capitals-skewt-sharppy-v1", "provider": "Open-Meteo Single Runs", "model": "ECMWF IFS 0.25°", "renderer": "SHARPpy", "run_utc": run.strftime("%Y-%m-%d %H:%MZ"), "cycle": args.cycle, "forecast_hours": HOURS, "cities": []}
     for capital, obj in zip(CAPITALS, locations):
         city_dir = out_root / capital[1]; city_dir.mkdir(parents=True, exist_ok=True)
         manifest["cities"].append({"name": capital[0], "slug": capital[1], "latitude": capital[2], "longitude": capital[3]})
