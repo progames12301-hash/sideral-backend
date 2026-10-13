@@ -50,8 +50,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -109,8 +111,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -162,8 +166,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -215,8 +221,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -268,8 +276,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -321,8 +331,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -374,8 +386,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -427,8 +441,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
@@ -480,8 +496,10 @@ jobs:
             echo "ERRO: existe CRLF em script wrf/*.sh; converta para LF." >&2
             exit 1
           fi
+          # Normalize checkout permissions: helpers are explicitly run with bash.
+          chmod +x "${scripts[@]}"
           for f in "${scripts[@]}"; do
-            test -x "$f" || { echo "ERRO: script não executável: $f" >&2; exit 1; }
+            test -x "$f" || { echo "ERRO: script não executável após chmod: $f" >&2; exit 1; }
             bash -n "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
