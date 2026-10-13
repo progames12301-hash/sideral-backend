@@ -58,7 +58,7 @@ jobs:
               blocks=re.findall(r"<script>(.*?)</script>", content, flags=re.S)
               if not blocks:
                   raise SystemExit(f"Bloco JavaScript não encontrado em {name}")
-              Path("/tmp/"+name.replace(".html",".js")).write_text("\\n".join(blocks),encoding="utf-8")
+              Path("/tmp/"+name.replace(".html",".js")).write_text("\n".join(blocks),encoding="utf-8")
           print("YAML e Python validos; JavaScript extraido para node --check.")
           PY
           node --check /tmp/skewt.js
