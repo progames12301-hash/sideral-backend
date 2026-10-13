@@ -5,6 +5,7 @@ START_HOUR="$1"
 END_HOUR="$2"
 SEGMENT_INDEX="$3"
 COLD_START="$4"
+SEGMENT_STARTED_AT="$(date +%s)"
 
 : "$GH_TOKEN"
 : "$CHECKPOINT_TAG"
@@ -119,13 +120,17 @@ if [[ "$COLD_START" == "0" ]]; then
   export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
   export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
   echo "TARC: preparando LBC com fallback ICON -> ECMWF -> GFS F$START_HOUR-F$END_HOUR"
+  BOUNDARY_PREP_STARTED_AT="$(date +%s)"
   prepare_source_with_fallback 1
+  echo "TARC_METRIC boundary_prepare_seconds=$(( $(date +%s) - BOUNDARY_PREP_STARTED_AT ))"
   test -s "$ROOT/wrf_work/run/wrfbdy_d01" || { echo "LBC TARC ausente para F$START_HOUR-F$END_HOUR" >&2; exit 27; }
   cp -f "$ROOT/wrf_work/run/wrfbdy_d01" "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/namelist.input"
   export WRF_RESTART_DIR="$INPUT/normalized"
+  RESTART_STARTED_AT="$(date +%s)"
   bash wrf/run_tarc_restart_segment.sh "$START_HOUR" "$END_HOUR" "$WRF_RESTART_DIR"
+  echo "TARC_METRIC restart_forecast_seconds=$(( $(date +%s) - RESTART_STARTED_AT ))"
 
   OUTPUT_DIR="$ROOT/tarc_segment_output"
   test -d "$OUTPUT_DIR"
@@ -148,7 +153,9 @@ PY
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
   export TARC_ALLOW_RESELECT_ICON=1
   export WRF_BOUNDARY_ONLY=0
+  COLD_FORECAST_STARTED_AT="$(date +%s)"
   prepare_source_with_fallback 0
+  echo "TARC_METRIC cold_start_forecast_seconds=$(( $(date +%s) - COLD_FORECAST_STARTED_AT ))"
   unset TARC_ALLOW_RESELECT_ICON
 
   test -s wrf_work/run/wrfinput_d01
@@ -180,4 +187,5 @@ if [[ -n "$(find "$POST_INPUT" -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0
   gh release upload "$CHECKPOINT_TAG" "$PRODUCT_DIR"/*.npz "tarc-products-$SEGMENT_INDEX.json" --repo "$GITHUB_REPOSITORY" --clobber
 fi
 
+echo "TARC_METRIC segment=F$START_HOUR-F$END_HOUR total_seconds=$(( $(date +%s) - SEGMENT_STARTED_AT ))"
 echo "TARC checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
