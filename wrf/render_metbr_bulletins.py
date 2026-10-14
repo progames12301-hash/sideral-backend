@@ -257,7 +257,7 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     for x, y, label in admin_labels:
         ax.text(
             x, y, label, transform=ccrs.PlateCarree(), ha="center", va="center",
-            fontsize=6.0, color="#202020", fontweight="medium", zorder=8, clip_on=True,
+            fontsize=6.2, color="#202020", fontweight="medium", zorder=8, clip_on=True,
             path_effects=[patheffects.withStroke(linewidth=1.8, foreground="white", alpha=0.94)],
         )
     gl = ax.gridlines(
