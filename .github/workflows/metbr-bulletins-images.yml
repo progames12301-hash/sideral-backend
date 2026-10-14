@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/metbr-bulletins-images.yml'
+      - 'wrf/render_metbr_bulletins.py'
   workflow_run:
     workflows: ["METBR + TARC Maestro - publicação diária de JSON"]
     types: [completed]
