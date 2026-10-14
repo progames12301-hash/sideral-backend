@@ -1,0 +1,128 @@
+name: METBR WRF 4 km — gerar boletins
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/metbr-bulletins-images.yml'
+  workflow_run:
+    workflows: ["METBR + TARC Maestro - publicação diária de JSON"]
+    types: [completed]
+  schedule:
+    - cron: '15 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: metbr-wrf-bulletins
+  cancel-in-progress: false
+
+jobs:
+  render-and-publish:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout do renderer
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Instalar bibliotecas de mapas
+        run: python -m pip install --disable-pip-version-check 'numpy>=1.26,<2' 'matplotlib>=3.8,<4' 'cartopy>=0.23,<0.26' 'shapely>=2,<3' 'requests>=2.31,<3'
+
+      - name: Baixar os JSON publicados sem alterar a branch de dados
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import concurrent.futures, json, time, os
+          from pathlib import Path, PurePosixPath
+          import requests
+
+          branch = "metbr-json-data"
+          base = f"https://raw.githubusercontent.com/{os.environ['GITHUB_REPOSITORY']}/{branch}/"
+          root = Path("metbr-source")
+          root.mkdir(parents=True, exist_ok=True)
+          headers = {"User-Agent": "Sideral-METBR-Bulletins/1.0", "Accept": "application/json,application/octet-stream,*/*"}
+
+          def download(rel):
+              path = PurePosixPath(rel)
+              if path.is_absolute() or ".." in path.parts:
+                  raise RuntimeError(f"Caminho de origem inválido: {rel}")
+              target = root.joinpath(*path.parts)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              last = None
+              for attempt in range(4):
+                  try:
+                      response = requests.get(base + str(path), headers=headers, timeout=(10, 90))
+                      if response.status_code == 404:
+                          raise RuntimeError(f"Ausente na branch {branch}: {rel}")
+                      response.raise_for_status()
+                      if not response.content:
+                          raise RuntimeError(f"Arquivo vazio: {rel}")
+                      target.write_bytes(response.content)
+                      return rel, len(response.content)
+                  except Exception as exc:
+                      last = exc
+                      if attempt < 3:
+                          time.sleep(1.5 * (attempt + 1))
+              raise RuntimeError(f"Falha ao baixar {rel}: {last}")
+
+          response = requests.get(base + "metadata.json", headers=headers, timeout=(10, 45))
+          response.raise_for_status()
+          meta = response.json()
+          if meta.get("model") != "METBR WRF 4 km":
+              raise SystemExit("A branch metbr-json-data não contém METBR WRF 4 km.")
+          files = ["metadata.json", "grid.json"]
+          files += [str(frame.get("dataFile") or f"frames/f{int(frame['forecastHour']):03d}.json.gz") for frame in meta.get("frames", [])]
+          if not meta.get("frames"):
+              raise SystemExit("metadata.json não lista frames publicados.")
+          with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+              result = list(pool.map(download, files))
+          total = sum(size for _, size in result)
+          print(f"METBR JSON lidos da branch existente: {len(result)} arquivos, {total / 1024 / 1024:.1f} MiB; ciclo {meta.get('initTime')}")
+          PY
+
+      - name: Gerar boletins PNG
+        run: |
+          set -euo pipefail
+          python wrf/render_metbr_bulletins.py --input-dir metbr-source --output-dir metbr-bulletins
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("metbr-bulletins")
+          meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
+          pngs = list(root.rglob("*.png"))
+          assert meta.get("model") == "METBR WRF 4 km"
+          assert meta.get("frameCount", 0) >= 1
+          assert meta.get("imageCount", 0) == len(pngs), (meta.get("imageCount"), len(pngs))
+          assert all(p.stat().st_size > 5000 for p in pngs)
+          print(f"Boletins validados: {meta['frameCount']} horários, {len(pngs)} PNGs, rodada {meta['initTime']}")
+          PY
+          du -sh metbr-bulletins
+
+      - name: Publicar somente as imagens na branch metbr-boletins-imagens
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PUBLISH_DIR="$(mktemp -d)"
+          cp -a metbr-bulletins/. "$PUBLISH_DIR/"
+          cd "$PUBLISH_DIR"
+          git init -b metbr-boletins-imagens
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m "publish: METBR WRF 4 km boletins $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:metbr-boletins-imagens
+          echo "Imagens publicadas na branch metbr-boletins-imagens; metbr-json-data ficou intacta."
