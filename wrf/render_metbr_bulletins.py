@@ -143,6 +143,32 @@ def variable_values(frame, variable, expected_size):
     return arr
 
 
+def _smooth_reflectivity_for_display(field):
+    """A light 3x3 display-only filter reduces single-grid-cell pinholes.
+
+    The published JSON keeps the native, unsmoothed REFL_10CM values. This
+    filter is used only when drawing the PNG and never changes the source data.
+    """
+    arr = np.asarray(field, dtype=np.float32)
+    valid = np.isfinite(arr)
+    if not valid.any():
+        return arr
+    values = np.where(valid, arr, 0.0)
+    padded_values = np.pad(values, 1, mode="edge")
+    padded_valid = np.pad(valid.astype(np.float32), 1, mode="edge")
+    kernel = (1.0, 2.0, 1.0)
+    numerator = np.zeros_like(arr, dtype=np.float32)
+    denominator = np.zeros_like(arr, dtype=np.float32)
+    height, width = arr.shape
+    for iy, wy in enumerate(kernel):
+        for ix, wx in enumerate(kernel):
+            weight = (wy * wx) / 16.0
+            numerator += padded_values[iy:iy + height, ix:ix + width] * padded_valid[iy:iy + height, ix:ix + width] * weight
+            denominator += padded_valid[iy:iy + height, ix:ix + width] * weight
+    smoothed = np.divide(numerator, denominator, out=np.full_like(arr, np.nan), where=denominator >= 0.5)
+    return smoothed
+
+
 def color_setup(variable, field):
     spec = VARIABLES.get(variable, {
         "label": variable, "short": variable, "unit": "", "cmap": "viridis",
@@ -154,7 +180,8 @@ def color_setup(variable, field):
         return spec, None, None, arr
 
     if variable == "reflectivity":
-        # Values under 5 dBZ are white, like the reference bulletin.
+        # Display-only interpolation improves cell edges; <5 dBZ remains white.
+        arr = _smooth_reflectivity_for_display(arr)
         arr = np.ma.masked_where((~np.isfinite(arr)) | (arr < 5.0), arr)
         return spec, REFL_CMAP, REFL_NORM, arr
 
@@ -196,19 +223,30 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     east = float(np.nanmax(lon[finite_geo]))
     south = float(np.nanmin(lat[finite_geo]))
     north = float(np.nanmax(lat[finite_geo]))
-    pad_lon = max(0.15, (east - west) * 0.012)
-    pad_lat = max(0.15, (north - south) * 0.012)
+    # Crop to the native domain with a narrow geographic margin.
+    pad_lon = max(0.04, (east - west) * 0.004)
+    pad_lat = max(0.04, (north - south) * 0.004)
     extent = [west - pad_lon, east + pad_lon, south - pad_lat, north + pad_lat]
 
     init = parse_time(init_time)
     valid = parse_time(valid_time)
-    fig = plt.figure(figsize=(10.24, 7.69), dpi=100, facecolor="white")
-    ax = fig.add_axes([0.105, 0.12, 0.79, 0.755], projection=ccrs.PlateCarree())
+    # Near-square canvas with larger map area, suited to the two-map layout.
+    fig = plt.figure(figsize=(10.0, 10.0), dpi=125, facecolor="white")
+    ax = fig.add_axes([0.08, 0.15, 0.84, 0.75], projection=ccrs.PlateCarree())
     ax.set_extent(extent, crs=ccrs.PlateCarree())
-    mesh = ax.pcolormesh(
-        lon, lat, field, cmap=cmap, norm=norm, shading="auto",
-        transform=ccrs.PlateCarree(), rasterized=True, zorder=2,
-    )
+    if variable == "reflectivity":
+        # Smoothly interpolated filled contours from native grid-point values.
+        refl_levels = np.arange(5.0, 75.1, 2.5)
+        mesh = ax.contourf(
+            lon, lat, field, levels=refl_levels, cmap=cmap, norm=norm,
+            extend="max", antialiased=True, corner_mask=True,
+            transform=ccrs.PlateCarree(), zorder=2,
+        )
+    else:
+        mesh = ax.pcolormesh(
+            lon, lat, field, cmap=cmap, norm=norm, shading="auto",
+            transform=ccrs.PlateCarree(), rasterized=True, zorder=2,
+        )
     ax.add_feature(cfeature.COASTLINE.with_scale("50m"), edgecolor="#343434", linewidth=0.55, zorder=4)
     ax.add_feature(cfeature.BORDERS.with_scale("50m"), edgecolor="#242424", linewidth=0.75, zorder=5)
     if admin_geometries:
@@ -219,8 +257,8 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     for x, y, label in admin_labels:
         ax.text(
             x, y, label, transform=ccrs.PlateCarree(), ha="center", va="center",
-            fontsize=5.1, color="#202020", zorder=8, clip_on=True,
-            path_effects=[patheffects.withStroke(linewidth=1.65, foreground="white", alpha=0.92)],
+            fontsize=6.0, color="#202020", fontweight="medium", zorder=8, clip_on=True,
+            path_effects=[patheffects.withStroke(linewidth=1.8, foreground="white", alpha=0.94)],
         )
     gl = ax.gridlines(
         crs=ccrs.PlateCarree(), draw_labels=True, linewidth=0.3,
@@ -236,7 +274,7 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     fig.text(0.978, 0.972, f"Previsão: {valid:%d/%m/%Y %H}Z (+{lead_hour:03d}h)", fontsize=9, color="#222222", ha="right", va="top")
     fig.text(0.50, 0.938, f"{spec['label']} ({spec['unit']})", fontsize=10.5, color="#222222", ha="center", va="top")
 
-    cb_ax = fig.add_axes([0.105, 0.067, 0.79, 0.022])
+    cb_ax = fig.add_axes([0.085, 0.065, 0.83, 0.018])
     cb = fig.colorbar(mesh, cax=cb_ax, orientation="horizontal")
     cb.ax.tick_params(labelsize=7, colors="#303030", length=2, pad=2)
     if variable == "reflectivity":
@@ -249,7 +287,11 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     fig.text(0.022, 0.024, f"Grade nativa {nx} × {ny}", fontsize=7, color="#4b535c", ha="left", va="bottom")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=100, facecolor="white", format="png", metadata={"Software": "Sideral METBR WRF bulletin renderer"})
+    fig.savefig(
+        output_path, dpi=125, facecolor="white", format="png",
+        bbox_inches="tight", pad_inches=0.025,
+        metadata={"Software": "Sideral METBR WRF bulletin renderer"},
+    )
     plt.close(fig)
     if output_path.stat().st_size < 5000:
         raise RuntimeError(f"PNG pequeno/inválido: {output_path}")
