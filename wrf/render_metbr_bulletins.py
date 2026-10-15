@@ -80,6 +80,22 @@ REFL_CMAP = mcolors.ListedColormap(REFL_COLORS, name="sideral_reflectivity")
 REFL_CMAP.set_bad((1.0, 1.0, 1.0, 0.0))
 REFL_NORM = mcolors.BoundaryNorm(REFL_BOUNDS, REFL_CMAP.N, clip=True)
 
+# Sigma-like accumulation palette: dry cells stay white, trace amounts gray,
+# then green/blue/yellow/orange/red and high-end muted/purple shades.
+PRECIP_BOUNDS = np.asarray([
+    0.2, 1.2, 2.5, 5.0, 7.5, 12.5, 17.5, 22.5, 30.0, 40.0,
+    50.0, 75.0, 100.0, 150.0, 200.0, 250.0, 300.0, 350.0, 400.0, 450.0,
+], dtype=np.float32)
+PRECIP_COLORS = [
+    "#c7c7c7", "#a5a5a5", "#727272", "#d4ffcc", "#8be68b",
+    "#24b63b", "#0e7e19", "#3e91f2", "#dff4a0", "#ffb23e",
+    "#f06b20", "#bb1018", "#7b271d", "#a0786d", "#b9abab",
+    "#d5c8d8", "#b98bd6", "#d33ba9", "#8d35b5",
+]
+PRECIP_CMAP = mcolors.ListedColormap(PRECIP_COLORS, name="sideral_precipitation")
+PRECIP_CMAP.set_bad((1.0, 1.0, 1.0, 0.0))
+PRECIP_NORM = mcolors.BoundaryNorm(PRECIP_BOUNDS, PRECIP_CMAP.N, clip=True)
+
 
 def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -145,32 +161,6 @@ def variable_values(frame, variable, expected_size):
     return arr
 
 
-def _smooth_reflectivity_for_display(field):
-    """A light 3x3 display-only filter reduces single-grid-cell pinholes.
-
-    The published JSON keeps the native, unsmoothed REFL_10CM values. This
-    filter is used only when drawing the PNG and never changes the source data.
-    """
-    arr = np.asarray(field, dtype=np.float32)
-    valid = np.isfinite(arr)
-    if not valid.any():
-        return arr
-    values = np.where(valid, arr, 0.0)
-    padded_values = np.pad(values, 1, mode="edge")
-    padded_valid = np.pad(valid.astype(np.float32), 1, mode="edge")
-    kernel = (1.0, 2.0, 1.0)
-    numerator = np.zeros_like(arr, dtype=np.float32)
-    denominator = np.zeros_like(arr, dtype=np.float32)
-    height, width = arr.shape
-    for iy, wy in enumerate(kernel):
-        for ix, wx in enumerate(kernel):
-            weight = (wy * wx) / 16.0
-            numerator += padded_values[iy:iy + height, ix:ix + width] * padded_valid[iy:iy + height, ix:ix + width] * weight
-            denominator += padded_valid[iy:iy + height, ix:ix + width] * weight
-    smoothed = np.divide(numerator, denominator, out=np.full_like(arr, np.nan), where=denominator >= 0.5)
-    return smoothed
-
-
 def color_setup(variable, field):
     """Return fixed, frame-comparable colors and a transparent no-data mask."""
     spec = VARIABLES.get(variable, {
@@ -190,6 +180,12 @@ def color_setup(variable, field):
         cmap = REFL_CMAP.copy()
         cmap.set_bad((1.0, 1.0, 1.0, 0.0))
         return spec, cmap, REFL_NORM, arr
+
+    if variable == "precipitation":
+        arr = np.ma.masked_where((~np.isfinite(arr)) | (arr < 0.2), arr)
+        cmap = PRECIP_CMAP.copy()
+        cmap.set_bad((1.0, 1.0, 1.0, 0.0))
+        return spec, cmap, PRECIP_NORM, arr
 
     if spec.get("mode") == "vorticity":
         arr = arr * 1e5
@@ -307,6 +303,9 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     cb.ax.tick_params(labelsize=7, colors="#303030", length=2, pad=2)
     if variable == "reflectivity":
         cb.set_ticks([5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75])
+    elif variable == "precipitation":
+        cb.set_ticks(PRECIP_BOUNDS.tolist())
+        cb.ax.tick_params(labelsize=5.5)
     elif variable == "windDirection":
         cb.set_ticks([0, 90, 180, 270, 360])
     cb.outline.set_edgecolor("#555555")
