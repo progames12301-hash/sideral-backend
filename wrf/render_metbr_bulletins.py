@@ -66,7 +66,44 @@ VARIABLES = {
     },
     "waterVapor": {
         "label": "Água precipitável", "short": "Água precipitável", "unit": "mm",
-        "cmap": "YlGnBu", "min": 0.0, "max": 70.0, 
+        "cmap": "YlGnBu", "min": 0.0, "max": 70.0,
+    },
+    "dewpoint2m": {
+        "label": "Ponto de orvalho a 2 m", "short": "Ponto de orvalho", "unit": "°C",
+        "cmap": "BrBG", "min": -20.0, "max": 30.0,
+    },
+    "thetaE2m": {
+        "label": "Temperatura potencial equivalente a 2 m", "short": "Theta-e 2 m", "unit": "K",
+        "cmap": "turbo", "min": 270.0, "max": 390.0,
+    },
+    "lcl": {
+        "label": "Nível de condensação por levantamento", "short": "LCL", "unit": "m AGL",
+        "cmap": "turbo", "min": 0.0, "max": 4000.0,
+    },
+    "surfacePressure": {
+        "label": "Pressão à superfície", "short": "Pressão de superfície", "unit": "hPa",
+        "cmap": "turbo", "min": 700.0, "max": 1050.0,
+    },
+    "seaLevelPressure": {
+        "label": "Pressão reduzida ao nível do mar", "short": "Pressão ao nível do mar", "unit": "hPa",
+        "cmap": "turbo", "min": 940.0, "max": 1040.0,
+    },
+    "temperature850": {
+        "label": "Temperatura em 850 hPa", "short": "Temperatura 850 hPa", "unit": "°C",
+        "cmap": "coolwarm", "min": -15.0, "max": 30.0,
+    },
+    "windSpeed850": {
+        "label": "Velocidade do vento em 850 hPa", "short": "Vento 850 hPa", "unit": "km/h",
+        "cmap": "turbo", "min": 0.0, "max": 180.0,
+    },
+    "windDirection850": {
+        "label": "Direção do vento em 850 hPa", "short": "Direção 850 hPa", "unit": "°",
+        "cmap": "twilight_shifted", "min": 0.0, "max": 360.0,
+        "ticks": [0, 90, 180, 270, 360],
+    },
+    "omega700": {
+        "label": "Velocidade vertical de pressão em 700 hPa", "short": "Omega 700 hPa", "unit": "Pa/s",
+        "cmap": "RdBu_r", "min": -3.0, "max": 3.0, "mode": "diverging",
     },
 }
 
@@ -197,6 +234,14 @@ def color_setup(variable, field):
         norm = mcolors.TwoSlopeNorm(vmin=-30.0, vcenter=0.0, vmax=30.0)
         return spec, cmap, norm, arr
 
+    if spec.get("mode") == "diverging":
+        limit = max(abs(float(spec.get("min", -1.0))), abs(float(spec.get("max", 1.0))))
+        arr = np.ma.masked_where((~np.isfinite(arr)) | (np.abs(arr) < 0.03), arr)
+        cmap = plt.get_cmap(spec["cmap"]).copy()
+        cmap.set_bad((1.0, 1.0, 1.0, 0.0))
+        norm = mcolors.TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit)
+        return spec, cmap, norm, arr
+
     # Keep neutral/no-event areas white instead of coloring zero with the first
     # shade of the palette. Thresholds are display-only; source JSON is untouched.
     # Values and color scales remain stable between forecast hours.
@@ -207,6 +252,8 @@ def color_setup(variable, field):
         "windSpeed": 1.0,
         "bulkShear": 15.0,
         "waterVapor": 5.0,
+        "seaLevelPressure": 0.0,
+        "surfacePressure": 0.0,
     }.get(variable)
     if display_floor is not None:
         arr = np.ma.masked_where((~np.isfinite(arr)) | (arr < display_floor), arr)
