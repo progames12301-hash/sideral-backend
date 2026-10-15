@@ -52,9 +52,13 @@ def main() -> None:
     if not frames:
         raise SystemExit("Nenhum frame publicado para criar GIF/MP4.")
 
-    ffmpeg = shutil.which("ffmpeg")
+    try:
+        import imageio_ffmpeg
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        raise SystemExit("ffmpeg indisponível; os MP4 não podem ser gerados.")
+        raise SystemExit("FFmpeg indisponível (imageio-ffmpeg/binário de sistema); os MP4 não podem ser gerados.")
     animations: dict[str, dict] = {}
     animation_root = root / "animations"
     animation_root.mkdir(parents=True, exist_ok=True)
