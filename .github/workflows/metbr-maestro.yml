@@ -1,4 +1,4 @@
-name: METBR + TARC Maestro - publicação diária de JSON
+name: METBR Maestro - publicação diária de JSON
 
 on:
   push:
@@ -8,23 +8,13 @@ on:
   workflow_run:
     workflows:
       - "METBR WRF 4 KM - ICON"
-      - "WRF TARC 3 KM — fallback ICON → ECMWF → GFS"
     types: [completed]
   schedule:
     - cron: '30 12 * * *'
   workflow_dispatch:
     inputs:
-      model:
-        description: "Modelo para extrair/publicar"
-        required: false
-        default: both
-        type: choice
-        options:
-          - both
-          - metbr
-          - tarc
       run_id:
-        description: "Run ID específico do modelo selecionado; vazio = última execução bem-sucedida"
+        description: "Run ID METBR específico. Vazio = validar a execução METBR mais recente."
         required: false
         type: string
 
@@ -32,10 +22,19 @@ permissions:
   contents: write
   actions: read
 
+concurrency:
+  group: metbr-maestro-publication
+  cancel-in-progress: false
+
 jobs:
   publish-metbr-json:
     if: >-
-      github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'METBR WRF 4 KM - ICON' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && (inputs.model == 'both' || inputs.model == 'metbr'))
+      github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.name == 'METBR WRF 4 KM - ICON' &&
+       github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     steps:
@@ -45,35 +44,59 @@ jobs:
           ref: main
           fetch-depth: 1
 
-      - name: Definir run ID METBR
+      - name: Validar e selecionar execução METBR atual
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_RUN_ID: ${{ inputs.run_id }}
-          INPUT_MODEL: ${{ inputs.model }}
-          EVENT_WORKFLOW: ${{ github.event.workflow_run.name }}
+          EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$INPUT_MODEL" == "metbr" && -n "$INPUT_RUN_ID" ]]; then
-            RUN_ID="$INPUT_RUN_ID"
-          elif [[ "$EVENT_WORKFLOW" == "METBR WRF 4 KM - ICON" && -n "$EVENT_RUN_ID" ]]; then
+          RUN_ID=""
+          if [[ "$EVENT_NAME" == "workflow_run" && -n "$EVENT_RUN_ID" ]]; then
             RUN_ID="$EVENT_RUN_ID"
+          elif [[ -n "$INPUT_RUN_ID" ]]; then
+            RUN_ID="$INPUT_RUN_ID"
           else
-            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            # Do not fall back to an older successful run while the newest
+            # METBR run is still running or has failed.
+            LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName)"
+            RUN_ID="$(jq -r '.[0].databaseId // empty' <<< "$LATEST")"
+            STATUS="$(jq -r '.[0].status // empty' <<< "$LATEST")"
+            CONCLUSION="$(jq -r '.[0].conclusion // empty' <<< "$LATEST")"
+            WORKFLOW_NAME="$(jq -r '.[0].workflowName // empty' <<< "$LATEST")"
+            if [[ -z "$RUN_ID" || "$STATUS" != "completed" || "$CONCLUSION" != "success" || "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "METBR mais recente ainda não concluiu com sucesso; não publicarei dados antigos."
+              exit 0
+            fi
           fi
-          test -n "$RUN_ID"
+
+          RUN_INFO="$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json databaseId,workflowName,status,conclusion)"
+          STATUS="$(jq -r '.status // empty' <<< "$RUN_INFO")"
+          CONCLUSION="$(jq -r '.conclusion // empty' <<< "$RUN_INFO")"
+          WORKFLOW_NAME="$(jq -r '.workflowName // empty' <<< "$RUN_INFO")"
+          if [[ "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" || "$STATUS" != "completed" || "$CONCLUSION" != "success" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Run $RUN_ID não é uma execução METBR concluída com sucesso; publicação cancelada."
+            exit 0
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "tag=metbr-wrf-4km-checkpoint-$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "METBR Maestro selecionou run_id=$RUN_ID"
+          echo "METBR Maestro publicará exclusivamente run_id=$RUN_ID"
 
       - name: Instalar dependências
+        if: steps.meta.outputs.publish == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'xarray>=2024.1,<2027' 'netCDF4>=1.7,<2'
 
       - name: Baixar WRFOUT METBR
+        if: steps.meta.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
@@ -86,6 +109,7 @@ jobs:
           test -n "$(find metbr_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)"
 
       - name: Extrair JSON METBR
+        if: steps.meta.outputs.publish == 'true'
         run: |
           set -euo pipefail
           rm -rf metbr_publish
@@ -97,6 +121,7 @@ jobs:
           test "$(find metbr_publish/frames -maxdepth 1 -type f -name 'f*.json.gz' -size +0c | wc -l)" -eq 43
 
       - name: Validar publicação METBR completa
+        if: steps.meta.outputs.publish == 'true'
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -166,6 +191,7 @@ jobs:
           PY
 
       - name: Selecionar branch do ciclo METBR
+        if: steps.meta.outputs.publish == 'true'
         run: |
           set -euo pipefail
           RUN_CYCLE="$(python - <<'PY'
@@ -186,11 +212,18 @@ jobs:
           echo "METBR ciclo $RUN_CYCLE Z validado; publicarei a branch por ciclo e metbr-json-data."
 
       - name: Publicar pacote METBR completo
+        if: steps.meta.outputs.publish == 'true'
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch origin metbr-json-data
+          CANDIDATE_INIT="$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json"))["initTime"])')"
+          EXISTING_INIT="$(git show origin/metbr-json-data:metadata.json | python -c 'import json,sys; print(json.load(sys.stdin).get("initTime",""))' || true)"
+          if [[ -n "$EXISTING_INIT" && "$CANDIDATE_INIT" < "$EXISTING_INIT" ]]; then
+            echo "Bloqueada publicação fora de ordem: candidato=$CANDIDATE_INIT; atual=$EXISTING_INIT"
+            exit 1
+          fi
           rm -rf /tmp/metbr-json-publication
           git worktree add --detach /tmp/metbr-json-publication origin/metbr-json-data
           find /tmp/metbr-json-publication -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
@@ -216,124 +249,3 @@ jobs:
           cd - >/dev/null
           git worktree remove --force /tmp/metbr-json-publication
           echo "METBR publicado integralmente em $METBR_JSON_BRANCH e metbr-json-data."
-
-
-  publish-tarc-json:
-    if: >-
-      github.event_name == 'schedule' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'WRF TARC 3 KM — fallback ICON → ECMWF → GFS' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && (inputs.model == 'both' || inputs.model == 'tarc'))
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Checkout dos extratores TARC
-        uses: actions/checkout@v4
-        with:
-          ref: tarc-wrf-3km
-          fetch-depth: 1
-
-      - name: Definir run ID TARC
-        id: meta
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          INPUT_RUN_ID: ${{ inputs.run_id }}
-          INPUT_MODEL: ${{ inputs.model }}
-          EVENT_WORKFLOW: ${{ github.event.workflow_run.name }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$INPUT_MODEL" == "tarc" && -n "$INPUT_RUN_ID" ]]; then
-            RUN_ID="$INPUT_RUN_ID"
-          elif [[ "$EVENT_WORKFLOW" == "WRF TARC 3 KM — fallback ICON → ECMWF → GFS" && -n "$EVENT_RUN_ID" ]]; then
-            RUN_ID="$EVENT_RUN_ID"
-          else
-            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow wrf-tarc-3km.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-          fi
-          test -n "$RUN_ID"
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "tag=tarc-wrf-3km-checkpoint-$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "TARC Maestro selecionou run_id=$RUN_ID"
-
-      - name: Instalar dependências
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027'
-
-      - name: Baixar WRFOUT TARC
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.meta.outputs.tag }}
-        run: |
-          set -euo pipefail
-          rm -rf tarc_work
-          mkdir -p tarc_work/run
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'wrfout_d01_*' --dir tarc_work/run --clobber
-          test -n "$(find tarc_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)"
-          count="$(find tarc_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l)"
-          echo "[TARC][MAESTRO] WRFOUT encontrados: $count"
-
-      - name: Extrair JSON TARC por frame
-        run: |
-          set -euo pipefail
-          rm -rf tarc_publish
-          python wrf/tarc_extract_json.py --run-dir tarc_work/run --output-dir tarc_publish --expected-start 0 --expected-end 48
-          test -s tarc_publish/metadata.json
-          test -n "$(find tarc_publish/frames -maxdepth 1 -type f -name 'f*.json.gz' -size +0c -print -quit)"
-
-      - name: Gerar diagnósticos severos TARC na grade nativa
-        env:
-          WRF_DX_METERS: 3000
-          WRF_PRODUCT_LABEL: WRF TARC 3 KM ICON · diagnósticos severos
-        run: |
-          set -euo pipefail
-          rm -rf tarc_severe
-          python wrf/extract_wrf_severe.py --run-dir tarc_work/run --output-dir tarc_severe --grid-x 361 --grid-y 445 --model icon --interval-hours 3 --expected-start 0 --expected-end 48
-          test -s tarc_severe/metadata.json
-          test -s tarc_severe/diagnostics.json
-
-      - name: Validar JSON TARC
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import gzip, json
-          from pathlib import Path
-          meta = json.loads(Path('tarc_publish/metadata.json').read_text(encoding='utf-8'))
-          assert meta['model'] == 'WRF TARC 3 KM'
-          assert meta['resolutionKm'] == 3
-          assert meta['nativeReflectivity'] == 'REFL_10CM'
-          assert meta['grid']['nx'] == 361 and meta['grid']['ny'] == 445
-          assert meta['status'] == 'complete', meta.get('missingForecastHours')
-          expected = set(range(49))
-          actual = {int(x['forecastHour']) for x in meta['frames']}
-          assert actual == expected, f'frames TARC inesperados: faltantes={sorted(expected-actual)} extras={sorted(actual-expected)}'
-          for item in meta['frames']:
-              p = Path('tarc_publish') / item['file']
-              with gzip.open(p, 'rt', encoding='utf-8') as fh:
-                  data = json.load(fh)
-              assert len(data['fields']['lat']) == 361*445
-              assert len(data['fields']['lon']) == 361*445
-              assert len(data['fields']['reflectivityDbz']) == 361*445
-              assert len(data['fields']['reflectivityCompositeDbz']) == 361*445
-          print(f"[TARC][VALID] {len(meta['frames'])} frames; 361x445; REFL_10CM + composta + vento + superfície")
-          PY
-
-      - name: Publicar TARC na branch tarc-json-data
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin tarc-json-data
-          rm -rf /tmp/tarc-json-publication
-          git worktree add --detach /tmp/tarc-json-publication origin/tarc-json-data
-          find /tmp/tarc-json-publication -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
-          cp -a tarc_publish/. /tmp/tarc-json-publication/
-          cp -f wrf/tarc_variable_catalog.json /tmp/tarc-json-publication/variable_catalog.json
-          mkdir -p /tmp/tarc-json-publication/severe
-          cp -a tarc_severe/. /tmp/tarc-json-publication/severe/
-          cd /tmp/tarc-json-publication
-          git add -A
-          git commit -m "publish: WRF TARC 3 KM JSON $(date -u +%Y-%m-%dT%H:%M:%SZ)" || exit 0
-          git push origin HEAD:tarc-json-data
-          cd - >/dev/null
-          git worktree remove --force /tmp/tarc-json-publication
-          echo "TARC JSON publicado em branch tarc-json-data."
