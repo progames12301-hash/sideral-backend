@@ -1,1 +1,237 @@
 <!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#171a20">
+<title>METBR WRF 4 km | Sideral Meteorologia</title>
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="favicon.png" type="image/png">
+<style>
+:root{color-scheme:dark;--bg:#171a20;--panel:#22262e;--panel2:#2b3039;--border:rgba(255,255,255,.09);--text:#edf1f7;--muted:#9ba7b7;--red:#ed3448}
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font-family:"DM Sans",Arial,sans-serif}button,select,input{font:inherit}button{cursor:pointer;-webkit-tap-highlight-color:transparent}[hidden]{display:none!important}
+.site-header{height:64px;background:#20242c;border-bottom:1px solid var(--border);position:relative;z-index:10}.header-inner{height:100%;width:min(100% - 32px,1480px);margin:auto;display:flex;align-items:center;gap:24px}.brand{display:flex;align-items:center;flex:0 0 auto}.brand img{display:block;width:136px;height:auto;max-height:48px;object-fit:contain}.header-nav{display:flex;align-items:center;gap:28px;flex:1;justify-content:center}.header-nav a{color:#e8edf5;text-decoration:none;font-size:12px;font-weight:650}.header-nav a:hover{color:#ff7a87}.head-button{padding:8px 12px;border:1px solid var(--border);border-radius:4px;color:#edf1f7;text-decoration:none;background:transparent;font-size:11px;font-weight:700}
+.app{height:calc(100vh - 64px);display:flex;flex-direction:column;min-height:420px}.toolbar{height:46px;flex:0 0 auto;display:grid;grid-template-columns:180px minmax(0,1fr) auto;align-items:stretch;background:#262b34;border-bottom:1px solid #11151b}.tool-group{display:flex;gap:7px;align-items:center;min-width:0;padding:5px 9px}.tool-group+.tool-group{border-left:1px solid var(--border)}.icon-btn{display:inline-grid;place-items:center;width:32px;height:32px;border:1px solid transparent;border-radius:4px;background:transparent;color:#d1d9e4;flex:0 0 auto}.icon-btn:hover,.icon-btn[aria-pressed="true"]{background:rgba(237,52,72,.14);border-color:rgba(237,52,72,.35);color:#fff}.icon-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.timeline{gap:10px}.timeline input{width:100%;min-width:60px;accent-color:var(--red)}.readout{white-space:nowrap;min-width:52px;text-align:right;font-weight:800;font-size:12px}.speed{width:76px;accent-color:var(--red)}
+.layout{display:grid;grid-template-columns:286px minmax(0,1fr);flex:1;min-height:0}.sidebar{min-width:0;overflow:auto;background:var(--panel);border-right:1px solid rgba(0,0,0,.25)}.side-head{padding:16px 17px;background:var(--panel2);border-bottom:1px solid var(--border)}.side-head h1{margin:0;font-size:16px;line-height:1.3;font-weight:800;letter-spacing:-.02em}.cycle-line{margin-top:7px;color:var(--muted);font-size:11px}.side-section{padding:12px 13px;border-bottom:1px solid var(--border)}.side-label{display:flex;justify-content:space-between;margin:0 5px 10px;color:#9ba6b6;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.field-label{display:block;color:#cbd3df;font-size:11px;font-weight:700;margin:10px 4px 6px}.select{width:100%;min-height:36px;background:#191d24;color:#edf1f7;border:1px solid rgba(255,255,255,.13);border-radius:4px;padding:7px 9px;font-size:12px;outline:none}.select:focus{border-color:rgba(237,52,72,.65)}.help-line{font-size:10px;color:#8f9bab;line-height:1.45;margin:9px 4px 0}
+.map-panel{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:#171b21}.map-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1px;flex:1;min-height:0;background:#101318}.map-card{display:flex;flex-direction:column;min-width:0;min-height:0;background:#fff;color:#20242a}.map-card-head{min-height:38px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:7px;padding:6px 9px;background:#22262e;color:#edf1f7;border-bottom:1px solid #11151b}.map-card-head strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.map-actions{display:flex;gap:4px;flex:0 0 auto}.map-actions button{border:1px solid rgba(255,255,255,.12);background:#2b3039;color:#dbe2eb;border-radius:3px;font-size:9px;padding:5px 6px}.map-actions button:hover{background:rgba(237,52,72,.2)}.image-wrap{position:relative;display:flex;align-items:center;justify-content:center;flex:1;min-height:0;background:#fff;overflow:hidden}.bulletin{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;background:#fff}.image-state{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;background:#fff;color:#727b86;font-size:12px;pointer-events:none}.image-state[hidden]{display:none!important}.status-bar{height:24px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 12px;background:#20242c;border-top:1px solid var(--border);color:#aeb9c8;font-size:10px}.status-bar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.layout.sidebar-collapsed{grid-template-columns:minmax(0,1fr)}.layout.sidebar-collapsed .sidebar{display:none}
+@media(max-width:1000px){.layout{grid-template-columns:245px minmax(0,1fr)}.header-inner{gap:14px}.header-nav{gap:15px}.speed{width:55px}}
+@media(max-width:720px){.site-header{height:58px}.header-inner{width:calc(100% - 20px);gap:8px}.brand img{width:108px}.header-nav{display:none}.head-button{margin-left:auto}.app{height:calc(100vh - 58px)}.toolbar{height:43px;grid-template-columns:auto minmax(0,1fr) auto}.tool-group{padding:4px;gap:3px}.tool-group .optional,.speed{display:none}.icon-btn{width:28px;height:29px}.timeline{gap:5px}.readout{min-width:42px;font-size:10px}.layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.sidebar{display:none;max-height:42vh;border-right:0;border-bottom:1px solid var(--border)}.sidebar.is-open{display:block}.side-head{padding:11px 14px}.side-section{padding:9px 11px}.map-pair{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1fr);overflow:auto}.map-card-head{min-height:31px;padding:4px 5px}.map-card-head strong{font-size:10px}.map-actions{gap:3px}.map-actions button{font-size:9px;padding:4px 5px}.status-bar{height:22px;font-size:9px}.status-right{display:none}}
+</style>
+</head>
+<body>
+<header class="site-header"><div class="header-inner">
+<a class="brand" href="index.html" aria-label="Sideral Meteorologia"><img src="assets/sideral-logo.png" alt="Sideral Meteorologia"></a>
+<nav class="header-nav"><a href="index.html">Início</a><a href="consulta/radar.html">Radar</a></nav>
+<a class="head-button" href="index.html">Voltar</a>
+</div></header>
+<main class="app">
+<div class="toolbar" role="toolbar" aria-label="Controles METBR">
+<div class="tool-group">
+<button class="icon-btn" id="toggleSidebar" title="Mostrar/ocultar variáveis" aria-label="Mostrar/ocultar variáveis" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"></rect><path d="M9 4v16"></path></svg></button>
+<button class="icon-btn" id="play" title="Animar previsão" aria-label="Animar previsão" aria-pressed="false"><svg id="playIcon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" fill="currentColor" stroke="none"></path></svg></button>
+<input class="speed optional" id="speed" type="range" min="1" max="10" value="7" aria-label="Velocidade da animação" title="Velocidade">
+</div>
+<div class="tool-group timeline">
+<button class="icon-btn optional" id="prev" title="Horário anterior" aria-label="Horário anterior"><svg viewBox="0 0 24 24"><path d="M18 5 8 12l10 7z" fill="currentColor" stroke="none"></path><path d="M5 5v14"></path></svg></button>
+<input id="frameSlider" type="range" min="0" max="42" value="0" step="1" aria-label="Horário de previsão"><span class="readout" id="frameReadout">F000</span>
+<button class="icon-btn optional" id="next" title="Próximo horário" aria-label="Próximo horário"><svg viewBox="0 0 24 24"><path d="m6 5 10 7-10 7z" fill="currentColor" stroke="none"></path><path d="M19 5v14"></path></svg></button>
+</div>
+<div class="tool-group"><button class="icon-btn" id="fullscreen" title="Tela cheia" aria-label="Tela cheia"><svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"></path></svg></button></div>
+</div>
+<div class="layout" id="layout">
+<aside class="sidebar" id="sidebar">
+<div class="side-head"><h1>METBR WRF 4 km</h1><div class="cycle-line" id="cycleLine">Carregando dados…</div></div>
+<section class="side-section"><h2 class="side-label">Variáveis</h2>
+<label class="field-label" for="variableA">Mapa 1</label><select class="select" id="variableA"><option value="reflectivity">Refletividade máxima</option></select>
+<label class="field-label" for="variableB">Mapa 2</label><select class="select" id="variableB"><option value="precipitation">Precipitação acumulada</option></select>
+<label class="field-label" for="exportSpeed">Velocidade do GIF/MP4 baixado</label><select class="select" id="exportSpeed"><option value="slow">Lenta</option><option value="ultra-fast">Ultra-rápida</option></select>
+<p class="help-line">A visualização usa prévias leves quando publicadas. PNG baixa o arquivo original 4K; GIF e MP4 baixam a animação completa.</p>
+</section>
+</aside>
+<section class="map-panel" aria-label="Boletins METBR WRF 4 km"><div class="map-pair">
+<article class="map-card"><header class="map-card-head"><strong id="titleA">Refletividade máxima</strong><div class="map-actions"><button type="button" id="downloadA">PNG 4K</button><button type="button" id="downloadGifA">GIF</button><button type="button" id="downloadMp4A">MP4</button></div></header><div class="image-wrap"><img class="bulletin" id="imageA" alt="Boletim METBR variável 1" hidden><img class="bulletin alternate" id="imageAAlt" alt="" hidden><div class="image-state" id="stateA">Aguardando boletins…</div></div></article>
+<article class="map-card"><header class="map-card-head"><strong id="titleB">Precipitação acumulada</strong><div class="map-actions"><button type="button" id="downloadB">PNG 4K</button><button type="button" id="downloadGifB">GIF</button><button type="button" id="downloadMp4B">MP4</button></div></header><div class="image-wrap"><img class="bulletin" id="imageB" alt="Boletim METBR variável 2" hidden><img class="bulletin alternate" id="imageBAlt" alt="" hidden><div class="image-state" id="stateB">Aguardando boletins…</div></div></article>
+</div><footer class="status-bar"><span id="validTime">—</span><span class="status-right" id="frameStatus">—</span></footer></section>
+</div>
+</main>
+<script>
+(function(){
+'use strict';
+var IMAGE_BRANCH='https://raw.githubusercontent.com/progames12301-hash/sideral-backend/metbr-boletins-imagens/';
+var metadataUrl=IMAGE_BRANCH+'metadata.json';
+var $=function(id){return document.getElementById(id);};
+var layout=$('layout'),sidebar=$('sidebar'),slider=$('frameSlider'),readout=$('frameReadout');
+var selectA=$('variableA'),selectB=$('variableB'),exportSpeed=$('exportSpeed');
+var metadata=null,frameIndex=0,playTimer=null,requestToken=0;
+var previewCache=new Map(),PREVIEW_CACHE_LIMIT=16;
+function versionKey(){return encodeURIComponent((metadata&&metadata.generatedAt)||(metadata&&metadata.sourceRunId)||(metadata&&metadata.initTime)||'1');}
+function assetUrl(path){return path?IMAGE_BRANCH+path+'?v='+versionKey():'';}
+function currentFrame(){return metadata&&metadata.frames&&metadata.frames[frameIndex]||null;}
+function lead(hour){return 'F'+String(hour).padStart(3,'0');}
+function formatUTC(value){
+ if(!value)return '—';var d=new Date(value);if(Number.isNaN(d.getTime()))return '—';
+ return new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(d)+' UTC';
+}
+function activeImage(side){
+ var first=$('image'+side),second=$( 'image'+side+'Alt');
+ if(first.dataset.active==='true')return first;
+ if(second.dataset.active==='true')return second;
+ return null;
+}
+function setState(side,message,hideImages){
+ var first=$('image'+side),second=$( 'image'+side+'Alt'),state=$('state'+side);
+ if(hideImages!==false){first.hidden=true;second.hidden=true;first.dataset.active='false';second.dataset.active='false';}
+ state.textContent=message||'—';state.hidden=false;
+}
+function previewPath(frame,variable){return frame&&frame.previewFiles&&frame.previewFiles[variable]||frame&&frame.files&&frame.files[variable]||'';}
+function warmPreview(url){
+ if(!url)return Promise.resolve(false);
+ if(previewCache.has(url)){var hit=previewCache.get(url);previewCache.delete(url);previewCache.set(url,hit);return hit;}
+ var promise=new Promise(function(resolve){
+  var im=new Image();im.decoding='async';im.onload=function(){
+   if(typeof im.decode==='function')im.decode().then(function(){resolve(true);}).catch(function(){resolve(true);});
+   else resolve(true);
+  };im.onerror=function(){resolve(false);};im.src=url;
+ });
+ previewCache.set(url,promise);
+ while(previewCache.size>PREVIEW_CACHE_LIMIT)previewCache.delete(previewCache.keys().next().value);
+ promise.then(function(ok){if(!ok)previewCache.delete(url);});
+ return promise;
+}
+function warmNeighbourFrames(){
+ if(!metadata)return;var vars=[selectA.value,selectB.value];
+ [1,2,-1].forEach(function(offset){
+  var frame=metadata.frames[frameIndex+offset];if(!frame)return;
+  vars.forEach(function(v){var path=previewPath(frame,v);if(path)warmPreview(assetUrl(path));});
+ });
+}
+function fillVariableMenus(){
+ var catalog=metadata.variableCatalog||{};
+ var available=metadata.availableVariables||Object.keys(catalog);
+ function build(select){
+  var previous=select.value;select.replaceChildren();
+  available.forEach(function(key){
+   var spec=catalog[key];if(!spec)return;
+   var option=document.createElement('option');option.value=key;option.textContent=(spec.label||key)+' ('+(spec.unit||'—')+')';select.appendChild(option);
+  });
+  if(Array.prototype.some.call(select.options,function(o){return o.value===previous;}))select.value=previous;
+ }
+ build(selectA);build(selectB);
+ if(Array.prototype.some.call(selectA.options,function(o){return o.value==='reflectivity';}))selectA.value='reflectivity';
+ if(Array.prototype.some.call(selectB.options,function(o){return o.value==='precipitation';}))selectB.value='precipitation';
+ if(selectA.value===selectB.value&&selectB.options.length>1)selectB.selectedIndex=1;
+}
+function updateTimeline(){
+ var frame=currentFrame();if(!frame)return;
+ readout.textContent=lead(Number(frame.forecastHour||0));$('validTime').textContent=formatUTC(frame.validTime);
+ $('frameStatus').textContent=(frameIndex+1)+'/'+metadata.frames.length;
+ $('cycleLine').textContent='Rodada '+formatUTC(metadata.initTime)+(metadata.publicationStatus==='partial'?' · parcial':'');
+}
+function loadSide(side,variable,token){
+ var first=$('image'+side),second=$( 'image'+side+'Alt'),state=$('state'+side),title=$('title'+side);
+ var frame=currentFrame(),catalog=metadata.variableCatalog||{};
+ title.textContent=(catalog[variable]&&catalog[variable].label)||variable;
+ if(!frame||!frame.files||!frame.files[variable]){
+  var skipped=frame&&frame.skippedVariables&&frame.skippedVariables[variable]==='no_visible_echo_below_5_dBZ';
+  setState(side,skipped?'Sem ecos visíveis neste horário':'Variável sem imagem neste horário',true);return;
+ }
+ var url=assetUrl(previewPath(frame,variable)),pngUrl=assetUrl(frame.files[variable]),active=activeImage(side);
+ if(active&&active.dataset.displayUrl===url){
+  active.dataset.pngUrl=pngUrl;active.dataset.variable=variable;active.alt=title.textContent+' — '+lead(Number(frame.forecastHour||0));state.hidden=true;return;
+ }
+ var next=active===first?second:first;
+ next.alt=title.textContent+' — '+lead(Number(frame.forecastHour||0));
+ if(!active){state.textContent='Carregando mapa…';state.hidden=false;}
+ warmPreview(url).then(function(ok){
+  if(token!==requestToken)return;
+  if(!ok){if(!activeImage(side))setState(side,'Imagem indisponível',true);else $('frameStatus').textContent='Prévia indisponível; mantendo o mapa anterior';return;}
+  var activate=function(){
+   if(token!==requestToken)return;
+   var old=activeImage(side);next.hidden=false;next.dataset.active='true';next.dataset.displayUrl=url;next.dataset.pngUrl=pngUrl;next.dataset.variable=variable;
+   if(old&&old!==next){old.hidden=true;old.dataset.active='false';}
+   state.hidden=true;
+  };
+  next.onload=activate;next.onerror=function(){if(token===requestToken&&!activeImage(side))setState(side,'Imagem indisponível',true);};
+  next.src=url;if(next.complete&&next.naturalWidth>0)activate();
+ });
+}
+function render(){
+ if(!metadata||!metadata.frames.length)return;
+ frameIndex=Math.max(0,Math.min(metadata.frames.length-1,frameIndex));slider.max=String(metadata.frames.length-1);slider.value=String(frameIndex);
+ updateTimeline();var token=++requestToken;loadSide('A',selectA.value,token);loadSide('B',selectB.value,token);warmNeighbourFrames();
+}
+async function init(){
+ setState('A','Carregando boletins…',true);setState('B','Carregando boletins…',true);
+ try{
+  var response=await fetch(metadataUrl+'?v='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('metadata HTTP '+response.status);
+  metadata=await response.json();
+  if(metadata.model!=='METBR WRF 4 km'||!Array.isArray(metadata.frames)||!metadata.frames.length)throw new Error('metadados METBR inválidos');
+  fillVariableMenus();render();
+ }catch(err){
+  $('cycleLine').textContent='Boletins ainda não publicados';setState('A','Não foi possível carregar os boletins',true);setState('B','Não foi possível carregar os boletins',true);
+  $('validTime').textContent='—';$('frameStatus').textContent='Verifique a publicação de imagens';
+ }
+}
+function stop(){
+ if(playTimer)clearInterval(playTimer);playTimer=null;$('play').setAttribute('aria-pressed','false');
+ $('playIcon').innerHTML='<path d="m8 5 11 7-11 7z" fill="currentColor" stroke="none"></path>';
+}
+function nextPlayableFrame(start){
+ var candidates=[],a=selectA.value,b=selectB.value;
+ metadata.frames.forEach(function(f,i){if(f.files&&f.files[a]&&f.files[b])candidates.push(i);});
+ if(candidates.length<2)return -1;
+ for(var i=0;i<candidates.length;i++)if(candidates[i]>start)return candidates[i];
+ return candidates[0];
+}
+$('toggleSidebar').addEventListener('click',function(){
+ if(window.matchMedia('(max-width:720px)').matches)sidebar.classList.toggle('is-open');
+ else layout.classList.toggle('sidebar-collapsed');
+});
+slider.addEventListener('input',function(){frameIndex=Number(slider.value);render();});
+$('prev').addEventListener('click',function(){frameIndex=Math.max(0,frameIndex-1);render();});
+$('next').addEventListener('click',function(){frameIndex=Math.min((metadata&&metadata.frames.length||1)-1,frameIndex+1);render();});
+selectA.addEventListener('change',render);selectB.addEventListener('change',render);
+$('play').addEventListener('click',function(){
+ if(playTimer){stop();return;}if(!metadata)return;
+ if(metadata.frames.filter(function(f){return f.files&&f.files[selectA.value]&&f.files[selectB.value];}).length<2){
+  $('frameStatus').textContent='Poucos horários com imagens para animar estas variáveis';return;
+ }
+ $('play').setAttribute('aria-pressed','true');
+ $('playIcon').innerHTML='<path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor" stroke="none"></path>';
+ playTimer=setInterval(function(){var next=nextPlayableFrame(frameIndex);if(next<0){stop();return;}frameIndex=next;render();},1500-(Number($('speed').value)-1)*130);
+});
+$('speed').addEventListener('input',function(){if(playTimer){stop();$('play').click();}});
+async function downloadUrl(url,filename){
+ if(!url)return false;
+ try{var response=await fetch(url);if(!response.ok)throw new Error('download HTTP '+response.status);
+  var blob=await response.blob(),objectUrl=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=objectUrl;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(function(){URL.revokeObjectURL(objectUrl);},10000);return true;
+ }catch(err){window.open(url,'_blank','noopener,noreferrer');return false;}
+}
+function variableForSide(side){return side==='A'?selectA.value:selectB.value;}
+async function downloadPng(side){
+ var variable=variableForSide(side),frame=currentFrame(),path=frame&&frame.files&&frame.files[variable];
+ if(!path){$('frameStatus').textContent='PNG indisponível para esta variável e horário';return;}
+ await downloadUrl(assetUrl(path),'metbr-wrf-4km-'+variable+'-'+lead(Number(frame.forecastHour||0))+'.png');
+}
+async function downloadAnimation(side,format){
+ var variable=variableForSide(side),speed=exportSpeed.value;
+ var path=metadata&&metadata.animations&&metadata.animations[variable]&&metadata.animations[variable][speed]&&metadata.animations[variable][speed][format];
+ if(!path){$('frameStatus').textContent=format.toUpperCase()+' '+(speed==='slow'?'lento':'ultra-rápido')+' ainda não publicado para '+((metadata.variableCatalog[variable]&&metadata.variableCatalog[variable].label)||variable);return;}
+ $('frameStatus').textContent='Preparando download…';
+ var ok=await downloadUrl(assetUrl(path),'metbr-wrf-4km-'+variable+'-'+speed+'.'+format);
+ $('frameStatus').textContent=ok?'Download '+format.toUpperCase()+' solicitado':'Abrindo arquivo de animação…';
+}
+$('downloadA').addEventListener('click',function(){downloadPng('A');});
+$('downloadB').addEventListener('click',function(){downloadPng('B');});
+$('downloadGifA').addEventListener('click',function(){downloadAnimation('A','gif');});
+$('downloadGifB').addEventListener('click',function(){downloadAnimation('B','gif');});
+$('downloadMp4A').addEventListener('click',function(){downloadAnimation('A','mp4');});
+$('downloadMp4B').addEventListener('click',function(){downloadAnimation('B','mp4');});
+$('fullscreen').addEventListener('click',async function(){var target=document.querySelector('.map-pair');try{if(document.fullscreenElement)await document.exitFullscreen();else await target.requestFullscreen();}catch(err){}});
+window.addEventListener('pagehide',stop);
+init();
+})();
+</script>
+</body>
+</html>
