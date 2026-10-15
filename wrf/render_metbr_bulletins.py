@@ -274,35 +274,57 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     init = parse_time(init_time)
     valid = parse_time(valid_time)
     # Near-square canvas with larger map area, suited to the two-map layout.
-    fig = plt.figure(figsize=(10.0, 10.0), dpi=125, facecolor="white")
+    # 4K square export: 3840 × 3840 pixels at 384 dpi. Higher output density
+    # sharpens labels/coastlines and gives native 4-km grid points more pixels.
+    fig = plt.figure(figsize=(10.0, 10.0), dpi=384, facecolor="white")
     ax = fig.add_axes([0.08, 0.15, 0.84, 0.75], projection=ccrs.PlateCarree())
     ax.set_facecolor("white")
     ax.set_extent(extent, crs=ccrs.PlateCarree())
     if variable == "reflectivity":
-        # Native REFL_10CM values: no numerical blur or averaging.
-        refl_levels = np.arange(0.0, 75.1, 2.5)
+        # Native REFL_10CM values; finer draw levels only improve edge rendering.
+        refl_levels = np.arange(0.0, 75.1, 1.0)
         mesh = ax.contourf(
             lon, lat, field, levels=refl_levels, cmap=cmap, norm=norm,
             extend="max", antialiased=True, corner_mask=True,
             transform=ccrs.PlateCarree(), zorder=2,
         )
     elif variable == "bulkShear":
-        # Stronger 0–6 km shear in filled contours; weak background remains white.
-        shear_levels = np.arange(15.0, 50.1, 2.5)
+        # Dense contour levels smooth the rendered gradients without modifying
+        # the model's original values or inventing higher-resolution data.
+        shear_levels = np.arange(15.0, 50.01, 0.5)
         mesh = ax.contourf(
             lon, lat, field, levels=shear_levels, cmap=cmap, norm=norm,
             extend="max", antialiased=True, corner_mask=True,
             transform=ccrs.PlateCarree(), zorder=2,
         )
+    elif variable != "windDirection":
+        # Continuous scalar variables are drawn as dense, antialiased filled
+        # contours instead of blocky native-cell pcolormesh tiles.
+        if variable == "precipitation":
+            scalar_levels = np.linspace(0.2, 450.0, 240)
+        elif variable == "vorticity850":
+            scalar_levels = np.linspace(-30.0, 30.0, 181)
+        elif variable == "mucape":
+            scalar_levels = np.linspace(0.0, 4000.0, 161)
+        else:
+            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 1.0)), 161)
+        mesh = ax.contourf(
+            lon, lat, field, levels=scalar_levels, cmap=cmap, norm=norm,
+            extend="both" if variable in {"temperature", "vorticity850"} else "max",
+            antialiased=True, corner_mask=True,
+            transform=ccrs.PlateCarree(), zorder=2,
+        )
     else:
+        # Direction is angular; keep native cells to avoid interpolation
+        # artifacts around the 0°/360° discontinuity.
         mesh = ax.pcolormesh(
             lon, lat, field, cmap=cmap, norm=norm, shading="auto",
             transform=ccrs.PlateCarree(), rasterized=True, zorder=2,
         )
 
-    # Overlay native 10-m wind barbs. UI JSON uses km/h and meteorological
-    # direction in degrees; Matplotlib barbs expect knot components.
-    if wind_speed is not None and wind_direction is not None:
+    # Overlay native 10-m wind barbs on the shear panel only. UI JSON uses km/h
+    # and meteorological direction in degrees; Matplotlib expects knot components.
+    if variable == "bulkShear" and wind_speed is not None and wind_direction is not None:
         speed = np.asarray(wind_speed, dtype=np.float32).reshape(ny, nx) / 1.852
         direction = np.asarray(wind_direction, dtype=np.float32).reshape(ny, nx)
         direction_rad = np.deg2rad(direction)
@@ -367,7 +389,6 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         cb.set_ticks([15, 20, 25, 30, 35, 40, 45, 50])
     cb.outline.set_edgecolor("#555555")
     cb.outline.set_linewidth(0.5)
-    fig.text(0.022, 0.024, f"Grade nativa {nx} × {ny}", fontsize=7, color="#4b535c", ha="left", va="bottom")
     # Use the repository's official Sideral artwork, not a generated text logo.
     logo_height = 0.046
     logo_ratio = sideral_logo.shape[1] / max(1, sideral_logo.shape[0])
@@ -378,11 +399,16 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(
-        output_path, dpi=125, facecolor="white", format="png",
-        bbox_inches="tight", pad_inches=0.025,
+        output_path, dpi=384, facecolor="white", format="png",
+        bbox_inches=None, pad_inches=0,
         metadata={"Software": "Sideral METBR WRF bulletin renderer"},
     )
     plt.close(fig)
+    # Strip the redundant alpha channel and compress the 4K PNG losslessly.
+    with Image.open(output_path) as rendered:
+        if rendered.size != (3840, 3840):
+            raise RuntimeError(f"PNG fora de 4K: {rendered.size}, esperado (3840, 3840)")
+        rendered.convert("RGB").save(output_path, format="PNG", optimize=True, compress_level=6)
     if output_path.stat().st_size < 5000:
         raise RuntimeError(f"PNG pequeno/inválido: {output_path}")
     return True
@@ -525,6 +551,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             "bulkShearDisplayFloorMs": 15.0,
             "windBarbs": "10 m; knots; every 18 native grid points",
             "outerModelBoundaryCellsMasked": 2,
+            "renderResolutionPx": [3840, 3840],
+            "scalarFieldRendering": "dense antialiased contours; native source grid preserved",
             "logo": "assets/sideral-logo.png",
         },
         "resolutionKm": 4,
