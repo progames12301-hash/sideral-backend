@@ -132,7 +132,19 @@ function loadSide(side,variable,token){
  title.textContent=(catalog[variable]&&catalog[variable].label)||variable;
  if(!frame||!frame.files||!frame.files[variable]){
   var skipped=frame&&frame.skippedVariables&&frame.skippedVariables[variable]==='no_visible_echo_below_5_dBZ';
-  setState(side,skipped?'Sem ecos visíveis neste horário':'Variável sem imagem neste horário',true);return;
+  if(skipped){
+   var lastVisible=activeImage(side);
+   if(lastVisible&&lastVisible.dataset.variable===variable){
+    // No visible echo this hour: hold the last reflectivity frame instead
+    // of clearing the panel and flashing white during playback.
+    $('frameStatus').textContent='Sem ecos visíveis em '+lead(Number(frame.forecastHour||0))+'; mantendo último quadro';
+    state.hidden=true;
+   }else{
+    setState(side,'Sem ecos visíveis neste horário',true);
+   }
+   return;
+  }
+  setState(side,'Variável sem imagem neste horário',true);return;
  }
  var url=assetUrl(previewPath(frame,variable)),pngUrl=assetUrl(frame.files[variable]),active=activeImage(side);
  if(active&&active.dataset.displayUrl===url){
