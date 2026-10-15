@@ -164,8 +164,13 @@ jobs:
           publish_batch() {
             local batch="$1"
             local variables="$2"
-            echo "::group::METBR lote $batch — $variables"
-            python wrf/render_metbr_bulletins.py --input-dir metbr-source --output-dir metbr-bulletins --variables "$variables"
+            local hours="${3:-all}"
+            echo "::group::METBR lote $batch — $variables — horas $hours"
+            if [[ "$hours" == "all" ]]; then
+              python wrf/render_metbr_bulletins.py --input-dir metbr-source --output-dir metbr-bulletins --variables "$variables"
+            else
+              python wrf/render_metbr_bulletins.py --input-dir metbr-source --output-dir metbr-bulletins --variables "$variables" --hours "$hours"
+            fi
             python - <<'PY'
           import json
           from pathlib import Path
@@ -207,11 +212,13 @@ jobs:
             echo "::endgroup::"
           }
 
-          publish_batch "1-core" "reflectivity,precipitation,temperature,humidity,windSpeed"
-          publish_batch "2-wind-moisture" "windDirection,bulkShear,vorticity850,waterVapor,dewpoint2m"
-          publish_batch "3-severe" "cin,kIndex,lcl,lclHeight,mlcape,mucapeWrf2,sbcape,stp,scp,srh01,srh03"
-          publish_batch "4-thermo" "thetaE2m,thetaE850,thetaEAdvection,temperature850,windDirection850,windSpeed850,seaLevelPressure,surfacePressure,mslp,pwat"
-          publish_batch "5-upper" "bulkShear06,effectiveBulkShear,omega700,thickness,totalTotals,vorticity500,wind500,wind850"
+          publish_batch "1-core-F000" "reflectivity,precipitation,temperature,humidity,windSpeed" "0"
+          publish_batch "2-core-F001-F004" "reflectivity,precipitation,temperature,humidity,windSpeed" "1,2,3,4"
+          publish_batch "3-core-F005-F012" "reflectivity,precipitation,temperature,humidity,windSpeed" "5,6,7,8,9,10,11,12"
+          publish_batch "4-wind-moisture" "windDirection,bulkShear,vorticity850,waterVapor,dewpoint2m"
+          publish_batch "5-severe" "cin,kIndex,lcl,lclHeight,mlcape,mucapeWrf2,sbcape,stp,scp,srh01,srh03"
+          publish_batch "6-thermo" "thetaE2m,thetaE850,thetaEAdvection,temperature850,windDirection850,windSpeed850,seaLevelPressure,surfacePressure,mslp,pwat"
+          publish_batch "7-upper" "bulkShear06,effectiveBulkShear,omega700,thickness,totalTotals,vorticity500,wind500,wind850"
           du -sh metbr-bulletins
 
       - name: Gerar GIF e MP4 lentos e ultra-rápidos
