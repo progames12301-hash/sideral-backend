@@ -156,7 +156,7 @@ jobs:
       - name: Gerar e publicar PNGs em lotes incrementais
         if: steps.source.outputs.publish == 'true'
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p metbr-bulletins
