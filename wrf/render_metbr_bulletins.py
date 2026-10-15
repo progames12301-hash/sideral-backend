@@ -387,6 +387,18 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         cb.set_ticks([0, 90, 180, 270, 360])
     elif variable == "bulkShear":
         cb.set_ticks([15, 20, 25, 30, 35, 40, 45, 50])
+    elif variable == "temperature":
+        cb.set_ticks(np.arange(-10, 41, 5))
+    elif variable == "humidity":
+        cb.set_ticks(np.arange(0, 101, 10))
+    elif variable == "mucape":
+        cb.set_ticks(np.arange(0, 4001, 500))
+    elif variable == "windSpeed":
+        cb.set_ticks(np.arange(0, 121, 20))
+    elif variable == "vorticity850":
+        cb.set_ticks([-30, -20, -10, 0, 10, 20, 30])
+    elif variable == "waterVapor":
+        cb.set_ticks(np.arange(0, 71, 10))
     cb.outline.set_edgecolor("#555555")
     cb.outline.set_linewidth(0.5)
     # Use the repository's official Sideral artwork, not a generated text logo.
