@@ -601,7 +601,7 @@ def create_preview(source_path: Path, preview_path: Path, max_edge: int = 1200):
     if preview_path.stat().st_size < 1000:
         raise RuntimeError(f"Prévia WEBP inválida: {preview_path}")
 
-def build_bulletins(input_dir: Path, output_dir: Path):
+def build_bulletins(input_dir: Path, output_dir: Path, selected_variables=None):
     metadata_path = input_dir / "metadata.json"
     grid_path = input_dir / "grid.json"
     if not metadata_path.is_file() or not grid_path.is_file():
@@ -625,8 +625,14 @@ def build_bulletins(input_dir: Path, output_dir: Path):
     if not frames:
         raise RuntimeError("METBR metadata não lista horários de previsão.")
     variable_candidates = set(meta.get("availableVariablesAnyFrame") or meta.get("availableVariables") or [])
-    variables = [v for v in VARIABLES if v in variable_candidates]
-    if "reflectivity" not in variables:
+    requested = set(selected_variables or [])
+    unknown = requested - set(VARIABLES)
+    if unknown:
+        raise RuntimeError(f"Variáveis desconhecidas solicitadas: {sorted(unknown)}")
+    variables = [v for v in VARIABLES if v in variable_candidates and (not requested or v in requested)]
+    if requested and not variables:
+        raise RuntimeError(f"Nenhuma das variáveis solicitadas está disponível nesta rodada: {sorted(requested)}")
+    if not requested and "reflectivity" not in variables:
         raise RuntimeError("Refletividade nativa não está disponível na publicação METBR.")
 
     west = float(np.nanmin(lon))
@@ -644,13 +650,25 @@ def build_bulletins(input_dir: Path, output_dir: Path):
     with Image.open(logo_path) as logo_source:
         sideral_logo = np.asarray(logo_source.convert("RGBA"))
 
-    if output_dir.exists():
+    previous_output_meta = None
+    if selected_variables and (output_dir / "metadata.json").is_file():
+        candidate_meta = read_json(output_dir / "metadata.json")
+        if (
+            candidate_meta.get("initTime") == meta.get("initTime")
+            and str(candidate_meta.get("sourceRunId") or "") == str(meta.get("sourceRunId") or "")
+        ):
+            previous_output_meta = candidate_meta
+    if output_dir.exists() and previous_output_meta is None:
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    previous_frames = {
+        int(frame.get("forecastHour", -1)): frame
+        for frame in (previous_output_meta or {}).get("frames", [])
+    }
     out_frames = []
-    skipped_reflectivity_frames = []
+    skipped_reflectivity_frames = list((previous_output_meta or {}).get("skippedReflectivityFrames", []))
     skipped_empty_frames = []
-    rendered_count = 0
+    rendered_count = int((previous_output_meta or {}).get("imageCount", 0))
     for item in frames:
         fh = int(item.get("forecastHour", -1))
         data_file = str(item.get("dataFile") or f"frames/f{fh:03d}.json.gz")
@@ -660,9 +678,10 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         frame = read_frame(source_path)
         if int(frame.get("forecastHour", fh)) != fh:
             raise RuntimeError(f"forecastHour inconsistente no arquivo {data_file}.")
+        previous_entry = previous_frames.get(fh, {})
         available = []
-        files = {}
-        preview_files = {}
+        files = dict(previous_entry.get("files") or {})
+        preview_files = dict(previous_entry.get("previewFiles") or {})
         forecast_time = str(item.get("time") or frame.get("validTime") or "")
         folder = output_dir / "frames" / f"f{fh:03d}"
         wind_speed_values = variable_values(frame, "windSpeed", expected)
@@ -679,6 +698,10 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         max_dbz = float(np.max(finite_refl))
         skip_reflectivity_png = fh > 0 and not np.any(finite_refl >= 5.0)
         if skip_reflectivity_png:
+            skipped_reflectivity_frames = [
+                item for item in skipped_reflectivity_frames
+                if int(item.get("forecastHour", -1)) != fh
+            ]
             skipped_reflectivity_frames.append({
                 "forecastHour": fh,
                 "validTime": forecast_time,
@@ -709,6 +732,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
                 preview_files[variable] = preview_rel
                 rendered_count += 1
                 print(f"[METBR BOLETINS] F{fh:03d} {variable}: PNG 4K + WebP", flush=True)
+        available_set = set(previous_entry.get("availableVariables") or []) | set(available)
+        available = [variable_name for variable_name in VARIABLES if variable_name in available_set and variable_name in files]
         frame_entry = {
             "forecastHour": fh,
             "validTime": forecast_time,
@@ -716,10 +741,11 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             "files": files,
             "previewFiles": preview_files,
         }
+        skipped = dict(previous_entry.get("skippedVariables") or {})
         if skip_reflectivity_png:
-            frame_entry["skippedVariables"] = {
-                "reflectivity": "no_visible_echo_below_5_dBZ"
-            }
+            skipped["reflectivity"] = "no_visible_echo_below_5_dBZ"
+        if skipped:
+            frame_entry["skippedVariables"] = skipped
         if available:
             out_frames.append(frame_entry)
         else:
@@ -749,7 +775,7 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             "previewFormat": "WebP RGBA; separate from 4K PNG downloads",
             "coverageCrop": "native METBR grid footprint; empty geographic corners transparent",
             "coverageExtentSource": "XLAT/XLONG valid grid, shared by every variable",
-            "scalarFieldRendering": "dense antialiased contours; native source grid preserved",
+            "scalarFieldRendering": "native-grid raster for continuous scalar fields; selected fields retain contours",
             "logo": "assets/sideral-logo.png",
         },
         "resolutionKm": 4,
@@ -765,8 +791,12 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         "skippedReflectivityFrameCount": len(skipped_reflectivity_frames),
         "skippedReflectivityFrames": skipped_reflectivity_frames,
         "skippedEmptyFrames": skipped_empty_frames,
-        "availableVariables": variables,
-        "variableCatalog": {key: {"label": VARIABLES[key]["label"], "short": VARIABLES[key]["short"], "unit": VARIABLES[key]["unit"]} for key in variables},
+        "availableVariables": [key for key in VARIABLES if key in variable_candidates and (key in set((previous_output_meta or {}).get("availableVariables", [])) or key in variables)],
+        "variableCatalog": {
+            key: {"label": VARIABLES[key]["label"], "short": VARIABLES[key]["short"], "unit": VARIABLES[key]["unit"]}
+            for key in VARIABLES
+            if key in variable_candidates and (key in set((previous_output_meta or {}).get("availableVariables", [])) or key in variables)
+        },
         "frames": out_frames,
     }
     (output_dir / "metadata.json").write_text(json.dumps(output_meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -790,8 +820,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--variables", default="", help="Lista opcional de variáveis separadas por vírgula; mantém arquivos já renderizados do mesmo ciclo.")
     args = parser.parse_args()
-    build_bulletins(args.input_dir.resolve(), args.output_dir.resolve())
+    selected = [value.strip() for value in args.variables.split(",") if value.strip()] or None
+    build_bulletins(args.input_dir.resolve(), args.output_dir.resolve(), selected_variables=selected)
 
 
 if __name__ == "__main__":
