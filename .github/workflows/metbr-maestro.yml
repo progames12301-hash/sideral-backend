@@ -62,14 +62,23 @@ jobs:
           else
             # Do not fall back to an older successful run while the newest
             # METBR run is still running or has failed.
-            LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName)"
+            LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName,createdAt)"
             RUN_ID="$(jq -r '.[0].databaseId // empty' <<< "$LATEST")"
             STATUS="$(jq -r '.[0].status // empty' <<< "$LATEST")"
             CONCLUSION="$(jq -r '.[0].conclusion // empty' <<< "$LATEST")"
             WORKFLOW_NAME="$(jq -r '.[0].workflowName // empty' <<< "$LATEST")"
+            CREATED_AT="$(jq -r '.[0].createdAt // empty' <<< "$LATEST")"
             if [[ -z "$RUN_ID" || "$STATUS" != "completed" || "$CONCLUSION" != "success" || "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
               echo "publish=false" >> "$GITHUB_OUTPUT"
               echo "METBR mais recente ainda não concluiu com sucesso; não publicarei dados antigos."
+              exit 0
+            fi
+            CREATED_EPOCH="$(date -u -d "$CREATED_AT" +%s)"
+            NOW_EPOCH="$(date -u +%s)"
+            AGE_SECONDS=$((NOW_EPOCH - CREATED_EPOCH))
+            if (( AGE_SECONDS < 0 || AGE_SECONDS > 30 * 60 * 60 )); then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "A última execução METBR bem-sucedida tem mais de 30 h; não vou republishar rodada antiga."
               exit 0
             fi
           fi
