@@ -57,7 +57,7 @@ VARIABLES = {
     },
     "bulkShear": {
         "label": "Cisalhamento profundo 0–6 km", "short": "Bulk shear 0–6 km", "unit": "m/s",
-        "cmap": "plasma", "min": 0.0, "max": 50.0, 
+        "cmap": "turbo", "min": 15.0, "max": 50.0,
     },
     "vorticity850": {
         "label": "Vorticidade relativa em 850 hPa", "short": "Vorticidade 850 hPa", "unit": "10⁻⁵ s⁻¹",
@@ -204,7 +204,7 @@ def color_setup(variable, field):
         "humidity": 15.0,
         "mucape": 25.0,
         "windSpeed": 1.0,
-        "bulkShear": 5.0,
+        "bulkShear": 15.0,
         "waterVapor": 5.0,
     }.get(variable)
     if display_floor is not None:
@@ -226,7 +226,8 @@ def color_setup(variable, field):
 
 
 def render_one(output_path, variable, values, lat, lon, init_time, valid_time, lead_hour,
-               nx, ny, admin_geometries, admin_labels, sideral_logo):
+               nx, ny, admin_geometries, admin_labels, sideral_logo,
+               wind_speed=None, wind_direction=None):
     import cartopy.crs as ccrs
     import cartopy.feature as cfeature
 
@@ -235,19 +236,31 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         return False
 
     finite_geo = np.isfinite(lat) & np.isfinite(lon) & (lat > -90) & (lat < 90) & (lon > -180) & (lon < 180)
-    finite_values = np.isfinite(np.asarray(values, dtype=np.float32).reshape(ny, nx))
-    # Crop to cells that actually contain data; sentinel/missing-data margins
-    # no longer enlarge the map canvas.
-    crop_mask = finite_geo & finite_values
+
+    # Mask the model's two outer grid rows/columns to remove the colored
+    # lateral-boundary fringe and avoid rendering invalid edge artifacts.
+    display_array = np.ma.asarray(field, dtype=np.float32)
+    display_data = np.asarray(np.ma.getdata(display_array), dtype=np.float32)
+    display_mask = np.ma.getmaskarray(display_array).copy()
+    edge = 2
+    display_mask[:edge, :] = True
+    display_mask[-edge:, :] = True
+    display_mask[:, :edge] = True
+    display_mask[:, -edge:] = True
+    display_mask |= ~np.isfinite(display_data)
+    field = np.ma.array(display_data, mask=display_mask)
+
+    # Crop from the pixels that are actually rendered after no-data/weak-signal
+    # masking, rather than from every finite native-grid value.
+    crop_mask = finite_geo & ~display_mask
     if int(crop_mask.sum()) < 100:
-        raise RuntimeError("grade geográfica/dados válidos insuficientes")
+        raise RuntimeError("grade geográfica/dados visíveis insuficientes para o recorte")
     west = float(np.nanmin(lon[crop_mask]))
     east = float(np.nanmax(lon[crop_mask]))
     south = float(np.nanmin(lat[crop_mask]))
     north = float(np.nanmax(lat[crop_mask]))
-    # Tight native-domain crop: roughly half a 4-km grid cell around the edge.
-    pad_lon = max(0.012, (east - west) * 0.001)
-    pad_lat = max(0.012, (north - south) * 0.001)
+    pad_lon = max(0.008, (east - west) * 0.0005)
+    pad_lat = max(0.008, (north - south) * 0.0005)
     extent = [west - pad_lon, east + pad_lon, south - pad_lat, north + pad_lat]
 
     init = parse_time(init_time)
@@ -258,11 +271,18 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     ax.set_facecolor("white")
     ax.set_extent(extent, crs=ccrs.PlateCarree())
     if variable == "reflectivity":
-        # Contours interpolate only between native grid points; source values
-        # are not averaged or blurred, preserving cell shape and intensity.
+        # Native REFL_10CM values: no numerical blur or averaging.
         refl_levels = np.arange(0.0, 75.1, 2.5)
         mesh = ax.contourf(
             lon, lat, field, levels=refl_levels, cmap=cmap, norm=norm,
+            extend="max", antialiased=True, corner_mask=True,
+            transform=ccrs.PlateCarree(), zorder=2,
+        )
+    elif variable == "bulkShear":
+        # Stronger 0–6 km shear in filled contours; weak background remains white.
+        shear_levels = np.arange(15.0, 50.1, 2.5)
+        mesh = ax.contourf(
+            lon, lat, field, levels=shear_levels, cmap=cmap, norm=norm,
             extend="max", antialiased=True, corner_mask=True,
             transform=ccrs.PlateCarree(), zorder=2,
         )
@@ -270,6 +290,33 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         mesh = ax.pcolormesh(
             lon, lat, field, cmap=cmap, norm=norm, shading="auto",
             transform=ccrs.PlateCarree(), rasterized=True, zorder=2,
+        )
+
+    # Overlay native 10-m wind barbs. UI JSON uses km/h and meteorological
+    # direction in degrees; Matplotlib barbs expect knot components.
+    if wind_speed is not None and wind_direction is not None:
+        speed = np.asarray(wind_speed, dtype=np.float32).reshape(ny, nx) / 1.852
+        direction = np.asarray(wind_direction, dtype=np.float32).reshape(ny, nx)
+        direction_rad = np.deg2rad(direction)
+        with np.errstate(invalid="ignore"):
+            u_knots = -speed * np.sin(direction_rad)
+            v_knots = -speed * np.cos(direction_rad)
+        valid_wind = (
+            np.isfinite(speed) & np.isfinite(direction) &
+            np.isfinite(u_knots) & np.isfinite(v_knots) & (speed >= 3.0 / 1.852)
+        )
+        # About 70 km between barbs on this 4-km grid, keeping a readable layout.
+        stride = 18
+        u_plot = np.ma.masked_where(~valid_wind, u_knots)[::stride, ::stride]
+        v_plot = np.ma.masked_where(~valid_wind, v_knots)[::stride, ::stride]
+        lon_plot = lon[::stride, ::stride]
+        lat_plot = lat[::stride, ::stride]
+        ax.barbs(
+            lon_plot, lat_plot, u_plot, v_plot,
+            length=4.3, linewidth=0.55, pivot="middle",
+            barbcolor="#202020", flagcolor="#202020",
+            barb_increments={"half": 5, "full": 10, "flag": 50},
+            transform=ccrs.PlateCarree(), zorder=7, alpha=0.90,
         )
     ax.add_feature(cfeature.COASTLINE.with_scale("50m"), edgecolor="#343434", linewidth=0.55, zorder=4)
     ax.add_feature(cfeature.BORDERS.with_scale("50m"), edgecolor="#242424", linewidth=0.75, zorder=5)
@@ -308,6 +355,8 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         cb.ax.tick_params(labelsize=5.5)
     elif variable == "windDirection":
         cb.set_ticks([0, 90, 180, 270, 360])
+    elif variable == "bulkShear":
+        cb.set_ticks([15, 20, 25, 30, 35, 40, 45, 50])
     cb.outline.set_edgecolor("#555555")
     cb.outline.set_linewidth(0.5)
     fig.text(0.022, 0.024, f"Grade nativa {nx} × {ny}", fontsize=7, color="#4b535c", ha="left", va="bottom")
@@ -394,6 +443,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         files = {}
         forecast_time = str(item.get("time") or frame.get("validTime") or "")
         folder = output_dir / "frames" / f"f{fh:03d}"
+        wind_speed_values = variable_values(frame, "windSpeed", expected)
+        wind_direction_values = variable_values(frame, "windDirection", expected)
 
         # A fully blank reflectivity map is invisible in the reference palette
         # (<5 dBZ is masked), so publishing it between active frames causes
@@ -426,7 +477,9 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             out_path = folder / f"{variable}.png"
             if render_one(out_path, variable, values.reshape(ny, nx), lat, lon,
                           str(meta.get("initTime") or frame.get("initTime") or ""),
-                          forecast_time, fh, nx, ny, admin_geometries, admin_labels, sideral_logo):
+                          forecast_time, fh, nx, ny, admin_geometries, admin_labels, sideral_logo,
+                          wind_speed=wind_speed_values.reshape(ny, nx) if wind_speed_values is not None else None,
+                          wind_direction=wind_direction_values.reshape(ny, nx) if wind_direction_values is not None else None):
                 available.append(variable)
                 files[variable] = f"frames/f{fh:03d}/{variable}.png"
                 rendered_count += 1
@@ -461,6 +514,9 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             "missingValuesTransparent": True,
             "skipBlankReflectivityAfterF000": True,
             "minimumVisibleReflectivityDbz": 5.0,
+            "bulkShearDisplayFloorMs": 15.0,
+            "windBarbs": "10 m; knots; every 18 native grid points",
+            "outerModelBoundaryCellsMasked": 2,
             "logo": "assets/sideral-logo.png",
         },
         "resolutionKm": 4,
