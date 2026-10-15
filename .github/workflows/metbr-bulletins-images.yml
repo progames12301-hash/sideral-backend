@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: metbr-wrf-bulletins
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   render-and-publish:
@@ -108,7 +108,16 @@ jobs:
           assert meta.get("frameCount", 0) >= 1
           assert meta.get("imageCount", 0) == len(pngs), (meta.get("imageCount"), len(pngs))
           assert all(p.stat().st_size > 5000 for p in pngs)
-          print(f"Boletins validados: {meta['frameCount']} horários, {len(pngs)} PNGs, rodada {meta['initTime']}")
+          policy = meta.get("displayProcessing") or {}
+          assert policy.get("skipBlankReflectivityAfterF000") is True, "Renderer sem regra anti-piscamento"
+          assert policy.get("windBarbs"), "Renderer sem barbelas de vento"
+          assert policy.get("outerModelBoundaryCellsMasked") == 2, "Recorte da borda WRF não aplicado"
+          assert meta.get("bulkShearDisplayFloorMs") is None or policy.get("bulkShearDisplayFloorMs") == 15.0
+          print(
+              f"Boletins validados: {meta['frameCount']} horários, {len(pngs)} PNGs, "
+              f"refletividade ignorada em {meta.get('skippedReflectivityFrameCount', 0)} horários, "
+              f"rodada {meta['initTime']}"
+          )
           PY
           du -sh metbr-bulletins
 
