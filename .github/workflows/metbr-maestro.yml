@@ -44,7 +44,7 @@ jobs:
           ref: main
           fetch-depth: 1
 
-      - name: Validar e selecionar execução METBR atual
+      - name: Selecionar a execução METBR mais recente
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,66 +54,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Always inspect the newest METBR run, even when this maestro was
-          # started by a workflow_run event. A newer in-progress run wins.
-          LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName,createdAt)"
-          LATEST_ID="$(jq -r '.[0].databaseId // empty' <<< "$LATEST")"
-          LATEST_STATUS="$(jq -r '.[0].status // empty' <<< "$LATEST")"
-          LATEST_CONCLUSION="$(jq -r '.[0].conclusion // empty' <<< "$LATEST")"
-          LATEST_WORKFLOW="$(jq -r '.[0].workflowName // empty' <<< "$LATEST")"
-          CREATED_AT="$(jq -r '.[0].createdAt // empty' <<< "$LATEST")"
-
-          if [[ -z "$LATEST_ID" || "$LATEST_WORKFLOW" != "METBR WRF 4 KM - ICON" ]]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "Não encontrei uma execução válida do METBR; nenhuma rodada será publicada."
-            exit 0
-          fi
-          if [[ "$LATEST_STATUS" != "completed" || "$LATEST_CONCLUSION" != "success" ]]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "A execução METBR mais recente ainda não terminou com sucesso (run=$LATEST_ID, status=$LATEST_STATUS); não publicarei dados antigos."
-            exit 0
-          fi
-
-          if [[ "$EVENT_NAME" == "workflow_run" && -n "$EVENT_RUN_ID" ]]; then
-            if [[ "$EVENT_RUN_ID" != "$LATEST_ID" ]]; then
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              echo "Evento do run $EVENT_RUN_ID ignorado: execução METBR mais recente é $LATEST_ID."
-              exit 0
-            fi
-            RUN_ID="$EVENT_RUN_ID"
-          elif [[ -n "$INPUT_RUN_ID" ]]; then
-            if [[ "$INPUT_RUN_ID" != "$LATEST_ID" ]]; then
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              echo "Run manual $INPUT_RUN_ID ignorado: só é permitida a execução METBR mais recente ($LATEST_ID)."
-              exit 0
-            fi
+          if [[ -n "$INPUT_RUN_ID" ]]; then
             RUN_ID="$INPUT_RUN_ID"
+            echo "Usando a execução METBR solicitada explicitamente: $RUN_ID"
           else
-            CREATED_EPOCH="$(date -u -d "$CREATED_AT" +%s)"
-            NOW_EPOCH="$(date -u +%s)"
-            AGE_SECONDS=$((NOW_EPOCH - CREATED_EPOCH))
-            if (( AGE_SECONDS < 0 || AGE_SECONDS > 30 * 60 * 60 )); then
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              echo "A última execução METBR bem-sucedida tem mais de 30 h; não vou republicar rodada antiga."
-              exit 0
+            # Always select the newest run by creation order, regardless of
+            # status. Never fall back to an older successful run.
+            LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName,createdAt)"
+            RUN_ID="$(jq -r '.[0].databaseId // empty' <<< "$LATEST")"
+            STATUS="$(jq -r '.[0].status // empty' <<< "$LATEST")"
+            WORKFLOW_NAME="$(jq -r '.[0].workflowName // empty' <<< "$LATEST")"
+            if [[ -z "$RUN_ID" || "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
+              echo "Não encontrei uma execução METBR válida." >&2
+              exit 1
             fi
-            RUN_ID="$LATEST_ID"
+            echo "Execução METBR mais recente: run_id=$RUN_ID; status=$STATUS"
           fi
 
           RUN_INFO="$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json databaseId,workflowName,status,conclusion)"
-          STATUS="$(jq -r '.status // empty' <<< "$RUN_INFO")"
-          CONCLUSION="$(jq -r '.conclusion // empty' <<< "$RUN_INFO")"
           WORKFLOW_NAME="$(jq -r '.workflowName // empty' <<< "$RUN_INFO")"
-          if [[ "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" || "$STATUS" != "completed" || "$CONCLUSION" != "success" ]]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "Run $RUN_ID não é uma execução METBR concluída com sucesso; publicação cancelada."
-            exit 0
+          STATUS="$(jq -r '.status // empty' <<< "$RUN_INFO")"
+          if [[ "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
+            echo "Run $RUN_ID pertence a '$WORKFLOW_NAME', não ao METBR." >&2
+            exit 1
           fi
 
           echo "publish=true" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "tag=metbr-wrf-4km-checkpoint-$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "METBR Maestro publicará exclusivamente a execução METBR mais recente: run_id=$RUN_ID"
+          echo "O Maestro tentará publicar exclusivamente a execução METBR mais recente: $RUN_ID (status=$STATUS)"
 
       - name: Instalar dependências
         if: steps.meta.outputs.publish == 'true'
