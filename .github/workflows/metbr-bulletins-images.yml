@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/metbr-bulletins-images.yml'
       - 'wrf/render_metbr_bulletins.py'
+      - 'wrf/render_metbr_animations.py'
       - 'metadata.json'
       - 'grid.json'
       - 'frames/**'
@@ -45,6 +46,14 @@ jobs:
 
       - name: Instalar bibliotecas de mapas
         run: python -m pip install --disable-pip-version-check 'numpy>=1.26,<2' 'matplotlib>=3.8,<4' 'cartopy>=0.23,<0.26' 'shapely>=2,<3' 'requests>=2.31,<3'
+
+      - name: Preparar FFmpeg para exportar MP4
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
 
       - name: Baixar os JSON publicados sem alterar a branch de dados
         id: source
@@ -157,6 +166,8 @@ jobs:
           assert meta.get("imageCount", 0) == len(pngs), (meta.get("imageCount"), len(pngs))
           assert all(p.stat().st_size > 5000 for p in pngs)
           policy = meta.get("displayProcessing") or {}
+          assert policy.get("previewFormat", "").startswith("WebP"), "renderer sem prévias WebP"
+          assert policy.get("previewResolutionMaxPx") == [1200, 1200], "resolução de prévia inesperada"
           assert policy.get("renderResolutionPx") == [3840, 3840], "PNG não foi renderizado em 4K"
           assert policy.get("skipBlankReflectivityAfterF000") is True, "Renderer sem regra anti-piscamento"
           assert policy.get("windBarbs"), "Renderer sem barbelas de vento"
@@ -174,6 +185,30 @@ jobs:
           )
           PY
           du -sh metbr-bulletins
+
+      - name: Gerar GIF e MP4 lentos e ultra-rápidos
+        if: steps.source.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          python -m py_compile wrf/render_metbr_animations.py
+          python wrf/render_metbr_animations.py --output-dir metbr-bulletins
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("metbr-bulletins")
+          meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
+          assert meta.get("animations"), "nenhuma animação publicada"
+          for variable, speeds in meta["animations"].items():
+              for speed in ("slow", "ultra-fast"):
+                  for fmt in ("gif", "mp4"):
+                      rel = speeds.get(speed, {}).get(fmt)
+                      assert rel, f"faltou {fmt} {speed} para {variable}"
+                      path = root / rel
+                      assert path.is_file() and path.stat().st_size > 5000, f"animação inválida: {rel}"
+          previews = [Path("metbr-bulletins") / rel for frame in meta["frames"] for rel in frame.get("previewFiles", {}).values()]
+          assert previews and all(p.is_file() and p.stat().st_size > 1000 for p in previews), "prévia WebP ausente"
+          print(f"Animações validadas: {sum(len(v) for v in meta['animations'].values())} perfis velocidade/formato; {len(previews)} prévias WebP")
+          PY
 
       - name: Publicar somente as imagens na branch metbr-boletins-imagens
         if: steps.source.outputs.publish == 'true'
