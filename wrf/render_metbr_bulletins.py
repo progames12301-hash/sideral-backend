@@ -593,7 +593,7 @@ def create_preview(source_path: Path, preview_path: Path, max_edge: int = 1200):
     if preview_path.stat().st_size < 1000:
         raise RuntimeError(f"Prévia WEBP inválida: {preview_path}")
 
-def build_bulletins(input_dir: Path, output_dir: Path, selected_variables=None):
+def build_bulletins(input_dir: Path, output_dir: Path, selected_variables=None, selected_hours=None):
     metadata_path = input_dir / "metadata.json"
     grid_path = input_dir / "grid.json"
     if not metadata_path.is_file() or not grid_path.is_file():
@@ -616,6 +616,10 @@ def build_bulletins(input_dir: Path, output_dir: Path, selected_variables=None):
     frames = sorted(meta.get("frames") or [], key=lambda x: int(x.get("forecastHour", -1)))
     if not frames:
         raise RuntimeError("METBR metadata não lista horários de previsão.")
+    requested_hours = set(int(hour) for hour in selected_hours) if selected_hours is not None else None
+    known_hours = {int(item.get("forecastHour", -1)) for item in frames}
+    if requested_hours is not None and not requested_hours.issubset(known_hours):
+        raise RuntimeError(f"Horários solicitados ausentes na rodada METBR: {sorted(requested_hours - known_hours)}")
     variable_candidates = set(meta.get("availableVariablesAnyFrame") or meta.get("availableVariables") or [])
     requested = set(selected_variables or [])
     unknown = requested - set(VARIABLES)
@@ -671,10 +675,20 @@ def build_bulletins(input_dir: Path, output_dir: Path, selected_variables=None):
         if int(frame.get("forecastHour", fh)) != fh:
             raise RuntimeError(f"forecastHour inconsistente no arquivo {data_file}.")
         previous_entry = previous_frames.get(fh, {})
+        forecast_time = str(item.get("time") or frame.get("validTime") or "")
+        if requested_hours is not None and fh not in requested_hours:
+            if previous_entry.get("files"):
+                out_frames.append(previous_entry)
+            else:
+                skipped_empty_frames.append({
+                    "forecastHour": fh,
+                    "validTime": forecast_time,
+                    "reason": "horario_ainda_nao_processado_no_lote_incremental",
+                })
+            continue
         available = []
         files = dict(previous_entry.get("files") or {})
         preview_files = dict(previous_entry.get("previewFiles") or {})
-        forecast_time = str(item.get("time") or frame.get("validTime") or "")
         folder = output_dir / "frames" / f"f{fh:03d}"
         wind_speed_values = variable_values(frame, "windSpeed", expected)
         wind_direction_values = variable_values(frame, "windDirection", expected)
@@ -813,9 +827,11 @@ def main():
     parser.add_argument("--input-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--variables", default="", help="Lista opcional de variáveis separadas por vírgula; mantém arquivos já renderizados do mesmo ciclo.")
+    parser.add_argument("--hours", default="", help="Horários Fxxx a renderizar, separados por vírgula; os demais arquivos já publicados no lote são preservados.")
     args = parser.parse_args()
     selected = [value.strip() for value in args.variables.split(",") if value.strip()] or None
-    build_bulletins(args.input_dir.resolve(), args.output_dir.resolve(), selected_variables=selected)
+    hours = [int(value.strip().upper().lstrip("F")) for value in args.hours.split(",") if value.strip()] or None
+    build_bulletins(args.input_dir.resolve(), args.output_dir.resolve(), selected_variables=selected, selected_hours=hours)
 
 
 if __name__ == "__main__":
