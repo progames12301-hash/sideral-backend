@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
 from matplotlib import patheffects
 import numpy as np
+from PIL import Image
 
 MODEL = "METBR WRF 4 km"
 COUNTRY_KEYS = {"Argentina", "Brazil", "Uruguay", "Paraguay", "Bolivia", "Chile"}
@@ -31,7 +32,7 @@ VARIABLES = {
     },
     "precipitation": {
         "label": "Precipitação acumulada", "short": "Precipitação", "unit": "mm",
-        "cmap": "turbo", "min": 0.0, "max": 80.0, "mode": "dynamic-upper",
+        "cmap": "turbo", "min": 0.0, "max": 450.0,
     },
     "temperature": {
         "label": "Temperatura a 2 m", "short": "Temperatura 2 m", "unit": "°C",
@@ -43,11 +44,11 @@ VARIABLES = {
     },
     "mucape": {
         "label": "CAPE de parcela mais instável", "short": "MUCAPE", "unit": "J/kg",
-        "cmap": "turbo", "min": 0.0, "max": 4000.0, "mode": "dynamic-upper",
+        "cmap": "turbo", "min": 0.0, "max": 4000.0, 
     },
     "windSpeed": {
         "label": "Velocidade do vento a 10 m", "short": "Vento 10 m", "unit": "km/h",
-        "cmap": "turbo", "min": 0.0, "max": 120.0, "mode": "dynamic-upper",
+        "cmap": "turbo", "min": 0.0, "max": 120.0, 
     },
     "windDirection": {
         "label": "Direção do vento a 10 m", "short": "Direção do vento", "unit": "°",
@@ -56,7 +57,7 @@ VARIABLES = {
     },
     "bulkShear": {
         "label": "Cisalhamento profundo 0–6 km", "short": "Bulk shear 0–6 km", "unit": "m/s",
-        "cmap": "plasma", "min": 0.0, "max": 50.0, "mode": "dynamic-upper",
+        "cmap": "plasma", "min": 0.0, "max": 50.0, 
     },
     "vorticity850": {
         "label": "Vorticidade relativa em 850 hPa", "short": "Vorticidade 850 hPa", "unit": "10⁻⁵ s⁻¹",
@@ -64,18 +65,19 @@ VARIABLES = {
     },
     "waterVapor": {
         "label": "Água precipitável", "short": "Água precipitável", "unit": "mm",
-        "cmap": "YlGnBu", "min": 0.0, "max": 70.0, "mode": "dynamic-upper",
+        "cmap": "YlGnBu", "min": 0.0, "max": 70.0, 
     },
 }
 
 # Palette patterned after the reflectivity bulletin supplied as the reference.
-REFL_BOUNDS = np.arange(5.0, 80.0, 5.0)
+REFL_BOUNDS = np.arange(0.0, 80.0, 5.0)
 REFL_COLORS = [
-    "#20e8f0", "#04a5f4", "#1239f5", "#17c92b", "#55be24", "#e0e722",
-    "#ffe21a", "#ffb000", "#ff6a00", "#ed1c24", "#9d0008", "#fa16da",
-    "#d343ed", "#8650c6",
+    "#ffffff", "#20e8f0", "#04a5f4", "#1239f5", "#17c92b", "#55be24",
+    "#e0e722", "#ffe21a", "#ffb000", "#ff6a00", "#ed1c24", "#9d0008",
+    "#fa16da", "#d343ed", "#8650c6",
 ]
 REFL_CMAP = mcolors.ListedColormap(REFL_COLORS, name="sideral_reflectivity")
+REFL_CMAP.set_bad((1.0, 1.0, 1.0, 0.0))
 REFL_NORM = mcolors.BoundaryNorm(REFL_BOUNDS, REFL_CMAP.N, clip=True)
 
 
@@ -139,7 +141,7 @@ def variable_values(frame, variable, expected_size):
         arr = np.asarray([np.nan if v is None else float(v) for v in raw], dtype=np.float32)
     except (TypeError, ValueError):
         return None
-    arr[(~np.isfinite(arr)) | (arr <= -1000.0) | (np.abs(arr) > 1e20)] = np.nan
+    arr[(~np.isfinite(arr)) | (arr <= -900.0) | (np.abs(arr) > 1e20)] = np.nan
     return arr
 
 
@@ -170,45 +172,65 @@ def _smooth_reflectivity_for_display(field):
 
 
 def color_setup(variable, field):
+    """Return fixed, frame-comparable colors and a transparent no-data mask."""
     spec = VARIABLES.get(variable, {
         "label": variable, "short": variable, "unit": "", "cmap": "viridis",
         "min": 0.0, "max": 1.0,
     })
-    arr = np.asarray(field, dtype=np.float32)
+    arr = np.asarray(field, dtype=np.float32).copy()
+    arr[(~np.isfinite(arr)) | (arr <= -900.0) | (np.abs(arr) > 1e20)] = np.nan
     finite = arr[np.isfinite(arr)]
     if finite.size == 0:
-        return spec, None, None, arr
+        return spec, None, None, np.ma.masked_invalid(arr)
 
     if variable == "reflectivity":
-        # Display-only interpolation improves cell edges; <5 dBZ remains white.
-        arr = _smooth_reflectivity_for_display(arr)
+        # Use native WRF values directly. No blur/smoothing: isolated cells,
+        # sharp gradients and gaps must remain faithful to REFL_10CM.
         arr = np.ma.masked_where((~np.isfinite(arr)) | (arr < 5.0), arr)
-        return spec, REFL_CMAP, REFL_NORM, arr
+        cmap = REFL_CMAP.copy()
+        cmap.set_bad((1.0, 1.0, 1.0, 0.0))
+        return spec, cmap, REFL_NORM, arr
 
-    mode = spec.get("mode")
-    if mode == "vorticity":
+    if spec.get("mode") == "vorticity":
         arr = arr * 1e5
-        finite = arr[np.isfinite(arr)]
-        robust = float(np.nanpercentile(np.abs(finite), 98)) if finite.size else 1.0
-        vmax = max(5.0, min(60.0, robust))
-        return spec, plt.get_cmap(spec["cmap"]), mcolors.TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax), arr
+        # Near-zero vorticity is neutral background, not a painted raster.
+        arr = np.ma.masked_where((~np.isfinite(arr)) | (np.abs(arr) < 1.0), arr)
+        cmap = plt.get_cmap(spec["cmap"]).copy()
+        cmap.set_bad((1.0, 1.0, 1.0, 0.0))
+        norm = mcolors.TwoSlopeNorm(vmin=-30.0, vcenter=0.0, vmax=30.0)
+        return spec, cmap, norm, arr
+
+    # Keep neutral/no-event areas white instead of coloring zero with the first
+    # shade of the palette. Thresholds are display-only; source JSON is untouched.
+    # Values and color scales remain stable between forecast hours.
+    display_floor = {
+        "precipitation": 0.2,
+        "humidity": 15.0,
+        "mucape": 25.0,
+        "windSpeed": 1.0,
+        "bulkShear": 5.0,
+        "waterVapor": 5.0,
+    }.get(variable)
+    if display_floor is not None:
+        arr = np.ma.masked_where((~np.isfinite(arr)) | (arr < display_floor), arr)
+    else:
+        arr = np.ma.masked_invalid(arr)
 
     vmin = float(spec.get("min", np.nanpercentile(finite, 2)))
     vmax = float(spec.get("max", np.nanpercentile(finite, 98)))
-    if mode == "dynamic-upper":
-        q98 = float(np.nanpercentile(finite, 98))
-        vmax = max(vmin + 1.0, min(vmax, q98 if q98 > vmin else vmax))
-    if variable == "precipitation":
-        vmax = max(5.0, vmax)
     if not math.isfinite(vmin):
         vmin = 0.0
     if not math.isfinite(vmax) or vmax <= vmin:
         vmax = vmin + 1.0
-    return spec, plt.get_cmap(spec.get("cmap", "viridis")), mcolors.Normalize(vmin=vmin, vmax=vmax, clip=True), arr
+
+    cmap = plt.get_cmap(spec.get("cmap", "viridis")).copy()
+    cmap.set_bad((1.0, 1.0, 1.0, 0.0))
+    norm = mcolors.Normalize(vmin=vmin, vmax=vmax, clip=True)
+    return spec, cmap, norm, arr
 
 
 def render_one(output_path, variable, values, lat, lon, init_time, valid_time, lead_hour,
-               nx, ny, admin_geometries, admin_labels):
+               nx, ny, admin_geometries, admin_labels, sideral_logo):
     import cartopy.crs as ccrs
     import cartopy.feature as cfeature
 
@@ -217,15 +239,19 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         return False
 
     finite_geo = np.isfinite(lat) & np.isfinite(lon) & (lat > -90) & (lat < 90) & (lon > -180) & (lon < 180)
-    if int(finite_geo.sum()) < 100:
-        raise RuntimeError("grade geográfica inválida")
-    west = float(np.nanmin(lon[finite_geo]))
-    east = float(np.nanmax(lon[finite_geo]))
-    south = float(np.nanmin(lat[finite_geo]))
-    north = float(np.nanmax(lat[finite_geo]))
-    # Crop to the native domain with a narrow geographic margin.
-    pad_lon = max(0.04, (east - west) * 0.004)
-    pad_lat = max(0.04, (north - south) * 0.004)
+    finite_values = np.isfinite(np.asarray(values, dtype=np.float32).reshape(ny, nx))
+    # Crop to cells that actually contain data; sentinel/missing-data margins
+    # no longer enlarge the map canvas.
+    crop_mask = finite_geo & finite_values
+    if int(crop_mask.sum()) < 100:
+        raise RuntimeError("grade geográfica/dados válidos insuficientes")
+    west = float(np.nanmin(lon[crop_mask]))
+    east = float(np.nanmax(lon[crop_mask]))
+    south = float(np.nanmin(lat[crop_mask]))
+    north = float(np.nanmax(lat[crop_mask]))
+    # Tight native-domain crop: roughly half a 4-km grid cell around the edge.
+    pad_lon = max(0.012, (east - west) * 0.001)
+    pad_lat = max(0.012, (north - south) * 0.001)
     extent = [west - pad_lon, east + pad_lon, south - pad_lat, north + pad_lat]
 
     init = parse_time(init_time)
@@ -233,10 +259,12 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     # Near-square canvas with larger map area, suited to the two-map layout.
     fig = plt.figure(figsize=(10.0, 10.0), dpi=125, facecolor="white")
     ax = fig.add_axes([0.08, 0.15, 0.84, 0.75], projection=ccrs.PlateCarree())
+    ax.set_facecolor("white")
     ax.set_extent(extent, crs=ccrs.PlateCarree())
     if variable == "reflectivity":
-        # Smoothly interpolated filled contours from native grid-point values.
-        refl_levels = np.arange(5.0, 75.1, 2.5)
+        # Contours interpolate only between native grid points; source values
+        # are not averaged or blurred, preserving cell shape and intensity.
+        refl_levels = np.arange(0.0, 75.1, 2.5)
         mesh = ax.contourf(
             lon, lat, field, levels=refl_levels, cmap=cmap, norm=norm,
             extend="max", antialiased=True, corner_mask=True,
@@ -283,8 +311,14 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         cb.set_ticks([0, 90, 180, 270, 360])
     cb.outline.set_edgecolor("#555555")
     cb.outline.set_linewidth(0.5)
-    fig.text(0.978, 0.024, "SIDERAL METEOROLOGIA", fontsize=7.5, fontweight="bold", color="#243b63", ha="right", va="bottom")
     fig.text(0.022, 0.024, f"Grade nativa {nx} × {ny}", fontsize=7, color="#4b535c", ha="left", va="bottom")
+    # Use the repository's official Sideral artwork, not a generated text logo.
+    logo_height = 0.046
+    logo_ratio = sideral_logo.shape[1] / max(1, sideral_logo.shape[0])
+    logo_width = logo_height * logo_ratio * (fig.get_figheight() / fig.get_figwidth())
+    logo_ax = fig.add_axes([0.978 - logo_width, 0.006, logo_width, logo_height])
+    logo_ax.imshow(sideral_logo, interpolation="antialiased")
+    logo_ax.set_axis_off()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(
@@ -335,6 +369,12 @@ def build_bulletins(input_dir: Path, output_dir: Path):
     if not admin_geometries:
         raise RuntimeError("Não foram carregadas fronteiras de estados/províncias; cancelando a publicação.")
 
+    logo_path = Path(__file__).resolve().parents[1] / "assets" / "sideral-logo.png"
+    if not logo_path.is_file():
+        raise RuntimeError(f"Logo oficial Sideral não encontrada: {logo_path}")
+    with Image.open(logo_path) as logo_source:
+        sideral_logo = np.asarray(logo_source.convert("RGBA"))
+
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -360,7 +400,7 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             out_path = folder / f"{variable}.png"
             if render_one(out_path, variable, values.reshape(ny, nx), lat, lon,
                           str(meta.get("initTime") or frame.get("initTime") or ""),
-                          forecast_time, fh, nx, ny, admin_geometries, admin_labels):
+                          forecast_time, fh, nx, ny, admin_geometries, admin_labels, sideral_logo):
                 available.append(variable)
                 files[variable] = f"frames/f{fh:03d}/{variable}.png"
                 rendered_count += 1
@@ -378,6 +418,13 @@ def build_bulletins(input_dir: Path, output_dir: Path):
     output_meta = {
         "schema": "sideral-metbr-bulletin-images-v1",
         "model": MODEL,
+        "displayProcessing": {
+            "nativeGrid": True,
+            "reflectivitySmoothing": False,
+            "fixedColorScales": True,
+            "missingValuesTransparent": True,
+            "logo": "assets/sideral-logo.png",
+        },
         "resolutionKm": 4,
         "nativeGrid": True,
         "initTime": meta["initTime"],
