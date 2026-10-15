@@ -153,6 +153,87 @@ jobs:
           print(f"METBR JSON lidos da branch existente: {len(result)} arquivos, {total / 1024 / 1024:.1f} MiB; ciclo {meta.get('initTime')}")
           PY
 
+      - name: Preservar prévias já publicadas do mesmo ciclo
+        if: steps.source.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import concurrent.futures
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import requests
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          source_path = Path("metbr-source/metadata.json")
+          source = json.loads(source_path.read_text(encoding="utf-8"))
+          root = Path("metbr-bulletins")
+          branch = "metbr-boletins-imagens"
+          base = f"https://raw.githubusercontent.com/{repo}/{branch}/"
+          headers = {"User-Agent": "Sideral-METBR-Bulletins/1.0"}
+
+          response = requests.get(base + "metadata.json", headers=headers, timeout=(10, 30))
+          if response.status_code == 404:
+              print("Sem pacote anterior de imagens; começando do zero.")
+              raise SystemExit(0)
+          response.raise_for_status()
+          published = response.json()
+          same_cycle = (
+              str(published.get("sourceRunId") or "") == str(source.get("sourceRunId") or "")
+              and str(published.get("initTime") or "") == str(source.get("initTime") or "")
+          )
+          policy = published.get("displayProcessing") or {}
+          valid_previous = (
+              same_cycle
+              and str(policy.get("previewFormat") or "").startswith("WebP")
+              and bool(policy.get("coverageCrop"))
+          )
+          if not valid_previous:
+              print("Pacote anterior de outro ciclo ou sem prévias/recorte verificados; começando do zero.")
+              raise SystemExit(0)
+
+          items = {"metadata.json": response.content}
+          for frame in published.get("frames", []):
+              for key in ("files", "previewFiles"):
+                  for rel in (frame.get(key) or {}).values():
+                      path = PurePosixPath(str(rel))
+                      if path.is_absolute() or ".." in path.parts:
+                          raise RuntimeError(f"Caminho inseguro no metadata publicado: {rel}")
+                      items[str(path)] = None
+
+          def download(item):
+              rel, existing = item
+              if existing is not None:
+                  return rel, existing
+              response = requests.get(base + rel, headers=headers, timeout=(10, 60))
+              response.raise_for_status()
+              if not response.content:
+                  raise RuntimeError(f"Arquivo anterior vazio: {rel}")
+              return rel, response.content
+
+          with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+              result = list(pool.map(download, items.items()))
+          root.mkdir(parents=True, exist_ok=True)
+          for rel, content in result:
+              destination = root / rel
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(content)
+          published.pop("animations", None)
+          published.pop("animationProfiles", None)
+          (root / "metadata.json").write_text(
+              json.dumps(published, ensure_ascii=False, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          (root / ".nojekyll").write_text("", encoding="utf-8")
+          print(
+              f"Preservado pacote do mesmo ciclo {source.get('initTime')}: "
+              f"{len(result)-1} PNG/WebP reutilizados; próximos lotes serão mesclados."
+          )
+          PY
+
       - name: Gerar e publicar PNGs em lotes incrementais
         if: steps.source.outputs.publish == 'true'
         env:
