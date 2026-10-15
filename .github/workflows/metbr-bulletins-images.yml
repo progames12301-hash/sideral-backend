@@ -153,12 +153,20 @@ jobs:
           print(f"METBR JSON lidos da branch existente: {len(result)} arquivos, {total / 1024 / 1024:.1f} MiB; ciclo {meta.get('initTime')}")
           PY
 
-      - name: Gerar boletins PNG
+      - name: Gerar e publicar PNGs em lotes incrementais
         if: steps.source.outputs.publish == 'true'
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          python wrf/render_metbr_bulletins.py --input-dir metbr-source --output-dir metbr-bulletins
-          python - <<'PY'
+          mkdir -p metbr-bulletins
+
+          publish_batch() {
+            local batch="$1"
+            local variables="$2"
+            echo "::group::METBR lote $batch — $variables"
+            python wrf/render_metbr_bulletins.py --input-dir metbr-source --output-dir metbr-bulletins --variables "$variables"
+            python - <<'PY'
           import json
           from pathlib import Path
           from PIL import Image
@@ -182,12 +190,27 @@ jobs:
               assert im.size == (3840, 3840), (first, im.size)
               assert im.mode == "RGBA", f"PNG precisa preservar máscara transparente: {im.mode}"
               assert im.getchannel("A").getextrema()[0] == 0, "PNG não removeu os cantos fora da cobertura"
-          print(
-              f"Boletins 4K validados: {meta['frameCount']} horários, {len(pngs)} PNGs, "
-              f"refletividade ignorada em {meta.get('skippedReflectivityFrameCount', 0)} horários, "
-              f"rodada {meta['initTime']}"
-          )
+          print(f"Lote publicado: {len(pngs)} PNGs 4K / {len(meta.get('availableVariables', []))} variáveis; rodada {meta['initTime']}")
           PY
+            local publish_dir
+            publish_dir="$(mktemp -d)"
+            cp -a metbr-bulletins/. "$publish_dir/"
+            git -C "$publish_dir" init -b metbr-boletins-imagens
+            git -C "$publish_dir" config user.name 'github-actions[bot]'
+            git -C "$publish_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git -C "$publish_dir" add -A
+            git -C "$publish_dir" commit -m "publish: METBR lote $batch $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git -C "$publish_dir" remote add origin "https://x-access-token:$GH_TOKEN@github.com/${GITHUB_REPOSITORY}.git"
+            git -C "$publish_dir" push --force origin HEAD:metbr-boletins-imagens
+            rm -rf "$publish_dir"
+            echo "Lote $batch publicado incrementalmente."
+            echo "::endgroup::"
+          }
+
+          publish_batch "1-core" "reflectivity,precipitation,temperature,humidity,windSpeed,windDirection,bulkShear,vorticity850,waterVapor,dewpoint2m"
+          publish_batch "2-severe" "cin,kIndex,lcl,lclHeight,mlcape,mucapeWrf2,sbcape,stp,scp,srh01,srh03"
+          publish_batch "3-thermo" "thetaE2m,thetaE850,thetaEAdvection,temperature850,windDirection850,windSpeed850,seaLevelPressure,surfacePressure,mslp,pwat"
+          publish_batch "4-upper" "bulkShear06,effectiveBulkShear,omega700,thickness,totalTotals,vorticity500,wind500,wind850"
           du -sh metbr-bulletins
 
       - name: Gerar GIF e MP4 lentos e ultra-rápidos
