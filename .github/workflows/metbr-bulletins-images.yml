@@ -34,6 +34,9 @@ jobs:
           ref: main
           fetch-depth: 1
 
+      - name: Validar sintaxe do renderer
+        run: python -m py_compile wrf/render_metbr_bulletins.py
+
       - name: Preparar Python
         uses: actions/setup-python@v5
         with:
@@ -157,9 +160,12 @@ jobs:
           assert policy.get("skipBlankReflectivityAfterF000") is True, "Renderer sem regra anti-piscamento"
           assert policy.get("windBarbs"), "Renderer sem barbelas de vento"
           assert policy.get("outerModelBoundaryCellsMasked") == 2, "Recorte da borda WRF não aplicado"
+          assert policy.get("coverageCrop"), "PNG sem recorte da cobertura geográfica METBR"
           first = pngs[0]
           with Image.open(first) as im:
               assert im.size == (3840, 3840), (first, im.size)
+              assert im.mode == "RGBA", f"PNG precisa preservar máscara transparente: {im.mode}"
+              assert im.getchannel("A").getextrema()[0] == 0, "PNG não removeu os cantos fora da cobertura"
           print(
               f"Boletins 4K validados: {meta['frameCount']} horários, {len(pngs)} PNGs, "
               f"refletividade ignorada em {meta.get('skippedReflectivityFrameCount', 0)} horários, "
