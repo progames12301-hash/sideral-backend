@@ -726,6 +726,8 @@ def build_bulletins(input_dir: Path, output_dir: Path, selected_variables=None, 
             if values is None or not np.isfinite(values).any():
                 continue
             out_path = folder / f"{variable}.png"
+            previous_rel = (previous_entry.get("files") or {}).get(variable)
+            was_already_counted = bool(previous_rel) and (output_dir / str(previous_rel)).is_file()
             if render_one(out_path, variable, values.reshape(ny, nx), lat, lon,
                           str(meta.get("initTime") or frame.get("initTime") or ""),
                           forecast_time, fh, nx, ny, admin_geometries, admin_labels, sideral_logo,
@@ -736,7 +738,8 @@ def build_bulletins(input_dir: Path, output_dir: Path, selected_variables=None, 
                 preview_rel = f"previews/f{fh:03d}/{variable}.webp"
                 create_preview(out_path, output_dir / preview_rel)
                 preview_files[variable] = preview_rel
-                rendered_count += 1
+                if not was_already_counted:
+                    rendered_count += 1
                 print(f"[METBR BOLETINS] F{fh:03d} {variable}: PNG 4K + WebP", flush=True)
         available_set = set(previous_entry.get("availableVariables") or []) | set(available)
         available = [variable_name for variable_name in VARIABLES if variable_name in available_set and variable_name in files]
