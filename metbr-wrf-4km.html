@@ -107,17 +107,21 @@ function warmNeighbourFrames(){
 function fillVariableMenus(){
  var catalog=metadata.variableCatalog||{};
  var available=metadata.availableVariables||Object.keys(catalog);
- function build(select){
-  var previous=select.value;select.replaceChildren();
+ var previousA=selectA.value,previousB=selectB.value;
+ function hasOption(select,value){
+  return Array.prototype.some.call(select.options,function(option){return option.value===value;});
+ }
+ function build(select,previous,fallback){
+  select.replaceChildren();
   available.forEach(function(key){
    var spec=catalog[key];if(!spec)return;
    var option=document.createElement('option');option.value=key;option.textContent=(spec.label||key)+' ('+(spec.unit||'—')+')';select.appendChild(option);
   });
-  if(Array.prototype.some.call(select.options,function(o){return o.value===previous;}))select.value=previous;
+  if(hasOption(select,previous))select.value=previous;
+  else if(hasOption(select,fallback))select.value=fallback;
  }
- build(selectA);build(selectB);
- if(Array.prototype.some.call(selectA.options,function(o){return o.value==='reflectivity';}))selectA.value='reflectivity';
- if(Array.prototype.some.call(selectB.options,function(o){return o.value==='precipitation';}))selectB.value='precipitation';
+ build(selectA,previousA,'reflectivity');
+ build(selectB,previousB,'precipitation');
  if(selectA.value===selectB.value&&selectB.options.length>1)selectB.selectedIndex=1;
 }
 function updateTimeline(){
@@ -171,13 +175,52 @@ function render(){
  frameIndex=Math.max(0,Math.min(metadata.frames.length-1,frameIndex));slider.max=String(metadata.frames.length-1);slider.value=String(frameIndex);
  updateTimeline();var token=++requestToken;loadSide('A',selectA.value,token);loadSide('B',selectB.value,token);warmNeighbourFrames();
 }
+function metadataIsValid(candidate){
+ return !!candidate&&candidate.model==='METBR WRF 4 km'&&Array.isArray(candidate.frames)&&candidate.frames.length>0;
+}
+function metadataVersion(candidate){
+ return [
+  candidate.sourceRunId||'',
+  candidate.initTime||'',
+  candidate.generatedAt||'',
+  (candidate.availableVariables||[]).join(',')
+ ].join('|');
+}
+async function refreshPublishedMetadata(){
+ try{
+  var response=await fetch(metadataUrl+'?v='+Date.now(),{cache:'no-store'});
+  if(!response.ok)return;
+  var incoming=await response.json();
+  if(!metadataIsValid(incoming))return;
+  if(metadata&&metadataVersion(incoming)===metadataVersion(metadata))return;
+  var previousFrame=currentFrame();
+  var previousHour=previousFrame?Number(previousFrame.forecastHour):null;
+  metadata=incoming;
+  fillVariableMenus();
+  if(previousHour!==null){
+   var matchingIndex=metadata.frames.findIndex(function(frame){
+    return Number(frame.forecastHour)===previousHour;
+   });
+   frameIndex=matchingIndex>=0?matchingIndex:Math.min(frameIndex,metadata.frames.length-1);
+  }else{
+   frameIndex=Math.min(frameIndex,metadata.frames.length-1);
+  }
+  render();
+ }catch(err){
+  // The last published metadata and the visible maps remain usable while
+  // a new batch is being published or the raw-content CDN is briefly stale.
+ }
+}
 async function init(){
  setState('A','Carregando boletins…',true);setState('B','Carregando boletins…',true);
  try{
   var response=await fetch(metadataUrl+'?v='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('metadata HTTP '+response.status);
   metadata=await response.json();
-  if(metadata.model!=='METBR WRF 4 km'||!Array.isArray(metadata.frames)||!metadata.frames.length)throw new Error('metadados METBR inválidos');
+  if(!metadataIsValid(metadata))throw new Error('metadados METBR inválidos');
   fillVariableMenus();render();
+  // New PNG/WebP batches and completed GIF/MP4 links appear without a manual
+  // reload; selections and the currently selected forecast hour are retained.
+  window.setInterval(refreshPublishedMetadata,30000);
  }catch(err){
   $('cycleLine').textContent='Boletins ainda não publicados';setState('A','Não foi possível carregar os boletins',true);setState('B','Não foi possível carregar os boletins',true);
   $('validTime').textContent='—';$('frameStatus').textContent='Verifique a publicação de imagens';
