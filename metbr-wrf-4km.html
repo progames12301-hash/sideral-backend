@@ -72,13 +72,14 @@ function animationCatalogVersion(candidate){
   }).join(';');
  }).join('|');
 }
-function versionKey(){
- return encodeURIComponent([
-  (metadata&&metadata.generatedAt)||(metadata&&metadata.sourceRunId)||(metadata&&metadata.initTime)||'1',
-  animationCatalogVersion(metadata)
- ].join('|'));
+function versionKey(path){
+ var base=(metadata&&metadata.generatedAt)||(metadata&&metadata.sourceRunId)||(metadata&&metadata.initTime)||'1';
+ // Animation publication changes only the downloadable GIF/MP4 cache key;
+ // existing WebP previews keep their URL so adding downloads won't flash the maps.
+ if(path&&String(path).indexOf('animations/')===0)base+='|'+animationCatalogVersion(metadata);
+ return encodeURIComponent(base);
 }
-function assetUrl(path){return path?IMAGE_BRANCH+path+'?v='+versionKey():'';}
+function assetUrl(path){return path?IMAGE_BRANCH+path+'?v='+versionKey(path):'';}
 function currentFrame(){return metadata&&metadata.frames&&metadata.frames[frameIndex]||null;}
 function lead(hour){return 'F'+String(hour).padStart(3,'0');}
 function formatUTC(value){
