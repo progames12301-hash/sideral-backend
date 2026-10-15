@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/metbr-maestro.yml'
       - 'wrf/metbr_extract_json.py'
+      - 'wrf/extract_wrf_severe_core.py'
   workflow_run:
     workflows:
       - "METBR WRF 4 KM - ICON"
