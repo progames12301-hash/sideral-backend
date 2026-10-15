@@ -63,7 +63,21 @@ var layout=$('layout'),sidebar=$('sidebar'),slider=$('frameSlider'),readout=$('f
 var selectA=$('variableA'),selectB=$('variableB'),exportSpeed=$('exportSpeed');
 var metadata=null,frameIndex=0,playTimer=null,requestToken=0;
 var previewCache=new Map(),PREVIEW_CACHE_LIMIT=16;
-function versionKey(){return encodeURIComponent((metadata&&metadata.generatedAt)||(metadata&&metadata.sourceRunId)||(metadata&&metadata.initTime)||'1');}
+function animationCatalogVersion(candidate){
+ var animations=(candidate&&candidate.animations)||{};
+ return Object.keys(animations).sort().map(function(variable){
+  var speeds=animations[variable]||{};
+  return variable+':'+Object.keys(speeds).sort().map(function(speed){
+   return speed+':'+Object.keys(speeds[speed]||{}).sort().join(',');
+  }).join(';');
+ }).join('|');
+}
+function versionKey(){
+ return encodeURIComponent([
+  (metadata&&metadata.generatedAt)||(metadata&&metadata.sourceRunId)||(metadata&&metadata.initTime)||'1',
+  animationCatalogVersion(metadata)
+ ].join('|'));
+}
 function assetUrl(path){return path?IMAGE_BRANCH+path+'?v='+versionKey():'';}
 function currentFrame(){return metadata&&metadata.frames&&metadata.frames[frameIndex]||null;}
 function lead(hour){return 'F'+String(hour).padStart(3,'0');}
@@ -183,7 +197,9 @@ function metadataVersion(candidate){
   candidate.sourceRunId||'',
   candidate.initTime||'',
   candidate.generatedAt||'',
-  (candidate.availableVariables||[]).join(',')
+  (candidate.availableVariables||[]).join(','),
+  animationCatalogVersion(candidate),
+  JSON.stringify(candidate.animationProfiles||{})
  ].join('|');
 }
 async function refreshPublishedMetadata(){
