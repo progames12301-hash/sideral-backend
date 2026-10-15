@@ -6,4 +6,6 @@
 - frames/fNNN.json.gz: refletividade REFL_10CM nativa e demais campos disponíveis
 - metbr_wrf_4km.json: índice compatível com a interface legada
 
-A publicação só é atualizada após validar os 43 frames F000-F042, a grade, os perfis verticais e a refletividade nativa.
+Checkpoints parciais da execução METBR mais recente podem ser publicados com publicationStatus=partial.
+A publicação final é marcada complete quando todos os 43 frames F000-F042 forem validados.
+A grade nativa, os perfis verticais e a refletividade REFL_10CM são obrigatórios em ambas as etapas.
