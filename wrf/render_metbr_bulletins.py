@@ -529,6 +529,17 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     return True
 
 
+
+def create_preview(source_path: Path, preview_path: Path, max_edge: int = 1200):
+    """Write a lightweight alpha-preserving WebP for instant interactive viewing."""
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source_path) as source:
+        image = source.convert("RGBA")
+        image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+        image.save(preview_path, format="WEBP", quality=88, method=4)
+    if preview_path.stat().st_size < 1000:
+        raise RuntimeError(f"Prévia WEBP inválida: {preview_path}")
+
 def build_bulletins(input_dir: Path, output_dir: Path):
     metadata_path = input_dir / "metadata.json"
     grid_path = input_dir / "grid.json"
@@ -590,6 +601,7 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             raise RuntimeError(f"forecastHour inconsistente no arquivo {data_file}.")
         available = []
         files = {}
+        preview_files = {}
         forecast_time = str(item.get("time") or frame.get("validTime") or "")
         folder = output_dir / "frames" / f"f{fh:03d}"
         wind_speed_values = variable_values(frame, "windSpeed", expected)
@@ -631,12 +643,16 @@ def build_bulletins(input_dir: Path, output_dir: Path):
                           wind_direction=wind_direction_values.reshape(ny, nx) if wind_direction_values is not None else None):
                 available.append(variable)
                 files[variable] = f"frames/f{fh:03d}/{variable}.png"
+                preview_rel = f"previews/f{fh:03d}/{variable}.webp"
+                create_preview(out_path, output_dir / preview_rel)
+                preview_files[variable] = preview_rel
                 rendered_count += 1
         frame_entry = {
             "forecastHour": fh,
             "validTime": forecast_time,
             "availableVariables": available,
             "files": files,
+            "previewFiles": preview_files,
         }
         if skip_reflectivity_png:
             frame_entry["skippedVariables"] = {
@@ -667,6 +683,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             "windBarbs": "10 m; knots; every 18 native grid points",
             "outerModelBoundaryCellsMasked": 2,
             "renderResolutionPx": [3840, 3840],
+            "previewResolutionMaxPx": [1200, 1200],
+            "previewFormat": "WebP RGBA; separate from 4K PNG downloads",
             "coverageCrop": "native METBR grid footprint; empty geographic corners transparent",
             "coverageExtentSource": "XLAT/XLONG valid grid, shared by every variable",
             "scalarFieldRendering": "dense antialiased contours; native source grid preserved",
