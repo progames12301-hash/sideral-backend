@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/metbr-maestro.yml'
+      - 'wrf/metbr_extract_json.py'
   workflow_run:
     workflows:
       - "METBR WRF 4 KM - ICON"
@@ -43,6 +44,9 @@ jobs:
         with:
           ref: main
           fetch-depth: 1
+
+      - name: Validar sintaxe do extrator METBR
+        run: python -m py_compile wrf/metbr_extract_json.py
 
       - name: Selecionar a execução METBR mais recente
         id: meta
