@@ -74,7 +74,7 @@ jobs:
           latest_id = str(latest.get("id") or "")
           if latest.get("status") != "completed" or latest.get("conclusion") != "success":
               print(f"METBR mais recente ainda não terminou com sucesso (run={latest_id}, status={latest.get('status')}); nada será publicado.")
-              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\\n", encoding="utf-8")
+              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
               raise SystemExit(0)
 
           branch = "metbr-json-data"
@@ -115,17 +115,17 @@ jobs:
           expected_init_time = os.environ.get("EXPECTED_INIT_TIME", "").strip()
           if not published_run_id or published_run_id != latest_id:
               print(f"JSON publicado pertence ao run {published_run_id or 'desconhecido'}, mas o METBR mais recente é {latest_id}; render ignorado.")
-              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\\n", encoding="utf-8")
+              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
               raise SystemExit(0)
           if expected_run_id and expected_run_id != published_run_id:
               print(f"Dispatch de run {expected_run_id} não corresponde ao JSON atual ({published_run_id}); render ignorado.")
-              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\\n", encoding="utf-8")
+              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
               raise SystemExit(0)
           if expected_init_time and expected_init_time != str(meta.get("initTime") or ""):
               print(f"InitTime do dispatch {expected_init_time} difere do JSON atual {meta.get('initTime')}; render ignorado.")
-              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\\n", encoding="utf-8")
+              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
               raise SystemExit(0)
-          Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=true\\n", encoding="utf-8")
+          Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=true\n", encoding="utf-8")
           files = ["metadata.json", "grid.json"]
           files += [str(frame.get("dataFile") or f"frames/f{int(frame['forecastHour']):03d}.json.gz") for frame in meta.get("frames", [])]
           if not meta.get("frames"):
