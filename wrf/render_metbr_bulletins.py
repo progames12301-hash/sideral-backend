@@ -254,7 +254,15 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     # masking, rather than from every finite native-grid value.
     crop_mask = finite_geo & ~display_mask
     if int(crop_mask.sum()) < 100:
-        raise RuntimeError("grade geográfica/dados visíveis insuficientes para o recorte")
+        # Sparse convection can occupy only a handful of cells. Keep the full
+        # native map context in that case instead of aborting the whole render.
+        crop_mask = finite_geo.copy()
+        crop_mask[:edge, :] = False
+        crop_mask[-edge:, :] = False
+        crop_mask[:, :edge] = False
+        crop_mask[:, -edge:] = False
+    if int(crop_mask.sum()) < 100:
+        raise RuntimeError("grade geográfica nativa insuficiente para o recorte")
     west = float(np.nanmin(lon[crop_mask]))
     east = float(np.nanmax(lon[crop_mask]))
     south = float(np.nanmin(lat[crop_mask]))
