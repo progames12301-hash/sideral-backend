@@ -6,6 +6,9 @@ from pathlib import Path
 
 import numpy as np
 from netCDF4 import Dataset
+import xarray as xr
+
+from extract_wrf_severe_core import FIELDS as SEVERE_FIELDS, METHODS as SEVERE_METHODS, compute as compute_severe
 
 REFLECTIVITY_NAMES = (
     "REFL_10CM", "REFL_10CM_NATIVE", "REFLECTIVITY_10CM", "REFLECTIVITY",
@@ -750,6 +753,30 @@ def write_gzip_json(path, payload):
             compressed.write(body)
 
 
+
+def extract_severe_fields(path, nx, ny):
+    """Derive shared WRF severe-weather diagnostics from the exact native frame."""
+    with xr.open_dataset(path, engine="netcdf4", decode_times=False) as ds:
+        rows = np.arange(ny, dtype=int)
+        cols = np.arange(nx, dtype=int)
+        result = compute_severe(ds, rows, cols)
+    if not isinstance(result, tuple) or not result or not isinstance(result[0], dict):
+        raise RuntimeError("Núcleo de diagnósticos severos não retornou os campos METBR esperados")
+    output = {}
+    expected = nx * ny
+    for name in SEVERE_FIELDS:
+        value = result[0].get(name)
+        if value is None:
+            continue
+        arr = np.asarray(value, dtype=np.float64)
+        if arr.size != expected:
+            raise RuntimeError(f"METBR {name}: {arr.size} valores; esperados {expected} ({ny}x{nx})")
+        flat = clean_array(arr, expected, digits=4)
+        if any(v is not None for v in flat):
+            output[name] = flat
+    return output
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -825,6 +852,16 @@ def main():
                 name: _field_list(arr, expected_size, name)
                 for name, arr in field_arrays.items()
             }
+            # Add the 23 derived/severe diagnostics used by other Sideral WRF
+            # products. Each one comes from this exact WRFOUT time; no fake
+            # values are substituted when a field is unavailable.
+            severe_values = extract_severe_fields(path, nx, ny)
+            for field_name, values in severe_values.items():
+                field_values[field_name] = values
+                description = SEVERE_METHODS.get(field_name, "diagnóstico WRF derivado")
+                if isinstance(description, dict):
+                    description = description.get("method") or description.get("classification") or "diagnóstico WRF derivado"
+                field_sources[field_name] = str(description)
             frame_available = sorted(
                 name for name, values in field_values.items()
                 if any(value is not None for value in values)
