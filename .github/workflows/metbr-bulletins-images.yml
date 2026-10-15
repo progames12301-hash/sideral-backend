@@ -49,11 +49,15 @@ jobs:
 
       - name: Preparar FFmpeg para exportar MP4
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y ffmpeg
-          fi
-          ffmpeg -version | head -n 1
+          python -m pip install --disable-pip-version-check 'imageio-ffmpeg>=0.5,<1'
+          python - <<'PY'
+          import imageio_ffmpeg
+          from pathlib import Path
+          binary = Path(imageio_ffmpeg.get_ffmpeg_exe())
+          if not binary.is_file():
+              raise SystemExit(f"FFmpeg empacotado ausente: {binary}")
+          print(f"FFmpeg pronto: {binary}")
+          PY
 
       - name: Baixar os JSON publicados sem alterar a branch de dados
         id: source
