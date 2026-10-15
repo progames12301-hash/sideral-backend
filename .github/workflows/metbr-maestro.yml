@@ -99,7 +99,12 @@ jobs:
             test -s "metbr_publish/$file" || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
           done
           test -d metbr_publish/frames
-          test "$(find metbr_publish/frames -maxdepth 1 -type f -name 'f*.json.gz' -size +0c | wc -l)" -eq 43
+          FRAME_COUNT="$(find metbr_publish/frames -maxdepth 1 -type f -name 'f*.json.gz' -size +0c | wc -l | tr -d '[:space:]')"
+          if [[ "$FRAME_COUNT" -lt 1 || "$FRAME_COUNT" -gt 43 ]]; then
+            echo "Quantidade inválida de frames METBR: $FRAME_COUNT (esperado entre 1 e 43)." >&2
+            exit 1
+          fi
+          echo "METBR checkpoint disponível: $FRAME_COUNT/43 frames; a execução mais nova será publicada sem voltar para uma rodada antiga."
 
       - name: Validar publicação METBR completa
         if: steps.meta.outputs.publish == 'true'
@@ -119,18 +124,29 @@ jobs:
           meta = json.loads(meta_path.read_text(encoding="utf-8"))
           data = json.loads(data_path.read_text(encoding="utf-8"))
           grid = json.loads((root / "grid.json").read_text(encoding="utf-8"))
+          source_frames = meta.get("frames") or []
+          published_hours = {int(item["forecastHour"]) for item in source_frames}
+          missing_hours = sorted(set(range(43)) - published_hours)
+          publication_status = "complete" if len(source_frames) == 43 and not missing_hours else "partial"
           meta["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
           meta["sourceWorkflow"] = "METBR WRF 4 KM - ICON"
+          meta["publicationStatus"] = publication_status
+          meta["expectedFrameCount"] = 43
+          meta["missingForecastHours"] = missing_hours
           data["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
           data["sourceWorkflow"] = "METBR WRF 4 KM - ICON"
+          data["publicationStatus"] = publication_status
+          data["expectedFrameCount"] = 43
+          data["missingForecastHours"] = missing_hours
           meta_path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
           data_path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+          print(f"METBR publicationStatus={publication_status}; frames={len(source_frames)}/43; ausentes={missing_hours}")
           assert meta.get("modelKey") == "metbr_wrf", meta.get("modelKey")
           assert int(meta.get("resolutionKm", 0)) == 4
           assert meta.get("gridFile") == "grid.json"
           assert meta.get("verticalProfileFile") == "vertical-f000.npz"
           frames = meta.get("frames") or []
-          assert len(frames) == 43, f"Esperados F000-F042; recebidos {len(frames)}"
+          assert 1 <= len(frames) <= 43, f"Quantidade inválida de frames: {len(frames)}"
           assert data.get("modelKey") == "metbr_wrf"
           assert len(data.get("frames", [])) == len(frames)
           nx, ny = int(meta["grid"]["nx"]), int(meta["grid"]["ny"])
@@ -171,14 +187,17 @@ jobs:
                   assert all(value is None or isinstance(value, (int, float)) for value in values), (file, field_name)
                   if any(value is not None for value in values):
                       available_from_payload.add(field_name)
-          assert actual_hours == set(range(43)), f"Horas ausentes: {sorted(set(range(43)) - actual_hours)}"
+          assert actual_hours, "Nenhum horário de previsão foi publicado"
+          expected_contiguous = set(range(max(actual_hours) + 1))
+          assert actual_hours == expected_contiguous, f"Frames não contíguos: recebidos={sorted(actual_hours)}"
+          assert max(actual_hours) <= 42, f"Forecast hour fora do intervalo: {max(actual_hours)}"
           sources = meta.get("reflectivitySource")
           sources = [sources] if isinstance(sources, str) else sources if isinstance(sources, list) else []
           assert any("REFL_10CM" in str(item).upper() for item in sources), sources
           assert "reflectivity" in available_from_payload, "Refletividade ausente nos frames"
           declared = set(meta.get("availableVariablesAnyFrame") or [])
           assert declared <= available_from_payload, (declared, available_from_payload)
-          print(f"METBR validado: {len(frames)} frames F000-F042, grade nativa {nx}x{ny}, NPZ vertical e REFL_10CM nativa.")
+          print(f"METBR validado: {len(frames)}/43 frames F000-F042, status={meta.get('publicationStatus')}, grade nativa {nx}x{ny}, NPZ vertical e REFL_10CM nativa.")
 
           PY
 
@@ -238,7 +257,9 @@ jobs:
           - frames/fNNN.json.gz: refletividade REFL_10CM nativa e demais campos disponíveis
           - metbr_wrf_4km.json: índice compatível com a interface legada
 
-          A publicação só é atualizada após validar os 43 frames F000-F042, a grade, os perfis verticais e a refletividade nativa.
+          Checkpoints parciais da execução METBR mais recente podem ser publicados com publicationStatus=partial.
+          A publicação final é marcada complete quando todos os 43 frames F000-F042 forem validados.
+          A grade nativa, os perfis verticais e a refletividade REFL_10CM são obrigatórios em ambas as etapas.
           EOF
           cd /tmp/metbr-json-publication
           git add -A
@@ -249,7 +270,7 @@ jobs:
           git push --force origin HEAD:metbr-json-data
           cd - >/dev/null
           git worktree remove --force /tmp/metbr-json-publication
-          echo "METBR publicado integralmente em $METBR_JSON_BRANCH e metbr-json-data."
+          echo "METBR publicado em $METBR_JSON_BRANCH e metbr-json-data; status=$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json")).get("publicationStatus","unknown"))')."
           # GITHUB_TOKEN pushes do not start downstream push-triggered workflows.
           # Dispatch only after both METBR JSON branches have been published.
           gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
