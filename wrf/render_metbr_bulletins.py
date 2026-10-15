@@ -400,7 +400,9 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     elif variable == "bulkShear":
         # Dense contour levels smooth the rendered gradients without modifying
         # the model's original values or inventing higher-resolution data.
-        shear_levels = np.arange(15.0, 50.01, 1.0)
+        # A coarser contour interval accelerates batch rendering; source values,
+        # 4-km grid, 4K output, and wind barbs remain unchanged.
+        shear_levels = np.arange(15.0, 50.01, 3.0)
         mesh = ax.contourf(
             lon, lat, field, levels=shear_levels, cmap=cmap, norm=norm,
             extend="max", antialiased=True, corner_mask=True,
