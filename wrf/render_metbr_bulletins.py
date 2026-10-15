@@ -406,32 +406,16 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
             extend="max", antialiased=True, corner_mask=True,
             transform=ccrs.PlateCarree(), zorder=2,
         )
-    elif variable not in {"windDirection", "windDirection850"}:
-        # Continuous scalar variables are drawn as dense, antialiased filled
-        # contours instead of blocky native-cell pcolormesh tiles.
-        if variable == "precipitation":
-            scalar_levels = PRECIP_BOUNDS
-        elif variable == "vorticity850":
-            scalar_levels = np.linspace(-30.0, 30.0, 91)
-        elif variable in {"mucape", "sbcape", "mlcape", "mucapeWrf2"}:
-            scalar_levels = np.linspace(0.0, float(spec.get("max", 5000.0)), 41)
-        elif variable in {"stp", "scp"}:
-            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 10.0)), 41)
-        elif variable in {"srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"}:
-            scalar_levels = np.linspace(float(spec.get("min", -1.0)), float(spec.get("max", 1.0)), 61)
-        elif variable == "cin":
-            scalar_levels = np.linspace(-600.0, 0.0, 41)
-        else:
-            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 1.0)), 41)
+    elif variable == "precipitation":
+        # Accumulation uses the model-native cells and its fixed discrete scale.
         mesh = ax.contourf(
-            lon, lat, field, levels=scalar_levels, cmap=cmap, norm=norm,
-            extend="both" if variable in {"temperature", "vorticity850", "srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"} else "max",
-            antialiased=True, corner_mask=True,
+            lon, lat, field, levels=PRECIP_BOUNDS, cmap=cmap, norm=norm,
+            extend="max", antialiased=True, corner_mask=True,
             transform=ccrs.PlateCarree(), zorder=2,
         )
     else:
-        # Direction is angular; keep native cells to avoid interpolation
-        # artifacts around the 0°/360° discontinuity.
+        # Fast native-grid raster path for scalar fields and angular directions.
+        # Data are not resampled or smoothed; the 4K canvas preserves the source grid.
         mesh = ax.pcolormesh(
             lon, lat, field, cmap=cmap, norm=norm, shading="auto",
             transform=ccrs.PlateCarree(), rasterized=True, zorder=2,
@@ -724,6 +708,7 @@ def build_bulletins(input_dir: Path, output_dir: Path):
                 create_preview(out_path, output_dir / preview_rel)
                 preview_files[variable] = preview_rel
                 rendered_count += 1
+                print(f"[METBR BOLETINS] F{fh:03d} {variable}: PNG 4K + WebP", flush=True)
         frame_entry = {
             "forecastHour": fh,
             "validTime": forecast_time,
