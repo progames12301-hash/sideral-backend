@@ -19,8 +19,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
 from matplotlib import patheffects
+from matplotlib.path import Path as MplPath
+from PIL import Image, ImageDraw
 import numpy as np
-from PIL import Image
 
 MODEL = "METBR WRF 4 km"
 COUNTRY_KEYS = {"Argentina", "Brazil", "Uruguay", "Paraguay", "Bolivia", "Chile"}
@@ -250,26 +251,47 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     display_mask |= ~np.isfinite(display_data)
     field = np.ma.array(display_data, mask=display_mask)
 
-    # Crop from the pixels that are actually rendered after no-data/weak-signal
-    # masking, rather than from every finite native-grid value.
-    crop_mask = finite_geo & ~display_mask
-    if int(crop_mask.sum()) < 100:
-        # Sparse convection can occupy only a handful of cells. Keep the full
-        # native map context in that case instead of aborting the whole render.
-        crop_mask = finite_geo.copy()
-        crop_mask[:edge, :] = False
-        crop_mask[-edge:, :] = False
-        crop_mask[:, :edge] = False
-        crop_mask[:, -edge:] = False
-    if int(crop_mask.sum()) < 100:
-        raise RuntimeError("grade geográfica nativa insuficiente para o recorte")
-    west = float(np.nanmin(lon[crop_mask]))
-    east = float(np.nanmax(lon[crop_mask]))
-    south = float(np.nanmin(lat[crop_mask]))
-    north = float(np.nanmax(lat[crop_mask]))
-    pad_lon = max(0.008, (east - west) * 0.0005)
-    pad_lat = max(0.008, (north - south) * 0.0005)
+    # Crop to the actual METBR model footprint, not to the cells with
+    # precipitation/reflectivity/strong shear. Otherwise each variable and
+    # forecast hour gets a different, artificially zoomed map.
+    coverage_mask = finite_geo.copy()
+    coverage_mask[:edge, :] = False
+    coverage_mask[-edge:, :] = False
+    coverage_mask[:, :edge] = False
+    coverage_mask[:, -edge:] = False
+    if int(coverage_mask.sum()) < 100:
+        raise RuntimeError("cobertura geográfica nativa insuficiente para o recorte")
+
+    west = float(np.nanmin(lon[coverage_mask]))
+    east = float(np.nanmax(lon[coverage_mask]))
+    south = float(np.nanmin(lat[coverage_mask]))
+    north = float(np.nanmax(lat[coverage_mask]))
+    # Less than half a native 4-km cell of padding; blank bands outside the
+    # actual domain are removed by the polygon clip below.
+    pad_lon = max(0.003, (east - west) * 0.0001)
+    pad_lat = max(0.003, (north - south) * 0.0001)
     extent = [west - pad_lon, east + pad_lon, south - pad_lat, north + pad_lat]
+
+    # Build the real, curved outer edge of the valid METBR grid. The geographic
+    # lon/lat bounding rectangle contains empty corners for a projected WRF
+    # domain, so clip those corners instead of exporting them as blank map.
+    top_lon = lon[edge, edge:nx-edge]
+    top_lat = lat[edge, edge:nx-edge]
+    right_lon = lon[edge+1:ny-edge, nx-edge-1]
+    right_lat = lat[edge+1:ny-edge, nx-edge-1]
+    bottom_lon = lon[ny-edge-1, nx-edge-2:edge-1:-1]
+    bottom_lat = lat[ny-edge-1, nx-edge-2:edge-1:-1]
+    left_lon = lon[ny-edge-2:edge:-1, edge]
+    left_lat = lat[ny-edge-2:edge:-1, edge]
+    boundary_lon = np.concatenate((top_lon, right_lon, bottom_lon, left_lon))
+    boundary_lat = np.concatenate((top_lat, right_lat, bottom_lat, left_lat))
+    boundary_valid = np.isfinite(boundary_lon) & np.isfinite(boundary_lat)
+    boundary_xy = np.column_stack((boundary_lon[boundary_valid], boundary_lat[boundary_valid]))
+    if len(boundary_xy) < 20:
+        raise RuntimeError("não foi possível determinar o contorno da cobertura METBR")
+    if not np.allclose(boundary_xy[0], boundary_xy[-1]):
+        boundary_xy = np.vstack((boundary_xy, boundary_xy[0]))
+    coverage_boundary = MplPath(boundary_xy)
 
     init = parse_time(init_time)
     valid = parse_time(valid_time)
@@ -280,6 +302,9 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     ax = fig.add_axes([0.08, 0.15, 0.84, 0.75], projection=ccrs.PlateCarree())
     ax.set_facecolor("white")
     ax.set_extent(extent, crs=ccrs.PlateCarree())
+    # Clip map features to the native grid outline; the post-save alpha mask
+    # below removes the unused corners from the PNG rather than painting them white.
+    ax.set_boundary(coverage_boundary, transform=ccrs.PlateCarree())
     if variable == "reflectivity":
         # Native REFL_10CM values; finer draw levels only improve edge rendering.
         refl_levels = np.arange(0.0, 75.1, 1.0)
@@ -410,17 +435,48 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     logo_ax.set_axis_off()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Draw once so the projection boundary can be mapped exactly to output pixels.
+    fig.canvas.draw()
+    axes_bbox = ax.get_window_extent()
     fig.savefig(
         output_path, dpi=384, facecolor="white", format="png",
         bbox_inches=None, pad_inches=0,
         metadata={"Software": "Sideral METBR WRF bulletin renderer"},
     )
     plt.close(fig)
-    # Strip the redundant alpha channel and compress the 4K PNG losslessly.
+    # Make only the empty corners outside the true model footprint transparent.
+    # The rest of the 4K bulletin (title, legend, logo and white background) remains intact.
     with Image.open(output_path) as rendered:
         if rendered.size != (3840, 3840):
             raise RuntimeError(f"PNG fora de 4K: {rendered.size}, esperado (3840, 3840)")
-        rendered.convert("RGB").save(output_path, format="PNG", optimize=True, compress_level=6)
+        rgba = np.asarray(rendered.convert("RGBA")).copy()
+    canvas_h, canvas_w = rgba.shape[:2]
+    axes_mask_image = Image.new("L", (canvas_w, canvas_h), 0)
+    axes_draw = ImageDraw.Draw(axes_mask_image)
+    x0, y0, axw, axh = axes_bbox.bounds
+    left_px = max(0, int(math.floor(x0)))
+    right_px = min(canvas_w - 1, int(math.ceil(x0 + axw)))
+    top_px = max(0, int(math.floor(canvas_h - (y0 + axh))))
+    bottom_px = min(canvas_h - 1, int(math.ceil(canvas_h - y0)))
+    axes_draw.rectangle((left_px, top_px, right_px, bottom_px), fill=255)
+
+    footprint_image = Image.new("L", (canvas_w, canvas_h), 0)
+    footprint_draw = ImageDraw.Draw(footprint_image)
+    display_xy = ax.transData.transform(boundary_xy)
+    polygon_pixels = [
+        (float(x), float(canvas_h - y)) for x, y in display_xy
+        if np.isfinite(x) and np.isfinite(y)
+    ]
+    if len(polygon_pixels) < 20:
+        raise RuntimeError("contorno METBR não pôde ser transformado para o PNG")
+    footprint_draw.polygon(polygon_pixels, fill=255)
+
+    axes_pixels = np.asarray(axes_mask_image, dtype=np.uint8) > 0
+    footprint_pixels = np.asarray(footprint_image, dtype=np.uint8) > 0
+    rgba[..., 3][axes_pixels & ~footprint_pixels] = 0
+    Image.fromarray(rgba, mode="RGBA").save(
+        output_path, format="PNG", optimize=True, compress_level=6
+    )
     if output_path.stat().st_size < 5000:
         raise RuntimeError(f"PNG pequeno/inválido: {output_path}")
     return True
@@ -564,6 +620,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             "windBarbs": "10 m; knots; every 18 native grid points",
             "outerModelBoundaryCellsMasked": 2,
             "renderResolutionPx": [3840, 3840],
+            "coverageCrop": "native METBR grid footprint; empty geographic corners transparent",
+            "coverageExtentSource": "XLAT/XLONG valid grid, shared by every variable",
             "scalarFieldRendering": "dense antialiased contours; native source grid preserved",
             "logo": "assets/sideral-logo.png",
         },
