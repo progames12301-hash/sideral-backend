@@ -378,6 +378,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     out_frames = []
+    skipped_reflectivity_frames = []
+    skipped_empty_frames = []
     rendered_count = 0
     for item in frames:
         fh = int(item.get("forecastHour", -1))
@@ -392,8 +394,33 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         files = {}
         forecast_time = str(item.get("time") or frame.get("validTime") or "")
         folder = output_dir / "frames" / f"f{fh:03d}"
+
+        # A fully blank reflectivity map is invisible in the reference palette
+        # (<5 dBZ is masked), so publishing it between active frames causes
+        # flicker. Preserve F000; after F000 omit only its reflectivity PNG,
+        # while keeping precipitation/temperature/etc. for that same hour.
+        reflectivity_values = variable_values(frame, "reflectivity", expected)
+        if reflectivity_values is None or not np.isfinite(reflectivity_values).any():
+            raise RuntimeError(f"F{fh:03d}: refletividade ausente ou sem valores numéricos válidos.")
+        finite_refl = reflectivity_values[np.isfinite(reflectivity_values)]
+        max_dbz = float(np.max(finite_refl))
+        skip_reflectivity_png = fh > 0 and not np.any(finite_refl >= 5.0)
+        if skip_reflectivity_png:
+            skipped_reflectivity_frames.append({
+                "forecastHour": fh,
+                "validTime": forecast_time,
+                "maxReflectivityDbz": round(max_dbz, 3),
+                "reason": "sem_ecos_visiveis_abaixo_de_5_dBZ",
+            })
+            print(
+                f"[METBR BOLETINS] F{fh:03d}: refletividade PNG ignorado "
+                f"(máximo {max_dbz:.2f} dBZ; F000 é preservado)"
+            )
+
         for variable in variables:
-            values = variable_values(frame, variable, expected)
+            if variable == "reflectivity" and skip_reflectivity_png:
+                continue
+            values = reflectivity_values if variable == "reflectivity" else variable_values(frame, variable, expected)
             if values is None or not np.isfinite(values).any():
                 continue
             out_path = folder / f"{variable}.png"
@@ -403,15 +430,25 @@ def build_bulletins(input_dir: Path, output_dir: Path):
                 available.append(variable)
                 files[variable] = f"frames/f{fh:03d}/{variable}.png"
                 rendered_count += 1
-        if "reflectivity" not in available:
-            raise RuntimeError(f"Frame F{fh:03d} não produziu boletim de refletividade.")
-        out_frames.append({
+        frame_entry = {
             "forecastHour": fh,
             "validTime": forecast_time,
             "availableVariables": available,
             "files": files,
-        })
-        print(f"[METBR BOLETINS] F{fh:03d}: {', '.join(available)}")
+        }
+        if skip_reflectivity_png:
+            frame_entry["skippedVariables"] = {
+                "reflectivity": "no_visible_echo_below_5_dBZ"
+            }
+        if available:
+            out_frames.append(frame_entry)
+        else:
+            skipped_empty_frames.append({
+                "forecastHour": fh,
+                "validTime": forecast_time,
+                "reason": "nenhum_png_gerado",
+            })
+        print(f"[METBR BOLETINS] F{fh:03d}: {', '.join(available) or 'sem PNG para publicar'}")
 
     generated = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     output_meta = {
@@ -422,6 +459,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             "reflectivitySmoothing": False,
             "fixedColorScales": True,
             "missingValuesTransparent": True,
+            "skipBlankReflectivityAfterF000": True,
+            "minimumVisibleReflectivityDbz": 5.0,
             "logo": "assets/sideral-logo.png",
         },
         "resolutionKm": 4,
@@ -431,6 +470,10 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         "grid": {"nx": nx, "ny": ny},
         "frameCount": len(out_frames),
         "imageCount": rendered_count,
+        "sourceFrameCount": len(frames),
+        "skippedReflectivityFrameCount": len(skipped_reflectivity_frames),
+        "skippedReflectivityFrames": skipped_reflectivity_frames,
+        "skippedEmptyFrames": skipped_empty_frames,
         "availableVariables": variables,
         "variableCatalog": {key: {"label": VARIABLES[key]["label"], "short": VARIABLES[key]["short"], "unit": VARIABLES[key]["unit"]} for key in variables},
         "frames": out_frames,
@@ -443,7 +486,12 @@ def build_bulletins(input_dir: Path, output_dir: Path):
             path = output_dir / relpath
             if not path.is_file() or path.stat().st_size < 5000:
                 raise RuntimeError(f"Imagem de boletim inválida: {relpath}")
-    print(f"[METBR BOLETINS][OK] rodada={meta['initTime']}; frames={len(out_frames)}; imagens={rendered_count}; variáveis={','.join(variables)}")
+    print(
+        f"[METBR BOLETINS][OK] rodada={meta['initTime']}; "
+        f"frames_publicados={len(out_frames)}/{len(frames)}; imagens={rendered_count}; "
+        f"PNG_refletividade_ignorados={len(skipped_reflectivity_frames)}; "
+        f"variáveis={','.join(variables)}"
+    )
     return output_meta
 
 
