@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# Do not let a manual retry overlap the daily METBR ICON cycle.
+concurrency:
+  group: metbr-wrf-4km-icon
+  cancel-in-progress: false
+
 env:
   CHECKPOINT_PREFIX: metbr-wrf-4km-checkpoint
   WRF_MPI_PROCS: 8
