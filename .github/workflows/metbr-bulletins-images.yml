@@ -306,12 +306,30 @@ jobs:
               encoding="utf-8",
           )
           (root / ".nojekyll").write_text("", encoding="utf-8")
+          source_hours = {
+              int(frame.get("forecastHour", -1)) for frame in source.get("frames", [])
+          }
+          published_by_hour = {
+              int(frame.get("forecastHour", -1)): frame
+              for frame in published.get("frames", [])
+          }
+          core_fields = {"precipitation", "temperature", "humidity", "windSpeed"}
+          core_complete = bool(source_hours) and source_hours.issubset(published_by_hour) and all(
+              core_fields.issubset(set((published_by_hour[hour].get("files") or {}).keys()))
+              and (
+                  "reflectivity" in (published_by_hour[hour].get("files") or {})
+                  or (published_by_hour[hour].get("skippedVariables") or {}).get("reflectivity") == "no_visible_echo_below_5_dBZ"
+              )
+              for hour in source_hours
+          )
           Path("metbr-source/.seeded-image-package").write_text(
               f"{source.get('initTime')}|{source.get('sourceRunId')}", encoding="utf-8"
           )
+          if core_complete:
+              Path("metbr-source/.seeded-core-complete").write_text("true", encoding="utf-8")
           print(
               f"Preservados {len(result)-1} PNGs/WebPs do mesmo ciclo {source.get('initTime')}; "
-              "os lotes seguintes vão completar a publicação."
+              f"núcleo principal completo={core_complete}."
           )
           PY
 
@@ -374,8 +392,8 @@ jobs:
             echo "::endgroup::"
           }
 
-          if [[ -f metbr-source/.seeded-image-package ]]; then
-            echo "Pacote core do mesmo ciclo já está publicado; preservando-o e renderizando os grupos restantes."
+          if [[ -f metbr-source/.seeded-core-complete ]]; then
+            echo "Pacote core está completo em todos os horários; preservando-o e renderizando os grupos restantes."
           else
             publish_batch "1-core-F000" "reflectivity,precipitation,temperature,humidity,windSpeed" "0"
             publish_batch "2-core-F001-F004" "reflectivity,precipitation,temperature,humidity,windSpeed" "1,2,3,4"
