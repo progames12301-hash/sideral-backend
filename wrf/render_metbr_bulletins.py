@@ -414,15 +414,15 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         elif variable == "vorticity850":
             scalar_levels = np.linspace(-30.0, 30.0, 91)
         elif variable in {"mucape", "sbcape", "mlcape", "mucapeWrf2"}:
-            scalar_levels = np.linspace(0.0, float(spec.get("max", 5000.0)), 81)
+            scalar_levels = np.linspace(0.0, float(spec.get("max", 5000.0)), 41)
         elif variable in {"stp", "scp"}:
-            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 10.0)), 161)
+            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 10.0)), 41)
         elif variable in {"srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"}:
-            scalar_levels = np.linspace(float(spec.get("min", -1.0)), float(spec.get("max", 1.0)), 91)
+            scalar_levels = np.linspace(float(spec.get("min", -1.0)), float(spec.get("max", 1.0)), 61)
         elif variable == "cin":
-            scalar_levels = np.linspace(-600.0, 0.0, 61)
+            scalar_levels = np.linspace(-600.0, 0.0, 41)
         else:
-            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 1.0)), 81)
+            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 1.0)), 41)
         mesh = ax.contourf(
             lon, lat, field, levels=scalar_levels, cmap=cmap, norm=norm,
             extend="both" if variable in {"temperature", "vorticity850", "srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"} else "max",
@@ -599,7 +599,7 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     footprint_pixels = np.asarray(footprint_image, dtype=np.uint8) > 0
     rgba[..., 3][axes_pixels & ~footprint_pixels] = 0
     Image.fromarray(rgba, mode="RGBA").save(
-        output_path, format="PNG", optimize=True, compress_level=6
+        output_path, format="PNG", optimize=False, compress_level=3
     )
     if output_path.stat().st_size < 5000:
         raise RuntimeError(f"PNG pequeno/inválido: {output_path}")
