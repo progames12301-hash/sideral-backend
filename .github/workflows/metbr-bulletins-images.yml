@@ -75,10 +75,11 @@ jobs:
           latest_runs = run_response.json().get("workflow_runs", [])
           latest = latest_runs[0] if latest_runs else {}
           latest_id = str(latest.get("id") or "")
-          if latest.get("status") != "completed" or latest.get("conclusion") != "success":
-              print(f"METBR mais recente ainda não terminou com sucesso (run={latest_id}, status={latest.get('status')}); nada será publicado.")
+          if not latest_id or latest.get("name") != "METBR WRF 4 KM - ICON":
+              print(f"Não consegui identificar a execução METBR mais recente; nada será publicado. Run={latest_id!r}")
               Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
               raise SystemExit(0)
+          print(f"Usando dados da execução METBR mais recente: run={latest_id}; status={latest.get('status')}; conclusão={latest.get('conclusion')}")
 
           branch = "metbr-json-data"
           base = f"https://raw.githubusercontent.com/{repo}/{branch}/"
