@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
 from matplotlib import patheffects
 from matplotlib.path import Path as MplPath
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 import numpy as np
 
 MODEL = "METBR WRF 4 km"
@@ -543,48 +543,40 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     logo_ax.set_axis_off()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Draw once so the projection boundary can be mapped exactly to output pixels.
+    # Render the figure once, then reuse its 4K RGBA canvas buffer. This avoids
+    # a second Matplotlib draw plus large temporary NumPy masks on every frame.
     fig.canvas.draw()
     axes_bbox = ax.get_window_extent()
     display_xy = ax.transData.transform(boundary_xy)
-    fig.savefig(
-        output_path, dpi=384, facecolor="white", format="png",
-        bbox_inches=None, pad_inches=0,
-        metadata={"Software": "Sideral METBR WRF bulletin renderer"},
-    )
+    canvas_size = fig.canvas.get_width_height()
+    if canvas_size != (3840, 3840):
+        plt.close(fig)
+        raise RuntimeError(f"Canvas fora de 4K: {canvas_size}, esperado (3840, 3840)")
+    rgba = Image.frombuffer(
+        "RGBA", canvas_size, fig.canvas.buffer_rgba(), "raw", "RGBA", 0, 1
+    ).copy()
     plt.close(fig)
-    # Make only the empty corners outside the true model footprint transparent.
-    # The rest of the 4K bulletin (title, legend, logo and white background) remains intact.
-    with Image.open(output_path) as rendered:
-        if rendered.size != (3840, 3840):
-            raise RuntimeError(f"PNG fora de 4K: {rendered.size}, esperado (3840, 3840)")
-        rgba = np.asarray(rendered.convert("RGBA")).copy()
-    canvas_h, canvas_w = rgba.shape[:2]
-    axes_mask_image = Image.new("L", (canvas_w, canvas_h), 0)
-    axes_draw = ImageDraw.Draw(axes_mask_image)
+    # Make only empty corners outside the true model footprint transparent.
+    # PIL keeps the entire mask operation in compiled image code rather than
+    # allocating multiple 3840x3840 boolean arrays for each output.
+    canvas_w, canvas_h = rgba.size
+    alpha_mask = Image.new("L", (canvas_w, canvas_h), 255)
+    alpha_draw = ImageDraw.Draw(alpha_mask)
     x0, y0, axw, axh = axes_bbox.bounds
     left_px = max(0, int(math.floor(x0)))
     right_px = min(canvas_w - 1, int(math.ceil(x0 + axw)))
     top_px = max(0, int(math.floor(canvas_h - (y0 + axh))))
     bottom_px = min(canvas_h - 1, int(math.ceil(canvas_h - y0)))
-    axes_draw.rectangle((left_px, top_px, right_px, bottom_px), fill=255)
-
-    footprint_image = Image.new("L", (canvas_w, canvas_h), 0)
-    footprint_draw = ImageDraw.Draw(footprint_image)
+    alpha_draw.rectangle((left_px, top_px, right_px, bottom_px), fill=0)
     polygon_pixels = [
         (float(x), float(canvas_h - y)) for x, y in display_xy
         if np.isfinite(x) and np.isfinite(y)
     ]
     if len(polygon_pixels) < 20:
         raise RuntimeError("contorno METBR não pôde ser transformado para o PNG")
-    footprint_draw.polygon(polygon_pixels, fill=255)
-
-    axes_pixels = np.asarray(axes_mask_image, dtype=np.uint8) > 0
-    footprint_pixels = np.asarray(footprint_image, dtype=np.uint8) > 0
-    rgba[..., 3][axes_pixels & ~footprint_pixels] = 0
-    Image.fromarray(rgba, mode="RGBA").save(
-        output_path, format="PNG", optimize=False, compress_level=3
-    )
+    alpha_draw.polygon(polygon_pixels, fill=255)
+    rgba.putalpha(ImageChops.multiply(rgba.getchannel("A"), alpha_mask))
+    rgba.save(output_path, format="PNG", optimize=False, compress_level=3)
     if output_path.stat().st_size < 5000:
         raise RuntimeError(f"PNG pequeno/inválido: {output_path}")
     return True
