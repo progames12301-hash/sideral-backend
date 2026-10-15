@@ -438,6 +438,7 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     # Draw once so the projection boundary can be mapped exactly to output pixels.
     fig.canvas.draw()
     axes_bbox = ax.get_window_extent()
+    display_xy = ax.transData.transform(boundary_xy)
     fig.savefig(
         output_path, dpi=384, facecolor="white", format="png",
         bbox_inches=None, pad_inches=0,
@@ -462,7 +463,6 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
 
     footprint_image = Image.new("L", (canvas_w, canvas_h), 0)
     footprint_draw = ImageDraw.Draw(footprint_image)
-    display_xy = ax.transData.transform(boundary_xy)
     polygon_pixels = [
         (float(x), float(canvas_h - y)) for x, y in display_xy
         if np.isfinite(x) and np.isfinite(y)
