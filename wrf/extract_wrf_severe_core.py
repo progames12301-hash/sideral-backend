@@ -79,12 +79,41 @@ def interp(coord,val,target,log=False):
         c0,c1,v0,v1=c[k],c[k+1],v[k],v[k+1]; ok=np.isfinite(c0)&np.isfinite(c1)&np.isfinite(v0)&np.isfinite(v1)&(((target-c0)*(target-c1))<=0)
         den=c1-c0; f=np.divide(target-c0,den,out=np.full_like(c0,np.nan),where=np.abs(den)>1e-12); cand=v0+f*(v1-v0); fill=ok&~np.isfinite(out); out[fill]=cand[fill]
     return out
+def interp_many(coord, values, targets):
+    """Interpolate many AGL heights in one vertical pass; numerically matches interp()."""
+    c,v=np.asarray(coord,float),np.asarray(values,float)
+    target=np.asarray(targets,float)
+    out=np.full((target.size,)+c.shape[1:],np.nan,dtype=float)
+    t3=target[:,None,None]
+    for k in range(c.shape[0]-1):
+        c0,c1,v0,v1=c[k],c[k+1],v[k],v[k+1]
+        crossing=(
+            np.isfinite(c0)[None]&np.isfinite(c1)[None]&
+            np.isfinite(v0)[None]&np.isfinite(v1)[None]&
+            (((t3-c0[None])*(t3-c1[None]))<=0)
+        )
+        den=c1-c0
+        frac=np.divide(t3-c0[None],den[None],
+                       out=np.full_like(out,np.nan),
+                       where=np.abs(den[None])>1e-12)
+        candidate=v0[None]+frac*(v1-v0)[None]
+        fill=crossing&~np.isfinite(out)
+        out[fill]=candidate[fill]
+    return out
+
 def profile(z,u,v,u10,v10,hs):
-    us=[];vs=[]
-    for h in hs:
-        if h==0: us.append(u10);vs.append(v10)
-        else: us.append(interp(z,u,h));vs.append(interp(z,v,h))
-    return np.stack(us),np.stack(vs)
+    hs=np.asarray(hs,float)
+    levels=hs[hs!=0]
+    up=interp_many(z,u,levels)
+    vp=interp_many(z,v,levels)
+    zero=np.where(hs==0)[0]
+    if zero.size:
+        out_u=np.full((hs.size,)+np.asarray(u10).shape,np.nan,dtype=float)
+        out_v=np.full_like(out_u,np.nan)
+        out_u[zero]=u10; out_v[zero]=v10
+        out_u[hs!=0]=up; out_v[hs!=0]=vp
+        return out_u,out_v
+    return up,vp
 def bunkers(lat,u,v,hs):
     hs=np.asarray(hs); mean=hs<=6000; low=hs<=500; high=hs>=5500
     with np.errstate(invalid="ignore"):
