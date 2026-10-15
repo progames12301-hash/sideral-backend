@@ -224,11 +224,20 @@ jobs:
 
       - name: Publicar pacote METBR completo
         if: steps.meta.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.meta.outputs.run_id }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch origin metbr-json-data
+          CANDIDATE_RUN_ID="$RUN_ID"
+          EXISTING_RUN_ID="$(git show origin/metbr-json-data:metadata.json | python -c 'import json,sys; print(json.load(sys.stdin).get("sourceRunId",""))' || true)"
+          if [[ "$EXISTING_RUN_ID" =~ ^[0-9]+$ && "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ && "$CANDIDATE_RUN_ID" -lt "$EXISTING_RUN_ID" ]]; then
+            echo "Bloqueada execução METBR antiga: run=$CANDIDATE_RUN_ID; publicada=$EXISTING_RUN_ID"
+            exit 1
+          fi
           CANDIDATE_INIT="$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json"))["initTime"])')"
           EXISTING_INIT="$(git show origin/metbr-json-data:metadata.json | python -c 'import json,sys; print(json.load(sys.stdin).get("initTime",""))' || true)"
           if [[ -n "$EXISTING_INIT" && "$CANDIDATE_INIT" < "$EXISTING_INIT" ]]; then
