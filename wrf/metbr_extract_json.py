@@ -771,7 +771,7 @@ def extract_severe_fields(path, nx, ny):
         arr = np.asarray(value, dtype=np.float64)
         if arr.size != expected:
             raise RuntimeError(f"METBR {name}: {arr.size} valores; esperados {expected} ({ny}x{nx})")
-        flat = clean_array(arr, expected, digits=4)
+        flat = _field_list(arr, expected, name)
         if any(v is not None for v in flat):
             output[name] = flat
     return output
