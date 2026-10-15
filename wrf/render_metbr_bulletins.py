@@ -105,6 +105,27 @@ VARIABLES = {
         "label": "Velocidade vertical de pressão em 700 hPa", "short": "Omega 700 hPa", "unit": "Pa/s",
         "cmap": "RdBu_r", "min": -3.0, "max": 3.0, "mode": "diverging",
     },
+    "stp": {"label": "Parâmetro significativo de tornado (STP)", "short": "STP", "unit": "índice", "cmap": "turbo", "min": 0.0, "max": 10.0},
+    "scp": {"label": "Parâmetro composto de supercélulas (SCP)", "short": "SCP", "unit": "índice", "cmap": "turbo", "min": 0.0, "max": 50.0},
+    "srh01": {"label": "Helicidade relativa à tempestade 0–1 km", "short": "SRH 0–1 km", "unit": "m²/s²", "cmap": "RdBu_r", "min": -500.0, "max": 500.0, "mode": "diverging"},
+    "srh03": {"label": "Helicidade relativa à tempestade 0–3 km", "short": "SRH 0–3 km", "unit": "m²/s²", "cmap": "RdBu_r", "min": -750.0, "max": 750.0, "mode": "diverging"},
+    "bulkShear06": {"label": "Cisalhamento do vento 0–6 km", "short": "Bulk shear 0–6 km", "unit": "m/s", "cmap": "turbo", "min": 0.0, "max": 50.0},
+    "effectiveBulkShear": {"label": "Cisalhamento efetivo de tempestade", "short": "Cisalhamento efetivo", "unit": "m/s", "cmap": "turbo", "min": 0.0, "max": 50.0},
+    "lclHeight": {"label": "Altura do LCL da parcela de superfície", "short": "LCL da parcela", "unit": "m AGL", "cmap": "turbo", "min": 0.0, "max": 3000.0},
+    "cin": {"label": "Inibição convectiva de superfície (CIN)", "short": "CIN", "unit": "J/kg", "cmap": "Blues_r", "min": -600.0, "max": 0.0},
+    "sbcape": {"label": "CAPE de parcela de superfície", "short": "SBCAPE", "unit": "J/kg", "cmap": "turbo", "min": 0.0, "max": 5000.0},
+    "mlcape": {"label": "CAPE de parcela média", "short": "MLCAPE", "unit": "J/kg", "cmap": "turbo", "min": 0.0, "max": 5000.0},
+    "mucapeWrf2": {"label": "CAPE de parcela mais instável", "short": "MUCAPE WRF", "unit": "J/kg", "cmap": "turbo", "min": 0.0, "max": 6000.0},
+    "pwat": {"label": "Água precipitável integrada", "short": "PWAT", "unit": "mm", "cmap": "YlGnBu", "min": 0.0, "max": 70.0},
+    "thetaE850": {"label": "Temperatura potencial equivalente em 850 hPa", "short": "Theta-e 850 hPa", "unit": "K", "cmap": "turbo", "min": 270.0, "max": 370.0},
+    "thetaEAdvection": {"label": "Advecção de temperatura potencial equivalente em 850 hPa", "short": "Advecção theta-e 850", "unit": "K/h", "cmap": "RdBu_r", "min": -20.0, "max": 20.0, "mode": "diverging"},
+    "wind850": {"label": "Velocidade do vento em 850 hPa", "short": "Vento 850 hPa", "unit": "m/s", "cmap": "turbo", "min": 0.0, "max": 40.0},
+    "wind500": {"label": "Velocidade do vento em 500 hPa", "short": "Vento 500 hPa", "unit": "m/s", "cmap": "turbo", "min": 0.0, "max": 50.0},
+    "vorticity500": {"label": "Vorticidade relativa em 500 hPa", "short": "Vorticidade 500 hPa", "unit": "10⁻⁵ s⁻¹", "cmap": "RdBu_r", "min": -200.0, "max": 200.0, "mode": "vorticity500"},
+    "mslp": {"label": "Pressão reduzida ao nível do mar", "short": "MSLP", "unit": "hPa", "cmap": "turbo", "min": 940.0, "max": 1040.0},
+    "thickness": {"label": "Espessura geopotencial 1000–500 hPa", "short": "Espessura 1000–500", "unit": "dam", "cmap": "turbo", "min": 500.0, "max": 600.0},
+    "kIndex": {"label": "Índice K de instabilidade", "short": "Índice K", "unit": "°C", "cmap": "turbo", "min": -50.0, "max": 70.0},
+    "totalTotals": {"label": "Índice Total Totals", "short": "Total Totals", "unit": "°C", "cmap": "turbo", "min": -20.0, "max": 80.0},
 }
 
 # Palette patterned after the reflectivity bulletin supplied as the reference.
@@ -234,6 +255,14 @@ def color_setup(variable, field):
         norm = mcolors.TwoSlopeNorm(vmin=-30.0, vcenter=0.0, vmax=30.0)
         return spec, cmap, norm, arr
 
+    if spec.get("mode") == "vorticity500":
+        arr = arr * 1e5
+        arr = np.ma.masked_where((~np.isfinite(arr)) | (np.abs(arr) < 1.0), arr)
+        cmap = plt.get_cmap(spec["cmap"]).copy()
+        cmap.set_bad((1.0, 1.0, 1.0, 0.0))
+        norm = mcolors.TwoSlopeNorm(vmin=-200.0, vcenter=0.0, vmax=200.0)
+        return spec, cmap, norm, arr
+
     if spec.get("mode") == "diverging":
         limit = max(abs(float(spec.get("min", -1.0))), abs(float(spec.get("max", 1.0))))
         arr = np.ma.masked_where((~np.isfinite(arr)) | (np.abs(arr) < 0.03), arr)
@@ -254,6 +283,14 @@ def color_setup(variable, field):
         "waterVapor": 5.0,
         "seaLevelPressure": 0.0,
         "surfacePressure": 0.0,
+        "sbcape": 25.0,
+        "mlcape": 25.0,
+        "mucapeWrf2": 25.0,
+        "pwat": 5.0,
+        "stp": 0.05,
+        "scp": 0.05,
+        "wind850": 1.0,
+        "wind500": 1.0,
     }.get(variable)
     if display_floor is not None:
         arr = np.ma.masked_where((~np.isfinite(arr)) | (arr < display_floor), arr)
@@ -369,20 +406,26 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
             extend="max", antialiased=True, corner_mask=True,
             transform=ccrs.PlateCarree(), zorder=2,
         )
-    elif variable != "windDirection":
+    elif variable not in {"windDirection", "windDirection850"}:
         # Continuous scalar variables are drawn as dense, antialiased filled
         # contours instead of blocky native-cell pcolormesh tiles.
         if variable == "precipitation":
             scalar_levels = np.linspace(0.2, 450.0, 240)
         elif variable == "vorticity850":
             scalar_levels = np.linspace(-30.0, 30.0, 181)
-        elif variable == "mucape":
-            scalar_levels = np.linspace(0.0, 4000.0, 161)
+        elif variable in {"mucape", "sbcape", "mlcape", "mucapeWrf2"}:
+            scalar_levels = np.linspace(0.0, float(spec.get("max", 5000.0)), 161)
+        elif variable in {"stp", "scp"}:
+            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 10.0)), 161)
+        elif variable in {"srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"}:
+            scalar_levels = np.linspace(float(spec.get("min", -1.0)), float(spec.get("max", 1.0)), 181)
+        elif variable == "cin":
+            scalar_levels = np.linspace(-600.0, 0.0, 121)
         else:
             scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 1.0)), 161)
         mesh = ax.contourf(
             lon, lat, field, levels=scalar_levels, cmap=cmap, norm=norm,
-            extend="both" if variable in {"temperature", "vorticity850"} else "max",
+            extend="both" if variable in {"temperature", "vorticity850", "srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"} else "max",
             antialiased=True, corner_mask=True,
             transform=ccrs.PlateCarree(), zorder=2,
         )
@@ -469,8 +512,42 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         cb.set_ticks(np.arange(0, 121, 20))
     elif variable == "vorticity850":
         cb.set_ticks([-30, -20, -10, 0, 10, 20, 30])
-    elif variable == "waterVapor":
+    elif variable == "waterVapor" or variable == "pwat":
         cb.set_ticks(np.arange(0, 71, 10))
+    elif variable == "stp":
+        cb.set_ticks(np.arange(0, 11, 2))
+    elif variable == "scp":
+        cb.set_ticks(np.arange(0, 51, 10))
+    elif variable == "srh01":
+        cb.set_ticks([-500, -250, 0, 250, 500])
+    elif variable == "srh03":
+        cb.set_ticks([-750, -500, -250, 0, 250, 500, 750])
+    elif variable == "bulkShear06" or variable == "effectiveBulkShear":
+        cb.set_ticks(np.arange(0, 51, 10))
+    elif variable == "lclHeight":
+        cb.set_ticks(np.arange(0, 3001, 500))
+    elif variable == "cin":
+        cb.set_ticks([-600, -500, -400, -300, -200, -100, 0])
+    elif variable in {"sbcape", "mlcape", "mucapeWrf2"}:
+        cb.set_ticks(np.arange(0, float(spec.get("max", 5000)) + 1, 1000))
+    elif variable == "thetaE850":
+        cb.set_ticks(np.arange(270, 371, 10))
+    elif variable == "thetaEAdvection":
+        cb.set_ticks([-20, -10, 0, 10, 20])
+    elif variable == "wind850":
+        cb.set_ticks(np.arange(0, 41, 10))
+    elif variable == "wind500":
+        cb.set_ticks(np.arange(0, 51, 10))
+    elif variable == "vorticity500":
+        cb.set_ticks([-200, -100, 0, 100, 200])
+    elif variable == "mslp":
+        cb.set_ticks(np.arange(940, 1041, 20))
+    elif variable == "thickness":
+        cb.set_ticks(np.arange(500, 601, 20))
+    elif variable == "kIndex":
+        cb.set_ticks(np.arange(-50, 71, 20))
+    elif variable == "totalTotals":
+        cb.set_ticks(np.arange(-20, 81, 20))
     cb.outline.set_edgecolor("#555555")
     cb.outline.set_linewidth(0.5)
     # Use the repository's official Sideral artwork, not a generated text logo.
