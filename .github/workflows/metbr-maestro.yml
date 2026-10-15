@@ -122,6 +122,8 @@ jobs:
 
       - name: Validar publicação METBR completa
         if: steps.meta.outputs.publish == 'true'
+        env:
+          SOURCE_RUN_ID: ${{ steps.meta.outputs.run_id }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -129,10 +131,19 @@ jobs:
           from pathlib import Path
           import numpy as np
 
+          import os
           root = Path("metbr_publish")
-          meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
-          data = json.loads((root / "metbr_wrf_4km.json").read_text(encoding="utf-8"))
+          meta_path = root / "metadata.json"
+          data_path = root / "metbr_wrf_4km.json"
+          meta = json.loads(meta_path.read_text(encoding="utf-8"))
+          data = json.loads(data_path.read_text(encoding="utf-8"))
           grid = json.loads((root / "grid.json").read_text(encoding="utf-8"))
+          meta["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
+          meta["sourceWorkflow"] = "METBR WRF 4 KM - ICON"
+          data["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
+          data["sourceWorkflow"] = "METBR WRF 4 KM - ICON"
+          meta_path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+          data_path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
           assert meta.get("modelKey") == "metbr_wrf", meta.get("modelKey")
           assert int(meta.get("resolutionKm", 0)) == 4
           assert meta.get("gridFile") == "grid.json"
@@ -249,3 +260,9 @@ jobs:
           cd - >/dev/null
           git worktree remove --force /tmp/metbr-json-publication
           echo "METBR publicado integralmente em $METBR_JSON_BRANCH e metbr-json-data."
+          # GITHUB_TOKEN pushes do not start downstream push-triggered workflows.
+          # Dispatch only after both METBR JSON branches have been published.
+          gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
+            -f event_type=metbr-json-published \
+            -f "client_payload[run_id]=$RUN_ID" \
+            -f "client_payload[init_time]=$CANDIDATE_INIT"
