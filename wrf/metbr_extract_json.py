@@ -326,6 +326,130 @@ def _derived_vorticity850(ds, expected_shape):
     return vort if np.isfinite(vort).any() else None
 
 
+
+def _derived_pressure_level_fields(ds, expected_shape, pressure_target_pa=85000.0):
+    """Derive 850-hPa temperature and earth-relative wind from native WRF levels."""
+    u = _mass_wind(ds, "U", expected_shape)
+    v = _mass_wind(ds, "V", expected_shape)
+    p = _read_3d(ds, "P", expected_shape)
+    pb = _read_3d(ds, "PB", expected_shape)
+    theta_pert = _read_3d(ds, "T", expected_shape)
+    if any(value is None for value in (u, v, p, pb, theta_pert)):
+        return {}, {}
+    if not (u.shape == v.shape == p.shape == pb.shape == theta_pert.shape):
+        return {}, {}
+    pressure = p + pb
+    theta = theta_pert + 300.0
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        temperature_k = theta * (np.maximum(pressure, 1.0) / 100000.0) ** 0.2854
+    t_target = _interp_vertical(pressure, temperature_k, pressure_target_pa, expected_shape)
+    u_target = _interp_vertical(pressure, u, pressure_target_pa, expected_shape)
+    v_target = _interp_vertical(pressure, v, pressure_target_pa, expected_shape)
+    if t_target is None or u_target is None or v_target is None:
+        return {}, {}
+    cosa, _ = _read_2d(ds, ("COSALPHA",), expected_shape)
+    sina, _ = _read_2d(ds, ("SINALPHA",), expected_shape)
+    if cosa is None:
+        cosa = np.ones(expected_shape, dtype=np.float64)
+    if sina is None:
+        sina = np.zeros(expected_shape, dtype=np.float64)
+    east = u_target * cosa - v_target * sina
+    north = u_target * sina + v_target * cosa
+    speed = np.sqrt(east ** 2 + north ** 2) * 3.6
+    direction = (270.0 - np.degrees(np.arctan2(north, east))) % 360.0
+    fields = {
+        "temperature850": t_target - 273.15,
+        "windSpeed850": speed,
+        "windDirection850": direction,
+    }
+    p_hpa = pressure_target_pa / 100.0
+    sources = {
+        "temperature850": "WRF T+300 interpolada em pressão para 850 hPa; °C",
+        "windSpeed850": "U/V destaggerados e rotacionados, interpolados em 850 hPa; km/h",
+        "windDirection850": "U/V destaggerados e rotacionados, interpolados em 850 hPa; graus meteorológicos",
+    }
+    return fields, sources
+
+
+def _derived_omega700(ds, expected_shape):
+    """Derive pressure vertical velocity at 700 hPa from W and native thermodynamics."""
+    w_stag = _read_3d(ds, "W", expected_shape)
+    p = _read_3d(ds, "P", expected_shape)
+    pb = _read_3d(ds, "PB", expected_shape)
+    theta_pert = _read_3d(ds, "T", expected_shape)
+    if any(value is None for value in (w_stag, p, pb, theta_pert)):
+        return None
+    if w_stag.shape[0] != p.shape[0] + 1 or p.shape != pb.shape or p.shape != theta_pert.shape:
+        return None
+    w = 0.5 * (w_stag[:-1] + w_stag[1:])
+    pressure = p + pb
+    theta = theta_pert + 300.0
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        temperature = theta * (np.maximum(pressure, 1.0) / 100000.0) ** 0.2854
+    w700 = _interp_vertical(pressure, w, 70000.0, expected_shape)
+    t700 = _interp_vertical(pressure, temperature, 70000.0, expected_shape)
+    if w700 is None or t700 is None:
+        return None
+    density = 70000.0 / (287.05 * np.maximum(t700, 150.0))
+    omega = -density * 9.80665 * w700
+    omega[~(np.isfinite(w700) & np.isfinite(t700))] = np.nan
+    return omega if np.isfinite(omega).any() else None
+
+
+def _derived_surface_thermodynamics(ds, expected_shape):
+    """Derive surface dewpoint, equivalent potential temperature, LCL and pressure maps."""
+    t2, _ = _read_2d(ds, ("T2",), expected_shape)
+    q2, _ = _read_2d(ds, ("Q2",), expected_shape)
+    psfc, _ = _read_2d(ds, ("PSFC",), expected_shape)
+    terrain, _ = _read_2d(ds, ("HGT",), expected_shape)
+    if any(value is None for value in (t2, q2, psfc)):
+        return {}, {}
+    # WRF Q2 is normally kg/kg; tolerate legacy outputs stored as g/kg.
+    q = np.asarray(q2, dtype=np.float64).copy()
+    q = np.where(q > 0.1, q / 1000.0, q)
+    q = np.clip(q, 1.0e-8, 0.5)
+    mixing_ratio = q / np.maximum(1.0 - q, 1.0e-8)
+    temp_k = t2 if np.nanmedian(t2) > 150 else t2 + 273.15
+    psfc_pa = psfc if np.nanmedian(psfc) > 2000 else psfc * 100.0
+    psfc_hpa = psfc_pa / 100.0
+    vapor_pa = mixing_ratio * psfc_pa / (0.622 + mixing_ratio)
+    vapor_hpa = vapor_pa / 100.0
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        loge = np.log(np.maximum(vapor_hpa, 1.0e-5) / 6.112)
+        dewpoint_c = 243.5 * loge / (17.67 - loge)
+        dewpoint_c = np.minimum(dewpoint_c, temp_k - 273.15)
+        dewpoint_k = dewpoint_c + 273.15
+        tlcl_k = 1.0 / (1.0 / (dewpoint_k - 56.0) + np.log(temp_k / dewpoint_k) / 800.0) + 56.0
+        # Bolton equivalent potential temperature, using vapor-corrected pressure.
+        theta_e = temp_k * (1000.0 / np.maximum(psfc_hpa - vapor_hpa, 1.0)) ** (0.2854 * (1.0 - 0.28 * mixing_ratio))
+        theta_e *= np.exp((3376.0 / tlcl_k - 2.54) * mixing_ratio * (1.0 + 0.81 * mixing_ratio))
+        p_lcl_hpa = np.maximum(psfc_hpa - vapor_hpa, 1.0) * (tlcl_k / temp_k) ** (1.0 / 0.2854)
+        lcl_m = (287.05 * (temp_k + tlcl_k) / 2.0 / 9.80665) * np.log(np.maximum(psfc_hpa, 1.0) / np.maximum(p_lcl_hpa, 1.0))
+    fields = {
+        "dewpoint2m": dewpoint_c,
+        "thetaE2m": theta_e,
+        "lcl": lcl_m,
+        "surfacePressure": psfc_hpa,
+    }
+    sources = {
+        "dewpoint2m": "Q2 e PSFC; ponto de orvalho calculado pela relação de vapor",
+        "thetaE2m": "T2, Q2 e PSFC; temperatura potencial equivalente (Bolton)",
+        "lcl": "T2, ponto de orvalho e PSFC; altura de LCL estimada em m AGL",
+        "surfacePressure": "PSFC nativo convertido para hPa",
+    }
+    if terrain is not None:
+        terrain_m = np.asarray(terrain, dtype=np.float64)
+        mean_temp_k = temp_k + 0.00325 * terrain_m
+        virtual_temp_k = np.maximum(mean_temp_k * (1.0 + 0.61 * q), 180.0)
+        with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+            slp = psfc_hpa * np.exp(9.80665 * terrain_m / (287.05 * virtual_temp_k))
+        # Do not publish implausible numerical blow-ups from invalid high terrain or pressure.
+        slp[~(np.isfinite(slp) & np.isfinite(psfc_hpa) & (psfc_hpa > 0) & (slp >= 800) & (slp <= 1150))] = np.nan
+        if np.isfinite(slp).any():
+            fields["seaLevelPressure"] = slp
+            sources["seaLevelPressure"] = "PSFC reduzida ao nível do mar por aproximação hipsométrica com T2, Q2 e HGT"
+    return fields, sources
+
 def extract_available_fields(ds, expected_shape, reflectivity):
     """Extracts fields from this WRFOUT only; missing fields stay absent."""
     fields = {"reflectivity": np.asarray(reflectivity, dtype=np.float64)}
@@ -451,6 +575,19 @@ def extract_available_fields(ds, expected_shape, reflectivity):
         if vort is not None:
             fields["vorticity850"] = vort
             sources["vorticity850"] = "derivada de U/V interpolados em 850 hPa; dv/dx - du/dy (s⁻¹)"
+
+    surface_fields, surface_sources = _derived_surface_thermodynamics(ds, native_shape)
+    fields.update(surface_fields)
+    sources.update(surface_sources)
+
+    pressure_fields, pressure_sources = _derived_pressure_level_fields(ds, native_shape, 85000.0)
+    fields.update(pressure_fields)
+    sources.update(pressure_sources)
+
+    omega700 = _derived_omega700(ds, native_shape)
+    if omega700 is not None:
+        fields["omega700"] = omega700
+        sources["omega700"] = "W destaggerado e interpolado para 700 hPa; conversão para omega (Pa/s)"
 
     # Keep only arrays with the native WRF horizontal dimensions and at least
     # one usable value. No proxy data or values from other models are used.
