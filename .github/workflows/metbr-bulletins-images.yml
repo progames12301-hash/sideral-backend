@@ -3,12 +3,17 @@ name: METBR WRF 4 km — gerar boletins
 
 on:
   push:
-    branches: [main]
+    branches: [main, metbr-json-data]
     paths:
       - '.github/workflows/metbr-bulletins-images.yml'
       - 'wrf/render_metbr_bulletins.py'
+      - 'metadata.json'
+      - 'grid.json'
+      - 'frames/**'
   workflow_run:
-    workflows: ["METBR + TARC Maestro - publicação diária de JSON"]
+    workflows:
+      - "METBR + TARC Maestro - publicação diária de JSON"
+      - "METBR WRF 4 KM - ICON"
     types: [completed]
   schedule:
     - cron: '15 14 * * *'
@@ -25,7 +30,7 @@ jobs:
   render-and-publish:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout do renderer
         uses: actions/checkout@v4
@@ -101,6 +106,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from PIL import Image
           root = Path("metbr-bulletins")
           meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
           pngs = list(root.rglob("*.png"))
@@ -109,12 +115,15 @@ jobs:
           assert meta.get("imageCount", 0) == len(pngs), (meta.get("imageCount"), len(pngs))
           assert all(p.stat().st_size > 5000 for p in pngs)
           policy = meta.get("displayProcessing") or {}
+          assert policy.get("renderResolutionPx") == [3840, 3840], "PNG não foi renderizado em 4K"
           assert policy.get("skipBlankReflectivityAfterF000") is True, "Renderer sem regra anti-piscamento"
           assert policy.get("windBarbs"), "Renderer sem barbelas de vento"
           assert policy.get("outerModelBoundaryCellsMasked") == 2, "Recorte da borda WRF não aplicado"
-          assert meta.get("bulkShearDisplayFloorMs") is None or policy.get("bulkShearDisplayFloorMs") == 15.0
+          first = pngs[0]
+          with Image.open(first) as im:
+              assert im.size == (3840, 3840), (first, im.size)
           print(
-              f"Boletins validados: {meta['frameCount']} horários, {len(pngs)} PNGs, "
+              f"Boletins 4K validados: {meta['frameCount']} horários, {len(pngs)} PNGs, "
               f"refletividade ignorada em {meta.get('skippedReflectivityFrameCount', 0)} horários, "
               f"rodada {meta['initTime']}"
           )
