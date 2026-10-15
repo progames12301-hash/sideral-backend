@@ -570,6 +570,8 @@ def build_bulletins(input_dir: Path, output_dir: Path):
         "resolutionKm": 4,
         "nativeGrid": True,
         "initTime": meta["initTime"],
+        "sourceRunId": meta.get("sourceRunId"),
+        "sourceWorkflow": meta.get("sourceWorkflow", "METBR WRF 4 KM - ICON"),
         "generatedAt": generated,
         "grid": {"nx": nx, "ny": ny},
         "frameCount": len(out_frames),
