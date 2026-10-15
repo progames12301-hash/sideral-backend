@@ -54,30 +54,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "$INPUT_RUN_ID" ]]; then
-            RUN_ID="$INPUT_RUN_ID"
-            echo "Usando a execução METBR solicitada explicitamente: $RUN_ID"
-          else
-            # Always select the newest run by creation order, regardless of
-            # status. Never fall back to an older successful run.
-            LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName,createdAt)"
-            RUN_ID="$(jq -r '.[0].databaseId // empty' <<< "$LATEST")"
-            STATUS="$(jq -r '.[0].status // empty' <<< "$LATEST")"
-            WORKFLOW_NAME="$(jq -r '.[0].workflowName // empty' <<< "$LATEST")"
-            if [[ -z "$RUN_ID" || "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
-              echo "Não encontrei uma execução METBR válida." >&2
-              exit 1
-            fi
-            echo "Execução METBR mais recente: run_id=$RUN_ID; status=$STATUS"
-          fi
-
-          RUN_INFO="$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json databaseId,workflowName,status,conclusion)"
-          WORKFLOW_NAME="$(jq -r '.workflowName // empty' <<< "$RUN_INFO")"
-          STATUS="$(jq -r '.status // empty' <<< "$RUN_INFO")"
-          if [[ "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
-            echo "Run $RUN_ID pertence a '$WORKFLOW_NAME', não ao METBR." >&2
+          # Always select the latest METBR execution; ignore any manual ID.
+          LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName,createdAt)"
+          RUN_ID="$(jq -r '.[0].databaseId // empty' <<< "$LATEST")"
+          STATUS="$(jq -r '.[0].status // empty' <<< "$LATEST")"
+          WORKFLOW_NAME="$(jq -r '.[0].workflowName // empty' <<< "$LATEST")"
+          if [[ -z "$RUN_ID" || "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
+            echo "Não encontrei uma execução METBR válida." >&2
             exit 1
           fi
+          echo "Execução METBR mais recente selecionada: run_id=$RUN_ID; status=$STATUS"
 
           echo "publish=true" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
