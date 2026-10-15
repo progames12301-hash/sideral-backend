@@ -391,7 +391,7 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     ax.set_boundary(coverage_boundary, transform=ccrs.PlateCarree())
     if variable == "reflectivity":
         # Native REFL_10CM values; finer draw levels only improve edge rendering.
-        refl_levels = np.arange(0.0, 75.1, 1.0)
+        refl_levels = REFL_BOUNDS
         mesh = ax.contourf(
             lon, lat, field, levels=refl_levels, cmap=cmap, norm=norm,
             extend="max", antialiased=True, corner_mask=True,
@@ -400,7 +400,7 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
     elif variable == "bulkShear":
         # Dense contour levels smooth the rendered gradients without modifying
         # the model's original values or inventing higher-resolution data.
-        shear_levels = np.arange(15.0, 50.01, 0.5)
+        shear_levels = np.arange(15.0, 50.01, 1.0)
         mesh = ax.contourf(
             lon, lat, field, levels=shear_levels, cmap=cmap, norm=norm,
             extend="max", antialiased=True, corner_mask=True,
@@ -410,19 +410,19 @@ def render_one(output_path, variable, values, lat, lon, init_time, valid_time, l
         # Continuous scalar variables are drawn as dense, antialiased filled
         # contours instead of blocky native-cell pcolormesh tiles.
         if variable == "precipitation":
-            scalar_levels = np.linspace(0.2, 450.0, 240)
+            scalar_levels = PRECIP_BOUNDS
         elif variable == "vorticity850":
-            scalar_levels = np.linspace(-30.0, 30.0, 181)
+            scalar_levels = np.linspace(-30.0, 30.0, 91)
         elif variable in {"mucape", "sbcape", "mlcape", "mucapeWrf2"}:
-            scalar_levels = np.linspace(0.0, float(spec.get("max", 5000.0)), 161)
+            scalar_levels = np.linspace(0.0, float(spec.get("max", 5000.0)), 81)
         elif variable in {"stp", "scp"}:
             scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 10.0)), 161)
         elif variable in {"srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"}:
-            scalar_levels = np.linspace(float(spec.get("min", -1.0)), float(spec.get("max", 1.0)), 181)
+            scalar_levels = np.linspace(float(spec.get("min", -1.0)), float(spec.get("max", 1.0)), 91)
         elif variable == "cin":
-            scalar_levels = np.linspace(-600.0, 0.0, 121)
+            scalar_levels = np.linspace(-600.0, 0.0, 61)
         else:
-            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 1.0)), 161)
+            scalar_levels = np.linspace(float(spec.get("min", 0.0)), float(spec.get("max", 1.0)), 81)
         mesh = ax.contourf(
             lon, lat, field, levels=scalar_levels, cmap=cmap, norm=norm,
             extend="both" if variable in {"temperature", "vorticity850", "srh01", "srh03", "thetaEAdvection", "vorticity500", "omega700"} else "max",
