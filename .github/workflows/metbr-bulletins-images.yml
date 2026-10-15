@@ -265,6 +265,65 @@ jobs:
             local variables="$2"
             local hours="${3:-all}"
             echo "::group::METBR lote $batch — $variables — horas $hours"
+
+            if python - "$variables" "$hours" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          required = {name.strip() for name in sys.argv[1].split(",") if name.strip()}
+          hour_arg = sys.argv[2].strip()
+          source = json.loads(Path("metbr-source/metadata.json").read_text(encoding="utf-8"))
+          output_root = Path("metbr-bulletins")
+          output_meta_path = output_root / "metadata.json"
+          if not output_meta_path.is_file():
+              raise SystemExit(1)
+          current = json.loads(output_meta_path.read_text(encoding="utf-8"))
+          if (
+              current.get("initTime") != source.get("initTime")
+              or str(current.get("sourceRunId") or "") != str(source.get("sourceRunId") or "")
+          ):
+              raise SystemExit(1)
+          frames = {
+              int(frame.get("forecastHour", -1)): frame
+              for frame in current.get("frames", [])
+          }
+          hours = (
+              [int(value.strip().upper().lstrip("F")) for value in hour_arg.split(",") if value.strip()]
+              if hour_arg != "all"
+              else [int(frame.get("forecastHour", -1)) for frame in source.get("frames", [])]
+          )
+          source_hours = {int(frame.get("forecastHour", -1)) for frame in source.get("frames", [])}
+          if not hours or not set(hours).issubset(source_hours):
+              raise SystemExit(1)
+          for hour in hours:
+              frame = frames.get(hour)
+              if frame is None:
+                  raise SystemExit(1)
+              files = frame.get("files") or {}
+              previews = frame.get("previewFiles") or {}
+              skipped = frame.get("skippedVariables") or {}
+              for variable in required:
+                  if variable == "reflectivity" and skipped.get(variable) == "no_visible_echo_below_5_dBZ":
+                      continue
+                  relative = files.get(variable)
+                  preview = previews.get(variable)
+                  if not relative or not preview:
+                      raise SystemExit(1)
+                  png = output_root / relative
+                  webp = output_root / preview
+                  if not png.is_file() or png.stat().st_size <= 5000:
+                      raise SystemExit(1)
+                  if not webp.is_file() or webp.stat().st_size <= 1000:
+                      raise SystemExit(1)
+          print(f"Grupo já completo: {len(hours)} horários, {len(required)} variáveis.")
+          PY
+            then
+              echo "Lote $batch já tem PNG 4K e WebP válidos; não será renderizado novamente."
+              echo "::endgroup::"
+              return 0
+            fi
+
             if [[ "$hours" == "all" ]]; then
               python wrf/render_metbr_bulletins.py --input-dir metbr-source --output-dir metbr-bulletins --variables "$variables"
             else
