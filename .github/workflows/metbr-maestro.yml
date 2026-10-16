@@ -11,8 +11,9 @@ on:
     workflows:
       - "METBR WRF 4 KM - ICON"
     types: [completed]
+  # Retry partial JSON publication every 30 minutes, including long-running cycles.
   schedule:
-    - cron: '30 12 * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       run_id:
