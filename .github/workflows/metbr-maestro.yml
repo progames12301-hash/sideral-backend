@@ -76,21 +76,21 @@ jobs:
               echo "Checkpoint $CANDIDATE_TAG não pode ser consultado; tentando uma execução anterior."
               continue
             fi
-            ASSET_IDS="$(jq -r '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0) | .id] | .[]' <<< "$ASSET_JSON")"
+            ASSET_ENDPOINTS="$(jq -r '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0) | .apiUrl | sub("^https://api.github.com/"; "")] | .[]' <<< "$ASSET_JSON")"
             COUNT="$(jq -r '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0)] | length' <<< "$ASSET_JSON")"
             if [[ ! "$COUNT" =~ ^[0-9]+$ || "$COUNT" -eq 0 ]]; then
               echo "Checkpoint $CANDIDATE_TAG sem WRFOUT válido; tentando uma execução anterior."
               continue
             fi
             ASSETS_VALID=true
-            while IFS= read -r ASSET_ID; do
-              [[ -n "$ASSET_ID" ]] || continue
-              if ! gh api "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" --jq '.id' >/dev/null 2>&1; then
-                echo "Asset WRFOUT $ASSET_ID ausente/inválido no checkpoint $CANDIDATE_TAG."
+            while IFS= read -r ASSET_ENDPOINT; do
+              [[ -n "$ASSET_ENDPOINT" ]] || continue
+              if ! gh api "$ASSET_ENDPOINT" --jq '.id' >/dev/null 2>&1; then
+                echo "Asset WRFOUT ausente/inválido ($ASSET_ENDPOINT) no checkpoint $CANDIDATE_TAG."
                 ASSETS_VALID=false
                 break
               fi
-            done <<< "$ASSET_IDS"
+            done <<< "$ASSET_ENDPOINTS"
             if [[ "$ASSETS_VALID" == true ]]; then
               echo "Checkpoint validado: $CANDIDATE_TAG; WRFOUTs=$COUNT."
               RUN_ID="$CANDIDATE_ID"
