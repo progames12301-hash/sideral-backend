@@ -12,7 +12,10 @@ from pathlib import Path
 from PIL import Image
 
 
-SIZE = 720
+GIF_SIZE = 720
+VIDEO_WIDTH = 3840
+VIDEO_HEIGHT = 2160
+VIDEO_MAP_SIZE = 2160
 GIF_COLORS = 128
 SPEEDS = {
     "slow": {"gif_ms": 500, "fps": "2"},
@@ -20,17 +23,24 @@ SPEEDS = {
 }
 
 
-def open_opaque_thumbnail(path: Path) -> Image.Image:
+def open_square_frame(path: Path, size: int) -> Image.Image:
+    """Fit the whole square bulletin inside a square canvas; preserve its coverage mask until compositing."""
     with Image.open(path) as source:
         rgba = source.convert("RGBA")
-        rgba.thumbnail((SIZE, SIZE), Image.Resampling.LANCZOS)
-        canvas = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-        canvas.alpha_composite(rgba)
-        if canvas.size != (SIZE, SIZE):
-            pad = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 255))
-            pad.alpha_composite(canvas, ((SIZE - canvas.width) // 2, (SIZE - canvas.height) // 2))
-            canvas = pad
-        return canvas.convert("RGB")
+        rgba.thumbnail((size, size), Image.Resampling.LANCZOS)
+        square = Image.new("RGBA", (size, size), (255, 255, 255, 255))
+        square.alpha_composite(rgba, ((size - rgba.width) // 2, (size - rgba.height) // 2))
+        return square.convert("RGB")
+
+
+def open_uhd_frame(path: Path) -> Image.Image:
+    """Create true 4K UHD 16:9 video frame with the square bulletin centered."""
+    square = open_square_frame(path, VIDEO_MAP_SIZE).convert("RGBA")
+    canvas = Image.new("RGBA", (VIDEO_WIDTH, VIDEO_HEIGHT), (255, 255, 255, 255))
+    canvas.alpha_composite(square, ((VIDEO_WIDTH - VIDEO_MAP_SIZE) // 2, (VIDEO_HEIGHT - VIDEO_MAP_SIZE) // 2))
+    if canvas.size != (3840, 2160):
+        raise RuntimeError(f"Quadro MP4 fora de 4K UHD: {canvas.size}")
+    return canvas.convert("RGB")
 
 
 def animation_source(frame: dict, variable: str) -> str | None:
@@ -81,10 +91,13 @@ def main() -> None:
             temp = Path(temporary)
             gif_frames = []
             for index, source in enumerate(entries):
-                frame_image = open_opaque_thumbnail(source)
+                gif_image = open_square_frame(source, GIF_SIZE)
+                gif_frames.append(gif_image.quantize(colors=GIF_COLORS, method=Image.Quantize.MEDIANCUT))
+                # H.264 input is built at the final 3840x2160 pixel size so the
+                # published MP4 is genuinely UHD, not a 720p clip upscaled by FFmpeg.
+                video_frame = open_uhd_frame(source)
                 jpeg_path = temp / f"frame_{index:04d}.jpg"
-                frame_image.save(jpeg_path, format="JPEG", quality=88, optimize=True)
-                gif_frames.append(frame_image.quantize(colors=GIF_COLORS, method=Image.Quantize.MEDIANCUT))
+                video_frame.save(jpeg_path, format="JPEG", quality=95, subsampling=0, optimize=False)
 
             for speed, spec in SPEEDS.items():
                 gif_rel = f"animations/{variable}-{speed}.gif"
@@ -101,8 +114,8 @@ def main() -> None:
                 command = [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                     "-framerate", spec["fps"], "-i", str(temp / "frame_%04d.jpg"),
-                    "-vf", f"scale={SIZE}:{SIZE}:flags=lanczos,format=yuv420p",
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                    "-vf", "format=yuv420p",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                     "-movflags", "+faststart", "-an", str(mp4_path),
                 ]
                 subprocess.run(command, check=True)
@@ -119,8 +132,11 @@ def main() -> None:
     metadata["animationProfiles"] = {
         "slow": {"gifFrameMs": 500, "mp4Fps": 2},
         "ultra-fast": {"gifFrameMs": 80, "mp4Fps": 12},
-        "animationResolutionPx": [SIZE, SIZE],
-        "source": "frames PNG/WebP já publicados; sem recalcular campos meteorológicos",
+        "animationResolutionPx": [VIDEO_WIDTH, VIDEO_HEIGHT],
+        "mp4ResolutionPx": [VIDEO_WIDTH, VIDEO_HEIGHT],
+        "gifResolutionPx": [GIF_SIZE, GIF_SIZE],
+        "videoAspectRatio": "16:9 UHD; boletim quadrado centralizado, sem esticar o campo meteorológico",
+        "source": "frames PNG/WebP 4K já publicados; sem recalcular campos meteorológicos",
     }
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
