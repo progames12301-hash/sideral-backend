@@ -157,6 +157,92 @@ jobs:
               print(f"InitTime do dispatch {expected_init_time} difere do JSON atual {meta.get('initTime')}; render ignorado.")
               Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
               raise SystemExit(0)
+          # Idempotency guard: don't re-render the same published source every 30 minutes.
+          # A main-branch renderer change still rebuilds if the published package is
+          # missing/old or doesn't advertise real UHD MP4 profiles.
+          existing_response = requests.get(
+              f"https://raw.githubusercontent.com/{repo}/metbr-boletins-imagens/metadata.json",
+              headers={"Cache-Control": "no-cache", "User-Agent": "Sideral-METBR-Bulletins/1.0"},
+              timeout=(10, 30),
+          )
+          if existing_response.ok:
+              try:
+                  existing = existing_response.json()
+              except Exception:
+                  existing = {}
+              source_frames = meta.get("frames") or []
+              image_frames = existing.get("frames") or []
+              source_hours = {int(frame.get("forecastHour", -1)) for frame in source_frames}
+              image_by_hour = {
+                  int(frame.get("forecastHour", -1)): frame for frame in image_frames
+              }
+              source_variables = set(
+                  meta.get("availableVariablesAnyFrame") or meta.get("availableVariables") or []
+              )
+              image_variables = set(existing.get("availableVariables") or [])
+              profiles = existing.get("animationProfiles") or {}
+              animations = existing.get("animations") or {}
+              display = existing.get("displayProcessing") or {}
+              profiles_are_uhd = (
+                  profiles.get("mp4ResolutionPx") == [3840, 2160]
+                  and profiles.get("bulletinResolutionPx") == [3840, 3840]
+                  and profiles.get("videoContentResolutionPx") == [2160, 2160]
+                  and profiles.get("gifResolutionPx") == [720, 720]
+                  and profiles.get("videoAspectRatio")
+                      == "16:9 UHD; boletim quadrado centralizado, sem esticar o campo meteorológico"
+              )
+              crop_is_valid = (
+                  display.get("renderResolutionPx") == [3840, 3840]
+                  and bool(display.get("coverageCrop"))
+                  and bool(display.get("previewFormat", "").startswith("WebP"))
+              )
+              frame_package_complete = bool(source_hours) and source_hours == set(image_by_hour)
+              if frame_package_complete:
+                  for hour in source_hours:
+                      frame = image_by_hour[hour]
+                      files_map = frame.get("files") or {}
+                      previews_map = frame.get("previewFiles") or {}
+                      skipped = frame.get("skippedVariables") or {}
+                      for variable in source_variables:
+                          if variable == "reflectivity" and skipped.get(variable) == "no_visible_echo_below_5_dBZ":
+                              continue
+                          if not files_map.get(variable) or not previews_map.get(variable):
+                              frame_package_complete = False
+                              break
+                      if not frame_package_complete:
+                          break
+              animations_complete = bool(source_variables) and source_variables.issubset(set(animations))
+              if animations_complete:
+                  for variable in source_variables:
+                      profiles_for_variable = animations.get(variable) or {}
+                      for speed in ("slow", "ultra-fast"):
+                          for fmt in ("gif", "mp4"):
+                              if not profiles_for_variable.get(speed, {}).get(fmt):
+                                  animations_complete = False
+                                  break
+                          if not animations_complete:
+                              break
+                      if not animations_complete:
+                          break
+              same_package = (
+                  str(existing.get("sourceRunId") or "") == published_run_id
+                  and str(existing.get("initTime") or "") == str(meta.get("initTime") or "")
+                  and int(existing.get("sourceFrameCount") or existing.get("frameCount") or 0) == len(source_frames)
+                  and image_variables == source_variables
+                  and frame_package_complete
+                  and animations_complete
+                  and profiles_are_uhd
+                  and crop_is_valid
+              )
+              if same_package:
+                  print(
+                      f"Pacote de imagens já está completo para a rodada {meta.get('initTime')} "
+                      f"({len(source_variables)} variáveis, {len(source_hours)} horários, MP4 UHD). "
+                      "Não vou renderizar tudo novamente nesta tentativa de 30 minutos."
+                  )
+                  Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
+                  raise SystemExit(0)
+
           Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=true\n", encoding="utf-8")
           files = ["metadata.json", "grid.json"]
           files += [str(frame.get("dataFile") or f"frames/f{int(frame['forecastHour']):03d}.json.gz") for frame in meta.get("frames", [])]
