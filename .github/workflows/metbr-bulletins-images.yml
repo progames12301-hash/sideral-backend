@@ -198,7 +198,9 @@ jobs:
               display = existing.get("displayProcessing") or {}
               profiles_are_uhd = (
                   profiles.get("compositionVersion") == 2
-                  and str(profiles.get("bulletinCropMode") or "").startswith("painel quadrado recortado")
+                  and str(profiles.get("bulletinCropMode") or "").lower().startswith("tile quadrado")
+                  and "cantos sem cobertura" in str(profiles.get("bulletinCropMode") or "").lower()
+                  and "4K UHD" in str(profiles.get("mp4Encoding") or "")
                   and profiles.get("mp4ResolutionPx") == [3840, 2160]
                   and profiles.get("bulletinResolutionPx") == [3840, 3840]
                   and profiles.get("videoContentResolutionPx") == [2160, 2160]
