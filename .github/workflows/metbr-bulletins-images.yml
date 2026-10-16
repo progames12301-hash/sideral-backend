@@ -14,6 +14,9 @@ on:
       - 'frames/**'
   repository_dispatch:
     types: [metbr-json-published]
+  # A periodic publisher retries when the JSON/checkpoint becomes available after a partial run.
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -22,7 +25,8 @@ permissions:
 
 concurrency:
   group: metbr-wrf-bulletins
-  cancel-in-progress: true
+  # Let the active render finish; keep only the latest queued retry if one arrives.
+  cancel-in-progress: false
 
 jobs:
   render-and-publish:
