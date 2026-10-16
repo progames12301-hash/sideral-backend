@@ -76,14 +76,34 @@ jobs:
           echo "tag=metbr-wrf-4km-checkpoint-$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "O Maestro tentará publicar exclusivamente a execução METBR mais recente: $RUN_ID (status=$STATUS)"
 
-      - name: Instalar dependências
+      - name: Verificar se o checkpoint WRF desta rodada já tem arquivos
+        id: checkpoint
         if: steps.meta.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET_COUNT="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0)] | length' 2>/dev/null || echo 0)"
+          if [[ ! "$ASSET_COUNT" =~ ^[0-9]+$ ]]; then ASSET_COUNT=0; fi
+          if (( ASSET_COUNT > 0 )); then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Checkpoint $TAG tem $ASSET_COUNT arquivos WRFOUT; a publicação parcial pode prosseguir."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Checkpoint $TAG ainda não tem WRFOUT; tentativa registrada e será repetida pelo agendamento de 30 minutos."
+          fi
+
+      - name: Instalar dependências
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'xarray>=2024.1,<2027' 'netCDF4>=1.7,<2'
 
       - name: Baixar WRFOUT METBR
-        if: steps.meta.outputs.publish == 'true'
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
@@ -96,7 +116,7 @@ jobs:
           test -n "$(find metbr_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)"
 
       - name: Extrair JSON METBR
-        if: steps.meta.outputs.publish == 'true'
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         run: |
           set -euo pipefail
           rm -rf metbr_publish
@@ -113,7 +133,7 @@ jobs:
           echo "METBR checkpoint disponível: $FRAME_COUNT/43 frames; a execução mais nova será publicada sem voltar para uma rodada antiga."
 
       - name: Validar publicação METBR completa
-        if: steps.meta.outputs.publish == 'true'
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         env:
           SOURCE_RUN_ID: ${{ steps.meta.outputs.run_id }}
         run: |
@@ -208,7 +228,7 @@ jobs:
           PY
 
       - name: Selecionar branch do ciclo METBR
-        if: steps.meta.outputs.publish == 'true'
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         run: |
           set -euo pipefail
           RUN_CYCLE="$(python - <<'PY'
@@ -229,7 +249,7 @@ jobs:
           echo "METBR ciclo $RUN_CYCLE Z validado; publicarei a branch por ciclo e metbr-json-data."
 
       - name: Publicar pacote METBR completo
-        if: steps.meta.outputs.publish == 'true'
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ steps.meta.outputs.run_id }}
