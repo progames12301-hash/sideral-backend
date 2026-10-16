@@ -513,7 +513,9 @@ jobs:
           assert meta.get("animations"), "nenhuma animação publicada"
           profiles = meta.get("animationProfiles") or {}
           assert profiles.get("compositionVersion") == 2, f"composição de vídeo antiga: {profiles.get('compositionVersion')}"
-          assert str(profiles.get("bulletinCropMode") or "").startswith("painel quadrado recortado"), "MP4 sem corte à cobertura nativa"
+          crop_mode = str(profiles.get("bulletinCropMode") or "").lower()
+          assert crop_mode.startswith("tile quadrado") and "cantos sem cobertura" in crop_mode, "MP4 sem recorte quadrado da cobertura nativa"
+          assert "4K UHD" in str(profiles.get("mp4Encoding") or ""), "perfil de encode UHD não registrado"
           assert profiles.get("mp4ResolutionPx") == [3840, 2160], f"MP4 não está em 4K UHD: {profiles.get('mp4ResolutionPx')}"
           assert profiles.get("bulletinResolutionPx") == [3840, 3840], f"boletim não está quadrado 4K: {profiles.get('bulletinResolutionPx')}"
           assert profiles.get("gifResolutionPx") == [720, 720], f"GIF com resolução inesperada: {profiles.get('gifResolutionPx')}"
