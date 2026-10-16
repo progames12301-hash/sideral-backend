@@ -1,5 +1,6 @@
 name: METBR WRF 4 km — gerar boletins
 # Republish trigger: renderer fix for blank reflectivity frames after F000.
+# Verify incremental variable batches and immediate branch publication.
 
 on:
   push:
