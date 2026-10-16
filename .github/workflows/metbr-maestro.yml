@@ -53,10 +53,10 @@ jobs:
       - name: Selecionar o checkpoint METBR mais recente disponível
         id: meta
         env:
-          GH_TOKEN: \${{ github.token }}
-          EVENT_RUN_ID: \${{ github.event.workflow_run.id }}
-          INPUT_RUN_ID: \${{ inputs.run_id }}
-          EVENT_NAME: \${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
           set -euo pipefail
