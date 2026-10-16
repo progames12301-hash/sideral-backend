@@ -400,6 +400,10 @@ jobs:
           root = Path("metbr-bulletins")
           meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
           assert meta.get("animations"), "nenhuma animação publicada"
+          profiles = meta.get("animationProfiles") or {}
+          assert profiles.get("mp4ResolutionPx") == [3840, 2160], f"MP4 não está em 4K UHD: {profiles.get('mp4ResolutionPx')}"
+          assert profiles.get("gifResolutionPx") == [720, 720], f"GIF com resolução inesperada: {profiles.get('gifResolutionPx')}"
+          assert profiles.get("videoAspectRatio") == "16:9 UHD; boletim quadrado centralizado, sem esticar o campo meteorológico"
           for variable, speeds in meta["animations"].items():
               for speed in ("slow", "ultra-fast"):
                   for fmt in ("gif", "mp4"):
