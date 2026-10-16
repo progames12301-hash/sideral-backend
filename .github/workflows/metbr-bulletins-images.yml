@@ -494,6 +494,29 @@ jobs:
             publish_batch "1-core-F000" "reflectivity,precipitation,temperature,humidity,windSpeed" "0"
             publish_batch "2-core-F001-F004" "reflectivity,precipitation,temperature,humidity,windSpeed" "1,2,3,4"
             publish_batch "3-core-F005-F012" "reflectivity,precipitation,temperature,humidity,windSpeed" "5,6,7,8,9,10,11,12"
+
+            # F013+ was previously omitted: the core maps stopped at F012,
+            # while the other variable groups continued across the forecast.
+            # Derive the remaining hours from the current source metadata so
+            # both partial checkpoint publications and the final run are covered.
+            core_tail_hours="$(python - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = json.loads(Path("metbr-source/metadata.json").read_text(encoding="utf-8"))
+          hours = sorted({
+              int(frame.get("forecastHour", -1))
+              for frame in source.get("frames", [])
+              if int(frame.get("forecastHour", -1)) > 12
+          })
+          print(",".join(str(hour) for hour in hours))
+          PY
+          )"
+            if [[ -n "$core_tail_hours" ]]; then
+              publish_batch "3b-core-F013+" "reflectivity,precipitation,temperature,humidity,windSpeed" "$core_tail_hours"
+            else
+              echo "Ainda não há horários METBR depois de F012 para o lote core."
+            fi
           fi
           publish_batch "4-wind-moisture" "windDirection,bulkShear,vorticity850,waterVapor,dewpoint2m"
           publish_batch "5-severe" "cin,kIndex,lcl,lclHeight,mlcape,mucapeWrf2,sbcape,stp,scp,srh01,srh03"
