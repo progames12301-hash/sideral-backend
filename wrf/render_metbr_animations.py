@@ -8,8 +8,9 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from datetime import datetime
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 
 GIF_SIZE = 720
@@ -23,24 +24,150 @@ SPEEDS = {
 }
 
 
+def font(size: int, bold: bool = False):
+    candidates = (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    )
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except OSError:
+            pass
+    return ImageFont.load_default()
+
+
+def text_wrap(draw: ImageDraw.ImageDraw, text: str, xy: tuple[int, int],
+              use_font, fill, max_width: int, line_spacing: int = 8,
+              max_lines: int = 4) -> int:
+    words = str(text or "").split()
+    x, y = xy
+    lines = []
+    current = ""
+    for word in words:
+        trial = f"{current} {word}".strip()
+        if current and draw.textbbox((0, 0), trial, font=use_font)[2] > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    lines = lines[:max_lines]
+    for line in lines:
+        draw.text((x, y), line, font=use_font, fill=fill)
+        y += draw.textbbox((0, 0), line, font=use_font)[3] + line_spacing
+    return y
+
+
+def crop_to_native_map(source: Image.Image) -> Image.Image:
+    """Trim the page margins to the map panel; retain the alpha cutout outside WRF coverage."""
+    rgba = source.convert("RGBA")
+    width, height = rgba.size
+    # Transparent corners are made by the renderer outside the native WRF polygon.
+    transparent = ImageChops.invert(rgba.getchannel("A")).getbbox()
+    if transparent and transparent[2] - transparent[0] > width * 0.45 and transparent[3] - transparent[1] > height * 0.45:
+        bbox = transparent
+    else:
+        # Fallback for older maps with no detectable alpha mask.
+        bbox = (round(width * 0.08), round(height * 0.10),
+                round(width * 0.92), round(height * 0.85))
+    left, top, right, bottom = bbox
+    left = max(0, min(left, width - 2))
+    top = max(0, min(top, height - 2))
+    right = max(left + 1, min(right, width))
+    bottom = max(top + 1, min(bottom, height))
+    return rgba.crop((left, top, right, bottom))
+
+
 def open_square_frame(path: Path, size: int) -> Image.Image:
-    """Fit the whole square bulletin inside a square canvas; preserve its coverage mask until compositing."""
+    """Build a square animation map trimmed to the native model panel, not the full bulletin sheet."""
     with Image.open(path) as source:
-        rgba = source.convert("RGBA")
-        rgba.thumbnail((size, size), Image.Resampling.LANCZOS)
-        square = Image.new("RGBA", (size, size), (255, 255, 255, 255))
-        square.alpha_composite(rgba, ((size - rgba.width) // 2, (size - rgba.height) // 2))
+        crop = crop_to_native_map(source)
+        crop.thumbnail((size, size), Image.Resampling.LANCZOS)
+        square = Image.new("RGBA", (size, size), (235, 239, 244, 255))
+        square.alpha_composite(crop, ((size - crop.width) // 2, (size - crop.height) // 2))
         return square.convert("RGB")
 
 
-def open_uhd_frame(path: Path) -> Image.Image:
-    """Create true 4K UHD 16:9 video frame with the square bulletin centered."""
-    square = open_square_frame(path, VIDEO_MAP_SIZE).convert("RGBA")
-    canvas = Image.new("RGBA", (VIDEO_WIDTH, VIDEO_HEIGHT), (255, 255, 255, 255))
-    canvas.alpha_composite(square, ((VIDEO_WIDTH - VIDEO_MAP_SIZE) // 2, (VIDEO_HEIGHT - VIDEO_MAP_SIZE) // 2))
+def formatted_time(value: str) -> str:
+    if not value:
+        return "—"
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.strftime("%d/%m/%Y %H:%M UTC")
+    except (ValueError, TypeError):
+        return str(value)
+
+
+def open_uhd_frame(path: Path, variable: str, frame: dict, metadata: dict,
+                   logo_path: Path | None) -> Image.Image:
+    """Compose a 3840x2160 UHD frame with a square native-map crop and two information panels."""
+    canvas = Image.new("RGB", (VIDEO_WIDTH, VIDEO_HEIGHT), (22, 29, 39))
+    draw = ImageDraw.Draw(canvas)
+    panel_width = (VIDEO_WIDTH - VIDEO_MAP_SIZE) // 2
+    left_x = panel_width
+    right_x = panel_width + VIDEO_MAP_SIZE
+    accent = (227, 42, 63)
+    white = (248, 250, 253)
+    muted = (174, 187, 202)
+    pad = 58
+    left_max = panel_width - pad * 2
+    right_pad = right_x + pad
+
+    # The square content fills the entire height of the 4K UHD frame. The
+    # native coverage's alpha mask is retained; off-domain corners use a soft
+    # neutral background instead of looking like empty white data cells.
+    map_square = open_square_frame(path, VIDEO_MAP_SIZE)
+    canvas.paste(map_square, (left_x, 0))
+    draw.rectangle((0, 0, 12, VIDEO_HEIGHT), fill=accent)
+    draw.rectangle((left_x - 5, 0, left_x - 1, VIDEO_HEIGHT), fill=accent)
+    draw.rectangle((right_x, 0, right_x + 4, VIDEO_HEIGHT), fill=accent)
+    draw.rectangle((VIDEO_WIDTH - 12, 0, VIDEO_WIDTH, VIDEO_HEIGHT), fill=accent)
+
+    draw.text((pad, 260), "SIDERAL METEOROLOGIA", font=font(27, True), fill=muted)
+    draw.text((pad, 315), "METBR WRF 4 KM", font=font(38, True), fill=white)
+    draw.line((pad, 390, panel_width - pad, 390), fill=accent, width=5)
+
+    if logo_path and logo_path.is_file():
+        try:
+            with Image.open(logo_path) as logo_source:
+                logo = logo_source.convert("RGBA")
+                logo.thumbnail((left_max, 120), Image.Resampling.LANCZOS)
+                draw.rounded_rectangle((pad, 70, panel_width - pad, 215), radius=8, fill=(255, 255, 255))
+                logo_x = pad + (left_max - logo.width) // 2
+                logo_y = 70 + (145 - logo.height) // 2
+                canvas.paste(logo, (logo_x, logo_y), logo)
+        except OSError:
+            pass
+
+    catalog = metadata.get("variableCatalog") or {}
+    item = catalog.get(variable) or {}
+    label = item.get("label") or variable
+    unit = item.get("unit") or "—"
+    y = text_wrap(draw, label, (pad, 445), font(47, True), white, left_max, 15, 5)
+    draw.text((pad, y + 18), f"UNIDADE: {unit}", font=font(29, True), fill=(255, 213, 218))
+    draw.text((pad, y + 84), "GRADE NATIVA WRF", font=font(24, True), fill=muted)
+    draw.text((pad, y + 128), "RESOLUÇÃO HORIZONTAL: 4 KM", font=font(20), fill=muted)
+    draw.text((pad, VIDEO_HEIGHT - 100), "SIDERAL • PREVISÃO NUMÉRICA", font=font(17, True), fill=muted)
+
+    forecast_hour = int(frame.get("forecastHour", 0))
+    valid_time = formatted_time(str(frame.get("validTime") or ""))
+    init_time = formatted_time(str(metadata.get("initTime") or ""))
+    draw.text((right_pad, 260), "HORÁRIO DE PREVISÃO", font=font(25, True), fill=muted)
+    draw.text((right_pad, 315), f"F{forecast_hour:03d}", font=font(82, True), fill=white)
+    draw.line((right_pad, 430, VIDEO_WIDTH - pad, 430), fill=accent, width=5)
+    draw.text((right_pad, 475), "VALIDADE", font=font(25, True), fill=muted)
+    y = text_wrap(draw, valid_time, (right_pad, 525), font(30, True), white, panel_width - pad * 2, 12, 3)
+    draw.text((right_pad, y + 36), "RODADA", font=font(25, True), fill=muted)
+    text_wrap(draw, init_time, (right_pad, y + 86), font(28, True), white, panel_width - pad * 2, 12, 3)
+    draw.line((right_pad, VIDEO_HEIGHT - 220, VIDEO_WIDTH - pad, VIDEO_HEIGHT - 220), fill=(66, 79, 96), width=2)
+    draw.text((right_pad, VIDEO_HEIGHT - 180), "COBERTURA NATIVA", font=font(22, True), fill=muted)
+    draw.text((right_pad, VIDEO_HEIGHT - 137), "CANTOS SEM GRADE RECORTADOS", font=font(15, True), fill=white)
+
     if canvas.size != (3840, 2160):
         raise RuntimeError(f"Quadro MP4 fora de 4K UHD: {canvas.size}")
-    return canvas.convert("RGB")
+    return canvas
 
 
 def animation_source(frame: dict, variable: str) -> str | None:
@@ -90,7 +217,7 @@ def main() -> None:
                 and full_source.stat().st_size > 0
                 and preview_source.stat().st_size > 0
             ):
-                entries.append((preview_source, full_source))
+                entries.append((preview_source, full_source, frame))
         if len(entries) < 2:
             print(f"[METBR ANIMATION] {variable}: apenas {len(entries)} frame(s), sem animação")
             continue
@@ -99,11 +226,12 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix=f"metbr-{variable}-") as temporary:
             temp = Path(temporary)
             gif_frames = []
-            for index, (gif_source, mp4_source) in enumerate(entries):
+            for index, (gif_source, mp4_source, frame) in enumerate(entries):
                 gif_image = open_square_frame(gif_source, GIF_SIZE)
                 gif_frames.append(gif_image.quantize(colors=GIF_COLORS, method=Image.Quantize.MEDIANCUT))
                 # H.264 uses the original full-resolution PNG; no WebP-preview upscaling.
-                video_frame = open_uhd_frame(mp4_source)
+                logo_path = Path(__file__).resolve().parents[1] / "assets" / "sideral-logo.png"
+                video_frame = open_uhd_frame(mp4_source, variable, frame, metadata, logo_path)
                 jpeg_path = temp / f"frame_{index:04d}.jpg"
                 video_frame.save(jpeg_path, format="JPEG", quality=95, subsampling=0, optimize=False)
 
@@ -140,13 +268,15 @@ def main() -> None:
     metadata["animationProfiles"] = {
         "slow": {"gifFrameMs": 500, "mp4Fps": 2},
         "ultra-fast": {"gifFrameMs": 80, "mp4Fps": 12},
+        "compositionVersion": 2,
+        "bulletinCropMode": "painel quadrado recortado pela máscara alfa da cobertura WRF nativa; margens do boletim removidas no vídeo",
         "animationResolutionPx": [VIDEO_WIDTH, VIDEO_HEIGHT],
-        "mp4ResolutionPx": [VIDEO_WIDTH, VIDEO_HEIGHT],
+        "mp4ResolutionPx": [3840, 2160],
         "gifResolutionPx": [GIF_SIZE, GIF_SIZE],
         "bulletinResolutionPx": [3840, 3840],
         "videoContentResolutionPx": [VIDEO_MAP_SIZE, VIDEO_MAP_SIZE],
-        "videoAspectRatio": "16:9 UHD; boletim quadrado centralizado, sem esticar o campo meteorológico",
-        "source": "frames PNG/WebP 4K já publicados; sem recalcular campos meteorológicos",
+        "videoAspectRatio": "16:9 UHD 3840x2160; mapa quadrado recortado à cobertura nativa, com painéis laterais informativos",
+        "source": "PNG/WebP 4K já publicados; MP4 UHD H.264; sem recalcular campos meteorológicos",
     }
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
