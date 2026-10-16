@@ -50,32 +50,51 @@ jobs:
       - name: Validar sintaxe do extrator METBR
         run: python -m py_compile wrf/metbr_extract_json.py
 
-      - name: Selecionar a execução METBR mais recente
+      - name: Selecionar o checkpoint METBR mais recente disponível
         id: meta
         env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          INPUT_RUN_ID: ${{ inputs.run_id }}
-          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: \${{ github.token }}
+          EVENT_RUN_ID: \${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: \${{ inputs.run_id }}
+          EVENT_NAME: \${{ github.event_name }}
         shell: bash
         run: |
           set -euo pipefail
-          # Always select the latest METBR execution; ignore any manual ID.
-          LATEST="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 1 --json databaseId,status,conclusion,workflowName,createdAt)"
-          RUN_ID="$(jq -r '.[0].databaseId // empty' <<< "$LATEST")"
-          STATUS="$(jq -r '.[0].status // empty' <<< "$LATEST")"
-          WORKFLOW_NAME="$(jq -r '.[0].workflowName // empty' <<< "$LATEST")"
-          if [[ -z "$RUN_ID" || "$WORKFLOW_NAME" != "METBR WRF 4 KM - ICON" ]]; then
-            echo "Não encontrei uma execução METBR válida." >&2
-            exit 1
-          fi
-          echo "Execução METBR mais recente selecionada: run_id=$RUN_ID; status=$STATUS"
+          # "Latest run" can be pending while its WRFOUT checkpoint has not yet
+          # been uploaded. Search runs newest-first and use the newest checkpoint
+          # that actually exists, falling back only when a newer run has no data.
+          CANDIDATES="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf-4km.yml --limit 30 --json databaseId,status,conclusion,workflowName,createdAt)"
+          RUN_ID=""
+          STATUS=""
+          TAG=""
+          ASSET_COUNT=0
+          while IFS=$'\t' read -r CANDIDATE_ID CANDIDATE_STATUS; do
+            [[ -n "$CANDIDATE_ID" ]] || continue
+            CANDIDATE_TAG="metbr-wrf-4km-checkpoint-$CANDIDATE_ID"
+            COUNT="$(gh release view "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0)] | length' 2>/dev/null || echo 0)"
+            if [[ ! "$COUNT" =~ ^[0-9]+$ ]]; then COUNT=0; fi
+            echo "Verificando checkpoint candidato: run=$CANDIDATE_ID; status=$CANDIDATE_STATUS; arquivos WRFOUT=$COUNT"
+            if (( COUNT > 0 )); then
+              RUN_ID="$CANDIDATE_ID"
+              STATUS="$CANDIDATE_STATUS"
+              TAG="$CANDIDATE_TAG"
+              ASSET_COUNT="$COUNT"
+              break
+            fi
+          done < <(jq -r '.[] | select(.workflowName == "METBR WRF 4 KM - ICON") | [.databaseId, .status] | @tsv' <<< "$CANDIDATES")
 
+          if [[ -z "$RUN_ID" ]]; then
+            echo "Nenhuma execução METBR recente tem checkpoint WRFOUT disponível; o publicador tentará de novo em 30 minutos."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Checkpoint METBR mais recente disponível selecionado: run_id=$RUN_ID; status=$STATUS; WRFOUTs=$ASSET_COUNT"
           echo "publish=true" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "tag=metbr-wrf-4km-checkpoint-$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "O Maestro tentará publicar exclusivamente a execução METBR mais recente: $RUN_ID (status=$STATUS)"
-
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "O Maestro publicará o checkpoint disponível mais recente, sem deixar uma execução pending bloquear os dados anteriores disponíveis."
       - name: Verificar se o checkpoint WRF desta rodada já tem arquivos
         id: checkpoint
         if: steps.meta.outputs.publish == 'true'
