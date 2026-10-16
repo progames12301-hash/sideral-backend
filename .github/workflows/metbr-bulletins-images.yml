@@ -70,6 +70,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_RUN_ID: ${{ github.event.client_payload.run_id }}
           EXPECTED_INIT_TIME: ${{ github.event.client_payload.init_time }}
+          # Main-branch renderer changes may rebuild the already-published package;
+          # cron and data-branch runs must still match the latest METBR execution.
+          ALLOW_STALE_SOURCE_FOR_RENDER: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -135,10 +138,17 @@ jobs:
           published_run_id = str(meta.get("sourceRunId") or "")
           expected_run_id = os.environ.get("EXPECTED_RUN_ID", "").strip()
           expected_init_time = os.environ.get("EXPECTED_INIT_TIME", "").strip()
-          if not published_run_id or published_run_id != latest_id:
-              print(f"JSON publicado pertence ao run {published_run_id or 'desconhecido'}, mas o METBR mais recente é {latest_id}; render ignorado.")
+          allow_stale = os.environ.get("ALLOW_STALE_SOURCE_FOR_RENDER", "").lower() == "true"
+          if not published_run_id:
+              print("JSON publicado não informa sourceRunId; render ignorado.")
               Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
               raise SystemExit(0)
+          if published_run_id != latest_id and not allow_stale:
+              print(f"JSON publicado pertence ao run {published_run_id}, mas o METBR mais recente é {latest_id}; render ignorado.")
+              Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
+              raise SystemExit(0)
+          if published_run_id != latest_id and allow_stale:
+              print(f"Reconstrução acionada por alteração de renderer em main: usando pacote JSON existente do run {published_run_id}; a execução METBR mais nova ({latest_id}) será publicada quando o checkpoint ficar disponível.")
           if expected_run_id and expected_run_id != published_run_id:
               print(f"Dispatch de run {expected_run_id} não corresponde ao JSON atual ({published_run_id}); render ignorado.")
               Path(os.environ["GITHUB_OUTPUT"]).write_text("publish=false\n", encoding="utf-8")
