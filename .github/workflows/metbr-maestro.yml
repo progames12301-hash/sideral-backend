@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/metbr-maestro.yml'
       - 'wrf/metbr_extract_json.py'
       - 'wrf/extract_wrf_severe_core.py'
   workflow_run:
@@ -307,6 +306,38 @@ jobs:
             echo "O ciclo já publicado ($EXISTING_INIT) é mais novo que o candidato ($CANDIDATE_INIT). Esta tentativa é ignorada, sem falha."
             exit 0
           fi
+
+          # Não substitua a previsão pública por um checkpoint parcial de menor horizonte.
+          # Continue publicando o ciclo específico a cada 30 min, mas só atualize o alias
+          # metbr-json-data quando o último horário válido alcançar/superar a previsão ativa.
+          CANDIDATE_END="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          meta = json.loads(Path("metbr_publish/metadata.json").read_text(encoding="utf-8"))
+          frames = meta.get("frames") or []
+          if not frames:
+              raise SystemExit("O candidato METBR não contém horários de previsão.")
+          frame = max(frames, key=lambda item: int(item.get("forecastHour", -1)))
+          value = frame.get("time") or frame.get("validTime")
+          if not value:
+              raise SystemExit("O último frame METBR não contém horário válido.")
+          print(value)
+          PY
+          )"
+          EXISTING_END="$(git show origin/metbr-json-data:metadata.json | python -c 'import json,sys; m=json.load(sys.stdin); f=m.get("frames") or []; x=max(f,key=lambda i:int(i.get("forecastHour",-1))) if f else {}; print(x.get("time") or x.get("validTime") or "")' 2>/dev/null || true)"
+          if [[ -z "$EXISTING_END" ]]; then
+            PUBLISH_SHARED=true
+          else
+            PUBLISH_SHARED="$(python - "$CANDIDATE_END" "$EXISTING_END" <<'PY'
+          import sys
+          from datetime import datetime
+          candidate = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          existing = datetime.fromisoformat(sys.argv[2].replace("Z", "+00:00"))
+          print("true" if candidate >= existing else "false")
+          PY
+          )"
+          fi
+          echo "Horizon candidato=$CANDIDATE_END; horizon público=$EXISTING_END; atualizar alias público=$PUBLISH_SHARED"
           rm -rf /tmp/metbr-json-publication
           git worktree add --detach /tmp/metbr-json-publication origin/metbr-json-data
           find /tmp/metbr-json-publication -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
@@ -330,13 +361,16 @@ jobs:
             git commit -m "publish: METBR WRF 4 km ciclo $METBR_RUN_CYCLE Z $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fi
           git push --force origin HEAD:"refs/heads/$METBR_JSON_BRANCH"
-          git push --force origin HEAD:refs/heads/metbr-json-data
+          if [[ "$PUBLISH_SHARED" == "true" ]]; then
+            git push --force origin HEAD:refs/heads/metbr-json-data
+            echo "METBR publicado em $METBR_JSON_BRANCH e metbr-json-data; status=$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json")).get("publicationStatus","unknown"))')."
+            # Notify image/UI publishers only when the shared public dataset changes.
+            gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
+              -f event_type=metbr-json-published \
+              -f "client_payload[run_id]=$RUN_ID" \
+              -f "client_payload[init_time]=$CANDIDATE_INIT"
+          else
+            echo "METBR publicado somente em $METBR_JSON_BRANCH: o checkpoint termina em $CANDIDATE_END, antes do horizonte já disponível ($EXISTING_END). A previsão pública completa foi preservada."
+          fi
           cd - >/dev/null
           git worktree remove --force /tmp/metbr-json-publication
-          echo "METBR publicado em $METBR_JSON_BRANCH e metbr-json-data; status=$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json")).get("publicationStatus","unknown"))')."
-          # GITHUB_TOKEN pushes do not start downstream push-triggered workflows.
-          # Dispatch only after both METBR JSON branches have been published.
-          gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
-            -f event_type=metbr-json-published \
-            -f "client_payload[run_id]=$RUN_ID" \
-            -f "client_payload[init_time]=$CANDIDATE_INIT"
