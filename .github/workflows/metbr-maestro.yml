@@ -280,14 +280,14 @@ jobs:
           CANDIDATE_RUN_ID="$RUN_ID"
           EXISTING_RUN_ID="$(git show origin/metbr-json-data:metadata.json | python -c 'import json,sys; print(json.load(sys.stdin).get("sourceRunId",""))' || true)"
           if [[ "$EXISTING_RUN_ID" =~ ^[0-9]+$ && "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ && "$CANDIDATE_RUN_ID" -lt "$EXISTING_RUN_ID" ]]; then
-            echo "Bloqueada execução METBR antiga: run=$CANDIDATE_RUN_ID; publicada=$EXISTING_RUN_ID"
-            exit 1
+            echo "Checkpoint já publicado é mais novo: candidato=$CANDIDATE_RUN_ID; publicado=$EXISTING_RUN_ID. Nada a atualizar nesta tentativa."
+            exit 0
           fi
           CANDIDATE_INIT="$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json"))["initTime"])')"
           EXISTING_INIT="$(git show origin/metbr-json-data:metadata.json | python -c 'import json,sys; print(json.load(sys.stdin).get("initTime",""))' || true)"
           if [[ -n "$EXISTING_INIT" && "$CANDIDATE_INIT" < "$EXISTING_INIT" ]]; then
-            echo "Bloqueada publicação fora de ordem: candidato=$CANDIDATE_INIT; atual=$EXISTING_INIT"
-            exit 1
+            echo "O ciclo já publicado ($EXISTING_INIT) é mais novo que o candidato ($CANDIDATE_INIT). Esta tentativa é ignorada, sem falha."
+            exit 0
           fi
           rm -rf /tmp/metbr-json-publication
           git worktree add --detach /tmp/metbr-json-publication origin/metbr-json-data
@@ -311,8 +311,8 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "publish: METBR WRF 4 km ciclo $METBR_RUN_CYCLE Z $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fi
-          git push --force origin HEAD:"$METBR_JSON_BRANCH"
-          git push --force origin HEAD:metbr-json-data
+          git push --force origin HEAD:"refs/heads/$METBR_JSON_BRANCH"
+          git push --force origin HEAD:refs/heads/metbr-json-data
           cd - >/dev/null
           git worktree remove --force /tmp/metbr-json-publication
           echo "METBR publicado em $METBR_JSON_BRANCH e metbr-json-data; status=$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json")).get("publicationStatus","unknown"))')."
