@@ -81,11 +81,14 @@ def crop_to_native_map(source: Image.Image) -> Image.Image:
 
 
 def open_square_frame(path: Path, size: int) -> Image.Image:
-    """Build a square animation map trimmed to the native model panel, not the full bulletin sheet."""
+    """Return a square map-only tile; off-domain pixels blend into the video background."""
     with Image.open(path) as source:
         crop = crop_to_native_map(source)
         crop.thumbnail((size, size), Image.Resampling.LANCZOS)
-        square = Image.new("RGBA", (size, size), (235, 239, 244, 255))
+        # Keep the whole native-domain outline, but never show the uncovered
+        # polygon corners as pale/gray data. The same background is used by the
+        # UHD canvas, so the no-coverage pixels visually disappear into it.
+        square = Image.new("RGBA", (size, size), (22, 29, 39, 255))
         square.alpha_composite(crop, ((size - crop.width) // 2, (size - crop.height) // 2))
         return square.convert("RGB")
 
@@ -250,7 +253,7 @@ def main() -> None:
                 command = [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                     "-framerate", spec["fps"], "-i", str(temp / "frame_%04d.jpg"),
-                    "-vf", "format=yuv420p",
+                    "-vf", "scale=3840:2160:flags=lanczos,setsar=1,format=yuv420p",
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                     "-movflags", "+faststart", "-an", str(mp4_path),
                 ]
@@ -269,13 +272,15 @@ def main() -> None:
         "slow": {"gifFrameMs": 500, "mp4Fps": 2},
         "ultra-fast": {"gifFrameMs": 80, "mp4Fps": 12},
         "compositionVersion": 2,
-        "bulletinCropMode": "painel quadrado recortado pela máscara alfa da cobertura WRF nativa; margens do boletim removidas no vídeo",
+        "bulletinCropMode": "tile quadrado com margens do boletim removidas e cantos sem cobertura integrados ao fundo do vídeo",
         "animationResolutionPx": [VIDEO_WIDTH, VIDEO_HEIGHT],
         "mp4ResolutionPx": [3840, 2160],
         "gifResolutionPx": [GIF_SIZE, GIF_SIZE],
         "bulletinResolutionPx": [3840, 3840],
         "videoContentResolutionPx": [VIDEO_MAP_SIZE, VIDEO_MAP_SIZE],
         "videoAspectRatio": "16:9 UHD 3840x2160; mapa quadrado recortado à cobertura nativa, com painéis laterais informativos",
+        "mp4Encoding": "H.264 / yuv420p / 3840x2160 UHD; escala explícita no encoder",
+        "squareMapCrop": "2160x2160, margens externas removidas; cantos fora da grade não aparecem como área cinza",
         "source": "PNG/WebP 4K já publicados; MP4 UHD H.264; sem recalcular campos meteorológicos",
     }
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
