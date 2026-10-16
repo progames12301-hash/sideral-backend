@@ -76,12 +76,21 @@ def main() -> None:
     for variable in catalog:
         entries = []
         for frame in frames:
-            relative = animation_source(frame, variable)
-            if not relative:
-                continue
-            source = root / relative
-            if source.is_file() and source.stat().st_size > 0:
-                entries.append(source)
+            full_relative = (frame.get("files") or {}).get(variable)
+            preview_relative = (frame.get("previewFiles") or {}).get(variable)
+            # MP4 must use the original 3840x3840 PNG, not a 1200px WebP preview.
+            # GIF can safely use the lighter WebP because it is published at 720x720.
+            full_source = root / full_relative if full_relative else None
+            preview_source = root / (preview_relative or full_relative) if (preview_relative or full_relative) else None
+            if (
+                full_source is not None
+                and preview_source is not None
+                and full_source.is_file()
+                and preview_source.is_file()
+                and full_source.stat().st_size > 0
+                and preview_source.stat().st_size > 0
+            ):
+                entries.append((preview_source, full_source))
         if len(entries) < 2:
             print(f"[METBR ANIMATION] {variable}: apenas {len(entries)} frame(s), sem animação")
             continue
@@ -90,12 +99,11 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix=f"metbr-{variable}-") as temporary:
             temp = Path(temporary)
             gif_frames = []
-            for index, source in enumerate(entries):
-                gif_image = open_square_frame(source, GIF_SIZE)
+            for index, (gif_source, mp4_source) in enumerate(entries):
+                gif_image = open_square_frame(gif_source, GIF_SIZE)
                 gif_frames.append(gif_image.quantize(colors=GIF_COLORS, method=Image.Quantize.MEDIANCUT))
-                # H.264 input is built at the final 3840x2160 pixel size so the
-                # published MP4 is genuinely UHD, not a 720p clip upscaled by FFmpeg.
-                video_frame = open_uhd_frame(source)
+                # H.264 uses the original full-resolution PNG; no WebP-preview upscaling.
+                video_frame = open_uhd_frame(mp4_source)
                 jpeg_path = temp / f"frame_{index:04d}.jpg"
                 video_frame.save(jpeg_path, format="JPEG", quality=95, subsampling=0, optimize=False)
 
@@ -135,6 +143,8 @@ def main() -> None:
         "animationResolutionPx": [VIDEO_WIDTH, VIDEO_HEIGHT],
         "mp4ResolutionPx": [VIDEO_WIDTH, VIDEO_HEIGHT],
         "gifResolutionPx": [GIF_SIZE, GIF_SIZE],
+        "bulletinResolutionPx": [3840, 3840],
+        "videoContentResolutionPx": [VIDEO_MAP_SIZE, VIDEO_MAP_SIZE],
         "videoAspectRatio": "16:9 UHD; boletim quadrado centralizado, sem esticar o campo meteorológico",
         "source": "frames PNG/WebP 4K já publicados; sem recalcular campos meteorológicos",
     }
