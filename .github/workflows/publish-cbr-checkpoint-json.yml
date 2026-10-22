@@ -52,7 +52,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_RUN_ID: ${{ github.event.client_payload.run_id }}
           INPUT_RUN_ID: ${{ inputs.run_id }}
-          FORCE_REPUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+          FORCE_REPUBLISH: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         run: |
           set -euo pipefail
           RUN_ID=""
