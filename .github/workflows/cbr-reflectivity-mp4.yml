@@ -44,13 +44,24 @@ jobs:
           elif [[ -n "$INPUT_RUN_ID" ]]; then
             candidates="$INPUT_RUN_ID"
           else
-            candidates="$(gh run list --repo "$GH_REPO" --workflow wrf-cbr-4km.yml --status success --limit 50 --json databaseId --jq '.[].databaseId')"
+            # Select published checkpoint releases, not run-list records: some
+            # older/partial Actions runs do not have a complete product bundle.
+            releases="$(gh api "repos/$GH_REPO/releases?per_page=100")"
+            candidates="$(jq -r '[.[] | select(.tag_name | startswith("cbr-wrf-4km-checkpoint-")) | select([.assets[] | select(.name == "cbr-products-4km.tar.gz")] | length > 0)] | sort_by(.updated_at // .published_at // .created_at) | reverse | .[].tag_name' <<< "$releases")"
           fi
 
           selected=""
-          while IFS= read -r run_id; do
-            [[ "$run_id" =~ ^[0-9]+$ ]] || continue
-            tag="cbr-wrf-4km-checkpoint-$run_id"
+          while IFS= read -r candidate; do
+            [[ -n "$candidate" ]] || continue
+            if [[ "$candidate" == cbr-wrf-4km-checkpoint-* ]]; then
+              tag="$candidate"
+              run_id="${tag##*-}"
+            elif [[ "$candidate" =~ ^[0-9]+$ ]]; then
+              run_id="$candidate"
+              tag="cbr-wrf-4km-checkpoint-$run_id"
+            else
+              continue
+            fi
             assets="$(gh release view "$tag" --repo "$GH_REPO" --json assets 2>/dev/null || true)"
             [[ -n "$assets" ]] || { echo "Checkpoint $tag ainda não existe; tentando outro."; continue; }
             npz_count="$(jq '[.assets[] | select(.name | endswith(".npz"))] | length' <<< "$assets")"
