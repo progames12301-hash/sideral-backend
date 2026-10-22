@@ -173,3 +173,9 @@ if [[ -n "$(find "$POST_INPUT" -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0
 fi
 
 echo "CBR checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
+# Notify the main-branch incremental publisher after compact NPZs have reached the checkpoint Release.
+if ! gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
+  -f event_type=cbr-checkpoint-published \
+  -f "client_payload[run_id]=$GITHUB_RUN_ID" >/dev/null; then
+  echo "AVISO: dispatch da publicação incremental CBR falhou; o publicador de recuperação tentará novamente."
+fi
