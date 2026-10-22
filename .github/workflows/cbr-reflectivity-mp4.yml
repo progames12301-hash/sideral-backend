@@ -5,20 +5,67 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/cbr-reflectivity-mp4.yml"
+  workflow_run:
+    workflows:
+      - "WRF CBR 4 KM — fallback ICON → ECMWF → GFS"
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID da execução CBR concluída; vazio seleciona a mais recente válida"
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   render:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      CHECKPOINT_TAG: cbr-wrf-4km-checkpoint-38300164789
-      VIDEO_NAME: cbr-refletividade-rapida-38300164789.mp4
     steps:
+      - name: Selecionar checkpoint CBR concluído mais recente
+        env:
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidates=""
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            [[ "$EVENT_CONCLUSION" == "success" ]] || { echo "CBR não concluiu com sucesso; vídeo não será renderizado."; exit 0; }
+            candidates="$EVENT_RUN_ID"
+          elif [[ -n "$INPUT_RUN_ID" ]]; then
+            candidates="$INPUT_RUN_ID"
+          else
+            candidates="$(gh run list --repo "$GH_REPO" --workflow wrf-cbr-4km.yml --status success --limit 50 --json databaseId --jq '.[].databaseId')"
+          fi
+
+          selected=""
+          while IFS= read -r run_id; do
+            [[ "$run_id" =~ ^[0-9]+$ ]] || continue
+            tag="cbr-wrf-4km-checkpoint-$run_id"
+            assets="$(gh release view "$tag" --repo "$GH_REPO" --json assets 2>/dev/null || true)"
+            [[ -n "$assets" ]] || { echo "Checkpoint $tag ainda não existe; tentando outro."; continue; }
+            npz_count="$(jq '[.assets[] | select(.name | endswith(".npz"))] | length' <<< "$assets")"
+            products_count="$(jq '[.assets[] | select(.name == "cbr-products-4km.tar.gz")] | length' <<< "$assets")"
+            if (( npz_count >= 2 && products_count >= 1 )); then
+              selected="$run_id"
+              break
+            fi
+            echo "Ignorando $tag: produtos completos ausentes ou frames NPZ insuficientes."
+          done <<< "$candidates"
+
+          [[ -n "$selected" ]] || { echo "Nenhum checkpoint CBR completo encontrado; não vou produzir um MP4 de uma rodada antiga fixada no código." >&2; exit 1; }
+          echo "CHECKPOINT_TAG=cbr-wrf-4km-checkpoint-$selected" >> "$GITHUB_ENV"
+          echo "VIDEO_NAME=cbr-refletividade-rapida-$selected.mp4" >> "$GITHUB_ENV"
+          echo "CBR selecionado: $CHECKPOINT_TAG"
       - name: Baixar os frames compactos publicados no checkpoint
         env:
           GH_REPO: ${{ github.repository }}
@@ -49,6 +96,7 @@ jobs:
           from datetime import datetime
           import re
           import json
+          import os
           import numpy as np
           import matplotlib
           matplotlib.use("Agg")
@@ -198,7 +246,7 @@ jobs:
               cb.set_label("dBZ", color="#e4ecf8", fontsize=10)
               cb.ax.tick_params(colors="#d6e0ef", labelsize=8, length=3)
               cb.outline.set_edgecolor("#536277")
-              fig.text(0.065, 0.045, "SIDERAL METEOROLOGIA  ·  CAMPOS NATIVOS DO WRF  ·  CHECKPOINT 38300164789",
+              fig.text(0.065, 0.045, "SIDERAL METEOROLOGIA  ·  CAMPOS NATIVOS DO WRF  ·  " + os.environ["CHECKPOINT_TAG"],
                        color="#8192aa", fontsize=8.2, ha="left")
               fig.savefig(out / f"frame_{idx:03d}.png", facecolor=fig.get_facecolor(),
                           dpi=110, bbox_inches=None)
