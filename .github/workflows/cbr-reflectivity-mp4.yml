@@ -65,7 +65,7 @@ jobs:
           [[ -n "$selected" ]] || { echo "Nenhum checkpoint CBR completo encontrado; não vou produzir um MP4 de uma rodada antiga fixada no código." >&2; exit 1; }
           echo "CHECKPOINT_TAG=cbr-wrf-4km-checkpoint-$selected" >> "$GITHUB_ENV"
           echo "VIDEO_NAME=cbr-refletividade-rapida-$selected.mp4" >> "$GITHUB_ENV"
-          echo "CBR selecionado: $CHECKPOINT_TAG"
+          echo "CBR selecionado: cbr-wrf-4km-checkpoint-$selected"
       - name: Baixar os frames compactos publicados no checkpoint
         env:
           GH_REPO: ${{ github.repository }}
