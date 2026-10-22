@@ -189,3 +189,9 @@ fi
 
 echo "TARC_METRIC segment=F$START_HOUR-F$END_HOUR total_seconds=$(( $(date +%s) - SEGMENT_STARTED_AT ))"
 echo "TARC checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
+# Notify the main-branch incremental publisher after compact NPZs have reached the checkpoint Release.
+if ! gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
+  -f event_type=tarc-checkpoint-published \
+  -f "client_payload[run_id]=$GITHUB_RUN_ID" >/dev/null; then
+  echo "AVISO: dispatch da publicação incremental TARC falhou; o publicador de recuperação tentará novamente."
+fi
