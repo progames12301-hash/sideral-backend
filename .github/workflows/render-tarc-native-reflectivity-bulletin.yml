@@ -7,24 +7,72 @@ on:
       - ".github/workflows/render-tarc-native-reflectivity-bulletin.yml"
       - "tools/render_tarc_native_reflectivity_bulletin.py"
       - "tools/render_tarc_native_reflectivity_mp4.py"
+  workflow_run:
+    workflows:
+      - "WRF TARC 3 KM — fallback ICON → ECMWF → GFS"
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID da execução TARC concluída; vazio seleciona a mais recente válida"
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   render-native-reflectivity:
-    name: Render from the native NPZ release asset
+    name: Render from the latest completed native TARC checkpoint
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
-      SOURCE_TAG: tarc-wrf-3km-checkpoint-38059861528
-      SOURCE_ASSET: 20261011_000000.npz
-      INIT_TIME: "2026-10-10T06:00:00Z"
-      OUTPUT_TAG: tarc-native-refl-boletim-38059861528
-      OUTPUT_PNG: dist/sideral-tarc-3km-refletividade-nativa-f018.png
-      OUTPUT_MP4: dist/sideral-tarc-3km-refletividade-nativa.mp4
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Select latest completed TARC checkpoint
+        env:
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidates=""
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            [[ "$EVENT_CONCLUSION" == "success" ]] || { echo "TARC não concluiu com sucesso; boletim ignorado."; exit 0; }
+            candidates="$EVENT_RUN_ID"
+          elif [[ -n "$INPUT_RUN_ID" ]]; then
+            candidates="$INPUT_RUN_ID"
+          else
+            candidates="$(gh run list --repo "$GH_REPO" --workflow wrf-tarc-3km.yml --status success --limit 50 --json databaseId --jq '.[].databaseId')"
+          fi
+
+          selected=""
+          while IFS= read -r run_id; do
+            [[ "$run_id" =~ ^[0-9]+$ ]] || continue
+            tag="tarc-wrf-3km-checkpoint-$run_id"
+            assets="$(gh release view "$tag" --repo "$GH_REPO" --json assets 2>/dev/null || true)"
+            [[ -n "$assets" ]] || { echo "Checkpoint $tag indisponível; tentando outro."; continue; }
+            npz_count="$(jq '[.assets[] | select(.name | endswith(".npz"))] | length' <<< "$assets")"
+            products_count="$(jq '[.assets[] | select(.name == "tarc-products-3km.tar.gz")] | length' <<< "$assets")"
+            severe_count="$(jq '[.assets[] | select(.name == "tarc-severe-3km.tar.gz")] | length' <<< "$assets")"
+            if (( npz_count >= 2 && products_count >= 1 && severe_count >= 1 )); then
+              selected="$run_id"
+              break
+            fi
+            echo "Ignorando $tag: os produtos completos ainda não foram publicados."
+          done <<< "$candidates"
+
+          [[ -n "$selected" ]] || { echo "Nenhum checkpoint TARC completo encontrado; nenhum boletim será gerado de um ID fixo antigo." >&2; exit 1; }
+          echo "SOURCE_TAG=tarc-wrf-3km-checkpoint-$selected" >> "$GITHUB_ENV"
+          echo "OUTPUT_TAG=tarc-native-refl-boletim-$selected" >> "$GITHUB_ENV"
+          echo "OUTPUT_PNG=dist/sideral-tarc-3km-refletividade-nativa-latest.png" >> "$GITHUB_ENV"
+          echo "OUTPUT_MP4=dist/sideral-tarc-3km-refletividade-nativa.mp4" >> "$GITHUB_ENV"
+          echo "TARC selecionado: tarc-wrf-3km-checkpoint-$selected"
+
       - name: Checkout renderer
         uses: actions/checkout@v4
         with:
@@ -48,13 +96,29 @@ jobs:
           set -euo pipefail
           mkdir -p native_input dist
           gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
-          # Grab the complete native NPZ sequence already published by checkpoint segments.
+          # Download all native hourly frames plus the authoritative run initialization.
           gh release download "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" \
             --pattern '*.npz' --dir native_input --clobber
-          test -s "native_input/$SOURCE_ASSET"
+          gh release download "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'tarc-run.env' --dir native_input --clobber
+          test -s "native_input/tarc-run.env"
           count="$(find native_input -maxdepth 1 -type f -name '*.npz' -size +0c | wc -l)"
           test "$count" -ge 2
-          echo "Using $count native NPZ frames from $SOURCE_TAG"
+          source native_input/tarc-run.env
+          INIT_TIME="$(python - "$RUN_DATE" "$RUN_CYCLE" <<'PY'
+          import re, sys
+          from datetime import datetime, timezone
+          run_date = re.sub(r'[^0-9]', '', sys.argv[1])
+          cycle = re.sub(r'[^0-9]', '', sys.argv[2])[:2].zfill(2)
+          init = datetime.strptime(run_date + cycle, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+          print(init.strftime("%Y-%m-%dT%H:%M:%SZ"))
+          PY
+          )"
+          SOURCE_ASSET="$(find native_input -maxdepth 1 -type f -name '*.npz' -printf '%f\n' | sort | tail -n 1)"
+          [[ -n "$SOURCE_ASSET" && -s "native_input/$SOURCE_ASSET" ]]
+          echo "INIT_TIME=$INIT_TIME" >> "$GITHUB_ENV"
+          echo "SOURCE_ASSET=$SOURCE_ASSET" >> "$GITHUB_ENV"
+          echo "Usando $count frames NPZ nativos de $SOURCE_TAG; PNG terminal=$SOURCE_ASSET; init=$INIT_TIME"
 
       - name: Render the bulletin from native REFL_10CM-derived data
         shell: bash
