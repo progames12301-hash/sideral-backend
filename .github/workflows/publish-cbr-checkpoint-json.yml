@@ -184,6 +184,7 @@ jobs:
               assert item["fields"]["lat"] and item["fields"]["lon"]
           print(f"CBR JSON validado: {meta['frameCount']}/43 frames; status={meta['status']}; init={meta['initTime']}")
           PY
+          python3 wrf/validate_cbr_extraction.py --metadata cbr_publish/metadata.json --catalog wrf/cbr_variable_catalog.json --expected-start 0 --expected-end 42 --allow-partial
 
       - name: Publish CBR metadata and frames with a sparse checkout
         if: steps.checkpoint.outputs.publish == 'true'
