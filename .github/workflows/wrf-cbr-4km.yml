@@ -952,6 +952,9 @@ jobs:
   complete:
     name: CBR 4 KM F000-F042 completo e JSON
     runs-on: ubuntu-22.04
+    concurrency:
+      group: cbr-json-data-publication
+      cancel-in-progress: false
     needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07, seg08, seg09, seg10, seg11, seg12, seg13]
     timeout-minutes: 90
     steps:
@@ -1039,6 +1042,27 @@ jobs:
           set -euo pipefail
           rm -rf cbr_json_data_checkout
           git clone --depth 1 --branch cbr-json-data "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" cbr_json_data_checkout
+
+          # Runs may overlap. Never let a late-finishing older cycle overwrite newer CBR data.
+          CANDIDATE_INIT="$(python3 -c 'import json; print(json.load(open("cbr_json/metadata.json"))["initTime"])')"
+          CANDIDATE_END="$(python3 -c 'import json; m=json.load(open("cbr_json/metadata.json")); f=max(m["frames"], key=lambda x:int(x["forecastHour"])); print(f["time"])')"
+          EXISTING_INIT="$(python3 -c 'import json; print(json.load(open("cbr_json_data_checkout/metadata.json")).get("initTime", ""))' 2>/dev/null || true)"
+          EXISTING_END="$(python3 -c 'import json; m=json.load(open("cbr_json_data_checkout/metadata.json")); f=max(m.get("frames", []), key=lambda x:int(x.get("forecastHour", -1))); print(f.get("time", ""))' 2>/dev/null || true)"
+          ALLOW_PUBLISH="$(python3 - "$CANDIDATE_INIT" "$CANDIDATE_END" "$EXISTING_INIT" "$EXISTING_END" <<'PY'
+          import sys
+          from datetime import datetime
+          def parse(v):
+              return datetime.fromisoformat(v.replace("Z", "+00:00")) if v else None
+          ci, ce, ei, ee = map(parse, sys.argv[1:5])
+          allow = ei is None or ci > ei or (ci == ei and (ee is None or ce >= ee))
+          print("true" if allow else "false")
+          PY
+          )"
+          if [[ "$ALLOW_PUBLISH" != "true" ]]; then
+            echo "CBR mantém publicação existente: candidato init=$CANDIDATE_INIT fim=$CANDIDATE_END; público init=$EXISTING_INIT fim=$EXISTING_END."
+            exit 0
+          fi
+          echo "Publicando CBR init=$CANDIDATE_INIT até $CANDIDATE_END."
           rm -rf cbr_json_data_checkout/frames
           mkdir -p cbr_json_data_checkout/frames
           cp -f cbr_json/metadata.json cbr_json_data_checkout/metadata.json
