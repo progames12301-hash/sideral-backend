@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/metbr-maestro.yml'
       - 'wrf/metbr_extract_json.py'
       - 'wrf/extract_wrf_severe_core.py'
   workflow_run:
