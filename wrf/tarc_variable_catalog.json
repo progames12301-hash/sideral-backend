@@ -1,0 +1,173 @@
+{
+  "model": "WRF TARC 3 KM",
+  "domain": {
+    "e_we": 361,
+    "e_sn": 445,
+    "dx_m": 3000,
+    "dy_m": 3000,
+    "approx_longitude": [
+      "-59.0",
+      "-48.0"
+    ],
+    "approx_latitude": [
+      "-34.0",
+      "-22.0"
+    ],
+    "projection": "Lambert"
+  },
+  "forecast": {
+    "hours": 48,
+    "output_interval_minutes": 60,
+    "input_model": "ICON"
+  },
+  "native_or_compact_products": [
+    [
+      "REFL_10CM",
+      "native",
+      "reflectividade nativa 3D; mantida no wrfout"
+    ],
+    [
+      "reflectivity_native_dbz",
+      "derived_from_native",
+      "camada inferior de REFL_10CM para o mapa"
+    ],
+    [
+      "reflectivity_composite_dbz",
+      "derived_from_native",
+      "maximo vertical de REFL_10CM"
+    ],
+    [
+      "U10",
+      "native",
+      "componente zonal do vento a 10 m"
+    ],
+    [
+      "V10",
+      "native",
+      "componente meridional do vento a 10 m"
+    ],
+    [
+      "wind10_ms",
+      "derived",
+      "velocidade do vento a 10 m"
+    ],
+    [
+      "wind10_dir_deg",
+      "derived",
+      "direcao meteorologica; base das barbelas"
+    ],
+    [
+      "T2",
+      "native",
+      "temperatura a 2 m"
+    ],
+    [
+      "td2_c",
+      "derived",
+      "ponto de orvalho a 2 m"
+    ],
+    [
+      "rh2_pct",
+      "derived",
+      "umidade relativa a 2 m"
+    ],
+    [
+      "Q2",
+      "native",
+      "razao de mistura a 2 m"
+    ],
+    [
+      "PSFC",
+      "native",
+      "pressao a superficie"
+    ],
+    [
+      "SLP",
+      "native",
+      "pressao ao nivel do mar, quando presente no wrfout"
+    ],
+    [
+      "RAINC",
+      "native",
+      "precipitacao convectiva acumulada"
+    ],
+    [
+      "RAINNC",
+      "native",
+      "precipitacao de grade acumulada"
+    ],
+    [
+      "RAINSH",
+      "native",
+      "precipitacao convectiva rasa, quando presente"
+    ],
+    [
+      "rain_total_mm",
+      "derived",
+      "RAINC + RAINNC"
+    ],
+    [
+      "SNOWNC",
+      "native",
+      "neve acumulada, quando presente"
+    ],
+    [
+      "GRAUPELNC",
+      "native",
+      "graupel acumulado, quando presente"
+    ],
+    [
+      "HAILNC",
+      "native",
+      "granizo acumulado, quando presente"
+    ],
+    [
+      "CLDFRA",
+      "native",
+      "fracao de nuvem, quando presente"
+    ],
+    [
+      "XLAT",
+      "native",
+      "latitude das celulas"
+    ],
+    [
+      "XLONG",
+      "native",
+      "longitude das celulas"
+    ]
+  ],
+  "additional_diagnostics_from_native_wrf": [
+    "CAPE",
+    "MUCAPE",
+    "MLCAPE",
+    "CIN",
+    "MUCIN",
+    "MLCIN",
+    "LCL",
+    "LFC",
+    "Lifted Index",
+    "Showalter Index",
+    "Total Totals",
+    "K Index",
+    "SRH 0-1 km",
+    "SRH 0-3 km",
+    "Shear 0-1 km",
+    "Shear 0-3 km",
+    "Shear 0-6 km",
+    "Bulk Wind Difference",
+    "Updraft Helicity",
+    "vorticidade",
+    "divergencia",
+    "convergencia",
+    "omega",
+    "theta",
+    "theta-e",
+    "PWAT",
+    "temperatura 850/700/500/200 hPa",
+    "umidade relativa 850/700/500/200 hPa",
+    "vento U/V 850/700/500/200 hPa",
+    "geopotencial 850/700/500/200 hPa"
+  ],
+  "note": "Os diagnosticos adicionais dependem de pos-processamento vertical dos wrfout 3D; o pipeline desta branch preserva os wrfout nativos para essa etapa sem inventar campos inexistentes."
+}
