@@ -549,7 +549,9 @@ jobs:
           assert m['resolutionKm']==3
           assert m['nativeReflectivity']=='REFL_10CM'
           assert m['domain']['e_we']==361 and m['domain']['e_sn']==445
-          assert m['frames'], 'Nenhum frame TARC produzido'
+          assert len(m['frames'])==49, f"Esperados 49 horários F000-F048; encontrados {len(m['frames'])}"
+          valid_times=[str(frame.get('time','')) for frame in m['frames']]
+          assert len(set(valid_times))==49, 'TARC contém horários duplicados ou inválidos'
           s=json.loads(pathlib.Path('tarc_severe/metadata.json').read_text(encoding='utf-8'))
           assert s['frameCount'] > 0
           print('TARC principal:', len(m['frames']), 'frames')
