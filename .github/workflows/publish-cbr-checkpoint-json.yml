@@ -1,6 +1,12 @@
 name: Publish CBR compact checkpoint JSON
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-cbr-checkpoint-json.yml'
+      - 'wrf/publish_compact_checkpoint_json.py'
+      - 'wrf/cbr_variable_catalog.json'
   repository_dispatch:
     types: [cbr-checkpoint-published]
   schedule:
