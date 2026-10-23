@@ -12,16 +12,17 @@ REG_DIR="$ROOT/tarc_icon_source_regular"
 REGRID_DIR="$ROOT/tarc_icon_regrid"
 HOST_UID="$(id -u)"
 
-ICON_SOURCE_XSIZE=93
-ICON_SOURCE_YSIZE=81
-ICON_SOURCE_XFIRST=-65.0
-ICON_SOURCE_YFIRST=-38.0
+# Regular ICON source grid has margin around the Sudeste WRF domain.
+ICON_SOURCE_XSIZE=101
+ICON_SOURCE_YSIZE=95
+ICON_SOURCE_XFIRST=-57.0
+ICON_SOURCE_YFIRST=-34.0
 ICON_SOURCE_XINC=0.25
 ICON_SOURCE_YINC=0.25
 SOURCE_END_HOUR="${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
 
 (( WRF_START_HOUR >= 0 && WRF_END_HOUR > WRF_START_HOUR && WRF_START_HOUR % 3 == 0 && WRF_END_HOUR % 3 == 0 && WRF_END_HOUR <= 48 && SOURCE_END_HOUR >= WRF_END_HOUR && SOURCE_END_HOUR % 3 == 0 && SOURCE_END_HOUR <= 48 )) || {
-  echo "Segmento ICON TARC invalido: F$WRF_START_HOUR-F$WRF_END_HOUR" >&2
+  echo "Segmento ICON SIDERAL invalido: F$WRF_START_HOUR-F$WRF_END_HOUR" >&2
   exit 2
 }
 
@@ -59,7 +60,7 @@ else
   ICON_SOURCE_CYCLE="$RUN_CYCLE"
   ICON_OFFSET=0
 fi
-echo "ICON TARC selecionado: fonte $ICON_SOURCE_DATE $ICON_SOURCE_CYCLE Z offset=$ICON_OFFSET h; validade WRF $RUN_DATE $RUN_CYCLE Z"
+echo "ICON SIDERAL selecionado: fonte $ICON_SOURCE_DATE $ICON_SOURCE_CYCLE Z offset=$ICON_OFFSET h; validade WRF $RUN_DATE $RUN_CYCLE Z"
 rm -rf "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 mkdir -p "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 
@@ -76,7 +77,7 @@ EOF
 docker pull "$ICON_REGRID_IMAGE"
 docker run --rm --user "$HOST_UID:$HOST_UID" -v "$REGRID_DIR:/work" "$ICON_REGRID_IMAGE" cdo gennn,/work/target_grid.txt /data/grids/icon/icon_grid.nc /work/icon_weights.nc
 
-echo "ICON TARC: baixando atomicamente todos os passos antes do WPS"
+echo "ICON SIDERAL: baixando atomicamente todos os passos antes do WPS"
 for H in $(seq "$WRF_START_HOUR" 3 "$SOURCE_END_HOUR"); do
   printf -v FH "%03d" "$H"
   RAW="$RAW_DIR/icon_f${FH}_raw.grib2"
@@ -85,7 +86,7 @@ for H in $(seq "$WRF_START_HOUR" 3 "$SOURCE_END_HOUR"); do
   test -s "$RAW" || { echo "GRIB ICON F$FH ausente após download" >&2; exit 22; }
 done
 
-echo "ICON TARC: todos os passos brutos baixados; iniciando conversão/regradeamento"
+echo "ICON SIDERAL: todos os passos brutos baixados; iniciando conversão/regradeamento"
 for H in $(seq "$WRF_START_HOUR" 3 "$SOURCE_END_HOUR"); do
   printf -v FH "%03d" "$H"
   RAW="$RAW_DIR/icon_f${FH}_raw.grib2"
@@ -118,8 +119,8 @@ done
 
 export SOURCE_MODEL=icon RUN_DATE RUN_CYCLE WRF_START_HOUR WRF_END_HOUR WRF_BOUNDARY_END_HOUR="$SOURCE_END_HOUR"
 export WRF_HISTORY_INTERVAL_MINUTES=60
-export WRF_DX_METERS=3000 WRF_DY_METERS=3000 WRF_E_WE=361 WRF_E_SN=445 WRF_TIME_STEP=18
-export WRF_REF_LAT=-28.0 WRF_REF_LON=-53.5 WRF_STAND_LON=-53.5
+export WRF_DX_METERS="${WRF_DX_METERS:-5000}" WRF_DY_METERS="${WRF_DY_METERS:-5000}" WRF_E_WE="${WRF_E_WE:-269}" WRF_E_SN="${WRF_E_SN:-401}" WRF_TIME_STEP="${WRF_TIME_STEP:-24}"
+export WRF_REF_LAT="${WRF_REF_LAT:--23.0}" WRF_REF_LON="${WRF_REF_LON:--45.5}" WRF_STAND_LON="${WRF_STAND_LON:--45.5}"
 export SOURCE_DIR="$REG_DIR"
 export SOURCE_VTABLE="$ROOT/wrf/Vtable.ICONp"
 bash "$ROOT/wrf/run_tarc_wrf_with_source.sh"
