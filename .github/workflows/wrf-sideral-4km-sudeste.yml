@@ -3,8 +3,8 @@ name: WRF SIDERAL 4 KM Sudeste — ICON
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 0 * * *'
-    - cron: '30 12 * * *'
+    - cron: '0 4 * * *'
+    - cron: '0 16 * * *'
 
 permissions:
   contents: write
@@ -21,7 +21,7 @@ env:
   WRF_TIME_STEP: 20
   WRF_HISTORY_INTERVAL_MINUTES: 60
   WRF2_ICON_ONLY: '1'
-  WRF_SCHEDULED_CYCLE: ${{ github.event.schedule == '30 0 * * *' && '00' || (github.event.schedule == '30 12 * * *' && '12' || '') }}
+  WRF_SCHEDULED_CYCLE: ${{ github.event.schedule == '0 4 * * *' && '00' || (github.event.schedule == '0 16 * * *' && '12' || '') }}
   WRF_REF_LAT: -23.0
   WRF_REF_LON: -45.5
   WRF_STAND_LON: -45.5
