@@ -28,7 +28,7 @@ env:
 jobs:
 
   seg00:
-    name: TARC fallback F000-F006
+    name: TARC WRF2 ICON F000-F006
     runs-on: ubuntu-22.04
     timeout-minutes: 478
     steps:
@@ -88,7 +88,7 @@ jobs:
           retention-days: 7
 
   seg01:
-    name: TARC fallback F006-F012
+    name: TARC WRF2 ICON F006-F012
     runs-on: ubuntu-22.04
     needs: seg00
     timeout-minutes: 478
@@ -143,7 +143,7 @@ jobs:
           retention-days: 7
 
   seg02:
-    name: TARC fallback F012-F018
+    name: TARC WRF2 ICON F012-F018
     runs-on: ubuntu-22.04
     needs: seg01
     timeout-minutes: 478
@@ -198,7 +198,7 @@ jobs:
           retention-days: 7
 
   seg03:
-    name: TARC fallback F018-F024
+    name: TARC WRF2 ICON F018-F024
     runs-on: ubuntu-22.04
     needs: seg02
     timeout-minutes: 478
@@ -253,7 +253,7 @@ jobs:
           retention-days: 7
 
   seg04:
-    name: TARC fallback F024-F030
+    name: TARC WRF2 ICON F024-F030
     runs-on: ubuntu-22.04
     needs: seg03
     timeout-minutes: 478
@@ -308,7 +308,7 @@ jobs:
           retention-days: 7
 
   seg05:
-    name: TARC fallback F030-F036
+    name: TARC WRF2 ICON F030-F036
     runs-on: ubuntu-22.04
     needs: seg04
     timeout-minutes: 478
@@ -363,7 +363,7 @@ jobs:
           retention-days: 7
 
   seg06:
-    name: TARC fallback F036-F042
+    name: TARC WRF2 ICON F036-F042
     runs-on: ubuntu-22.04
     needs: seg05
     timeout-minutes: 478
@@ -418,7 +418,7 @@ jobs:
           retention-days: 7
 
   seg07:
-    name: TARC fallback F042-F048
+    name: TARC WRF2 ICON F042-F048
     runs-on: ubuntu-22.04
     needs: seg06
     timeout-minutes: 478
