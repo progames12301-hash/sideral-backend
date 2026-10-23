@@ -31,14 +31,14 @@ done
 
 chmod +x wrf/run_tarc_checkpoint_segment.sh wrf/run_tarc_icon_wrf.sh wrf/run_tarc_ecmwf_wrf.sh wrf/run_tarc_gfs_wrf.sh wrf/run_tarc_wrf_with_source.sh wrf/run_tarc_restart_segment.sh
 
-export WRF_TARGET_RESOLUTION_KM=3
-export WRF_DX_METERS=3000 WRF_DY_METERS=3000
-export WRF_E_WE=361 WRF_E_SN=445
-export WRF_HISTORY_INTERVAL_MINUTES=60
-export WRF_TIME_STEP=18
-export WRF_MPI_PROCS=4
+export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-5}"
+export WRF_DX_METERS="${WRF_DX_METERS:-5000}" WRF_DY_METERS="${WRF_DY_METERS:-5000}"
+export WRF_E_WE="${WRF_E_WE:-269}" WRF_E_SN="${WRF_E_SN:-401}"
+export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}"
+export WRF_TIME_STEP="${WRF_TIME_STEP:-24}"
+export WRF_MPI_PROCS="${WRF_MPI_PROCS:-4}"
 export WRF_BOUNDARY_END_HOUR="$END_HOUR"
-export WRF_REF_LAT=-28.0 WRF_REF_LON=-53.5 WRF_STAND_LON=-53.5
+export WRF_REF_LAT="${WRF_REF_LAT:--23.0}" WRF_REF_LON="${WRF_REF_LON:--45.5}" WRF_STAND_LON="${WRF_STAND_LON:--45.5}"
 export WRF_RUN_HOURS=$((END_HOUR-START_HOUR))
 export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
 
@@ -61,7 +61,7 @@ prepare_source_with_fallback() {
   export WRF_BOUNDARY_ONLY="$boundary_only"
   for model in "${candidates[@]}"; do
     echo
-    echo "===== TARC SOURCE FALLBACK: tentando ${model^^}; boundary_only=$boundary_only ====="
+    echo "===== SIDERAL ICON SOURCE: tentando ${model^^}; boundary_only=$boundary_only ====="
     case "$model" in
       icon)
         if bash wrf/run_tarc_icon_wrf.sh; then rc=0; else rc=$?; fi
@@ -83,10 +83,10 @@ prepare_source_with_fallback() {
         export FORCE_RUN_DATE FORCE_RUN_CYCLE
         echo "TARC: ciclo ICON validado e fixado: $RUN_DATE $RUN_CYCLE Z"
       fi
-      echo "TARC SOURCE FALLBACK: fonte escolhida ${selected^^}"
+      echo "SIDERAL ICON SOURCE: fonte escolhida ${selected^^}"
       break
     fi
-    echo "TARC SOURCE FALLBACK: ${model^^} falhou (exit=$rc); seguindo para a proxima fonte"
+    echo "SIDERAL ICON SOURCE: ${model^^} falhou (exit=$rc); seguindo para a proxima fonte"
   done
 
   [[ -n "$selected" ]] || {
@@ -116,15 +116,15 @@ if [[ "$COLD_START" == "0" ]]; then
   # ICON LBC covering START_HOUR..END_HOUR before restarting WRF.
   export RUN_DATE RUN_CYCLE
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
-  export WRF_TARGET_RESOLUTION_KM=3 WRF_DX_METERS=3000 WRF_DY_METERS=3000
-  export WRF_E_WE=361 WRF_E_SN=445
-  export WRF_HISTORY_INTERVAL_MINUTES=60 WRF_TIME_STEP=18 WRF_MPI_PROCS=4
+  export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-5}" WRF_DX_METERS="${WRF_DX_METERS:-5000}" WRF_DY_METERS="${WRF_DY_METERS:-5000}"
+  export WRF_E_WE="${WRF_E_WE:-269}" WRF_E_SN="${WRF_E_SN:-401}"
+  export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}" WRF_TIME_STEP="${WRF_TIME_STEP:-24}" WRF_MPI_PROCS="${WRF_MPI_PROCS:-4}"
   export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
   export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
-  echo "TARC: preparando LBC com fallback ICON -> ECMWF -> GFS F$START_HOUR-F$END_HOUR"
+  echo "SIDERAL: preparando LBC com fallback ICON -> ECMWF -> GFS F$START_HOUR-F$END_HOUR"
   BOUNDARY_PREP_STARTED_AT="$(date +%s)"
   prepare_source_with_fallback 1
-  echo "TARC_METRIC boundary_prepare_seconds=$(( $(date +%s) - BOUNDARY_PREP_STARTED_AT ))"
+  echo "SIDERAL_METRIC boundary_prepare_seconds=$(( $(date +%s) - BOUNDARY_PREP_STARTED_AT ))"
   test -s "$ROOT/wrf_work/run/wrfbdy_d01" || { echo "LBC TARC ausente para F$START_HOUR-F$END_HOUR" >&2; exit 27; }
   cp -f "$ROOT/wrf_work/run/wrfbdy_d01" "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/wrfbdy_d01"
@@ -132,7 +132,7 @@ if [[ "$COLD_START" == "0" ]]; then
   export WRF_RESTART_DIR="$INPUT/normalized"
   RESTART_STARTED_AT="$(date +%s)"
   bash wrf/run_tarc_restart_segment.sh "$START_HOUR" "$END_HOUR" "$WRF_RESTART_DIR"
-  echo "TARC_METRIC restart_forecast_seconds=$(( $(date +%s) - RESTART_STARTED_AT ))"
+  echo "SIDERAL_METRIC restart_forecast_seconds=$(( $(date +%s) - RESTART_STARTED_AT ))"
 
   OUTPUT_DIR="$ROOT/tarc_segment_output"
   test -d "$OUTPUT_DIR"
@@ -151,7 +151,7 @@ if os.environ.get("WRF2_TOMORROW") == "1":
 open("tarc-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\nWRF2_TOMORROW={os.environ.get('WRF2_TOMORROW','0')}\n")
 PY
   source tarc-run.env
-  gh release create "$CHECKPOINT_TAG" --target tarc-wrf-3km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF TARC 3 KM ICON checkpoint $GITHUB_RUN_ID" || true
+  gh release create "$CHECKPOINT_TAG" --target sideral-wrf-5km-sudeste --prerelease --latest=false --repo "$GITHUB_REPOSITORY" --notes "WRF SIDERAL 5 KM SUDESTE ICON checkpoint $GITHUB_RUN_ID" || true
   gh release upload "$CHECKPOINT_TAG" tarc-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
@@ -159,7 +159,7 @@ PY
   export WRF_BOUNDARY_ONLY=0
   COLD_FORECAST_STARTED_AT="$(date +%s)"
   prepare_source_with_fallback 0
-  echo "TARC_METRIC cold_start_forecast_seconds=$(( $(date +%s) - COLD_FORECAST_STARTED_AT ))"
+  echo "SIDERAL_METRIC cold_start_forecast_seconds=$(( $(date +%s) - COLD_FORECAST_STARTED_AT ))"
   unset TARC_ALLOW_RESELECT_ICON
 
   test -s wrf_work/run/wrfinput_d01
@@ -191,13 +191,13 @@ if [[ -n "$(find "$POST_INPUT" -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0
   gh release upload "$CHECKPOINT_TAG" "$PRODUCT_DIR"/*.npz "tarc-products-$SEGMENT_INDEX.json" --repo "$GITHUB_REPOSITORY" --clobber
 fi
 
-echo "TARC_METRIC segment=F$START_HOUR-F$END_HOUR total_seconds=$(( $(date +%s) - SEGMENT_STARTED_AT ))"
-echo "TARC checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
+echo "SIDERAL_METRIC segment=F$START_HOUR-F$END_HOUR total_seconds=$(( $(date +%s) - SEGMENT_STARTED_AT ))"
+echo "SIDERAL checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
 # Notify the main-branch incremental publisher after compact NPZs have reached the checkpoint Release.
 if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
-  PUBLISH_EVENT=tarc-wrf2-checkpoint-published
+  PUBLISH_EVENT=sideral-wrf-5km-sudeste-2-checkpoint-published
 else
-  PUBLISH_EVENT=tarc-checkpoint-published
+  PUBLISH_EVENT=sideral-wrf-5km-sudeste-checkpoint-published
 fi
 if ! gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
   -f "event_type=$PUBLISH_EVENT" \
