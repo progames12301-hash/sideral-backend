@@ -3,7 +3,8 @@ name: WRF SIDERAL 4 KM Sudeste — ICON
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0,12 * * *'
+    - cron: '30 0 * * *'
+    - cron: '30 12 * * *'
 
 permissions:
   contents: write
@@ -20,6 +21,7 @@ env:
   WRF_TIME_STEP: 20
   WRF_HISTORY_INTERVAL_MINUTES: 60
   WRF2_ICON_ONLY: '1'
+  WRF_SCHEDULED_CYCLE: ${{ github.event.schedule == '30 0 * * *' && '00' || (github.event.schedule == '30 12 * * *' && '12' || '') }}
   WRF_REF_LAT: -23.0
   WRF_REF_LON: -45.5
   WRF_STAND_LON: -45.5
@@ -31,7 +33,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -92,7 +94,7 @@ jobs:
     needs: seg00
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -147,7 +149,7 @@ jobs:
     needs: seg01
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -202,7 +204,7 @@ jobs:
     needs: seg02
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -257,7 +259,7 @@ jobs:
     needs: seg03
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -312,7 +314,7 @@ jobs:
     needs: seg04
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -367,7 +369,7 @@ jobs:
     needs: seg05
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -422,7 +424,7 @@ jobs:
     needs: seg06
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
@@ -477,7 +479,7 @@ jobs:
     needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06, seg07]
     timeout-minutes: 478
     steps:
-      - name: Checkout TARC
+      - name: Checkout Sideral runner
         uses: actions/checkout@v4
         with:
           ref: sideral-wrf-4km-sudeste
