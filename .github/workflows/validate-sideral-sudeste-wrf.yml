@@ -66,12 +66,21 @@ jobs:
               assert (doc["domain"]["e_we"], doc["domain"]["e_sn"]) == (e_we, e_sn)
               assert doc["modelKey"] == key
               print("Catalog OK:", name, f"{e_we}x{e_sn}", f"{resolution} km")
+
+          for root, name, key in [
+              ("runner4", "WRF SIDERAL 4 KM 2 SUDESTE", "sideral_wrf_4km_2_sudeste"),
+              ("runner5", "WRF SIDERAL 5 KM 2 SUDESTE", "sideral_wrf_5km_2_sudeste"),
+          ]:
+              doc = json.loads((Path(root) / "wrf/tarc_variable_catalog_wrf2.json").read_text(encoding="utf-8"))
+              assert doc["model"] == name and doc["modelKey"] == key
+              print("WRF2 catalog OK:", name)
           PY
 
       - name: Validate runner shell syntax
         run: |
           set -euo pipefail
           for root in runner4 runner5; do
+            python -m py_compile "$root/wrf/tarc_postprocess.py"
             bash -n "$root/wrf/run_tarc_checkpoint_segment.sh"
             bash -n "$root/wrf/run_tarc_icon_wrf.sh"
             bash -n "$root/wrf/run_tarc_wrf_with_source.sh"
