@@ -572,5 +572,10 @@ jobs:
           test -s sideral-wrf-5km-sudeste-products.tar.gz
           test -s sideral-wrf-5km-sudeste-severe.tar.gz
           gh release upload "$CHECKPOINT_TAG" sideral-wrf-5km-sudeste-products.tar.gz sideral-wrf-5km-sudeste-severe.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
-          gh release upload "$CHECKPOINT_TAG" wrf/tarc_variable_catalog.json --repo "$GITHUB_REPOSITORY" --clobber
-          echo "TARC 3 KM: produtos e diagnósticos publicados."
+          CATALOG_PATH=wrf/tarc_variable_catalog.json
+          if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
+            CATALOG_PATH=wrf/tarc_variable_catalog_wrf2.json
+          fi
+          test -s "$CATALOG_PATH"
+          gh release upload "$CHECKPOINT_TAG" "$CATALOG_PATH" --repo "$GITHUB_REPOSITORY" --clobber
+          echo "SIDERAL: produtos, diagnósticos e catálogo publicados."
