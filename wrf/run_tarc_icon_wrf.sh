@@ -51,7 +51,7 @@ if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
     "$RUN_DATE" "$RUN_CYCLE" > "$ROOT/tarc-icon-run.env"
 else
   SELECTION_ARGS=(--start-hour "$WRF_START_HOUR" --end-hour "$SOURCE_END_HOUR" --output "$ROOT/tarc-icon-run.env")
-  if [[ -n "$FORCE_RUN_DATE" && -n "$FORCE_RUN_CYCLE" && "${TARC_ALLOW_RESELECT_ICON:-0}" != "1" ]]; then
+  if [[ -n "$FORCE_RUN_DATE" && -n "$FORCE_RUN_CYCLE" ]]; then
     SELECTION_ARGS+=(--date "$FORCE_RUN_DATE" --cycle "$FORCE_RUN_CYCLE")
   fi
   python3 "$ROOT/wrf/select_tarc_icon_run.py" "${SELECTION_ARGS[@]}"
