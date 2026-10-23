@@ -138,7 +138,7 @@ now=dt.datetime.now(dt.timezone.utc)
 run=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
 if os.environ.get("WRF2_TOMORROW") == "1":
     run += dt.timedelta(hours=24)
-open("cbr-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\\nRUN_CYCLE={run:%H}\\nSOURCE_MODEL=icon\\n")
+open("cbr-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\n")
 PY
   source cbr-run.env
   gh release create "$CHECKPOINT_TAG" --target cbr-wrf-4km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF CBR 4 KM ICON checkpoint $GITHUB_RUN_ID" || true
