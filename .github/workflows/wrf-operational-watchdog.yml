@@ -136,16 +136,10 @@ jobs:
                   needed.append((workflow, f'{branch}: {why}'))
 
           if not ecmwf_source_fresh:
-              # Refresh the ECMWF source before attempting any regional ECMWF WRF.
-              needed = [
-                  item for item in needed
-                  if item[0] not in {
-                      '.github/workflows/wrf-ecmwf-4km-native.yml',
-                      '.github/workflows/wrf-sudeste-ecmwf-4km.yml',
-                  }
-              ]
+              # Regional WRFs resolve a fresh run directly from ECMWF Open Data;
+              # refresh the South America/global ecmwf-data publication separately.
               needed.append(('.github/workflows/ecmwf-ifs-auto.yml', ecmwf_source_reason))
-              print('Adiados WRF regionais ECMWF ate renovar ecmwf-data.')
+              print('Solicitada atualizacao do produto ecmwf-data; WRF regionais seguem independentes.')
 
           cim_bad = []
           for branch, km, count in cim:
