@@ -78,7 +78,7 @@ if [[ "$COLD_START" == "0" ]]; then
   export WRF_RESTART_DIR="$INPUT/normalized"
 else
   python3 - <<'PY'
-import json, os, urllib.request
+import datetime as dt, json, os, urllib.request
 repo=os.environ['GITHUB_REPOSITORY']
 url=f"https://raw.githubusercontent.com/{repo}/icon-data/metadata.json?run={os.environ.get('GITHUB_RUN_ID','0')}"
 req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'Sideral-METBR'})
@@ -87,7 +87,11 @@ if str(m.get('model','')).lower()!='icon': raise SystemExit('metadata nao e ICON
 run_date=str(m['runDate']).replace('-','')
 run_cycle=str(m.get('runCycle','')).replace('Z','').zfill(2)
 if run_cycle not in {'00','06','12','18'}: raise SystemExit(f'runCycle ICON invalido: {m.get("runCycle")!r}')
-with open('metbr-run.env','w') as f: f.write(f'RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\n')
+source_base=dt.datetime.strptime(run_date+run_cycle,'%Y%m%d%H').replace(tzinfo=dt.timezone.utc)
+target_base=source_base + (dt.timedelta(hours=24) if os.environ.get("WRF2_TOMORROW') == '1' else dt.timedelta(0))
+run_date=target_base.strftime('%Y%m%d')
+run_cycle=target_base.strftime('%H')
+with open('metbr-run.env','w') as f: f.write(f'RUN_DATE={run_date}\nRUN_CYCLE={run_cycle}\nWRF2_TOMORROW={os.environ.get("WRF2_TOMORROW","0")}\n')
 PY
   source metbr-run.env
   gh release create "$CHECKPOINT_TAG" --target wrf-runner --prerelease --latest=false --notes "METBR WRF 4 KM ICON checkpoint $GITHUB_RUN_ID ${RUN_DATE} ${RUN_CYCLE}Z" || true
