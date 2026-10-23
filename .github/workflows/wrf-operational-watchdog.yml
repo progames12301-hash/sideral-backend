@@ -114,12 +114,38 @@ jobs:
                       detail += f"; keys={sorted(meta.keys())[:12]}"
                   return False, detail
 
+          ecmwf_source_fresh = True
+          try:
+              source_meta = fetch_meta('ecmwf-data')
+              init_value = str(source_meta.get('initTime') or '')
+              assert init_value, 'initTime ausente em ecmwf-data'
+              source_stamp = dt.datetime.fromisoformat(init_value.replace('Z', '+00:00'))
+              source_age = (now - source_stamp.astimezone(dt.timezone.utc)).total_seconds() / 3600
+              assert source_age <= 36, f'ECMWF IFS fonte stale {source_age:.1f}h'
+              print('OK ecmwf-data fonte:', init_value, f'age={source_age:.1f}h')
+          except Exception as exc:
+              ecmwf_source_fresh = False
+              ecmwf_source_reason = f'ecmwf-data: {exc!r}'
+              print('RECOVER ECMWF fonte:', ecmwf_source_reason)
+
           needed = []
           for branch, km, count, workflow, max_age_h in products:
               ok, why = check(branch, km, count, max_age_h)
               print(('OK' if ok else 'RECOVER'), branch, why)
               if not ok:
                   needed.append((workflow, f'{branch}: {why}'))
+
+          if not ecmwf_source_fresh:
+              # Refresh the ECMWF source before attempting any regional ECMWF WRF.
+              needed = [
+                  item for item in needed
+                  if item[0] not in {
+                      '.github/workflows/wrf-ecmwf-4km-native.yml',
+                      '.github/workflows/wrf-sudeste-ecmwf-4km.yml',
+                  }
+              ]
+              needed.append(('.github/workflows/ecmwf-ifs-auto.yml', ecmwf_source_reason))
+              print('Adiados WRF regionais ECMWF ate renovar ecmwf-data.')
 
           cim_bad = []
           for branch, km, count in cim:
@@ -159,9 +185,30 @@ jobs:
             exit 0
           fi
 
-          while IFS=$'\t' read -r workflow reason; do
+          while IFS=
+\t' read -r workflow reason; do
             [[ -n "$workflow" ]] || continue
             echo "Verificando atividade: $workflow"
+
+            # Cancelar somente execucoes claramente travadas no checkout (>20 min).
+            # Nunca cancelar jobs que ja estejam preparando/rodando WRF ou gerando ECMWF.
+            runs_json="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 20 --json databaseId,status,createdAt)"
+            while IFS=
+\t' read -r run_id created_at; do
+              [[ -n "$run_id" && -n "$created_at" ]] || continue
+              status="$(jq -r --argjson id "$run_id" '.[] | select(.databaseId == $id) | .status' <<< "$runs_json" | head -1)"
+              [[ "$status" == "in_progress" ]] || continue
+              age_seconds="$(( $(date -u +%s) - $(date -u -d "$created_at" +%s) ))"
+              (( age_seconds > 1200 )) || continue
+              jobs_json="$(gh api "repos/\${GITHUB_REPOSITORY}/actions/runs/\${run_id}/jobs")"
+              checkout_active="$(jq '[.jobs[]? | select(.status == "in_progress") | .steps[]? | select(.status == "in_progress") | select((.name | ascii_downcase) | contains("checkout"))] | length' <<< "$jobs_json")"
+              if [[ "$checkout_active" != "0" ]]; then
+                echo "CANCEL STUCK CHECKOUT: run=$run_id age=\${age_seconds}s workflow=$workflow"
+                gh api --method POST "repos/\${GITHUB_REPOSITORY}/actions/runs/\${run_id}/cancel"
+                sleep 5
+              fi
+            done < <(jq -r '.[] | select(.status == "in_progress") | [.databaseId, .createdAt] | @tsv' <<< "$runs_json")
+
             active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 20 --json status \
               --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending")] | length')"
             if [[ "$active" != "0" ]]; then
