@@ -47,7 +47,9 @@ prepare_source_with_fallback() {
   local -a candidates=()
 
   case "$first" in
-    icon) candidates=(icon ecmwf gfs) ;;
+    icon)
+    if [[ "${WRF2_ICON_ONLY:-0}" == "1" ]]; then candidates=(icon); else candidates=(icon ecmwf gfs); fi
+    ;;
     ecmwf) candidates=(ecmwf gfs) ;;
     gfs) candidates=(gfs) ;;
     *) echo "SOURCE_MODEL invalido no checkpoint CBR: $first" >&2; return 2 ;;
@@ -131,10 +133,12 @@ else
   # Timeline base for WRF. The ICON selector checks actual files and can use
   # any published ICON cycle that covers this segment's valid-time window.
   python3 - <<'PY'
-import datetime as dt
+import datetime as dt, os
 now=dt.datetime.now(dt.timezone.utc)
 run=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
-open("cbr-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\n")
+if os.environ.get("WRF2_TOMORROW") == "1":
+    run += dt.timedelta(hours=24)
+open("cbr-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\\nRUN_CYCLE={run:%H}\\nSOURCE_MODEL=icon\\n")
 PY
   source cbr-run.env
   gh release create "$CHECKPOINT_TAG" --target cbr-wrf-4km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF CBR 4 KM ICON checkpoint $GITHUB_RUN_ID" || true
@@ -174,8 +178,13 @@ fi
 
 echo "CBR checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
 # Notify the main-branch incremental publisher after compact NPZs have reached the checkpoint Release.
+if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
+  PUBLISH_EVENT=cbr-wrf2-checkpoint-published
+else
+  PUBLISH_EVENT=cbr-checkpoint-published
+fi
 if ! gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
-  -f event_type=cbr-checkpoint-published \
+  -f "event_type=$PUBLISH_EVENT" \
   -f "client_payload[run_id]=$GITHUB_RUN_ID" >/dev/null; then
   echo "AVISO: dispatch da publicação incremental CBR falhou; o publicador de recuperação tentará novamente."
 fi
