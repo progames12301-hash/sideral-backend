@@ -90,11 +90,11 @@ jobs:
 
           regional = Path('.github/workflows/wrf-regional-7km-single.yml').read_text(encoding='utf-8')
           assert "elif model == 'icon':" in regional
-          assert 'age_hours > 36' in regional
+          assert "client.latest(type='fc', step=42, param=['2t'])" in regional
           assert 'fetch-depth: 0' not in regional
 
           wrf2 = Path('.github/workflows/wrf2-sudeste-7km-reusable.yml').read_text(encoding='utf-8')
-          assert 'if age > 36' in wrf2
+          assert "client.latest(type='fc',step=48,param=['2t'])" in wrf2
           assert 'assert actual == expected' in wrf2
           assert 'Excluir horas de spin-up' in wrf2
           assert 'fetch-depth: 0' not in wrf2
@@ -112,5 +112,5 @@ jobs:
               merged.extend(kept)
           assert merged == list(range(0, 49, 3)), merged
           assert len(merged) == 17 and len(set(merged)) == 17
-          print('ICON cycle handoff OK; ECMWF freshness guards OK; WRF2 segments produce 17 unique frames F000-F048.')
+          print('ICON live-cycle handoff OK; WRF regional and WRF2 select current ECMWF Open Data; 17 unique WRF2 frames F000-F048.')
           PY
