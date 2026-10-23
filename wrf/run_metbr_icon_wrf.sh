@@ -34,6 +34,22 @@ if ! git cat-file -e "${LEGACY_COMMIT}:wrf/run_icon_wrf.sh" 2>/dev/null; then
   git fetch --no-tags --depth=1 origin "$LEGACY_COMMIT"
 fi
 git show "${LEGACY_COMMIT}:wrf/run_icon_wrf.sh" > "$LEGACY"
+if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
+  ICON_SOURCE_DATE="$(date -u -d "${RUN_DATE} ${RUN_CYCLE}:00 UTC -24 hours" +%Y%m%d)"
+  ICON_SOURCE_CYCLE="$RUN_CYCLE"
+  export ICON_SOURCE_DATE ICON_SOURCE_CYCLE WRF2_ICON_OFFSET_HOURS=24
+  python3 - "$LEGACY" <<'PYICONOFFSET'
+import pathlib, sys
+p=pathlib.Path(sys.argv[1])
+s=p.read_text(encoding="utf-8")
+old='    --date "$RUN_DATE" ' + chr(92) + '\n' + '    --cycle "$RUN_CYCLE" ' + chr(92) + '\n' + '    --step "$H" ' + chr(92) + '\n'
+new='    --date "${ICON_SOURCE_DATE:-$RUN_DATE}" ' + chr(92) + '\n' + '    --cycle "${ICON_SOURCE_CYCLE:-$RUN_CYCLE}" ' + chr(92) + '\n' + '    --step "$((H+${WRF2_ICON_OFFSET_HOURS:-0}))" ' + chr(92) + '\n'
+if s.count(old) != 1:
+    raise SystemExit(f"Esperava 1 chamada de download ICON para ajustar, encontrei {s.count(old)}")
+p.write_text(s.replace(old,new,1),encoding="utf-8")
+PYICONOFFSET
+  echo "METBR WRF2: validade ${RUN_DATE} ${RUN_CYCLE}Z; inicialização ICON ${ICON_SOURCE_DATE} ${ICON_SOURCE_CYCLE}Z F024+"
+fi
 chmod +x "$LEGACY"
 
 SOURCE_RUN="$ROOT/wrf/run_wrf_with_source.sh"
