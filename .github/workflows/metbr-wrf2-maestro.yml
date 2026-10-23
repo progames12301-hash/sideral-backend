@@ -1,0 +1,377 @@
+name: METBR WRF2 Maestro - publicador JSON válido amanhã
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/metbr-wrf2-maestro.yml'
+      - 'wrf/metbr_extract_json.py'
+      - 'wrf/extract_wrf_severe_core.py'
+  workflow_run:
+    workflows:
+      - "METBR WRF2 4 KM - ICON válido amanhã"
+    types: [completed]
+  # Retry partial JSON publication every 30 minutes, including long-running cycles.
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run ID METBR específico. Vazio = validar a execução METBR mais recente."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: metbr-wrf2-maestro-publication
+  cancel-in-progress: false
+
+jobs:
+  publish-metbr-json:
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.name == 'METBR WRF2 4 KM - ICON válido amanhã' &&
+       github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout do extrator METBR
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Validar sintaxe do extrator METBR
+        run: python -m py_compile wrf/metbr_extract_json.py
+
+      - name: Selecionar o checkpoint METBR mais recente disponível
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # "Latest run" can be pending while its WRFOUT checkpoint has not yet
+          # been uploaded. Search runs newest-first and use the newest checkpoint
+          # that actually exists, falling back only when a newer run has no data.
+          CANDIDATES="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow metbr-wrf2-4km-tomorrow.yml --limit 30 --json databaseId,status,conclusion,workflowName,createdAt)"
+          RUN_ID=""
+          STATUS=""
+          TAG=""
+          ASSET_COUNT=0
+          while read -r CANDIDATE_ID CANDIDATE_STATUS; do
+            [[ -n "$CANDIDATE_ID" ]] || continue
+            CANDIDATE_TAG="metbr-wrf2-4km-checkpoint-$CANDIDATE_ID"
+            ASSET_JSON="$(gh release view "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" --json assets 2>/dev/null || true)"
+            if [[ -z "$ASSET_JSON" ]]; then
+              echo "Checkpoint $CANDIDATE_TAG não pode ser consultado; tentando uma execução anterior."
+              continue
+            fi
+            ASSET_ENDPOINTS="$(jq -r '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0) | .apiUrl | sub("^https://api.github.com/"; "")] | .[]' <<< "$ASSET_JSON")"
+            COUNT="$(jq -r '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0)] | length' <<< "$ASSET_JSON")"
+            if [[ ! "$COUNT" =~ ^[0-9]+$ || "$COUNT" -eq 0 ]]; then
+              echo "Checkpoint $CANDIDATE_TAG sem WRFOUT válido; tentando uma execução anterior."
+              continue
+            fi
+            ASSETS_VALID=true
+            while IFS= read -r ASSET_ENDPOINT; do
+              [[ -n "$ASSET_ENDPOINT" ]] || continue
+              if ! gh api "$ASSET_ENDPOINT" --jq '.id' >/dev/null 2>&1; then
+                echo "Asset WRFOUT ausente/inválido ($ASSET_ENDPOINT) no checkpoint $CANDIDATE_TAG."
+                ASSETS_VALID=false
+                break
+              fi
+            done <<< "$ASSET_ENDPOINTS"
+            if [[ "$ASSETS_VALID" == true ]]; then
+              echo "Checkpoint validado: $CANDIDATE_TAG; WRFOUTs=$COUNT."
+              RUN_ID="$CANDIDATE_ID"
+              STATUS="$CANDIDATE_STATUS"
+              TAG="$CANDIDATE_TAG"
+              ASSET_COUNT="$COUNT"
+              break
+            fi
+            echo "Ignorando checkpoint $CANDIDATE_TAG incompleto; tentando o próximo checkpoint anterior."
+          done < <(jq -r '.[] | select(.workflowName == "METBR WRF2 4 KM - ICON válido amanhã") | [.databaseId, .status] | @tsv' <<< "$CANDIDATES")
+
+                    if [[ -z "$RUN_ID" ]]; then
+            echo "Nenhuma execução METBR recente tem checkpoint WRFOUT disponível; o publicador tentará de novo em 30 minutos."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Checkpoint METBR mais recente disponível selecionado: run_id=$RUN_ID; status=$STATUS; WRFOUTs=$ASSET_COUNT"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "O Maestro publicará o checkpoint disponível mais recente, sem deixar uma execução pending bloquear os dados anteriores disponíveis."
+      - name: Verificar se o checkpoint WRF desta rodada já tem arquivos
+        id: checkpoint
+        if: steps.meta.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET_COUNT="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '[.assets[] | select(.name | startswith("wrfout_d01_")) | select(.size > 0)] | length' 2>/dev/null || echo 0)"
+          if [[ ! "$ASSET_COUNT" =~ ^[0-9]+$ ]]; then ASSET_COUNT=0; fi
+          if (( ASSET_COUNT > 0 )); then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Checkpoint $TAG tem $ASSET_COUNT arquivos WRFOUT; a publicação parcial pode prosseguir."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Checkpoint $TAG ainda não tem WRFOUT; tentativa registrada e será repetida pelo agendamento de 30 minutos."
+          fi
+
+      - name: Instalar dependências
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'xarray>=2024.1,<2027' 'netCDF4>=1.7,<2'
+
+      - name: Baixar WRFOUT METBR
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          rm -rf metbr_work
+          mkdir -p metbr_work/run
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'wrfout_d01_*' --dir metbr_work/run --clobber
+          test -n "$(find metbr_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)"
+
+      - name: Extrair JSON METBR
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf metbr_publish
+          python wrf/metbr_extract_json.py --run-dir metbr_work/run --output-dir metbr_publish
+          for file in metadata.json metbr_wrf_4km.json grid.json vertical-f000.npz; do
+            test -s "metbr_publish/$file" || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
+          done
+          test -d metbr_publish/frames
+          FRAME_COUNT="$(find metbr_publish/frames -maxdepth 1 -type f -name 'f*.json.gz' -size +0c | wc -l | tr -d '[:space:]')"
+          if [[ "$FRAME_COUNT" -lt 1 || "$FRAME_COUNT" -gt 43 ]]; then
+            echo "Quantidade inválida de frames METBR: $FRAME_COUNT (esperado entre 1 e 43)." >&2
+            exit 1
+          fi
+          echo "METBR checkpoint disponível: $FRAME_COUNT/43 frames; a execução mais nova será publicada sem voltar para uma rodada antiga."
+
+      - name: Validar publicação METBR completa
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
+        env:
+          SOURCE_RUN_ID: ${{ steps.meta.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip, json
+          from pathlib import Path
+          import numpy as np
+
+          import os
+          root = Path("metbr_publish")
+          meta_path = root / "metadata.json"
+          data_path = root / "metbr_wrf_4km.json"
+          meta = json.loads(meta_path.read_text(encoding="utf-8"))
+          data = json.loads(data_path.read_text(encoding="utf-8"))
+          grid = json.loads((root / "grid.json").read_text(encoding="utf-8"))
+          source_frames = meta.get("frames") or []
+          published_hours = {int(item["forecastHour"]) for item in source_frames}
+          missing_hours = sorted(set(range(43)) - published_hours)
+          publication_status = "complete" if len(source_frames) == 43 and not missing_hours else "partial"
+          meta["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
+          meta["sourceWorkflow"] = "METBR WRF2 4 KM - ICON válido amanhã"
+          meta["publicationStatus"] = publication_status
+          meta["expectedFrameCount"] = 43
+          meta["missingForecastHours"] = missing_hours
+          data["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
+          data["sourceWorkflow"] = "METBR WRF2 4 KM - ICON válido amanhã"
+          data["publicationStatus"] = publication_status
+          data["expectedFrameCount"] = 43
+          data["missingForecastHours"] = missing_hours
+          meta_path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+          data_path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+          print(f"METBR publicationStatus={publication_status}; frames={len(source_frames)}/43; ausentes={missing_hours}")
+          assert meta.get("modelKey") == "metbr_wrf", meta.get("modelKey")
+          assert int(meta.get("resolutionKm", 0)) == 4
+          assert meta.get("gridFile") == "grid.json"
+          assert meta.get("verticalProfileFile") == "vertical-f000.npz"
+          frames = meta.get("frames") or []
+          assert 1 <= len(frames) <= 43, f"Quantidade inválida de frames: {len(frames)}"
+          assert data.get("modelKey") == "metbr_wrf"
+          assert len(data.get("frames", [])) == len(frames)
+          nx, ny = int(meta["grid"]["nx"]), int(meta["grid"]["ny"])
+          expected = nx * ny
+          assert grid.get("schema") == "sideral-metbr-grid-v1"
+          assert grid.get("modelKey") == "metbr_wrf"
+          assert int(grid["grid"]["nx"]) == nx and int(grid["grid"]["ny"]) == ny
+          assert len(grid["fields"]["lat"]) == expected
+          assert len(grid["fields"]["lon"]) == expected
+
+          with np.load(root / "vertical-f000.npz", allow_pickle=False) as vertical:
+              shape = vertical["pressure_hpa"].shape
+              assert len(shape) == 3 and shape[0] >= 10, shape
+              assert shape[1:] == (ny, nx), shape
+              for name in ("temperature_c", "dewpoint_c", "height_m", "u_kt", "v_kt", "omega_pa_s"):
+                  assert vertical[name].shape == shape, (name, vertical[name].shape)
+              assert vertical["lat"].shape == (ny, nx)
+              assert vertical["lon"].shape == (ny, nx)
+              assert vertical["terrain_m"].shape == (ny, nx)
+
+          available_from_payload = set()
+          actual_hours = set()
+          for item in frames:
+              forecast = int(item["forecastHour"])
+              actual_hours.add(forecast)
+              file = item.get("dataFile") or f"frames/f{forecast:03d}.json.gz"
+              with gzip.open(root / file, "rt", encoding="utf-8") as handle:
+                  frame = json.load(handle)
+              assert frame.get("modelKey") == "metbr_wrf", file
+              assert frame.get("reflectivitySource") == "REFL_10CM_NATIVE", file
+              assert int(frame["gridX"]) == nx and int(frame["gridY"]) == ny, file
+              assert int(frame["forecastHour"]) == forecast, file
+              assert len(frame.get("reflectivityDbz", [])) == expected, file
+              fields = frame.get("fields") or {}
+              assert isinstance(fields, dict), (file, fields)
+              for field_name, values in fields.items():
+                  assert isinstance(values, list) and len(values) == expected, (file, field_name)
+                  assert all(value is None or isinstance(value, (int, float)) for value in values), (file, field_name)
+                  if any(value is not None for value in values):
+                      available_from_payload.add(field_name)
+          assert actual_hours, "Nenhum horário de previsão foi publicado"
+          expected_contiguous = set(range(max(actual_hours) + 1))
+          assert actual_hours == expected_contiguous, f"Frames não contíguos: recebidos={sorted(actual_hours)}"
+          assert max(actual_hours) <= 42, f"Forecast hour fora do intervalo: {max(actual_hours)}"
+          sources = meta.get("reflectivitySource")
+          sources = [sources] if isinstance(sources, str) else sources if isinstance(sources, list) else []
+          assert any("REFL_10CM" in str(item).upper() for item in sources), sources
+          assert "reflectivity" in available_from_payload, "Refletividade ausente nos frames"
+          declared = set(meta.get("availableVariablesAnyFrame") or [])
+          assert declared <= available_from_payload, (declared, available_from_payload)
+          print(f"METBR validado: {len(frames)}/43 frames F000-F042, status={meta.get('publicationStatus')}, grade nativa {nx}x{ny}, NPZ vertical e REFL_10CM nativa.")
+
+          PY
+
+      - name: Selecionar branch do ciclo METBR
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          RUN_CYCLE="$(python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+          meta = json.loads(Path("metbr_publish/metadata.json").read_text(encoding="utf-8"))
+          init_time = str(meta.get("initTime") or "")
+          if not init_time:
+              raise SystemExit("metadata.json não informa initTime")
+          stamp = datetime.fromisoformat(init_time.replace("Z", "+00:00"))
+          print(stamp.strftime("%H"))
+          PY
+          )"
+          [[ "$RUN_CYCLE" =~ ^(00|06|12|18|21)$ ]] || { echo "Ciclo METBR não suportado: $RUN_CYCLE" >&2; exit 20; }
+          echo "METBR_RUN_CYCLE=$RUN_CYCLE" >> "$GITHUB_ENV"
+          echo "METBR_JSON_BRANCH=metbr-wrf2-json-data-$RUN_CYCLE" >> "$GITHUB_ENV"
+          echo "METBR ciclo $RUN_CYCLE Z validado; publicarei a branch por ciclo e metbr-wrf2-json-data."
+
+      - name: Publicar pacote METBR completo
+        if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.meta.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin metbr-wrf2-json-data
+          CANDIDATE_RUN_ID="$RUN_ID"
+          EXISTING_RUN_ID="$(git show origin/metbr-wrf2-json-data:metadata.json | python -c 'import json,sys; print(json.load(sys.stdin).get("sourceRunId",""))' || true)"
+          if [[ "$EXISTING_RUN_ID" =~ ^[0-9]+$ && "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ && "$CANDIDATE_RUN_ID" -lt "$EXISTING_RUN_ID" ]]; then
+            echo "Checkpoint já publicado é mais novo: candidato=$CANDIDATE_RUN_ID; publicado=$EXISTING_RUN_ID. Nada a atualizar nesta tentativa."
+            exit 0
+          fi
+          CANDIDATE_INIT="$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json"))["initTime"])')"
+          EXISTING_INIT="$(git show origin/metbr-wrf2-json-data:metadata.json | python -c 'import json,sys; print(json.load(sys.stdin).get("initTime",""))' || true)"
+          if [[ -n "$EXISTING_INIT" && "$CANDIDATE_INIT" < "$EXISTING_INIT" ]]; then
+            echo "O ciclo já publicado ($EXISTING_INIT) é mais novo que o candidato ($CANDIDATE_INIT). Esta tentativa é ignorada, sem falha."
+            exit 0
+          fi
+
+          # Não substitua a previsão pública por um checkpoint parcial de menor horizonte.
+          # Continue publicando o ciclo específico a cada 30 min, mas só atualize o alias
+          # metbr-wrf2-json-data quando o último horário válido alcançar/superar a previsão ativa.
+          CANDIDATE_END="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          meta = json.loads(Path("metbr_publish/metadata.json").read_text(encoding="utf-8"))
+          frames = meta.get("frames") or []
+          if not frames:
+              raise SystemExit("O candidato METBR não contém horários de previsão.")
+          frame = max(frames, key=lambda item: int(item.get("forecastHour", -1)))
+          value = frame.get("time") or frame.get("validTime")
+          if not value:
+              raise SystemExit("O último frame METBR não contém horário válido.")
+          print(value)
+          PY
+          )"
+          EXISTING_END="$(git show origin/metbr-wrf2-json-data:metadata.json | python -c 'import json,sys; m=json.load(sys.stdin); f=m.get("frames") or []; x=max(f,key=lambda i:int(i.get("forecastHour",-1))) if f else {}; print(x.get("time") or x.get("validTime") or "")' 2>/dev/null || true)"
+          if [[ -z "$EXISTING_END" ]]; then
+            PUBLISH_SHARED=true
+          else
+            PUBLISH_SHARED="$(python - "$CANDIDATE_END" "$EXISTING_END" <<'PY'
+          import sys
+          from datetime import datetime
+          candidate = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          existing = datetime.fromisoformat(sys.argv[2].replace("Z", "+00:00"))
+          print("true" if candidate >= existing else "false")
+          PY
+          )"
+          fi
+          echo "Horizon candidato=$CANDIDATE_END; horizon público=$EXISTING_END; atualizar alias público=$PUBLISH_SHARED"
+          rm -rf /tmp/metbr-json-publication
+          git worktree add --detach /tmp/metbr-json-publication origin/metbr-wrf2-json-data
+          find /tmp/metbr-json-publication -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
+          cp -a metbr_publish/. /tmp/metbr-json-publication/
+          cat > /tmp/metbr-json-publication/README.md <<'EOF'
+          # METBR WRF 4 km — publicação JSON nativa
+
+          - metadata.json: horários, variáveis e contrato de publicação
+          - grid.json: coordenadas nativas XLAT/XLONG
+          - vertical-f000.npz: grade vertical nativa para o Skew-T click-to-point
+          - frames/fNNN.json.gz: refletividade REFL_10CM nativa e demais campos disponíveis
+          - metbr_wrf_4km.json: índice compatível com a interface legada
+
+          Checkpoints parciais da execução METBR mais recente podem ser publicados com publicationStatus=partial.
+          A publicação final é marcada complete quando todos os 43 frames F000-F042 forem validados.
+          A grade nativa, os perfis verticais e a refletividade REFL_10CM são obrigatórios em ambas as etapas.
+          EOF
+          cd /tmp/metbr-json-publication
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "publish: METBR WRF 4 km ciclo $METBR_RUN_CYCLE Z $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fi
+          git push --force origin HEAD:"refs/heads/$METBR_JSON_BRANCH"
+          if [[ "$PUBLISH_SHARED" == "true" ]]; then
+            git push --force origin HEAD:refs/heads/metbr-wrf2-json-data
+            echo "METBR publicado em $METBR_JSON_BRANCH e metbr-wrf2-json-data; status=$(python -c 'import json; print(json.load(open("metbr_publish/metadata.json")).get("publicationStatus","unknown"))')."
+            # Notify image/UI publishers only when the shared public dataset changes.
+            gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
+              -f event_type=metbr-wrf2-json-published \
+              -f "client_payload[run_id]=$RUN_ID" \
+              -f "client_payload[init_time]=$CANDIDATE_INIT"
+          else
+            echo "METBR publicado somente em $METBR_JSON_BRANCH: o checkpoint termina em $CANDIDATE_END, antes do horizonte já disponível ($EXISTING_END). A previsão pública completa foi preservada."
+          fi
+          cd - >/dev/null
+          git worktree remove --force /tmp/metbr-json-publication
