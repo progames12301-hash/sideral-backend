@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: "ID da execução TARC; vazio seleciona a execução mais recente"
+        description: "ID da execução SIDERAL; vazio seleciona a execução mais recente"
         required: false
         type: string
 
@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish latest TARC checkpoint without re-running WRF
+    name: Publish latest SIDERAL checkpoint without re-running WRF
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
@@ -64,7 +64,7 @@ jobs:
             RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
           fi
           if [[ ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
-            echo "Não foi possível identificar uma execução TARC válida; publicação adiada."
+            echo "Não foi possível identificar uma execução SIDERAL válida; publicação adiada."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -182,7 +182,7 @@ jobs:
                   item = json.load(stream)
               assert item["modelKey"] == "sideral_wrf_4km_2_sudeste"
               assert item["fields"]["lat"] and item["fields"]["lon"]
-          print(f"TARC JSON validado: {meta['frameCount']}/49 frames; status={meta['status']}; init={meta['initTime']}")
+          print(f"SIDERAL JSON validado: {meta['frameCount']}/49 frames; status={meta['status']}; init={meta['initTime']}")
           PY
 
       - name: Publish WRF SIDERAL 4 KM 2 SUDESTE metadata and frames with a sparse checkout
@@ -204,7 +204,7 @@ jobs:
           git config user.email "sideralmeteorologia@gmail.com"
           git add --sparse metadata.json variable_catalog.json frames/
           if git diff --cached --quiet; then
-            echo "TARC: branch já contém os mesmos dados."
+            echo "SIDERAL: branch já contém os mesmos dados."
             exit 0
           fi
           git commit -m "publish: WRF SIDERAL 4 KM 2 SUDESTE checkpoint $(date -u +%Y-%m-%dT%H:%M:%SZ)"
