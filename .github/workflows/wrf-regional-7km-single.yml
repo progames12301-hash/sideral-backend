@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: wrf-runner
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Preparar runner
         shell: bash
@@ -134,6 +134,20 @@ jobs:
                   raise SystemExit('Nenhuma rodada GFS recente com F042 disponivel')
               run_date, run_cycle = selected
               init_time = dt.datetime.strptime(run_date + run_cycle, '%Y%m%d%H').replace(tzinfo=dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+          elif model == 'icon' and manual_requested:
+              if len(requested_date) != 8 or not requested_date.isdigit():
+                  raise SystemExit('run_date ICON deve estar em YYYYMMDD')
+              if requested_cycle not in {'00', '06', '12', '18'}:
+                  raise SystemExit('run_cycle ICON deve ser 00, 06, 12 ou 18')
+              icon_url = (
+                  'https://opendata.dwd.de/weather/nwp/icon/grib/'
+                  f'{requested_cycle}/t_2m/icon_global_icosahedral_single-level_'
+                  f'{requested_date}{requested_cycle}_042_T_2M.grib2.bz2'
+              )
+              if not head_ok(icon_url):
+                  raise SystemExit(f'ICON {requested_date} {requested_cycle}Z ainda nao possui F042')
+              run_date, run_cycle = requested_date, requested_cycle
+              init_time = dt.datetime.strptime(run_date + run_cycle, '%Y%m%d%H').replace(tzinfo=dt.timezone.utc).isoformat().replace('+00:00', 'Z')
           else:
               branch = os.environ.get('SOURCE_BRANCH', '').strip()
               if not branch:
@@ -149,6 +163,14 @@ jobs:
               init_time = str(metadata['initTime'])
               if len(run_date) != 8 or run_cycle not in {'00', '06', '12', '18'}:
                   raise SystemExit(f'Rodada fonte invalida: {run_date} {run_cycle}')
+              if model == 'ecmwf':
+                  stamp = dt.datetime.fromisoformat(init_time.replace('Z', '+00:00'))
+                  age_hours = (dt.datetime.now(dt.timezone.utc) - stamp.astimezone(dt.timezone.utc)).total_seconds() / 3600.0
+                  if age_hours > 36:
+                      raise SystemExit(
+                          f'Metadata ECMWF esta desatualizada ({age_hours:.1f} h; '
+                          f'rodada {run_date} {run_cycle}Z). Aguarde nova publicacao ecmwf-data.'
+                      )
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f'run_date={run_date}\n')
