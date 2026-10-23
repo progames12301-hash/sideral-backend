@@ -185,26 +185,24 @@ jobs:
             exit 0
           fi
 
-          while IFS=
-\t' read -r workflow reason; do
+          while IFS=$'\t' read -r workflow reason; do
             [[ -n "$workflow" ]] || continue
             echo "Verificando atividade: $workflow"
 
             # Cancelar somente execucoes claramente travadas no checkout (>20 min).
             # Nunca cancelar jobs que ja estejam preparando/rodando WRF ou gerando ECMWF.
             runs_json="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 20 --json databaseId,status,createdAt)"
-            while IFS=
-\t' read -r run_id created_at; do
+            while IFS=$'\t' read -r run_id created_at; do
               [[ -n "$run_id" && -n "$created_at" ]] || continue
               status="$(jq -r --argjson id "$run_id" '.[] | select(.databaseId == $id) | .status' <<< "$runs_json" | head -1)"
               [[ "$status" == "in_progress" ]] || continue
               age_seconds="$(( $(date -u +%s) - $(date -u -d "$created_at" +%s) ))"
               (( age_seconds > 1200 )) || continue
-              jobs_json="$(gh api "repos/\${GITHUB_REPOSITORY}/actions/runs/\${run_id}/jobs")"
+              jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs")"
               checkout_active="$(jq '[.jobs[]? | select(.status == "in_progress") | .steps[]? | select(.status == "in_progress") | select((.name | ascii_downcase) | contains("checkout"))] | length' <<< "$jobs_json")"
               if [[ "$checkout_active" != "0" ]]; then
-                echo "CANCEL STUCK CHECKOUT: run=$run_id age=\${age_seconds}s workflow=$workflow"
-                gh api --method POST "repos/\${GITHUB_REPOSITORY}/actions/runs/\${run_id}/cancel"
+                echo "CANCEL STUCK CHECKOUT: run=$run_id age=${age_seconds}s workflow=$workflow"
+                gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel"
                 sleep 5
               fi
             done < <(jq -r '.[] | select(.status == "in_progress") | [.databaseId, .createdAt] | @tsv' <<< "$runs_json")
