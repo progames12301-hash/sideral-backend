@@ -73,3 +73,44 @@ jobs:
           done
           bash -n <(sed -n '1,240p' /dev/null) 2>/dev/null || true
           echo 'WRF2 Sudeste: 7 km, 222x205, 48 h, diagnosticos reais.'
+
+      - name: Validar selecao de ciclo ICON e segmentos WRF2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          icon = Path('.github/workflows/wrf-sudeste-icon-4km.yml').read_text(encoding='utf-8')
+          line = next(line for line in icon.splitlines() if "output.write(f'available=" in line)
+          assert line.endswith(r"\\n')"), repr(line)
+          assert 'available=$(python3' not in icon
+          assert 'run_date: ${{ needs.check-icon-data.outputs.run_date }}' in icon
+          assert 'run_cycle: ${{ needs.check-icon-data.outputs.run_cycle }}' in icon
+
+          regional = Path('.github/workflows/wrf-regional-7km-single.yml').read_text(encoding='utf-8')
+          assert "elif model == 'icon' and manual_requested" in regional
+          assert 'age_hours > 36' in regional
+          assert 'fetch-depth: 0' not in regional
+
+          wrf2 = Path('.github/workflows/wrf2-sudeste-7km-reusable.yml').read_text(encoding='utf-8')
+          assert 'if age > 36' in wrf2
+          assert 'assert actual == expected' in wrf2
+          assert 'Excluir horas de spin-up' in wrf2
+          assert 'fetch-depth: 0' not in wrf2
+
+          segments = [(0, 0, 9), (9, 3, 18), (18, 12, 27),
+                      (27, 21, 36), (36, 30, 45), (45, 39, 48)]
+          merged = []
+          for start, spinup, end in segments:
+              candidates = list(range(spinup, end + 1, 3))
+              kept = [h for h in candidates
+                      if (h >= start if start == 0 else h > start) and h <= end]
+              expected_first = start if start == 0 else start + 3
+              expected = list(range(expected_first, end + 1, 3))
+              assert kept == expected, (start, end, kept, expected)
+              merged.extend(kept)
+          assert merged == list(range(0, 49, 3)), merged
+          assert len(merged) == 17 and len(set(merged)) == 17
+          print('ICON cycle handoff OK; ECMWF freshness guards OK; WRF2 segments produce 17 unique frames F000-F048.')
+          PY
