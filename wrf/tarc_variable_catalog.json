@@ -1,8 +1,8 @@
 {
-  "model": "WRF TARC 3 KM",
+  "model": "WRF SIDERAL 5 KM SUDESTE",
   "domain": {
-    "e_we": 361,
-    "e_sn": 445,
+    "e_we": 269,
+    "e_sn": 401,
     "dx_m": 3000,
     "dy_m": 3000,
     "approx_longitude": [
@@ -13,7 +13,17 @@
       "-34.0",
       "-22.0"
     ],
-    "projection": "Lambert"
+    "projection": "Lambert",
+    "approxLon": [
+      -52.95,
+      -38.05
+    ],
+    "approxLat": [
+      -31.75,
+      -13.17
+    ],
+    "centerLat": -23,
+    "centerLon": -45.5
   },
   "forecast": {
     "hours": 48,
@@ -169,5 +179,7 @@
     "vento U/V 850/700/500/200 hPa",
     "geopotencial 850/700/500/200 hPa"
   ],
-  "note": "Os diagnosticos adicionais dependem de pos-processamento vertical dos wrfout 3D; o pipeline desta branch preserva os wrfout nativos para essa etapa sem inventar campos inexistentes."
+  "note": "Os diagnosticos adicionais dependem de pos-processamento vertical dos wrfout 3D; o pipeline desta branch preserva os wrfout nativos para essa etapa sem inventar campos inexistentes.",
+  "modelKey": "sideral_wrf_5km_sudeste",
+  "resolutionKm": 5
 }
