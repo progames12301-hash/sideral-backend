@@ -33,67 +33,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          available=false
           python3 - <<'PY'
           import os
-          import sys
           import urllib.request
           from datetime import datetime, timezone, timedelta
 
           now = datetime.now(timezone.utc)
           base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
-
+          available = False
           for offset in range(0, 48, 6):
               run = base - timedelta(hours=offset)
               date_str = run.strftime('%Y%m%d')
               cycle_str = run.strftime('%H')
-              url = f'https://opendata.dwd.de/weather/nwp/icon/grib/{cycle_str}/t_2m/icon_global_icosahedral_single-level_{date_str}{cycle_str}_042_T_2M.grib2.bz2'
-
+              url = (
+                  'https://opendata.dwd.de/weather/nwp/icon/grib/'
+                  f'{cycle_str}/t_2m/icon_global_icosahedral_single-level_'
+                  f'{date_str}{cycle_str}_042_T_2M.grib2.bz2'
+              )
               try:
-                  req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Sideral-Check'})
-                  with urllib.request.urlopen(req, timeout=15) as response:
+                  request = urllib.request.Request(
+                      url, method='HEAD',
+                      headers={'User-Agent': 'Sideral-Check'}
+                  )
+                  with urllib.request.urlopen(request, timeout=15) as response:
                       if response.status in (200, 206):
                           print(f'ICON encontrado: {date_str} {cycle_str}Z')
-                          print('available=true')
-                          sys.exit(0)
-              except Exception:
-                  continue
+                          available = True
+                          break
+              except Exception as exc:
+                  print(f'ICON indisponivel {date_str} {cycle_str}Z: {exc}')
 
-          print('Nenhuma rodada ICON disponível no momento')
-          print('available=false')
-          sys.exit(0)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'available={str(available).lower()}\\n')
+          if not available:
+              print('Nenhuma rodada ICON com F042 disponivel; etapa regional sera pulada sem falhar.')
           PY
-          status=$?
-          if [[ "$status" -eq 0 ]]; then
-            available=$(python3 - <<'PY'
-            import os
-            import sys
-            import urllib.request
-            from datetime import datetime, timezone, timedelta
-
-            now = datetime.now(timezone.utc)
-            base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
-
-            for offset in range(0, 48, 6):
-                run = base - timedelta(hours=offset)
-                date_str = run.strftime('%Y%m%d')
-                cycle_str = run.strftime('%H')
-                url = f'https://opendata.dwd.de/weather/nwp/icon/grib/{cycle_str}/t_2m/icon_global_icosahedral_single-level_{date_str}{cycle_str}_042_T_2M.grib2.bz2'
-                try:
-                    req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Sideral-Check'})
-                    with urllib.request.urlopen(req, timeout=15) as response:
-                        if response.status in (200, 206):
-                            print('true')
-                            raise SystemExit(0)
-                except Exception:
-                    continue
-            print('false')
-            PY
-            )
-            echo "available=${available}" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
 
   wrf:
     name: WRF Sudeste ICON 7km
