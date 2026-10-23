@@ -25,16 +25,41 @@ SOURCE_END_HOUR="${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
   exit 2
 }
 
-# O ciclo só é aceito depois de verificar os arquivos realmente publicados.
-# Na primeira tentativa, TARC_ALLOW_RESELECT_ICON=1 permite escolher o run
-# completo mais recente, sem confiar no relógio/metadata de outro workflow.
-SELECTION_ARGS=(--start-hour "$WRF_START_HOUR" --end-hour "$SOURCE_END_HOUR" --output "$ROOT/tarc-icon-run.env")
-if [[ -n "$FORCE_RUN_DATE" && -n "$FORCE_RUN_CYCLE" && "${TARC_ALLOW_RESELECT_ICON:-0}" != "1" ]]; then
-  SELECTION_ARGS+=(--date "$FORCE_RUN_DATE" --cycle "$FORCE_RUN_CYCLE")
+# WRF2: a validade WRF comeca 24 h apos o ciclo ICON fonte.
+# O selector valida todos os campos/horarios fonte de F024 a F072 antes da integracao.
+if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
+  TARGET_DATE="${FORCE_RUN_DATE:-${RUN_DATE:-}}"
+  TARGET_CYCLE="$(printf '%02d' "$((10#${FORCE_RUN_CYCLE:-${RUN_CYCLE:-0}}))")"
+  [[ "$TARGET_DATE" =~ ^[0-9]{8}$ && "$TARGET_CYCLE" =~ ^(00|06|12|18)$ ]] || {
+    echo "WRF2 TARC: data/ciclo alvo de amanha invalidos: $TARGET_DATE $TARGET_CYCLE" >&2; exit 21;
+  }
+  SOURCE_BASE="$(date -u -d "${TARGET_DATE} ${TARGET_CYCLE}:00 UTC -24 hours" +%Y%m%d%H)"
+  ICON_SOURCE_DATE="${SOURCE_BASE:0:8}"
+  ICON_SOURCE_CYCLE="${SOURCE_BASE:8:2}"
+  SELECTION_ENV="$ROOT/tarc-icon-source-run.env"
+  python3 "$ROOT/wrf/select_tarc_icon_run.py" \
+    --start-hour "$((WRF_START_HOUR+24))" --end-hour "$((SOURCE_END_HOUR+24))" \
+    --date "$ICON_SOURCE_DATE" --cycle "$ICON_SOURCE_CYCLE" --output "$SELECTION_ENV"
+  source "$SELECTION_ENV"
+  ICON_SOURCE_DATE="$RUN_DATE"
+  ICON_SOURCE_CYCLE="$RUN_CYCLE"
+  ICON_OFFSET=24
+  RUN_DATE="$TARGET_DATE"
+  RUN_CYCLE="$TARGET_CYCLE"
+  printf 'RUN_DATE=%s\nRUN_CYCLE=%s\nSOURCE_MODEL=icon\nWRF2_TOMORROW=1\n' \
+    "$RUN_DATE" "$RUN_CYCLE" > "$ROOT/tarc-icon-run.env"
+else
+  SELECTION_ARGS=(--start-hour "$WRF_START_HOUR" --end-hour "$SOURCE_END_HOUR" --output "$ROOT/tarc-icon-run.env")
+  if [[ -n "$FORCE_RUN_DATE" && -n "$FORCE_RUN_CYCLE" && "${TARC_ALLOW_RESELECT_ICON:-0}" != "1" ]]; then
+    SELECTION_ARGS+=(--date "$FORCE_RUN_DATE" --cycle "$FORCE_RUN_CYCLE")
+  fi
+  python3 "$ROOT/wrf/select_tarc_icon_run.py" "${SELECTION_ARGS[@]}"
+  source "$ROOT/tarc-icon-run.env"
+  ICON_SOURCE_DATE="$RUN_DATE"
+  ICON_SOURCE_CYCLE="$RUN_CYCLE"
+  ICON_OFFSET=0
 fi
-python3 "$ROOT/wrf/select_tarc_icon_run.py" "${SELECTION_ARGS[@]}"
-source "$ROOT/tarc-icon-run.env"
-echo "ICON TARC selecionado após validação: $RUN_DATE $RUN_CYCLE Z"
+echo "ICON TARC selecionado: fonte $ICON_SOURCE_DATE $ICON_SOURCE_CYCLE Z offset=$ICON_OFFSET h; validade WRF $RUN_DATE $RUN_CYCLE Z"
 rm -rf "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 mkdir -p "$RAW_DIR" "$REG_DIR" "$REGRID_DIR"
 
@@ -55,7 +80,8 @@ echo "ICON TARC: baixando atomicamente todos os passos antes do WPS"
 for H in $(seq "$WRF_START_HOUR" 3 "$SOURCE_END_HOUR"); do
   printf -v FH "%03d" "$H"
   RAW="$RAW_DIR/icon_f${FH}_raw.grib2"
-  python3 "$ROOT/wrf/fetch_icon_wrf_step.py" --date "$RUN_DATE" --cycle "$RUN_CYCLE" --step "$H" --output "$RAW"
+  SOURCE_H=$((H+ICON_OFFSET))
+  python3 "$ROOT/wrf/fetch_icon_wrf_step.py" --date "$ICON_SOURCE_DATE" --cycle "$ICON_SOURCE_CYCLE" --step "$SOURCE_H" --output "$RAW"
   test -s "$RAW" || { echo "GRIB ICON F$FH ausente após download" >&2; exit 22; }
 done
 
