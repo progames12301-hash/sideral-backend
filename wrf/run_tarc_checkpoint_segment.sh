@@ -148,7 +148,7 @@ now=dt.datetime.now(dt.timezone.utc)
 run=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
 if os.environ.get("WRF2_TOMORROW") == "1":
     run += dt.timedelta(hours=24)
-open("tarc-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\\nRUN_CYCLE={run:%H}\\nSOURCE_MODEL=icon\\nWRF2_TOMORROW={os.environ.get('WRF2_TOMORROW','0')}\\n")
+open("tarc-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\nWRF2_TOMORROW={os.environ.get('WRF2_TOMORROW','0')}\n")
 PY
   source tarc-run.env
   gh release create "$CHECKPOINT_TAG" --target tarc-wrf-3km --prerelease --latest=false     --repo "$GITHUB_REPOSITORY" --notes "WRF TARC 3 KM ICON checkpoint $GITHUB_RUN_ID" || true
