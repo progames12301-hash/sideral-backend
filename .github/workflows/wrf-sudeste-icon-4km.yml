@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 10
     outputs:
       data_available: ${{ steps.check.outputs.available }}
+      run_date: ${{ steps.check.outputs.run_date }}
+      run_cycle: ${{ steps.check.outputs.run_cycle }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +43,8 @@ jobs:
           now = datetime.now(timezone.utc)
           base = now.replace(hour=(now.hour // 6) * 6, minute=0, second=0, microsecond=0)
           available = False
+          run_date = ''
+          run_cycle = ''
           for offset in range(0, 48, 6):
               run = base - timedelta(hours=offset)
               date_str = run.strftime('%Y%m%d')
@@ -59,12 +63,16 @@ jobs:
                       if response.status in (200, 206):
                           print(f'ICON encontrado: {date_str} {cycle_str}Z')
                           available = True
+                          run_date = date_str
+                          run_cycle = cycle_str
                           break
               except Exception as exc:
                   print(f'ICON indisponivel {date_str} {cycle_str}Z: {exc}')
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f'available={str(available).lower()}\n')
+              output.write(f'run_date={run_date}\n')
+              output.write(f'run_cycle={run_cycle}\n')
           if not available:
               print('Nenhuma rodada ICON com F042 disponivel; etapa regional sera pulada sem falhar.')
           PY
@@ -80,6 +88,8 @@ jobs:
       source_data_branch: icon-data
       publish_branch: wrf-sudeste-icon-data
       run_script: run_icon_wrf_sudeste.sh
+      run_date: ${{ needs.check-icon-data.outputs.run_date }}
+      run_cycle: ${{ needs.check-icon-data.outputs.run_cycle }}
     secrets: inherit
 
   notify-unavailable:
