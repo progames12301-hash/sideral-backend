@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: wrf-runner
-          fetch-depth: 0
+          fetch-depth: 1
       - name: Preparar runner
         run: |
           set -euxo pipefail
@@ -176,7 +176,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: wrf-runner
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: actions/download-artifact@v4
         with:
           pattern: wrf2-${{ inputs.model }}-severe-*
