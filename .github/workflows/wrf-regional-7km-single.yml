@@ -161,30 +161,34 @@ jobs:
                   raise SystemExit('Nenhuma rodada ICON recente com F042 disponivel')
               run_date, run_cycle = selected
               init_time = dt.datetime.strptime(run_date + run_cycle, '%Y%m%d%H').replace(tzinfo=dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+          elif model == 'ecmwf':
+              # Select from ECMWF Open Data directly; do not depend on an old ecmwf-data map publication.
+              import time
+              from ecmwf.opendata import Client
+              client = Client(source='ecmwf', model='ifs')
+              latest = None
+              last_error = None
+              for attempt in range(1, 4):
+                  try:
+                      latest = client.latest(type='fc', step=42, param=['2t'])
+                      break
+                  except Exception as exc:
+                      last_error = exc
+                      if attempt < 3:
+                          print(f'ECMWF latest retry {attempt}/3: {exc}')
+                          time.sleep(5 * attempt)
+              if latest is None:
+                  raise SystemExit(f'Nao foi possivel descobrir ECMWF IFS F042: {last_error}')
+              if not isinstance(latest, dt.datetime):
+                  latest = dt.datetime.fromisoformat(str(latest))
+              if latest.tzinfo is None:
+                  latest = latest.replace(tzinfo=dt.timezone.utc)
+              latest = latest.astimezone(dt.timezone.utc)
+              run_date = latest.strftime('%Y%m%d')
+              run_cycle = latest.strftime('%H')
+              init_time = latest.isoformat().replace('+00:00', 'Z')
           else:
-              branch = os.environ.get('SOURCE_BRANCH', '').strip()
-              if not branch:
-                  raise SystemExit(f'source_data_branch ausente para {model}')
-              url = f"https://raw.githubusercontent.com/{os.environ['REPOSITORY']}/{branch}/metadata.json?run={os.environ['CACHE_BUSTER']}"
-              request = urllib.request.Request(url, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Sideral-WRF-7km'})
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  metadata = json.load(response)
-              if str(metadata.get('model')).lower() != model:
-                  raise SystemExit(f"Branch fonte retornou modelo incorreto: {metadata.get('model')}")
-              run_date = str(metadata['runDate']).replace('-', '')
-              run_cycle = ''.join(ch for ch in str(metadata['runCycle']) if ch.isdigit()).zfill(2)[:2]
-              init_time = str(metadata['initTime'])
-              if len(run_date) != 8 or run_cycle not in {'00', '06', '12', '18'}:
-                  raise SystemExit(f'Rodada fonte invalida: {run_date} {run_cycle}')
-              if model == 'ecmwf':
-                  stamp = dt.datetime.fromisoformat(init_time.replace('Z', '+00:00'))
-                  age_hours = (dt.datetime.now(dt.timezone.utc) - stamp.astimezone(dt.timezone.utc)).total_seconds() / 3600.0
-                  if age_hours > 36:
-                      raise SystemExit(
-                          f'Metadata ECMWF esta desatualizada ({age_hours:.1f} h; '
-                          f'rodada {run_date} {run_cycle}Z). Aguarde nova publicacao ecmwf-data.'
-                      )
-
+              raise SystemExit(f'Modelo regional invalido: {model}')
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f'run_date={run_date}\n')
               output.write(f'run_cycle={run_cycle}\n')
