@@ -83,7 +83,7 @@ jobs:
 
           icon = Path('.github/workflows/wrf-sudeste-icon-4km.yml').read_text(encoding='utf-8')
           line = next(line for line in icon.splitlines() if "output.write(f'available=" in line)
-          assert line.endswith(r"\\n')"), repr(line)
+          assert line.endswith(r"\n')"), repr(line)
           assert 'available=$(python3' not in icon
           assert 'run_date: ${{ needs.check-icon-data.outputs.run_date }}' in icon
           assert 'run_cycle: ${{ needs.check-icon-data.outputs.run_cycle }}' in icon
