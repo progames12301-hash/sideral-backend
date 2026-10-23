@@ -23,7 +23,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: regional-json-tarc
+  group: sideral-wrf-4km-sudeste-json-publication
   cancel-in-progress: false
 
 jobs:
