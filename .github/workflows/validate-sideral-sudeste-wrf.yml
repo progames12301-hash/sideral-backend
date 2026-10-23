@@ -80,6 +80,10 @@ jobs:
         run: |
           set -euo pipefail
           for root in runner4 runner5; do
+            if grep -RFn --include='*.sh' '${config.res}' "$root/wrf"; then
+              echo "ERRO: template JavaScript encontrado em script Bash no runner $root." >&2
+              exit 1
+            fi
             python -m py_compile "$root/wrf/tarc_postprocess.py"
             bash -n "$root/wrf/run_tarc_checkpoint_segment.sh"
             bash -n "$root/wrf/run_tarc_icon_wrf.sh"
