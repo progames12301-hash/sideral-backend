@@ -31,7 +31,7 @@ rm -rf "$WORK/source" "$WORK/soil" "$WORK/run" "$WORK/geog_extract" "$WORK/WPS_G
 mkdir -p "$WORK/source" "$WORK/soil" "$WORK/geog_extract" "$WORK/WPS_GEOG"
 rm -f "$WORK/use_wps_gfs_vtable" "$WORK/Vtable.source" "$WORK"/GRIBFILE.* "$WORK"/SRC:* "$WORK"/SOIL:* "$WORK"/FILE:* "$WORK"/met_em.d01.*.nc "$WORK"/geo_em.d01.nc "$WORK"/Vtable "$WORK"/geogrid.log "$WORK"/ungrib.log "$WORK"/metgrid.log
 
-echo "SIDERAL Sudeste ${config.res} KM: F$WRF_START_HOUR-F$WRF_END_HOUR; LBC ate F$BOUNDARY_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
+echo "SIDERAL Sudeste ${WRF_TARGET_RESOLUTION_KM} KM: F$WRF_START_HOUR-F$WRF_END_HOUR; LBC ate F$BOUNDARY_END_HOUR; grid=$WRF_E_WE x $WRF_E_SN; dt=$WRF_TIME_STEP s"
 
 find "$SOURCE_DIR" -maxdepth 1 -type f -name '*.grib2' -print | sort > "$DIAG/source-files.txt"
 test -s "$DIAG/source-files.txt"
@@ -281,7 +281,7 @@ if [[ "${WRF_BOUNDARY_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
-echo "=== WRF SIDERAL Sudeste ${config.res} KM / REFL_10CM NATIVO ==="
+echo "=== WRF SIDERAL Sudeste / REFL_10CM NATIVO ==="
 mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
 grep -q "SUCCESS COMPLETE WRF" rsl.error.0000 || { tail -260 rsl.error.0000 || true; exit 51; }
 ls -lh wrfout_d01_* wrfrst_d01_* wrfbdy_d01 | tee /work/tarc-files.txt
