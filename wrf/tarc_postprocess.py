@@ -55,6 +55,9 @@ def main():
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     index = []
+    is_wrf2 = os.environ.get("WRF2_TOMORROW", "0") == "1"
+    model_label = "WRF SIDERAL 4 KM 2 SUDESTE" if is_wrf2 else "WRF SIDERAL 4 KM SUDESTE"
+    model_key = "sideral_wrf_4km_2_sudeste" if is_wrf2 else "sideral_wrf_4km_sudeste"
 
     for path in sorted(args.files):
         with Dataset(path) as ds:
@@ -121,8 +124,9 @@ def main():
 
     manifest = out / "metadata.json"
     manifest.write_text(json.dumps({
-        "model": "WRF SIDERAL 4 KM SUDESTE",
+        "model": model_label,
         "resolutionKm": 4,
+        "modelKey": model_key,
         "nativeReflectivity": "REFL_10CM",
         "projection": "WRF Lambert",
         "domain": {"e_we": 337, "e_sn": 501, "approxLon": [-52.95, -38.05], "approxLat": [-31.75, -13.17]},
