@@ -89,7 +89,7 @@ jobs:
           assert 'run_cycle: ${{ needs.check-icon-data.outputs.run_cycle }}' in icon
 
           regional = Path('.github/workflows/wrf-regional-7km-single.yml').read_text(encoding='utf-8')
-          assert "elif model == 'icon' and manual_requested" in regional
+          assert "elif model == 'icon':" in regional
           assert 'age_hours > 36' in regional
           assert 'fetch-depth: 0' not in regional
 
