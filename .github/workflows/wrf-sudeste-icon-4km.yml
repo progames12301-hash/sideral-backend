@@ -64,7 +64,7 @@ jobs:
                   print(f'ICON indisponivel {date_str} {cycle_str}Z: {exc}')
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f'available={str(available).lower()}\\n')
+              output.write(f'available={str(available).lower()}\n')
           if not available:
               print('Nenhuma rodada ICON com F042 disponivel; etapa regional sera pulada sem falhar.')
           PY
