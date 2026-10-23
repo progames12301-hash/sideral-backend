@@ -145,7 +145,11 @@ else
   python3 - <<'PY'
 import datetime as dt, os
 now=dt.datetime.now(dt.timezone.utc)
-run=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
+scheduled_cycle=os.environ.get("WRF_SCHEDULED_CYCLE","")
+if scheduled_cycle in {"00","12"}:
+    run=now.replace(hour=int(scheduled_cycle), minute=0, second=0, microsecond=0)
+else:
+    run=now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
 if os.environ.get("WRF2_TOMORROW") == "1":
     run += dt.timedelta(hours=24)
 open("tarc-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\nWRF2_TOMORROW={os.environ.get('WRF2_TOMORROW','0')}\n")
@@ -155,13 +159,11 @@ PY
   gh release upload "$CHECKPOINT_TAG" tarc-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
-  export TARC_ALLOW_RESELECT_ICON=1
+  unset TARC_ALLOW_RESELECT_ICON
   export WRF_BOUNDARY_ONLY=0
   COLD_FORECAST_STARTED_AT="$(date +%s)"
   prepare_source_with_fallback 0
   echo "SIDERAL_METRIC cold_start_forecast_seconds=$(( $(date +%s) - COLD_FORECAST_STARTED_AT ))"
-  unset TARC_ALLOW_RESELECT_ICON
-
   test -s wrf_work/run/wrfinput_d01
   test -s wrf_work/run/wrfbdy_d01
   test -n "$(find wrf_work/run -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c -print -quit)"
