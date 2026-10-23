@@ -44,23 +44,48 @@ jobs:
           import datetime as dt, json, os, urllib.request
           from zoneinfo import ZoneInfo
           model=os.environ['MODEL'].lower()
-          branch=os.environ['SOURCE_BRANCH']
-          url=f"https://raw.githubusercontent.com/{os.environ['REPOSITORY']}/{branch}/metadata.json?run={os.environ['CACHE_BUSTER']}"
-          req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'Sideral-WRF2-7km'})
-          with urllib.request.urlopen(req,timeout=30) as r: meta=json.load(r)
-          if str(meta.get('model')).lower()!=model: raise SystemExit(f"Modelo fonte incorreto: {meta.get('model')}")
-          date=str(meta['runDate']).replace('-','')
-          cycle=''.join(c for c in str(meta['runCycle']) if c.isdigit()).zfill(2)[:2]
-          if len(date)!=8 or cycle not in {'00','06','12','18'}: raise SystemExit('Rodada fonte invalida')
-          if 'initTime' not in meta: raise SystemExit('initTime ausente')
-          if model == 'ecmwf':
-              stamp=dt.datetime.fromisoformat(str(meta['initTime']).replace('Z','+00:00'))
-              age=(dt.datetime.now(dt.timezone.utc)-stamp.astimezone(dt.timezone.utc)).total_seconds()/3600
-              if age > 36:
-                  raise SystemExit(f'Metadata ECMWF esta desatualizada ({age:.1f} h; rodada {date} {cycle}Z). Aguarde nova publicacao ecmwf-data.')
-          with open(os.environ['GITHUB_OUTPUT'],'a') as o:
-              o.write(f'run_date={date}\nrun_cycle={cycle}\ninit_time={meta["initTime"]}\n')
-          print(f'{model.upper()} fonte validada: {meta["initTime"]}')
+          if model == 'icon':
+              from datetime import datetime, timezone, timedelta
+              def head_ok(url):
+                  try:
+                      req=urllib.request.Request(url,method='HEAD',headers={'User-Agent':'Sideral-WRF2-7km'})
+                      with urllib.request.urlopen(req,timeout=20) as response: return response.status in (200,206)
+                  except Exception: return False
+              now=datetime.now(timezone.utc)
+              base=now.replace(hour=(now.hour//6)*6,minute=0,second=0,microsecond=0)
+              selected=None
+              for offset in range(0,49,6):
+                  run=base-timedelta(hours=offset)
+                  date,cycle=run.strftime('%Y%m%d'),run.strftime('%H')
+                  url=('https://opendata.dwd.de/weather/nwp/icon/grib/'
+                       f'{cycle}/t_2m/icon_global_icosahedral_single-level_{date}{cycle}_048_T_2M.grib2.bz2')
+                  if head_ok(url):
+                      selected=(date,cycle)
+                      break
+              if selected is None: raise SystemExit('Nenhuma rodada ICON recente com F048 disponivel')
+              date,cycle=selected
+              init_time=datetime.strptime(date+cycle,'%Y%m%d%H').replace(tzinfo=timezone.utc).isoformat().replace('+00:00','Z')
+          else:
+              branch=os.environ['SOURCE_BRANCH']
+              url=f"https://raw.githubusercontent.com/{os.environ['REPOSITORY']}/{branch}/metadata.json?run={os.environ['CACHE_BUSTER']}"
+              req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'Sideral-WRF2-7km'})
+              with urllib.request.urlopen(req,timeout=30) as response: meta=json.load(response)
+              if str(meta.get('model')).lower()!=model: raise SystemExit(f"Modelo fonte incorreto: {meta.get('model')}")
+              date=str(meta['runDate']).replace('-','')
+              cycle=''.join(c for c in str(meta['runCycle']) if c.isdigit()).zfill(2)[:2]
+              if len(date)!=8 or cycle not in {'00','06','12','18'}: raise SystemExit('Rodada fonte invalida')
+              if 'initTime' not in meta: raise SystemExit('initTime ausente')
+              init_time=str(meta['initTime'])
+              if model == 'ecmwf':
+                  stamp=dt.datetime.fromisoformat(init_time.replace('Z','+00:00'))
+                  age=(dt.datetime.now(dt.timezone.utc)-stamp.astimezone(dt.timezone.utc)).total_seconds()/3600
+                  if age > 36:
+                      raise SystemExit(f'Metadata ECMWF esta desatualizada ({age:.1f} h; rodada {date} {cycle}Z). Aguarde nova publicacao ecmwf-data.')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('run_date='+date+'\n')
+              output.write('run_cycle='+cycle+'\n')
+              output.write('init_time='+init_time+'\n')
+          print(f'{model.upper()} fonte validada: {init_time}')
           PY
 
   segments:
