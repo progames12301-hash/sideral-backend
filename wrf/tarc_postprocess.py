@@ -121,11 +121,11 @@ def main():
 
     manifest = out / "metadata.json"
     manifest.write_text(json.dumps({
-        "model": "WRF TARC 3 KM",
-        "resolutionKm": 3,
+        "model": "WRF SIDERAL 4 KM SUDESTE",
+        "resolutionKm": 4,
         "nativeReflectivity": "REFL_10CM",
         "projection": "WRF Lambert",
-        "domain": {"e_we": 361, "e_sn": 445, "approxLon": [-59.0, -48.0], "approxLat": [-34.0, -22.0]},
+        "domain": {"e_we": 337, "e_sn": 501, "approxLon": [-52.95, -38.05], "approxLat": [-31.75, -13.17]},
         "frames": index,
         "products": {
             "reflectivity_native_dbz": "native REFL_10CM, lowest model level",
