@@ -1,9 +1,7 @@
-name: SDC SC Chapecó PPI Z
+name: SDC SC Chapecó PPI Z (DESATIVADO)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/10 * * * *"
 
 permissions:
   contents: write
@@ -14,6 +12,7 @@ concurrency:
 
 jobs:
   ppi-z:
+    if: false
     name: Baixar PPI Z real de Chapecó
     runs-on: ubuntu-22.04
     timeout-minutes: 25
