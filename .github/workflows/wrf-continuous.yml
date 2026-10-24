@@ -1,13 +1,6 @@
 name: Previsões contínuas — próximo dia
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/wrf-continuous.yml
-      - .github/workflows/wrf-4km-next-day-auto.yml
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_run:
     workflows:
       - "GFS Global — dados para Modelos"
