@@ -1,5 +1,6 @@
-name: REDEMET Radar Scope
+name: REDEMET Radar Scope (DESATIVADO)
 
+# Desativado: processamento Radar Scope era experimental.
 on:
   workflow_dispatch:
     inputs:
@@ -29,8 +30,6 @@ on:
         required: false
         default: "7"
         type: string
-  schedule:
-    - cron: "*/10 * * * *"
 
 permissions:
   contents: write
@@ -44,6 +43,7 @@ env:
 
 jobs:
   build-and-publish:
+    if: false  # Desativado: workflow de radar experimental, sem alocar runner.
     name: Gerar gates polares REDEMET
     runs-on: ubuntu-22.04
     timeout-minutes: 20
