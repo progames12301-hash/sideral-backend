@@ -15,6 +15,7 @@ env:
 
 jobs:
   render:
+    if: false  # Desativado: retry de teste NEMS10.
     if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-latest
     timeout-minutes: 120
