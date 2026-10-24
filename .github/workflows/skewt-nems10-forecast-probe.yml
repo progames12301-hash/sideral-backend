@@ -7,6 +7,7 @@ permissions:
 
 jobs:
   probe:
+    if: false  # Desativado: teste de sondagem não operacional.
     if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-latest
     timeout-minutes: 5
