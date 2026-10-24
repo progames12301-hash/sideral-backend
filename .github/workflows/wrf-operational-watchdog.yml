@@ -2,24 +2,6 @@ name: Sideral WRF operational watchdog
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 5 * * *'
-    - cron: '45 */3 * * *'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/wrf-operational-watchdog.yml'
-      - '.github/workflows/wrf-regional-7km-single.yml'
-      - '.github/workflows/wrf-brasil-12km.yml'
-      - '.github/workflows/cim-wrf-3km-operational.yml'
-      - '.github/workflows/wrf-4km-next-day-auto.yml'
-      - '.github/workflows/wrf-icon-4km-native.yml'
-      - '.github/workflows/wrf-ecmwf-4km-native.yml'
-      - '.github/workflows/wrf-sudeste-gfs-4km.yml'
-      - '.github/workflows/wrf-sudeste-icon-4km.yml'
-      - '.github/workflows/wrf-sudeste-ecmwf-4km.yml'
-      - '.github/workflows/metbr-wrf-4km.yml'
-
 permissions:
   contents: read
   actions: write
@@ -30,6 +12,7 @@ concurrency:
 
 jobs:
   verify-and-recover:
+    if: false  # Desativado para reduzir runners auxiliares.
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
