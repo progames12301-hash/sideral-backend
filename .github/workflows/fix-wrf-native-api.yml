@@ -3,16 +3,12 @@ name: WRF - corrigir API para REFL nativo
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/fix-wrf-native-api.yml"
-
 permissions:
   contents: write
 
 jobs:
   patch-server:
+    if: false  # Desativado: correção de migração antiga.
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
