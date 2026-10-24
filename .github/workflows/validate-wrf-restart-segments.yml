@@ -2,15 +2,9 @@ name: Validar WRF Restart Segmentos
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/validate-wrf-restart-segments.yml'
-      - '.github/workflows/metbr-wrf-4km.yml'
-      - 'wrf/**'
-
 jobs:
   validate:
+    if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
