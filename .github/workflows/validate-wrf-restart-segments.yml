@@ -5,6 +5,7 @@ on:
 jobs:
   validate:
     if: false  # Desativado para reduzir carga de runners.
+    if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
