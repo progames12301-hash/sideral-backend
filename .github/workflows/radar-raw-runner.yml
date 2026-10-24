@@ -1,4 +1,4 @@
-name: SIDERAL RADAR - RAW DATA RUNNER (DESATIVADO)
+name: SIDERAL RADAR - RAW DATA RUNNER (DESATIVADO) (DESATIVADO)
 
 # Desativado porque a coleta de radar era apenas teste.
 on:
@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   collect-raw-radar:
+    if: false
     if: false  # Desativado: workflow de radar experimental, sem alocar runner.
     name: Baixar dados brutos de radar
     runs-on: ubuntu-latest
