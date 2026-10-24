@@ -17,7 +17,6 @@ concurrency:
 jobs:
   build-and-publish:
     if: false
-    if: false  # Desativado: workflow de radar experimental, sem alocar runner.
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
