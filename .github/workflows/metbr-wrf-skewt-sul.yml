@@ -1,24 +1,7 @@
 name: METBR WRF 4 KM — Skew-T Sul
 
 on:
-  workflow_run:
-    workflows: ["METBR WRF 4 KM - ICON"]
-    types: [completed]
   workflow_dispatch:
-    inputs:
-      metbr_run_id:
-        description: "ID de uma execução METBR concluída; vazio usa a última execução bem-sucedida"
-        required: false
-        type: string
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/metbr-wrf-skewt-sul.yml'
-      - 'wrf/metbr_skewt_south.py'
-      - 'tools/skewt/metbr_native_spc_render.py'
-      - 'skewt.html'
-      - 'skewt-capitais.html'
-
 permissions:
   contents: write
   actions: read
@@ -29,7 +12,7 @@ concurrency:
 
 jobs:
   validate-source:
-    if: github.event_name == 'push'
+    if: false  # Desativado para reduzir carga de runners.
     name: Validate METBR Skew-T pipeline and interface
     runs-on: ubuntu-22.04
     steps:
@@ -65,7 +48,7 @@ jobs:
           node --check /tmp/skewt-capitais.js
           echo "Preflight METBR Skew-T concluído."
   publish:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    if: false  # Desativado para reduzir carga de runners.
     name: Extract native METBR columns and publish Southern Skew-Ts
     runs-on: ubuntu-22.04
     timeout-minutes: 120
