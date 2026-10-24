@@ -1,17 +1,13 @@
 name: Sideral — Diagnóstico meteoblue Forecast API NEMS10
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/skewt-nems10-forecast-probe.yml'
   workflow_dispatch:
-
 permissions:
   contents: read
 
 jobs:
   probe:
+    if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
