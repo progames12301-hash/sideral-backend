@@ -2,24 +2,12 @@ name: Validar WRF Sudeste
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/validate-wrf-sudeste.yml"
-      - ".github/workflows/wrf-regional-7km-single.yml"
-      - ".github/workflows/wrf-sudeste-gfs-4km.yml"
-      - ".github/workflows/wrf-sudeste-icon-4km.yml"
-      - ".github/workflows/wrf-sudeste-ecmwf-4km.yml"
-      - ".github/workflows/wrf2-sudeste-7km-reusable.yml"
-      - ".github/workflows/wrf2-sudeste-gfs-7km.yml"
-      - ".github/workflows/wrf2-sudeste-icon-7km.yml"
-      - ".github/workflows/wrf2-sudeste-ecmwf-7km.yml"
-
 permissions:
   contents: read
 
 jobs:
   validate:
+    if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
