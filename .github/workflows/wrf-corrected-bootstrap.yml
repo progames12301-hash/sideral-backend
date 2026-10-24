@@ -2,7 +2,6 @@ name: WRF - validar e iniciar rodadas corrigidas
 
 on:
   workflow_dispatch:
-
 permissions:
   actions: write
   contents: read
@@ -13,6 +12,7 @@ concurrency:
 
 jobs:
   dispatch:
+    if: false  # Desativado: bootstrap inicial já não é necessário na operação normal.
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
