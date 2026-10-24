@@ -1,11 +1,7 @@
 name: METBR WRF cycle watchdog
 
 on:
-  # Retry five minutes after each synoptic launch in case GitHub skipped the cron.
-  schedule:
-    - cron: '5 0,6,12,18 * * *'
   workflow_dispatch:
-
 permissions:
   actions: write
   contents: read
@@ -17,6 +13,7 @@ concurrency:
 
 jobs:
   ensure-synoptic-cycle:
+    if: false  # Desativado: watchdog auxiliar do ciclo METBR.
     name: Garantir execução METBR 00/06/12/18Z
     runs-on: ubuntu-22.04
     timeout-minutes: 5
