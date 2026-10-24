@@ -19,7 +19,6 @@ permissions:
 jobs:
   collect-raw-radar:
     if: false
-    if: false  # Desativado: workflow de radar experimental, sem alocar runner.
     name: Baixar dados brutos de radar
     runs-on: ubuntu-latest
     timeout-minutes: 30
