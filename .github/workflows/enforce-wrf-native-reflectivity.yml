@@ -2,16 +2,6 @@ name: WRF - enforce native reflectivity
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "tools/enforce_wrf_native_reflectivity.py"
-      - ".github/workflows/enforce-wrf-native-reflectivity.yml"
-      - "server.py"
-      - "server_legacy.py"
-  schedule:
-    - cron: "17 2 * * *"
-
 permissions:
   contents: write
 
@@ -21,6 +11,7 @@ concurrency:
 
 jobs:
   enforce:
+    if: false  # Desativado: manutenção automática não operacional.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
