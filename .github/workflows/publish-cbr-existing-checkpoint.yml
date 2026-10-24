@@ -1,12 +1,7 @@
 name: Publicar JSON do checkpoint CBR existente
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/publish-cbr-existing-checkpoint.yml"
   workflow_dispatch:
-
 permissions:
   contents: write
 
@@ -16,6 +11,7 @@ concurrency:
 
 jobs:
   publish:
+    if: false  # Desativado para reduzir carga de runners.
     name: Recuperar saída existente e publicar JSON CBR
     runs-on: ubuntu-22.04
     timeout-minutes: 60
