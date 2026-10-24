@@ -9,8 +9,6 @@ on:
       - 'wrf/sideral_wrf_5km_2_sudeste_variable_catalog.json'
   repository_dispatch:
     types: [sideral-wrf-5km-sudeste-2-checkpoint-published]
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       run_id:
