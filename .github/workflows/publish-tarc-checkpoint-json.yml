@@ -9,8 +9,6 @@ on:
       - 'wrf/tarc_variable_catalog.json'
   repository_dispatch:
     types: [tarc-checkpoint-published]
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       run_id:
