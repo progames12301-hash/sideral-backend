@@ -1,4 +1,4 @@
-name: METBR WRF 4 km — gerar boletins
+name: METBR WRF 4 km — gerar boletins (DESATIVADO)
 # Republish trigger: renderer fix for blank reflectivity frames after F000.
 # Verify incremental variable batches and immediate branch publication.
 
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   render-and-publish:
+    if: false  # Desativado: o site renderiza os boletins; não gerar imagens duplicadas.
     if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     timeout-minutes: 90
