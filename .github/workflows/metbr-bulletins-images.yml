@@ -3,22 +3,7 @@ name: METBR WRF 4 km — gerar boletins
 # Verify incremental variable batches and immediate branch publication.
 
 on:
-  push:
-    branches: [main, metbr-json-data]
-    paths:
-      - '.github/workflows/metbr-bulletins-images.yml'
-      - 'wrf/render_metbr_bulletins.py'
-      - 'wrf/render_metbr_animations.py'
-      - 'metadata.json'
-      - 'grid.json'
-      - 'frames/**'
-  repository_dispatch:
-    types: [metbr-json-published]
-  # A periodic publisher retries when the JSON/checkpoint becomes available after a partial run.
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
-
 permissions:
   contents: write
   actions: read
@@ -30,7 +15,7 @@ concurrency:
 
 jobs:
   render-and-publish:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
