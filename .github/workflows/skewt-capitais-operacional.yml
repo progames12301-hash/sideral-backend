@@ -7,7 +7,6 @@ on:
       - 'tools/skewt/native_spc_render.py'
       - 'tools/skewt/generate_sharppy_product.py'
       - 'tools/skewt/generate_capitals_sharppy.py'
-      - '.github/workflows/skewt-capitais-operacional.yml'
   schedule:
     # GitHub cron é UTC. Executa uma vez por dia, usando o ciclo ECMWF 18Z.
     - cron: '45 1 * * *'  # 18Z

@@ -7,7 +7,6 @@ on:
       - 'tools/skewt/generate_multimodel_capitals.py'
       - 'tools/skewt/generate_capitals_sharppy.py'
       - 'tools/skewt/native_spc_render.py'
-      - '.github/workflows/skewt-multimodel-operacional.yml'
   schedule:
     - cron: '55 1 * * *'  # ciclo 18Z
   workflow_dispatch:
