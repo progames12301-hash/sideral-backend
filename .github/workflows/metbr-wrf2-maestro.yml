@@ -11,9 +11,9 @@ on:
     workflows:
       - "METBR WRF2 4 KM - ICON válido amanhã"
     types: [completed]
-  # Retry partial JSON publication every 30 minutes, including long-running cycles.
+  # Daily fallback for partial JSON publication; successful WRF2 completions still publish immediately.
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 22 * * *'
   workflow_dispatch:
     inputs:
       run_id:

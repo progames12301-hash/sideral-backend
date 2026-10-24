@@ -3,7 +3,7 @@ name: WRF run archive catalog
 on:
   workflow_dispatch:
   schedule:
-    - cron: '23 * * * *'
+    - cron: '23 22 * * *'
   push:
     branches: [main]
     paths:

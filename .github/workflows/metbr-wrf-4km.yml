@@ -2,16 +2,14 @@ name: METBR WRF 4 KM - ICON
 
 on:
   workflow_dispatch:
-  # Operational ICON cycles in UTC: 00Z, 06Z, 12Z and 18Z.
+  # Uma única execução programada por dia, após a janela de publicação do ICON.
   schedule:
-    - cron: '0 0,6,12,18 * * *'
+    - cron: '0 6 * * *'
 
 permissions:
   contents: write
 
-# Every scheduled synoptic cycle receives its own group. This allows the
-# 00/06/12/18Z jobs to start even when a previous long WRF run is still active.
-# The checkpoint/release names include github.run_id to keep concurrent runs isolated.
+# One scheduled METBR run per day. Separate run IDs keep manual runs isolated.
 concurrency:
   group: metbr-wrf-4km-icon-${{ github.run_id }}
   cancel-in-progress: false

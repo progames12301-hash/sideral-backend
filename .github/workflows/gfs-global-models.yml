@@ -8,7 +8,7 @@ on:
       - "backend/models/publish_remote.py"
       - ".github/workflows/gfs-global-models.yml"
   schedule:
-    - cron: "35 4,10,16,22 * * *"
+    - cron: "35 22 * * *"
 
 permissions:
   contents: write

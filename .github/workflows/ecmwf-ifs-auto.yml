@@ -9,7 +9,6 @@ on:
       - ".github/workflows/ecmwf-ifs-auto.yml"
       - "wrf/ecmwf_ifs_runner.py"
   schedule:
-    - cron: '10 10 * * *'
     - cron: '10 22 * * *'
 
 permissions:

@@ -3,7 +3,6 @@ name: WRF SIDERAL 4 KM Sudeste — ICON
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 4 * * *'
     - cron: '0 16 * * *'
 
 permissions:

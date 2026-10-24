@@ -1,4 +1,4 @@
-name: METBR Maestro - publicador de JSON a cada 30 min
+name: METBR Maestro - publicador de JSON diário
 
 on:
   push:
@@ -11,9 +11,9 @@ on:
     workflows:
       - "METBR WRF 4 KM - ICON"
     types: [completed]
-  # Retry partial JSON publication every 30 minutes, including long-running cycles.
+  # Daily fallback for partial JSON publication; successful WRF completions still publish immediately.
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 22 * * *'
   workflow_dispatch:
     inputs:
       run_id:

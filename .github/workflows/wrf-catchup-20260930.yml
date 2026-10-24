@@ -9,7 +9,6 @@ permissions:
 jobs:
   dispatch-wrf:
     if: false  # Desativado: catch-up de setembro de 2026 expirado.
-    if: false  # Desativado: não alocar runner para este fluxo obsoleto.
     runs-on: ubuntu-22.04
     steps:
       - name: Iniciar todas as rodadas WRF do catch-up
