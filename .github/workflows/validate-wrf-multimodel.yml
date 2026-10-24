@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 jobs:
   validate:
+    if: false  # Desativado: validação manual da fila não operacional.
     if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     steps:
