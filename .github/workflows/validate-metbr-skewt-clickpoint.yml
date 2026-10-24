@@ -7,7 +7,6 @@ permissions:
 
 jobs:
   syntax:
-    if: false  # Desativado: validação técnica não operacional.
     if: false  # Desativado para reduzir carga de runners.
     name: Validate backend Python syntax
     runs-on: ubuntu-22.04
