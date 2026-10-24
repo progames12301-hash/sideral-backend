@@ -2,9 +2,6 @@ name: WRF - watchdog Sul ECMWF e Sudeste
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/10 * * * *"
-
 permissions:
   actions: write
   contents: read
@@ -15,6 +12,7 @@ concurrency:
 
 jobs:
   ensure-correct-products:
+    if: false  # Desativado: watchdog recorrente não operacional.
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
