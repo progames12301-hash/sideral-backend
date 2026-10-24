@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   disabled:
+    if: false  # Desativado: não alocar runner para este fluxo obsoleto.
     runs-on: ubuntu-22.04
     steps:
       - run: echo "Publicador antigo desativado; use METBR WRF 4 KM - JSON temporário."
