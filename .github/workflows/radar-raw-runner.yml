@@ -1,5 +1,6 @@
-name: SIDERAL RADAR - RAW DATA RUNNER
+name: SIDERAL RADAR - RAW DATA RUNNER (DESATIVADO)
 
+# Desativado porque a coleta de radar era apenas teste.
 on:
   workflow_dispatch:
     inputs:
@@ -7,8 +8,6 @@ on:
         description: "Quantidade de arquivos mais recentes por fonte"
         required: false
         default: "2"
-  schedule:
-    - cron: "*/15 * * * *"
 
 concurrency:
   group: sideral-radar-raw
@@ -19,6 +18,7 @@ permissions:
 
 jobs:
   collect-raw-radar:
+    if: false  # Desativado: workflow de radar experimental, sem alocar runner.
     name: Baixar dados brutos de radar
     runs-on: ubuntu-latest
     timeout-minutes: 30
