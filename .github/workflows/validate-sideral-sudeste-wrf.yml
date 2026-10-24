@@ -1,21 +1,13 @@
 name: Validate Sideral Sudeste WRF pipelines
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/wrf-sideral-*.yml'
-      - '.github/workflows/publish-sideral-*.yml'
-      - '.github/workflows/validate-sideral-sudeste-wrf.yml'
-      - 'wrf/publish_sideral_checkpoint_json.py'
-      - 'wrf/sideral_*_variable_catalog.json'
   workflow_dispatch:
-
 permissions:
   contents: read
 
 jobs:
   validate:
+    if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
