@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   ppi-z:
+    if: false
     name: Extrair PPI Z volumétrico CPTEC
     runs-on: ubuntu-22.04
     timeout-minutes: 15
