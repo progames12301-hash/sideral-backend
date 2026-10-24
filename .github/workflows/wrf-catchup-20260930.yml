@@ -1,15 +1,14 @@
 name: WRF Catch-up — rodada 2026-09-30
 
 on:
-  # O cron único de 30/09/2026 foi removido; o catch-up expirou.
   workflow_dispatch:
-
 permissions:
   actions: write
   contents: read
 
 jobs:
   dispatch-wrf:
+    if: false  # Desativado: catch-up de setembro de 2026 expirado.
     if: false  # Desativado: não alocar runner para este fluxo obsoleto.
     runs-on: ubuntu-22.04
     steps:
