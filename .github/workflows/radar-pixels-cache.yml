@@ -1,12 +1,8 @@
-name: Cache de pixels do radar REDEMET
+name: Cache de pixels do radar REDEMET (DESATIVADO)
 
-# O cache é publicado em um ramo separado para não alterar WRF ou os modelos.
+# Desativado: este cache de radar foi criado apenas para testes. Sem schedule, push trigger ou job ativo.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "*/10 * * * *"
 
 permissions:
   contents: write
@@ -20,6 +16,7 @@ concurrency:
 
 jobs:
   build-and-publish:
+    if: false  # Desativado: workflow de radar experimental, sem alocar runner.
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
