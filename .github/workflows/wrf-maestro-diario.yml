@@ -2,10 +2,6 @@ name: WRF Maestro - garantia diaria
 
 on:
   workflow_dispatch:
-  schedule:
-    # 08:20 UTC = 05:20 BRT. Atua como fiscal/fallback depois das janelas normais.
-    - cron: '20 8 * * *'
-
 permissions:
   contents: read
   actions: write
@@ -19,6 +15,7 @@ env:
 
 jobs:
   maestro:
+    if: false  # Desativado: despachante auxiliar, os WRF mantêm seus próprios agendamentos.
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
