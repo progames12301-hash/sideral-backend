@@ -2,11 +2,6 @@ name: WRF Sudeste GFS - DISPARADOR DE SEGURANCA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wrf-sudeste-gfs-scheduler-fix.yml"
-
 permissions:
   actions: write
   contents: read
@@ -17,6 +12,7 @@ concurrency:
 
 jobs:
   dispatch:
+    if: false  # Desativado: correção antiga do agendador.
     runs-on: ubuntu-22.04
     steps:
       - name: Disparar WRF Sudeste GFS como workflow_dispatch
