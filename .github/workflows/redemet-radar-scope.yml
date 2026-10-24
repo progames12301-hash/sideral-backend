@@ -1,4 +1,4 @@
-name: REDEMET Radar Scope (DESATIVADO)
+name: REDEMET Radar Scope (DESATIVADO) (DESATIVADO)
 
 # Desativado: processamento Radar Scope era experimental.
 on:
@@ -43,6 +43,7 @@ env:
 
 jobs:
   build-and-publish:
+    if: false
     if: false  # Desativado: workflow de radar experimental, sem alocar runner.
     name: Gerar gates polares REDEMET
     runs-on: ubuntu-22.04
