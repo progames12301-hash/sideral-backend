@@ -2,13 +2,9 @@ name: VALIDAR WRF MULTI-MODELO
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/validate-wrf-multimodel.yml"
-
 jobs:
   validate:
+    if: false  # Desativado para reduzir carga de runners.
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout wrf-runner
