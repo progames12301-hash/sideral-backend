@@ -49,6 +49,18 @@ class Handler(legacy.Handler):
                 'provider': 'METBR',
                 'error': 'METBR movido para a publicação JSON temporária; use a branch metbr-json-data.'
             })
+        if p.path.startswith('/api/radar/v3/'):
+            try:
+                from backend.radar_v3.integration import dispatch as radar_v3_dispatch
+                return radar_v3_dispatch(self)
+            except Exception as exc:
+                import logging
+                logging.exception('[BRASIL-SCOPE-V3] falha ao encaminhar a API')
+                return send_json(self, 503, {
+                    'status': False,
+                    'error': 'API do Super Res V3 indisponível no backend.',
+                    'details': type(exc).__name__,
+                })
         if p.path == '/api/redemet/radar':
             return self._redemet_radar(parse_qs(p.query))
         if p.path == '/api/redemet/image':
