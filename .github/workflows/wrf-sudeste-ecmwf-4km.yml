@@ -2,6 +2,9 @@ name: WRF 7 km SUDESTE ECMWF - AUTOMATICO DIARIO
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/wrf-sudeste-ecmwf-4km.yml'
   schedule:
     - cron: '8 7 * * *'
   workflow_run:
@@ -13,7 +16,7 @@ permissions:
 
 concurrency:
   group: sideral-wrf-sudeste-ecmwf-7km
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   wrf:
