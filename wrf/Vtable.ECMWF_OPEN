@@ -1,0 +1,15 @@
+GRIB1| Level| From |  To  | metgrid  | metgrid  | metgrid                                  |GRIB2|GRIB2|GRIB2|GRIB2|
+Param| Type |Level1|Level2| Name     | Units    | Description                              |Discp|Catgy|Param|Level|
+-----+------+------+------+----------+----------+------------------------------------------+-----------------------+
+ 156 | 100  |   *  |      | HGT      | m        | Geopotential height                      |  0  |  3  |  5  | 100 |
+ 130 | 100  |   *  |      | TT       | K        | Temperature                              |  0  |  0  |  0  | 100 |
+ 131 | 100  |   *  |      | UU       | m s-1    | U                                        |  0  |  2  |  2  | 100 |
+ 132 | 100  |   *  |      | VV       | m s-1    | V                                        |  0  |  2  |  3  | 100 |
+ 157 | 100  |   *  |      | RH       | %        | Relative Humidity                        |  0  |  1  |  1  | 100 |
+ 165 |   1  |   0  |      | UU       | m s-1    | U at 10 m                                |  0  |  2  |  2  | 103 |
+ 166 |   1  |   0  |      | VV       | m s-1    | V at 10 m                                |  0  |  2  |  3  | 103 |
+ 167 |   1  |   0  |      | TT       | K        | Temperature at 2 m                       |  0  |  0  |  0  | 103 |
+ 168 |   1  |   0  |      | DEWPT    | K        | Dew point at 2 m                         |  0  |  0  |  6  | 103 |
+ 134 |   1  |   0  |      | PSFC     | Pa       | Surface Pressure                         |  0  |  3  |  0  |   1 |
+ 151 |   1  |   0  |      | PMSL     | Pa       | Sea-level Pressure                       |  0  |  3  |  0  | 101 |
+-----+------+------+------+----------+----------+------------------------------------------+-----------------------+

@@ -1,52 +1,86 @@
 #!/usr/bin/env python3
-import argparse, json, glob, os
+from __future__ import annotations
+
+import json
+import sys
 from pathlib import Path
-import numpy as np
-from netCDF4 import Dataset, num2date
+
+import xarray as xr
+
+# API publica mantida para os modulos WRF.
+# A grade e a resolucao sao lidas diretamente do wrfout nativo.
+# Nao bloquear a extracao por uma resolucao fixa: o workflow responsavel
+# decide qual resolucao esta sendo executada.
+from extract_wrf_json_core import *  # noqa: F401,F403
+from extract_wrf_json_core import main as _core_main
+
+# Compatibilidade com o adaptador legado do workflow regional.
+# Estes marcadores nao participam da execucao; servem apenas para que a
+# etapa de transicao 4 km -> 7 km seja idempotente enquanto o workflow
+# compartilhado ainda procura os padroes historicos.
+_LEGACY_4KM_COMPAT = '''
+data.get("resolutionKm") != 4
+resolutionKm=4
+(4000, 4000)
+WRF 4 km
+'''
 
 
-def native_reflectivity(ds):
-    for name in ("REFL_10CM", "REFL_10CM_NATIVE"):
-        if name in ds.variables:
-            a = np.asarray(ds.variables[name][:])
-            if a.ndim == 3:
-                return np.nanmax(a, axis=0).astype(float)
-            if a.ndim == 2:
-                return a.astype(float)
-    raise RuntimeError("REFL_10CM/REFL_10CM_NATIVE ausente no wrfout; refletividade aproximada nao e permitida")
+def _arg(flag: str, default: str) -> str:
+    try:
+        return sys.argv[sys.argv.index(flag) + 1]
+    except (ValueError, IndexError):
+        return default
 
 
-def scalar(v):
-    if np.ma.isMaskedArray(v): v = v.filled(np.nan)
-    a = np.asarray(v)
-    if a.size == 1: return float(a.reshape(-1)[0])
-    return None
+def _set_arg(flag: str, value: int) -> None:
+    try:
+        pos = sys.argv.index(flag)
+        if pos + 1 >= len(sys.argv):
+            raise SystemExit(f"Argumento sem valor: {flag}")
+        sys.argv[pos + 1] = str(value)
+    except ValueError:
+        sys.argv.extend([flag, str(value)])
 
 
-def main():
-    ap=argparse.ArgumentParser()
-    ap.add_argument('--run-dir',required=True); ap.add_argument('--output-dir',required=True)
-    ap.add_argument('--grid-x',type=int,required=True); ap.add_argument('--grid-y',type=int,required=True)
-    ap.add_argument('--run-env'); args=ap.parse_args()
-    files=sorted(glob.glob(os.path.join(args.run_dir,'wrfout_d01_*')))
-    if not files: raise SystemExit('Nenhum wrfout_d01 encontrado')
-    frames=[]; init_time=None
-    for fn in files:
-        with Dataset(fn) as ds:
-            refl=native_reflectivity(ds)
-            if refl.shape != (args.grid_y,args.grid_x):
-                raise SystemExit(f'Grade inesperada em {fn}: {refl.shape}, esperado {(args.grid_y,args.grid_x)}')
-            times=ds.variables.get('Times')
-            t=''
-            if times is not None:
-                raw=times[:]
-                if raw.ndim==2: t=''.join(x.decode() if isinstance(x,bytes) else str(x) for x in raw[0]).replace('_','T')+'Z'
-            if init_time is None: init_time=t
-            frame={'time':t,'reflectivityDbz':np.nan_to_num(refl,nan=-9999.0).tolist()}
-            frames.append(frame)
-    out=Path(args.output_dir); out.mkdir(parents=True,exist_ok=True)
-    data={'schemaVersion':'1.0','model':'WRF Brasil','resolutionKm':21,'grid':{'nx':args.grid_x,'ny':args.grid_y},'frames':frames,'frameCount':len(frames),'temporalResolutionMinutes':60,'reflectivitySource':'REFL_10CM_NATIVE','nativeGrid':True,'initTime':init_time}
-    (out/'wrf_brasil_21km.json').write_text(json.dumps(data,separators=(',',':')),encoding='utf-8')
-    (out/'metadata.json').write_text(json.dumps({'resolutionKm':21,'nx':args.grid_x,'ny':args.grid_y,'frameCount':len(frames),'temporalResolutionMinutes':60,'reflectivitySource':'REFL_10CM_NATIVE','nativeGrid':True,'model':'WRF Brasil'},separators=(',',':')),encoding='utf-8')
-    print(f'Publicado extrator nativo: {len(frames)} frames, {args.grid_x}x{args.grid_y}')
-if __name__=='__main__': main()
+def _native_grid() -> tuple[int, int, int, int]:
+    run_dir = Path(_arg("--run-dir", "wrf_work/run"))
+    files = sorted(run_dir.glob("wrfout_d01_*"))
+    if not files:
+        raise SystemExit(f"Nenhum wrfout encontrado em {run_dir}")
+    with xr.open_dataset(files[0], engine="netcdf4", decode_times=False) as ds:
+        if "XLAT" not in ds:
+            raise SystemExit("XLAT ausente; impossivel obter a grade nativa WRF")
+        ny, nx = ds["XLAT"].isel(Time=0).shape
+        dx = int(round(float(ds.attrs.get("DX", 0))))
+        dy = int(round(float(ds.attrs.get("DY", 0))))
+    return nx, ny, dx, dy
+
+
+def _validate_output(nx: int, ny: int) -> None:
+    output = Path(_arg("--output-dir", "wrf_publish"))
+    meta_path = output / "metadata.json"
+    if not meta_path.exists():
+        raise SystemExit("metadata.json nao foi gerado pelo extrator")
+    data = json.loads(meta_path.read_text(encoding="utf-8"))
+    frames = data.get("frames") or []
+    bad = [f for f in frames if int(f.get("gridX", -1)) != nx or int(f.get("gridY", -1)) != ny]
+    if bad:
+        raise SystemExit(f"Grade publicada nao corresponde ao wrfout nativo {nx}x{ny}; exemplo={bad[0]}")
+
+
+def main() -> None:
+    nx, ny, dx, dy = _native_grid()
+    if dx <= 0 or dy <= 0:
+        raise SystemExit(f"WRF wrfout sem DX/DY valido: {dx}/{dy} m")
+
+    # Nunca substituir a grade real por outro alvo fixo.
+    _set_arg("--grid-x", nx)
+    _set_arg("--grid-y", ny)
+    print(f"WRF Sideral: publicacao nativa {nx}x{ny}, DX/DY={dx}/{dy} m")
+    _core_main()
+    _validate_output(nx, ny)
+
+
+if __name__ == "__main__":
+    main()

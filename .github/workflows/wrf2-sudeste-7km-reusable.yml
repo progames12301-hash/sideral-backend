@@ -126,7 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: wrf-runner
+          ref: handoff-wrf-sudeste-7km-20261026
           fetch-depth: 1
       - name: Preparar runner
         run: |
@@ -268,7 +268,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: wrf-runner
+          ref: handoff-wrf-sudeste-7km-20261026
           fetch-depth: 1
       - uses: actions/download-artifact@v4
         with:

@@ -1,28 +1,32 @@
-# Sideral Meteorologia — backend e modelos
+# Pacote de entrega — WRF SIDERAL Sudeste 7 km + WRF2 Sudeste 7 km
 
-Este repositório reúne parte da infraestrutura meteorológica usada pela **Sideral Meteorologia**. Aqui ficam serviços de dados, rotinas de processamento e os pipelines que alimentam produtos como previsões regionais e campos derivados.
+Este ZIP foi separado para entregar apenas os sistemas antigos de 7 km do Sudeste:
+- WRF Sudeste 7 km: GFS, ICON e ECMWF, publicação horária até F040.
+- WRF2 Sudeste 7 km: GFS, ICON e ECMWF, diagnósticos severos até F048.
 
-## Sobre o nosso WRF
+Não inclui os WRF SIDERAL 4 km/5 km, METBR, CIM, CBR, TARC nem outros modelos do repositório.
 
-O WRF da Sideral **não é uma imagem inventada, um filtro sobre outro mapa ou uma simples ampliação do GFS**. Nós executamos o WRF-ARW como modelo regional, usando dados de modelos globais como condição inicial e de contorno. O modelo recebe esses campos, a descrição geográfica do domínio e integra a atmosfera em uma grade regional de aproximadamente 4 km.
+## Atenção aos nomes antigos
+Os workflows `wrf-sudeste-gfs-4km.yml`, `wrf-sudeste-icon-4km.yml` e `wrf-sudeste-ecmwf-4km.yml` têm nomes históricos enganosos: o conteúdo declara 7 km / 7000 m. Eles pertencem a este pacote de 7 km, não aos modelos novos de 4 km.
 
-De forma resumida, o processo é:
+## Workflows incluídos
+- `.github/workflows/wrf-sudeste-gfs-4km.yml`
+- `.github/workflows/wrf-sudeste-icon-4km.yml`
+- `.github/workflows/wrf-sudeste-ecmwf-4km.yml`
+- `.github/workflows/wrf-regional-7km-single.yml` (runner reutilizável do WRF principal)
+- `.github/workflows/wrf2-sudeste-gfs-7km.yml`
+- `.github/workflows/wrf2-sudeste-icon-7km.yml`
+- `.github/workflows/wrf2-sudeste-ecmwf-7km.yml`
+- `.github/workflows/wrf2-sudeste-7km-reusable.yml` (runner reutilizável do WRF2)
 
-1. uma rodada global disponível é selecionada como entrada;
-2. os campos atmosféricos são preparados para o domínio regional;
-3. o WPS monta a grade e interpola os dados necessários;
-4. `real.exe` prepara as condições do WRF;
-5. `wrf.exe` executa a integração numérica;
-6. os arquivos `wrfout` resultantes são pós-processados para formatos mais leves usados no site.
+## Branches de publicação
+WRF principal: `wrf-sudeste-gfs-data`, `wrf-sudeste-icon-data`, `wrf-sudeste-ecmwf-data`.
+WRF2: `wrf2-gfs-data`, `wrf2-icon-data`, `wrf2-ecmwf-data`.
 
-Na refletividade, quando o produto é identificado como **REFL_10CM nativo**, o valor vem do diagnóstico de refletividade produzido pelo próprio WRF. Ele não é uma imagem de radar observada e não deve ser interpretado como se fosse uma medição em tempo real.
+## Para encerrar a operação
+Para parar a geração automática no repositório operacional, desabilite ou remova os seis workflows de entrada (três WRF 7 km e três WRF2 7 km). Os dois workflows reutilizáveis não têm agenda própria: são chamados pelos workflows de entrada. Este pacote é apenas uma cópia de entrega; nada foi desativado nem excluído do branch principal.
 
-A resolução de **4 km** significa espaçamento de grade. Isso não significa precisão de 4 km para a posição de cada tempestade: convecção é altamente sensível às condições iniciais e pequenos erros crescem rapidamente com o tempo de previsão.
+## Dependências externas
+Os workflows ainda esperam os branches de dados globais (`gfs-model-data`, `icon-data`, `ecmwf-data`), GitHub Actions com permissão de escrita e a imagem Docker `dtcenter/wps_wrf:latest`. Os segredos são herdados dos workflows originais; não há credenciais incluídas neste pacote.
 
-As rodadas passam por validações automáticas de ciclo, horários, quantidade de quadros e metadados antes da publicação. Os arquivos completos do modelo são grandes e temporários; para o site, somente produtos processados e metadados necessários são mantidos.
-
-Para uma explicação mais completa, mas sem expor detalhes operacionais desnecessários, veja [COMO-FUNCIONA-WRF.md](COMO-FUNCIONA-WRF.md).
-
-## Transparência
-
-A Sideral é um projeto independente e em desenvolvimento contínuo. Os produtos numéricos são experimentais e devem ser usados junto de dados observacionais, radares, satélites e fontes meteorológicas oficiais. Quando uma rodada falha ou fica incompleta, preferimos indicar a indisponibilidade a apresentar dados como se fossem uma execução válida.
+Os workflows reutilizáveis foram adaptados nesta cópia para buscar os scripts deste branch: `handoff-wrf-sudeste-7km-20261026`.
