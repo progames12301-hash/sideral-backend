@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   check-icon-data:
+    # Descontinuado em 2026-10-26: WRF Sudeste 7 km
+    if: ${{ false }}
     name: Verificar disponibilidade de dados ICON
     runs-on: ubuntu-22.04
     timeout-minutes: 10
@@ -78,9 +80,10 @@ jobs:
           PY
 
   wrf:
+    # Descontinuado em 2026-10-26: WRF Sudeste 7 km
+    if: ${{ false }}
     name: WRF Sudeste ICON 7km
     needs: check-icon-data
-    if: ${{ needs.check-icon-data.outputs.data_available == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: icon
@@ -93,6 +96,8 @@ jobs:
     secrets: inherit
 
   notify-unavailable:
+    # Descontinuado em 2026-10-26: WRF Sudeste 7 km
+    if: ${{ false }}
     name: Notificar dados indisponíveis
     needs: check-icon-data
     if: ${{ needs.check-icon-data.outputs.data_available == 'false' }}
