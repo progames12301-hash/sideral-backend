@@ -17,7 +17,8 @@ concurrency:
 
 jobs:
   wrf2:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # Descontinuado em 2026-10-26: WRF2 Sudeste 7 km
+    if: ${{ false }}
     uses: ./.github/workflows/wrf2-sudeste-7km-reusable.yml
     with:
       model: icon
