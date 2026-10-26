@@ -11,9 +11,6 @@ on:
         description: "Ciclo GFS: 00, 06, 12 ou 18"
         required: false
         type: string
-  push:
-    paths:
-      - '.github/workflows/wrf-sudeste-gfs-4km.yml'
   schedule:
     - cron: '30 7 * * *'
 
