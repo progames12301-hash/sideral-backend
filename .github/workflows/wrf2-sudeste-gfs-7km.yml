@@ -14,6 +14,8 @@ concurrency:
 
 jobs:
   wrf2:
+    # Descontinuado em 2026-10-26: WRF2 Sudeste 7 km
+    if: ${{ false }}
     uses: ./.github/workflows/wrf2-sudeste-7km-reusable.yml
     with:
       model: gfs
