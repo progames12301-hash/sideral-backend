@@ -2,9 +2,6 @@ name: WRF 7 km SUDESTE ECMWF - AUTOMATICO DIARIO
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/wrf-sudeste-ecmwf-4km.yml'
   schedule:
     - cron: '8 7 * * *'
   workflow_run:
