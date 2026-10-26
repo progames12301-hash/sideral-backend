@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   wrf:
+    # Descontinuado em 2026-10-26: WRF Sudeste 7 km
+    if: ${{ false }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: gfs
