@@ -2489,10 +2489,25 @@ def _metbr_publication_metadata(cycle: str | None = None) -> dict[str, Any]:
 
 
 def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
-    """Resolve all hourly files to one checkpoint release matching this published cycle."""
+    """Resolve the exact checkpoint tag without listing the repository's releases."""
     declared_tag = str(metadata.get("sourceReleaseTag") or "").strip()
     if declared_tag and re.fullmatch(r"metbr-wrf-4km-checkpoint-\d+", declared_tag):
         return declared_tag
+
+    # METBR's publisher writes sourceRunId into metadata.json, and the source
+    # release tag is deterministically named from that workflow run ID. Use it
+    # directly instead of calling /releases?per_page=100 unauthenticated on every
+    # cold cache / Render instance. The asset download below validates the exact
+    # asset and reports a useful 404 if the publication is inconsistent.
+    source_run_id = metadata.get("sourceRunId")
+    try:
+        source_run_id_int = int(source_run_id)
+    except (TypeError, ValueError):
+        source_run_id_int = 0
+    if source_run_id_int > 0:
+        derived_tag = f"metbr-wrf-4km-checkpoint-{source_run_id_int}"
+        if re.fullmatch(r"metbr-wrf-4km-checkpoint-\\d+", derived_tag):
+            return derived_tag
 
     run_key = str(metadata.get("initTime") or "")
     now = time.monotonic()
