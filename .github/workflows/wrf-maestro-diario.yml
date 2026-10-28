@@ -44,17 +44,14 @@ jobs:
           # Somente produtos operacionais atuais. Os WRF Sudeste de 7 km
           # descontinuados em 26/10/2026 nao sao reativados.
           targets = [
-              {"workflow":"metbr-wrf-4km.yml", "branches":["metbr-json-data"], "frames":49, "age":30, "future":6},
-              {"workflow":"metbr-wrf2-4km-tomorrow.yml", "branches":["metbr-wrf2-json-data"], "frames":49, "age":30, "future":36},
-              {"workflow":"wrf-4km-next-day-auto.yml", "branches":["wrf-data"], "frames":41, "age":30, "future":3, "severe":True},
-              {"workflow":"wrf-icon-4km-native.yml", "branches":["wrf-icon-data"], "frames":41, "age":30, "future":3, "severe":True},
-              {"workflow":"wrf-ecmwf-4km-native.yml", "branches":["wrf-ecmwf-data"], "frames":41, "age":30, "future":3, "severe":True},
+              {"workflow":"metbr-wrf-4km.yml", "branches":["metbr-json-data"], "frames":43, "age":30, "future":6},
+              {"workflow":"metbr-wrf2-4km-tomorrow.yml", "branches":["metbr-wrf2-json-data"], "frames":43, "age":30, "future":36},
               {"workflow":"wrf-brasil-12km.yml", "branches":["wrf-brasil-12km-data"], "frames":49, "age":30, "future":3},
               {"workflow":"cim-wrf-3km-operational.yml", "branches":["cim-wrf-3km-icon-data","cim-wrf-3km-ecmwf-data"], "frames":41, "age":30, "future":3, "severe":True},
-              {"workflow":"wrf-tarc-3km.yml", "branches":["tarc-json-data"], "frames":17, "age":30, "future":6},
-              {"workflow":"wrf2-tarc-3km-tomorrow.yml", "branches":["tarc-wrf2-json-data"], "frames":17, "age":30, "future":36},
-              {"workflow":"wrf-cbr-4km.yml", "branches":["cbr-json-data"], "frames":15, "age":30, "future":6},
-              {"workflow":"wrf2-cbr-4km-tomorrow.yml", "branches":["cbr-wrf2-json-data"], "frames":15, "age":30, "future":36},
+              {"workflow":"wrf-tarc-3km.yml", "branches":["tarc-json-data"], "frames":49, "age":30, "future":6},
+              {"workflow":"wrf2-tarc-3km-tomorrow.yml", "branches":["tarc-wrf2-json-data"], "frames":49, "age":30, "future":36},
+              {"workflow":"wrf-cbr-4km.yml", "branches":["cbr-json-data"], "frames":43, "age":30, "future":6},
+              {"workflow":"wrf2-cbr-4km-tomorrow.yml", "branches":["cbr-wrf2-json-data"], "frames":43, "age":30, "future":36},
               {"workflow":"wrf-sideral-4km-sudeste.yml", "branches":["sideral-wrf-4km-sudeste-data"], "frames":49, "age":30, "future":3},
               {"workflow":"wrf-sideral-5km-sudeste.yml", "branches":["sideral-wrf-5km-sudeste-data"], "frames":49, "age":30, "future":3},
               {"workflow":"wrf-sideral-4km-2-sudeste.yml", "branches":["sideral-wrf-4km-2-sudeste-data"], "frames":49, "age":30, "future":36},
