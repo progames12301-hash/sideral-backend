@@ -1025,10 +1025,55 @@ jobs:
       - name: Gerar JSON CBR
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check -q 'numpy>=1.24,<3' 'netCDF4>=1.6,<2'
+          python3 -m pip install --disable-pip-version-check -q 'numpy>=1.24,<3' 'netCDF4>=1.6,<2' 'xarray>=2024.1,<2027'
           python3 wrf/cbr_extract_json.py --run-dir cbr_all_wrfout --output-dir cbr_json --run-env cbr-run.env --catalog wrf/cbr_variable_catalog.json --expected-start 0 --expected-end 42 --require-complete
           test -s cbr_json/metadata.json
           test "$(find cbr_json/frames -maxdepth 1 -type f -name 'f*.json.gz' | wc -l)" -eq 43 || { echo "Esperados 43 frames horários; extração incompleta" >&2; exit 1; }
+
+      - name: Gerar diagnosticos severos CAPE/CIN
+        env:
+          WRF_DX_METERS: '4000'
+          WRF_PRODUCT_LABEL: WRF CBR 4 KM · CAPE/CIN e diagnosticos severos
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -q 'numpy>=1.24,<3' 'netCDF4>=1.6,<2' 'xarray>=2024.1,<2027'
+          python3 wrf/extract_wrf_severe.py --run-dir cbr_all_wrfout --run-env cbr-run.env --output-dir cbr_severe --grid-x 400 --grid-y 500 --model cbr --interval-hours 3 --expected-start 0 --expected-end 42
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          meta = json.loads(Path('cbr_severe/metadata.json').read_text(encoding='utf-8'))
+          assert meta.get('status') == 'complete', f"Diagnosticos CBR incompletos: {meta.get('status')}"
+          assert meta.get('frameCount') == 15, f"Esperados 15 frames severos F000-F042; recebidos {meta.get('frameCount')}"
+          variables = meta.get('variables', {})
+          required = ('sbcape', 'mlcape', 'mucapeWrf2', 'cin', 'stp', 'scp', 'srh01', 'srh03', 'bulkShear06', 'pwat', 'thetaE850')
+          unavailable = [name for name in required if variables.get(name, {}).get('status') != 'available']
+          assert not unavailable, f"Diagnosticos CBR ausentes: {unavailable}"
+          partial_cape = [name for name in ('sbcape', 'mlcape', 'mucapeWrf2', 'cin') if variables.get(name, {}).get('availableFrames') != meta['frameCount']]
+          assert not partial_cape, f"CAPE/CIN ausentes em frames: {partial_cape}"
+          print('CBR CAPE/CIN validado:', {name: variables[name]['availableFrames'] for name in required})
+          PY
+          mkdir -p cbr_json/severe/cbr
+          cp -f cbr_severe/severe/cbr/*.json.gz cbr_json/severe/cbr/
+          cp -f cbr_severe/metadata.json cbr_json/severe/metadata.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('cbr_json')
+          meta = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+          severe = json.loads((root / 'severe/metadata.json').read_text(encoding='utf-8'))
+          meta['wrf2SevereDiagnostics'] = True
+          meta['wrf2SeverePathTemplate'] = 'severe/{model}/f{forecastHour:03d}.json.gz'
+          meta['wrf2SevereFields'] = list(severe.get('variables', {}).keys())
+          meta['wrf2DiagnosticMethods'] = severe.get('diagnosticMethods', {})
+          meta['severeMetadataFile'] = 'severe/metadata.json'
+          meta['severeStatus'] = severe['status']
+          severe_hours = {int(frame['forecastHour']): frame['file'] for frame in severe.get('frames', [])}
+          for frame in meta.get('frames', []):
+              hour = int(frame.get('forecastHour', -1))
+              if hour in severe_hours:
+                  frame['severeFile'] = severe_hours[hour]
+          (root / 'metadata.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
 
       - name: Validar JSON CBR
         run: |
@@ -1063,15 +1108,16 @@ jobs:
             exit 0
           fi
           echo "Publicando CBR init=$CANDIDATE_INIT até $CANDIDATE_END."
-          rm -rf cbr_json_data_checkout/frames
+          rm -rf cbr_json_data_checkout/frames cbr_json_data_checkout/severe
           mkdir -p cbr_json_data_checkout/frames
           cp -f cbr_json/metadata.json cbr_json_data_checkout/metadata.json
           cp -f cbr_json/frames/*.json.gz cbr_json_data_checkout/frames/
+          cp -a cbr_json/severe cbr_json_data_checkout/severe
           cp -f wrf/cbr_variable_catalog.json cbr_json_data_checkout/variable_catalog.json
           cd cbr_json_data_checkout
           git config user.name "sideral-cbr-bot"
           git config user.email "sideralmeteorologia@gmail.com"
-          git add metadata.json variable_catalog.json frames/
+          git add metadata.json variable_catalog.json frames/ severe/
           git diff --cached --quiet && exit 0
           git commit -m "CBR: publicar WRF 4 KM ICON"
           git push origin cbr-json-data
