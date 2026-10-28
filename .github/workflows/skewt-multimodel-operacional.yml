@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 120
     concurrency:
       group: skewt-multimodel-${{ matrix.model }}-${{ matrix.model == 'nems10' && 'live' || (github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'schedule' && github.event.schedule == '55 19 * * *' && '12') || (github.event_name == 'schedule' && github.event.schedule == '55 1 * * *' && '18') || 'auto') }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
