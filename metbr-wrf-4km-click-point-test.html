@@ -383,6 +383,18 @@
   #uiSkewtClickHint[hidden]{display:none!important}
   @media(max-width:720px){#uiSkewtClickHint{bottom:28px;width:calc(100vw - 24px)}}
 </style>
+<style id="metbrSkewtClickPointModalStyles">
+  #uiSkewtModal[hidden]{display:none!important}
+  #uiSkewtModal{position:fixed;inset:0;z-index:6000;display:flex;align-items:center;justify-content:center;padding:12px}
+  #uiSkewtModal .skewt-modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.84);backdrop-filter:blur(4px)}
+  #uiSkewtModal .skewt-modal-dialog{position:relative;z-index:1;display:flex;flex-direction:column;width:min(1500px,100%);height:min(95vh,100%);min-height:380px;background:#050505;border:1px solid #393940;box-shadow:0 18px 70px #000b;overflow:hidden}
+  #uiSkewtModal .skewt-modal-head{flex:0 0 44px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 14px;background:#08080a;border-bottom:1px solid #29292e;color:#f4f4f5;font:800 11px Consolas,monospace}
+  #uiSkewtModal .skewt-modal-head small{display:block;color:#92929a;font-weight:600;margin-top:3px}
+  #uiSkewtModal .skewt-modal-close{height:30px;padding:0 12px;border:1px solid #45454d;background:#17171c;color:#fff;font:800 11px Consolas,monospace;cursor:pointer}
+  #uiSkewtModal .skewt-modal-close:hover{border-color:#ed3448;background:#24242a}
+  #uiSkewtFrame{display:block;flex:1;min-width:0;min-height:0;width:100%;height:100%;border:0;background:#050505}
+  @media(max-width:720px){#uiSkewtModal{padding:0}#uiSkewtModal .skewt-modal-dialog{width:100%;height:100%;min-height:0;border:0}#uiSkewtModal .skewt-modal-head{padding:0 10px}}
+</style>
 </head>
 <body>
 <div id="metbrUI">
@@ -444,6 +456,17 @@
       </section>
     </div>
   </main>
+</div>
+
+<div id="uiSkewtModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Skew-T METBR Click-to-Point">
+  <div class="skewt-modal-backdrop" data-skewt-close></div>
+  <section class="skewt-modal-dialog">
+    <header class="skewt-modal-head">
+      <div>SIDERAL / SKEW-T <small id="uiSkewtModalCaption">METBR WRF 4 km · Click-to-Point</small></div>
+      <button type="button" class="skewt-modal-close" id="uiSkewtClose">FECHAR ×</button>
+    </header>
+    <iframe id="uiSkewtFrame" title="Interface Skew-T SHARPpy da Sideral" src="about:blank" loading="eager" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe>
+  </section>
 </div>
 
 <div id="engineShell" aria-hidden="true">
@@ -5004,14 +5027,18 @@
   const button = document.getElementById('uiSkewtClickMode');
   const root = document.getElementById('metbrUI');
   const status = document.getElementById('uiFrameStatus');
-  if (!button || !root || !status) return;
+  const modal = document.getElementById('uiSkewtModal');
+  const frame = document.getElementById('uiSkewtFrame');
+  const closeButton = document.getElementById('uiSkewtClose');
+  const caption = document.getElementById('uiSkewtModalCaption');
+  if (!button || !root || !status || !modal || !frame || !closeButton) return;
 
   let enabled = false;
   let pointerStart = null;
   const hint = document.createElement('output');
   hint.id = 'uiSkewtClickHint';
   hint.hidden = true;
-  hint.textContent = 'CLICK-TO-POINT ATIVO — clique em um ponto da grade METBR para abrir o Skew-T SHARPpy.';
+  hint.textContent = 'CLICK-TO-POINT ATIVO — clique diretamente sobre uma célula do mapa METBR para abrir o Skew-T nesta janela.';
   document.body.appendChild(hint);
 
   function setEnabled(value) {
@@ -5028,6 +5055,8 @@
       } else {
         status.textContent = 'Click-to-Point ativo: clique diretamente no mapa meteorológico.';
       }
+    } else if (!modal.hidden) {
+      status.textContent = 'Skew-T METBR aberto nesta página.';
     } else {
       status.textContent = 'Click-to-Point desativado.';
     }
@@ -5054,6 +5083,13 @@
     return { lat: Number(point.lat), lon: Number(point.lon) };
   }
 
+  function selectedCycle() {
+    const line = document.getElementById('uiCycleLine')?.textContent || '';
+    const match = line.match(/\b(00|06|12|18|21):\d{2}\s*UTC\b/i)
+      || line.match(/\b(00|06|12|18|21)Z\b/i);
+    return match ? match[1] : '';
+  }
+
   function openSounding(point) {
     const model = document.getElementById('uiModelVariant')?.value;
     if (model !== 'metbr_wrf') {
@@ -5067,24 +5103,34 @@
       status.textContent = 'O Click-to-Point METBR está publicado até F042. Selecione uma validade entre F000 e F042.';
       return;
     }
-    const cycleText = document.getElementById('uiCycleLine')?.textContent || '';
-    const matchCycle = cycleText.match(/\b(00|06|12|18|21):\d{2}\s*UTC\b/i);
+
     const params = new URLSearchParams({
       model: 'metbr',
       lat: point.lat.toFixed(5),
       lon: point.lon.toFixed(5),
       fh: String(forecastHour),
-      from: 'metbr-map-test'
+      from: 'metbr-map-embedded'
     });
-    if (matchCycle) params.set('cycle', matchCycle[1]);
-    const target = SKEWT_PAGE + '?' + params.toString();
-    const opened = window.open(target, '_blank');
-    if (!opened) {
-      status.textContent = 'O navegador bloqueou a nova aba. Permita pop-ups para abrir o Skew-T.';
-      return;
-    }
-    status.textContent = `Skew-T solicitado para ${point.lat.toFixed(3)}°, ${point.lon.toFixed(3)}° · ${frameText}.`;
+    const cycle = selectedCycle();
+    if (cycle) params.set('cycle', cycle);
+
+    caption.textContent = 'METBR WRF 4 km · ' + point.lat.toFixed(3) + '°, ' + point.lon.toFixed(3) + '° · ' + frameText + (cycle ? ' · ' + cycle + 'Z' : '');
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    frame.src = SKEWT_PAGE + '?' + params.toString();
+    closeButton.focus({ preventScroll: true });
+    status.textContent = 'Gerando Skew-T para ' + point.lat.toFixed(3) + '°, ' + point.lon.toFixed(3) + '° · ' + frameText + '. A interface será exibida sobre o mapa METBR.';
     setEnabled(false);
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    frame.src = 'about:blank';
+    document.body.style.overflow = '';
+    button.focus({ preventScroll: true });
+    status.textContent = 'Skew-T fechado. O mapa METBR continua na mesma página.';
   }
 
   button.addEventListener('click', () => setEnabled(!enabled));
@@ -5109,17 +5155,18 @@
     event.stopPropagation();
     try {
       const model = document.getElementById('uiModelVariant')?.value;
-      if (model !== 'metbr_wrf') {
-        throw new Error('Selecione METBR WRF 4 km no painel lateral antes de escolher o ponto.');
-      }
+      if (model !== 'metbr_wrf') throw new Error('Selecione METBR WRF 4 km no painel lateral antes de escolher o ponto.');
       openSounding(inspectPoint(event, canvas));
     } catch (error) {
       status.textContent = error.message || 'Falha ao localizar a coordenada selecionada.';
     }
   }, true);
 
+  closeButton.addEventListener('click', closeModal);
+  modal.querySelector('[data-skewt-close]')?.addEventListener('click', closeModal);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && enabled) setEnabled(false);
+    else if (event.key === 'Escape' && !modal.hidden) closeModal();
   });
 })();
 </script>
