@@ -1,4 +1,4 @@
-name: Validate Skew-T Python syntax
+name: Validate Skew-T Python and workflow syntax
 
 on:
   push:
@@ -6,7 +6,8 @@ on:
       - main
     paths:
       - "tools/skewt/*.py"
-      - ".github/workflows/validate-skewt-syntax.yml"
+      - ".github/workflows/*.yml"
+      - ".github/workflows/*.yaml"
   workflow_dispatch:
 
 permissions:
@@ -22,6 +23,45 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install YAML parser
+        run: python -m pip install --disable-pip-version-check pyyaml
+      - name: Check all workflow YAML and reject duplicate keys
+        run: |
+          python - <<'PY'
+          import glob
+          import yaml
+
+          class UniqueKeyLoader(yaml.SafeLoader):
+              pass
+
+          def construct_unique_mapping(loader, node, deep=False):
+              loader.flatten_mapping(node)
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=deep)
+                  if key in mapping:
+                      raise yaml.constructor.ConstructorError(
+                          "while constructing a mapping",
+                          node.start_mark,
+                          f"duplicate key {key!r}",
+                          key_node.start_mark,
+                      )
+                  mapping[key] = loader.construct_object(value_node, deep=deep)
+              return mapping
+
+          UniqueKeyLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+              construct_unique_mapping,
+          )
+          paths = sorted(
+              glob.glob(".github/workflows/*.yml")
+              + glob.glob(".github/workflows/*.yaml")
+          )
+          for path in paths:
+              with open(path, encoding="utf-8") as stream:
+                  yaml.load(stream, Loader=UniqueKeyLoader)
+          print(f"Validated YAML syntax and duplicate keys in {len(paths)} workflow files.")
+          PY
       - name: Compile Skew-T scripts before any rendering
         run: |
           python -m py_compile \
