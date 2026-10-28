@@ -4559,7 +4559,7 @@
             [skip, close].forEach(button => button?.addEventListener('click', finish));
             overlay.addEventListener('click', event => { if (event.target === overlay) finish(); });
             window.addEventListener('keydown', event => { if (event.key === 'Escape' && overlay.classList.contains('is-open')) finish(); });
-            if (localStorage.getItem('sideral-wrf-tutorial-seen') !== '1') {
+            if (localStorage.getItem('sideral-wrf-tutorial-seen') !== '1' && !document.getElementById('uiSkewtClickMode')) {
                 setTimeout(() => { overlay.classList.add('is-open'); overlay.setAttribute('aria-hidden', 'false'); document.body.classList.add('wrf-tutorial-open'); close?.focus(); }, 350);
             }
         })();
