@@ -19,7 +19,6 @@ jobs:
   wrf:
     # Descontinuado em 2026-10-26: WRF Sudeste 7 km
     if: ${{ false }}
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/wrf-regional-7km-single.yml
     with:
       model: ecmwf
