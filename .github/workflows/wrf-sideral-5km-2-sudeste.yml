@@ -556,7 +556,14 @@ jobs:
           valid_times=[str(frame.get('time','')) for frame in m['frames']]
           assert len(set(valid_times))==49, 'TARC contém horários duplicados ou inválidos'
           s=json.loads(pathlib.Path('tarc_severe/metadata.json').read_text(encoding='utf-8'))
-          assert s['frameCount'] > 0
+          required = ('sbcape', 'mlcape', 'mucapeWrf2', 'cin', 'stp', 'scp', 'srh01', 'srh03', 'bulkShear06', 'pwat', 'thetaE850')
+          assert s.get('status') == 'complete', f"Diagnosticos severos incompletos: {s.get('status')}"
+          assert s['frameCount'] == 17, f"Esperados 17 frames severos F000-F048 de 3 em 3 h; encontrados {s.get('frameCount')}"
+          variables = s.get('variables', {})
+          unavailable = [name for name in required if variables.get(name, {}).get('status') != 'available']
+          assert not unavailable, f"Diagnosticos WRF ausentes: {unavailable}"
+          cape_incomplete = [name for name in ('sbcape', 'mlcape', 'mucapeWrf2', 'cin') if variables.get(name, {}).get('availableFrames') != s['frameCount']]
+          assert not cape_incomplete, f"CAPE/CIN ausentes em alguns frames: {cape_incomplete}"
           print('TARC principal:', len(m['frames']), 'frames')
           print('TARC severo:', s['frameCount'], 'frames')
           print('Status severo:', s['status'])
