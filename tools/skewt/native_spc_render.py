@@ -250,24 +250,24 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     ps = np.geomspace(100, max(100.0, surface_pressure), 240)
     for pp in p_ticks:
         if pp <= surface_pressure + 0.1:
-            ax.axhline(pp, color="#a7a7a7", lw=0.62, zorder=0)
+            ax.axhline(pp, color="#b8c0ca", lw=0.52, zorder=0)
     for pp in p_minor:
-        ax.axhline(pp, color="#e4e4e4", lw=0.34, zorder=0)
+        ax.axhline(pp, color="#e5e8ec", lw=0.30, zorder=0)
 
     # Isotherms every 5 C; every 10 C is emphasized.
     for temp in np.arange(-90, 66, 5):
         major = (int(temp) % 10 == 0)
         ax.plot(_xskew(np.full_like(ps, temp), ps), ps,
-                ls=(0, (2, 3)), color="#7192c4" if major else "#b7b7b7",
-                lw=0.54 if major else 0.38, alpha=0.80 if major else 0.66, zorder=0)
+                ls="-", color="#9eacbc" if major else "#d0d7df",
+                lw=0.48 if major else 0.30, alpha=0.78 if major else 0.58, zorder=0)
 
     # Dry adiabats every 5 K (10 K emphasized), giving a denser thermodynamic mesh.
     for theta_k in np.arange(250, 506, 5):
         tt = theta_k * (ps / 1000.0) ** 0.2854 - 273.15
         major = (int(theta_k) % 10 == 0)
-        ax.plot(_xskew(tt, ps), ps, color="#c49a5a" if major else "#dfc6a1",
-                ls=(0, (2, 3)), lw=0.58 if major else 0.40,
-                alpha=0.82 if major else 0.66, zorder=0)
+        ax.plot(_xskew(tt, ps), ps, color="#b99565" if major else "#ddc9aa",
+                ls="-", lw=0.54 if major else 0.32,
+                alpha=0.80 if major else 0.56, zorder=0)
 
     # Moist adiabats every 5 C. Vectorized SHARPpy wet lifting is much faster
     # than evaluating each point separately for each of the 459 generated frames.
@@ -283,9 +283,9 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
             if len(curve) == len(pp_grid):
                 major = (int(start_t) % 10 == 0)
                 ax.plot(_xskew(curve[visible_moist], pp_grid[visible_moist]), pp_grid[visible_moist],
-                        color="#45935c" if major else "#98c4a0",
-                        ls=(0, (2, 3)), lw=0.60 if major else 0.40,
-                        alpha=0.82 if major else 0.67, zorder=0)
+                        color="#719f7b" if major else "#b8d0bd",
+                        ls="-", lw=0.52 if major else 0.32,
+                        alpha=0.76 if major else 0.54, zorder=0)
     except Exception:
         pass
 
@@ -295,9 +295,9 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
         loge = np.log(np.maximum(e, 0.01) / 6.112)
         tdline = 243.5 * loge / (17.67 - loge)
         major = r in (0.4, 1, 2, 4, 8, 16, 24, 32)
-        ax.plot(_xskew(tdline, ps), ps, color="#86b68e" if major else "#b2ceb5",
-                ls=(0, (1, 3)), lw=0.56 if major else 0.38,
-                alpha=0.78 if major else 0.62, zorder=0)
+        ax.plot(_xskew(tdline, ps), ps, color="#91b59a" if major else "#c5d7c9",
+                ls=(0, (1, 2)), lw=0.48 if major else 0.30,
+                alpha=0.70 if major else 0.48, zorder=0)
     h_agl = z - z[0]
     ax.axhline(surface_pressure, color="#555555", lw=0.95, ls=(0, (4, 2)), alpha=0.95, zorder=3)
     ax.text(-41.8, surface_pressure, f"SFC {surface_pressure:.0f} hPa / 0 m AGL",
@@ -319,14 +319,41 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
             tw_values.append(np.nan)
     t_wet = np.asarray(tw_values, dtype=float)
     # Trace colours follow the METBR operational chart convention.
-    ax.plot(_xskew(t, p), p, color="#d62728", lw=1.8, zorder=6, label="T")
-    ax.plot(_xskew(td, p), p, color="#238b45", lw=1.8, zorder=7, label="Td")
-    ax.plot(_xskew(t_virtual, p), p, color="#bf3b3b", lw=1.0, ls="--", zorder=5, label="Tv")
+    ax.plot(_xskew(t, p), p, color="#e53935", lw=1.75, zorder=6, label="Temperatura")
+    ax.plot(_xskew(td, p), p, color="#159957", lw=1.75, zorder=7, label="Ponto de orvalho")
+    ax.plot(_xskew(t_virtual, p), p, color="#b84a4a", lw=0.95, ls=(0, (4, 2)), zorder=5, label="Temperatura virtual")
     if np.isfinite(t_wet).sum() >= 3:
-        ax.plot(_xskew(t_wet, p), p, color="#13a6ac", lw=1.15, zorder=5, label="Tw")
-    parcel = _parcel_curve(p, t, td)
-    if np.isfinite(parcel).sum() > 3:
-        ax.plot(_xskew(parcel, p), p, color="#292929", lw=1.35, ls="--", zorder=5, label="Parcela SFC")
+        ax.plot(_xskew(t_wet, p), p, color="#00a6b2", lw=1.20, zorder=5, label="Temp. bulbo úmido")
+    def parcel_trace(parcel_name):
+        parcel_obj = getattr(pcl, parcel_name, None)
+        trace_p = _arr(getattr(parcel_obj, "ptrace", [])) if parcel_obj is not None else np.asarray([])
+        trace_t = _arr(getattr(parcel_obj, "ttrace", [])) if parcel_obj is not None else np.asarray([])
+        good = np.isfinite(trace_p) & (trace_p > 0) & np.isfinite(trace_t)
+        if int(good.sum()) < 2:
+            return np.full_like(p, np.nan, dtype=float)
+        trace_p, trace_t = trace_p[good], trace_t[good]
+        order = np.argsort(trace_p)
+        trace_p, trace_t = trace_p[order], trace_t[order]
+        unique = np.r_[True, np.diff(trace_p) > 0.01]
+        trace_p, trace_t = trace_p[unique], trace_t[unique]
+        result = np.full_like(p, np.nan, dtype=float)
+        inside = (p >= trace_p.min()) & (p <= trace_p.max())
+        result[inside] = np.interp(np.log(p[inside]), np.log(trace_p), trace_t)
+        return result
+
+    parcel_specs = [
+        ("sfcpcl", "Parcela SFC", "#bd348e", "-"),
+        ("mlpcl", "Parcela efetiva ML", "#d2a000", (0, (4, 2))),
+        ("mupcl", "Parcela mais instável MU", "#55616f", (0, (2, 2))),
+    ]
+    for parcel_name, parcel_label, parcel_color, parcel_style in parcel_specs:
+        parcel_trace_values = parcel_trace(parcel_name)
+        if parcel_name == "sfcpcl" and np.isfinite(parcel_trace_values).sum() < 3:
+            parcel_trace_values = _parcel_curve(p, t, td)
+        if np.isfinite(parcel_trace_values).sum() > 3:
+            ax.plot(_xskew(parcel_trace_values, p), p, color=parcel_color,
+                    lw=1.25 if parcel_name == "sfcpcl" else 1.05,
+                    ls=parcel_style, zorder=5, label=parcel_label)
     # Mark LCL/LFC/EL using whichever SHARPpy parcel contains each value.
     parcel_objects = [getattr(pcl, n, None) for n in ("sfcpcl", "mlpcl", "mupcl", "fcstpcl")]
     markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
@@ -421,10 +448,10 @@ def _make_hodo(ax, z, u, v, station_text, motion):
     ax.set_xticks([]); ax.set_yticks([])
     for r in [10, 20, 30, 40, 50, 60, 70]:
         ax.add_patch(plt.Circle((0, 0), r, fill=False, lw=0.8 if r % 20 == 0 else 0.45,
-                                edgecolor="#aeb8c4" if r % 20 == 0 else "#e3e7ec", zorder=0))
-        if r in (10, 30, 50):
+                                edgecolor="#b7c0cb" if r % 20 == 0 else "#e0e5eb", linestyle=(0, (3, 3)), zorder=0))
+        if r % 20 == 10:
             ax.text(-r, 1.5, f"{r}", fontsize=7, color="#7d8792", ha="center", va="bottom")
-            ax.text(1.8, r, f"{r}", fontsize=7, color="#bdbdbd", ha="left", va="center")
+            ax.text(1.8, r, f"{r}", fontsize=7, color="#7d8792", ha="left", va="center")
     ax.axhline(0, color="#9aa4b0", lw=0.85, zorder=1); ax.axvline(0, color="#9aa4b0", lw=0.85, zorder=1)
     order = np.argsort(h_agl)
     hh, uu, vv = h_agl[order], u[order], v[order]
@@ -432,23 +459,38 @@ def _make_hodo(ax, z, u, v, station_text, motion):
     if len(pts) >= 2:
         segments = np.concatenate([pts[:-1], pts[1:]], axis=1)
         mids = (hh[:-1] + hh[1:]) / 2.0
-        bounds = [0, 2000, 4000, 9000, 11000, np.inf]
-        colors = ["#003cff", "#a900d8", "#ff8a00", "#ff3030", "#ff3030"]
+        bounds = [500, 3000, 6000, 12000, np.inf]
+        colors = ["#b44bc7", "#d65b76", "#d9a33a", "#319c7c", "#319c7c"]
         seg_colors = [colors[min(np.searchsorted(bounds[1:], hz, side="right"), len(colors)-1)] for hz in mids]
-        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=1.65, zorder=4))
-        for target, label in [(1000, "1"), (3000, "3"), (6000, "6"), (9000, "9"), (12000, "12")]:
-            if hh.min() <= target <= hh.max():
-                px, py = np.interp(target, hh, uu), np.interp(target, hh, vv)
-                ax.plot(px, py, "o", ms=2.5, color="#111111", zorder=5)
-                ax.text(px + 1.3, py + 1.3, label, fontsize=7, weight="bold", color=INK, zorder=6)
+        ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=1.45, zorder=4))
+        label_offsets = [(4, 4), (4, -5), (-5, 4), (5, 4), (-5, -5),
+                         (4, -5), (-5, 4), (5, 4), (-5, -5), (4, 4), (-5, 4)]
+        for km, (dx, dy) in enumerate(label_offsets):
+            target = km * 1000
+            if hh.min() <= target <= min(hh.max(), 10000.0):
+                px, py = float(np.interp(target, hh, uu)), float(np.interp(target, hh, vv))
+                ax.plot(px, py, "o", ms=3.0, markerfacecolor="white",
+                        markeredgecolor="#657181", markeredgewidth=0.55, zorder=5)
+                ax.annotate(str(km), (px, py), xytext=(dx, dy), textcoords="offset points",
+                            fontsize=5.5, weight="bold", color="#354154", ha="center", va="center",
+                            bbox=dict(boxstyle="circle,pad=0.10", facecolor="white",
+                                      edgecolor="#8994a3", linewidth=0.45), zorder=6)
     mw, rm, lm = motion
     for sx, sy, label in [(lm[0], lm[1], "LM"), (mw[0], mw[1], "MW"), (rm[0], rm[1], "RM")]:
         ax.annotate("", xy=(sx, sy), xytext=(0, 0),
-                    arrowprops=dict(arrowstyle="-|>", lw=1.0, color="#c3c3c3", shrinkA=0, shrinkB=0), zorder=2)
-        ax.text(sx + 2.5, sy + 2.0, label, fontsize=8, weight="bold", color=INK, zorder=6)
+                    arrowprops=dict(arrowstyle="-|>", lw=0.85, color={"LM":"#476fbd","MW":"#84909d","RM":"#c94f4f"}[label], shrinkA=0, shrinkB=0), zorder=2)
+        ax.plot(sx, sy, marker="o", ms=3.8, mfc="white", mec={"LM":"#476fbd","MW":"#84909d","RM":"#c94f4f"}[label], mew=0.8, zorder=5)
+        ax.text(sx + 2.5, sy + 2.0, label, fontsize=7.2, weight="bold", color={"LM":"#476fbd","MW":"#637080","RM":"#c94f4f"}[label], zorder=6)
     ax.set_title("HODOGRAPH / WIND (kt)", fontsize=9.0, loc="left", pad=5, color=INK)
-    ax.text(0.0, 0.01, "Height labels in km AGL", transform=ax.transAxes, fontsize=7.0,
-            ha="left", va="bottom", color="#4f5965")
+    legend_handles = [
+        plt.Line2D([0], [0], color="#b44bc7", lw=1.6, label="0–0,5 km"),
+        plt.Line2D([0], [0], color="#d65b76", lw=1.6, label="0,5–3 km"),
+        plt.Line2D([0], [0], color="#d9a33a", lw=1.6, label="3–6 km"),
+        plt.Line2D([0], [0], color="#319c7c", lw=1.6, label="6–12 km"),
+    ]
+    ax.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, -0.025),
+              ncol=4, fontsize=5.5, frameon=False, labelcolor="#354154",
+              handlelength=1.0, handletextpad=0.25, columnspacing=0.6)
 
 
 def _make_advection(ax, p, t, omega):
