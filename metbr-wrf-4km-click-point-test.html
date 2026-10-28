@@ -543,9 +543,10 @@
 <label for="uiSkewtCapitalCity">Capital</label><select id="uiSkewtCapitalCity"><option value="curitiba">Curitiba</option><option value="florianopolis">Florianópolis</option><option value="porto-alegre">Porto Alegre</option></select>
 <label for="uiSkewtCapitalCycle">Rodada publicada</label><select id="uiSkewtCapitalCycle"><option value="06">06Z</option><option value="12">12Z</option><option value="18" selected>18Z</option></select>
 <label for="uiSkewtCapitalHour">Validade PNG</label><select id="uiSkewtCapitalHour"></select><button class="primary" id="uiSkewtCapitalLoad">ABRIR PNG PUBLICADO</button><button id="uiSkewtCapitalDownload" disabled>BAIXAR IMAGEM PNG</button>
-<div class="skewt-capitals-divider"></div><h3>EXPORTAR GIF</h3><div class="skewt-capital-hour-row"><div><label for="uiSkewtGifStart">Primeira validade</label><select id="uiSkewtGifStart"></select></div><div><label for="uiSkewtGifEnd">Última validade</label><select id="uiSkewtGifEnd"></select></div></div>
-<button class="primary" id="uiSkewtCapitalMakeGif">GERAR GIF</button><button id="uiSkewtCapitalCancelGif" hidden>CANCELAR GIF</button>
-<p class="skewt-capitals-note">O GIF usa exclusivamente imagens pré-geradas e publicadas. Não chama o gerador sob demanda do Click-to-Point.</p><p id="uiSkewtCapitalsStatus" role="status" aria-live="polite">Selecione uma capital e abra um PNG publicado.</p><span id="uiSkewtCapitalsProgress"></span></aside>
+<div class="skewt-capitals-divider"></div><h3>EXPORTAR GIF / MP4</h3><div class="skewt-capital-hour-row"><div><label for="uiSkewtGifStart">Primeira validade</label><select id="uiSkewtGifStart"></select></div><div><label for="uiSkewtGifEnd">Última validade</label><select id="uiSkewtGifEnd"></select></div></div>
+<label for="uiSkewtGifSpeed">VELOCIDADE · TEMPO POR QUADRO</label><select id="uiSkewtGifSpeed"><option value="0.25">Muito rápido · 0,25 s (4 FPS)</option><option value="0.5" selected>Normal · 0,5 s (2 FPS)</option><option value="0.75">Moderado · 0,75 s</option><option value="1">Lento · 1 s</option><option value="1.5">Muito lento · 1,5 s</option><option value="2">Extra lento · 2 s</option></select>
+<button class="primary" id="uiSkewtCapitalMakeGif">GERAR GIF</button><button class="primary" id="uiSkewtCapitalMakeMp4">GERAR MP4</button><button id="uiSkewtCapitalCancelGif" hidden>CANCELAR EXPORTAÇÃO</button>
+<p class="skewt-capitals-note">GIF e MP4 usam exclusivamente PNGs já publicados e respeitam a velocidade escolhida. A exportação não chama o gerador sob demanda do Click-to-Point. MP4 requer codificação de vídeo H.264 disponível no navegador.</p><p id="uiSkewtCapitalsStatus" role="status" aria-live="polite">Selecione uma capital e abra um PNG publicado.</p><span id="uiSkewtCapitalsProgress"></span></aside>
 <main id="uiSkewtCapitalsStage"><div id="uiSkewtCapitalsLoading">Selecione uma capital e carregue um PNG já publicado.</div><img id="uiSkewtCapitalsImage" alt="Skew-T METBR WRF 4 km pré-gerado" hidden /></main>
 </div></section></div>
 <div id="engineShell" aria-hidden="true">
@@ -5375,9 +5376,9 @@
 (()=>{'use strict';
 const API=/^https?:$/.test(location.protocol)&&/(^|\.)sideral-backend\.onrender\.com$/i.test(location.hostname)?location.origin:'https://sideral-backend.onrender.com';
 const HOURS=Array.from({length:15},(_,i)=>i*3),$=id=>document.getElementById(id);
-const button=$('uiSkewtCapitalsOpen'),modal=$('uiSkewtCapitalsModal'),close=$('uiSkewtCapitalsClose'),city=$('uiSkewtCapitalCity'),cycle=$('uiSkewtCapitalCycle'),hour=$('uiSkewtCapitalHour'),start=$('uiSkewtGifStart'),end=$('uiSkewtGifEnd'),load=$('uiSkewtCapitalLoad'),down=$('uiSkewtCapitalDownload'),downTop=$('uiSkewtCapitalsDownloadTop'),make=$('uiSkewtCapitalMakeGif'),cancel=$('uiSkewtCapitalCancelGif'),status=$('uiSkewtCapitalsStatus'),progress=$('uiSkewtCapitalsProgress'),loading=$('uiSkewtCapitalsLoading'),img=$('uiSkewtCapitalsImage');
-if(!button||!modal||!city||!cycle||!hour||!start||!end||!img)return;
-let imageUrl='',job=null,workerBlob='',overflow='';
+const button=$('uiSkewtCapitalsOpen'),modal=$('uiSkewtCapitalsModal'),close=$('uiSkewtCapitalsClose'),city=$('uiSkewtCapitalCity'),cycle=$('uiSkewtCapitalCycle'),hour=$('uiSkewtCapitalHour'),start=$('uiSkewtGifStart'),end=$('uiSkewtGifEnd'),load=$('uiSkewtCapitalLoad'),down=$('uiSkewtCapitalDownload'),downTop=$('uiSkewtCapitalsDownloadTop'),make=$('uiSkewtCapitalMakeGif'),mp4=$('uiSkewtCapitalMakeMp4'),speed=$('uiSkewtGifSpeed'),cancel=$('uiSkewtCapitalCancelGif'),status=$('uiSkewtCapitalsStatus'),progress=$('uiSkewtCapitalsProgress'),loading=$('uiSkewtCapitalsLoading'),img=$('uiSkewtCapitalsImage');
+if(!button||!modal||!city||!cycle||!hour||!start||!end||!img||!mp4||!speed)return;
+let imageUrl='',job=null,workerBlob='',overflow='',mediabunnyPromise=null;
 const label=h=>'F'+String(h).padStart(3,'0'), cityName=()=>city.options[city.selectedIndex]?.textContent||city.value;
 const url=(c,r,h)=>API+'/api/skewt/metbr-frame?city='+encodeURIComponent(c)+'&cycle='+encodeURIComponent(r)+'&fh='+encodeURIComponent(h);
 function fill(sel,chosen){sel.replaceChildren();HOURS.forEach(h=>sel.add(new Option(label(h),String(h))));sel.value=String(chosen);}
@@ -5390,10 +5391,68 @@ async function downloadPng(){if(!imageUrl||img.hidden)return;try{const r=await f
 async function gifLibrary(){if(window.GIF)return;await new Promise((ok,no)=>{const sc=document.createElement('script');sc.src=API+'/api/skewt/gif.js';sc.onload=ok;sc.onerror=()=>no(Error('Codificador GIF indisponível no Render.'));document.head.appendChild(sc);});if(!window.GIF)throw Error('Codificador GIF não carregou.');}
 async function gifWorker(){if(workerBlob)return workerBlob;const r=await fetch(API+'/api/skewt/gif-worker.js',{cache:'force-cache'});if(!r.ok)throw Error('Worker GIF indisponível.');workerBlob=URL.createObjectURL(new Blob([await r.text()],{type:'text/javascript'}));return workerBlob;}
 function draw(ctx,cv,im){ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);const z=Math.min(1,960/im.naturalWidth);ctx.drawImage(im,0,0,Math.max(1,Math.round(im.naturalWidth*z)),Math.max(1,Math.round(im.naturalHeight*z)));}
-async function makeGif(){if(job)return;const c=city.value,r=cycle.value,a=Number(start.value),b=Number(end.value),frames=HOURS.filter(h=>h>=a&&h<=b);if(!frames.length||b<a){msg('Selecione uma faixa de validades válida.',true);return;}const current={cancelled:false,gif:null};job=current;[load,city,cycle,hour,start,end,make].forEach(x=>x.disabled=true);cancel.hidden=false;setDownload(false);try{msg('Carregando codificador GIF…');progress.textContent='0 / '+frames.length;await gifLibrary();const worker=await gifWorker();if(current.cancelled)throw Error('Exportação cancelada.');const first=await getImage(url(c,r,frames[0]),label(frames[0]));if(current.cancelled)throw Error('Exportação cancelada.');const z=Math.min(1,960/first.naturalWidth),cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(first.naturalWidth*z));cv.height=Math.max(1,Math.round(first.naturalHeight*z));const ctx=cv.getContext('2d',{alpha:false});if(!ctx)throw Error('Não foi possível preparar o GIF.');const gif=new window.GIF({workers:2,quality:10,width:cv.width,height:cv.height,workerScript:worker,repeat:0,background:'#fff'});current.gif=gif;draw(ctx,cv,first);gif.addFrame(cv,{delay:550,copy:true});for(let i=1;i<frames.length;i++){if(current.cancelled)throw Error('Exportação cancelada.');msg('Carregando PNG publicado '+label(frames[i]));progress.textContent=(i+1)+' / '+frames.length;const im=await getImage(url(c,r,frames[i]),label(frames[i]));if(current.cancelled)throw Error('Exportação cancelada.');draw(ctx,cv,im);gif.addFrame(cv,{delay:550,copy:true});}msg('Codificando GIF a partir de '+frames.length+' PNGs publicados…');const blob=await new Promise((ok,no)=>{const t=setTimeout(()=>no(Error('Tempo limite na codificação GIF.')),300000);gif.on('finished',b=>{clearTimeout(t);ok(b);});gif.on('error',e=>{clearTimeout(t);no(e instanceof Error?e:Error('Erro ao codificar GIF.'));});gif.render();});if(current.cancelled)throw Error('Exportação cancelada.');const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='METBR-SkewT-'+c+'-'+r+'Z-'+label(frames[0])+'-'+label(frames.at(-1))+'.gif';a.click();setTimeout(()=>URL.revokeObjectURL(u),15000);msg('GIF criado com '+frames.length+' PNGs publicados. Nenhum cálculo sob demanda foi executado.');progress.textContent='Concluído · '+frames.length+' quadros';}catch(e){msg(e.message||'Falha ao gerar GIF.',true);}finally{if(job===current)job=null;[load,city,cycle,hour,start,end,make].forEach(x=>x.disabled=false);cancel.hidden=true;if(!modal.hidden&&imageUrl)setDownload(true);}}
+async function makeGif(){if(job)return;const c=city.value,r=cycle.value,a=Number(start.value),b=Number(end.value),frames=HOURS.filter(h=>h>=a&&h<=b),delayMs=Math.max(100,Math.round((Number(speed.value)||0.5)*1000));if(!frames.length||b<a){msg('Selecione uma faixa de validades válida.',true);return;}const current={cancelled:false,gif:null,kind:'gif'};job=current;[load,city,cycle,hour,start,end,speed,make,mp4].forEach(x=>x.disabled=true);cancel.hidden=false;setDownload(false);try{msg('Carregando codificador GIF…');progress.textContent='0 / '+frames.length;await gifLibrary();const worker=await gifWorker();if(current.cancelled)throw Error('Exportação cancelada.');const first=await getImage(url(c,r,frames[0]),label(frames[0]));if(current.cancelled)throw Error('Exportação cancelada.');const z=Math.min(1,960/first.naturalWidth),cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(first.naturalWidth*z));cv.height=Math.max(1,Math.round(first.naturalHeight*z));const ctx=cv.getContext('2d',{alpha:false});if(!ctx)throw Error('Não foi possível preparar o GIF.');const gif=new window.GIF({workers:2,quality:10,width:cv.width,height:cv.height,workerScript:worker,repeat:0,background:'#fff'});current.gif=gif;draw(ctx,cv,first);gif.addFrame(cv,{delay:delayMs,copy:true});for(let i=1;i<frames.length;i++){if(current.cancelled)throw Error('Exportação cancelada.');msg('Carregando PNG publicado '+label(frames[i]));progress.textContent=(i+1)+' / '+frames.length;const im=await getImage(url(c,r,frames[i]),label(frames[i]));if(current.cancelled)throw Error('Exportação cancelada.');draw(ctx,cv,im);gif.addFrame(cv,{delay:delayMs,copy:true});}msg('Codificando GIF a partir de '+frames.length+' PNGs publicados…');const blob=await new Promise((ok,no)=>{const t=setTimeout(()=>no(Error('Tempo limite na codificação GIF.')),300000);gif.on('finished',b=>{clearTimeout(t);ok(b);});gif.on('error',e=>{clearTimeout(t);no(e instanceof Error?e:Error('Erro ao codificar GIF.'));});gif.render();});if(current.cancelled)throw Error('Exportação cancelada.');const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='METBR-SkewT-'+c+'-'+r+'Z-'+label(frames[0])+'-'+label(frames.at(-1))+'.gif';a.click();setTimeout(()=>URL.revokeObjectURL(u),15000);msg('GIF criado com '+frames.length+' PNGs publicados · '+(delayMs/1000)+' s por quadro. Nenhum cálculo sob demanda foi executado.');progress.textContent='Concluído · '+frames.length+' quadros · '+delayMs+' ms/quadro';}catch(e){msg(e.message||'Falha ao gerar GIF.',true);}finally{if(job===current)job=null;[load,city,cycle,hour,start,end,speed,make,mp4].forEach(x=>x.disabled=false);cancel.hidden=true;if(!modal.hidden&&imageUrl)setDownload(true);}}
+
+let mediabunnyModulePromise=null;
+async function getMediabunny(){
+ if(!mediabunnyModulePromise){
+  mediabunnyModulePromise=import('https://cdn.jsdelivr.net/npm/mediabunny@1.62.1/+esm').catch(()=>{
+   mediabunnyModulePromise=null;
+   throw Error('Não foi possível carregar o codificador MP4. Verifique a conexão e tente novamente.');
+  });
+ }
+ const m=await mediabunnyModulePromise;
+ if(!m.Output||!m.Mp4OutputFormat||!m.BufferTarget||!m.CanvasSource||!m.Quality)throw Error('O módulo MP4 não carregou todos os componentes necessários.');
+ return m;
+}
+async function makeMp4(){
+ if(job)return;
+ if(!('VideoEncoder'in window)||!('VideoFrame'in window)){msg('Este navegador não oferece codificação de vídeo para MP4. Atualize o Edge ou Chrome.',true);return;}
+ const c=city.value,r=cycle.value,a=Number(start.value),b=Number(end.value),frames=HOURS.filter(h=>h>=a&&h<=b),seconds=Math.max(0.25,Number(speed.value)||0.5);
+ if(!frames.length||b<a){msg('Selecione uma faixa de validades válida.',true);return;}
+ const current={cancelled:false,kind:'mp4',gif:null,output:null,source:null};job=current;
+ [load,city,cycle,hour,start,end,speed,make,mp4].forEach(x=>x.disabled=true);cancel.hidden=false;setDownload(false);
+ let objectUrl='';
+ try{
+  msg('Carregando codificador MP4… na primeira execução pode demorar.');
+  progress.textContent='Preparando · '+frames.length+' quadros · '+seconds+' s/quadro';
+  const m=await getMediabunny();if(current.cancelled)throw Error('Exportação cancelada.');
+  const first=await getImage(url(c,r,frames[0]),label(frames[0]));if(current.cancelled)throw Error('Exportação cancelada.');
+  const scale=Math.min(1,960/first.naturalWidth),cv=document.createElement('canvas');
+  cv.width=Math.max(2,Math.floor(first.naturalWidth*scale/2)*2);cv.height=Math.max(2,Math.floor(first.naturalHeight*scale/2)*2);
+  const ctx=cv.getContext('2d',{alpha:false});if(!ctx)throw Error('Não foi possível preparar o canvas MP4.');
+  const target=new m.BufferTarget(),output=new m.Output({format:new m.Mp4OutputFormat(),target});
+  const source=new m.CanvasSource(cv,{codec:'avc',quality:new m.Quality({bitrate:1500000})});
+  current.output=output;current.source=source;output.addVideoTrack(source);await output.start();
+  for(let i=0;i<frames.length;i++){
+   if(current.cancelled)throw Error('Exportação cancelada.');
+   const h=frames[i],im=i===0?first:await getImage(url(c,r,h),label(h));
+   if(current.cancelled)throw Error('Exportação cancelada.');
+   ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+   const fit=Math.min(cv.width/im.naturalWidth,cv.height/im.naturalHeight),w=Math.max(1,Math.round(im.naturalWidth*fit)),hh=Math.max(1,Math.round(im.naturalHeight*fit));
+   ctx.drawImage(im,Math.round((cv.width-w)/2),Math.round((cv.height-hh)/2),w,hh);
+   await source.add(i*seconds,seconds);
+   progress.textContent=(i+1)+' / '+frames.length+' quadros · '+label(h);msg('Codificando MP4 com PNG publicado '+label(h)+'…');
+  }
+  if(current.cancelled)throw Error('Exportação cancelada.');
+  msg('Finalizando arquivo MP4…');await output.finalize();if(current.cancelled)throw Error('Exportação cancelada.');
+  const buffer=target.buffer;if(!buffer||!buffer.byteLength)throw Error('O codificador não produziu um arquivo MP4 válido.');
+  const blob=new Blob([buffer],{type:'video/mp4'});if(blob.size<4096)throw Error('O MP4 gerado ficou incompleto.');
+  objectUrl=URL.createObjectURL(blob);const link=document.createElement('a');link.href=objectUrl;link.download='METBR-SkewT-'+c+'-'+r+'Z-'+label(frames[0])+'-'+label(frames[frames.length-1])+'.mp4';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(objectUrl),20000);objectUrl='';
+  msg('MP4 H.264 gerado com '+frames.length+' PNGs publicados · '+seconds+' s por quadro. Nenhum perfil sob demanda foi calculado.');progress.textContent='Concluído · '+frames.length+' quadros · MP4';
+ }catch(e){
+  msg(e.message||'Falha ao gerar MP4.',true);
+  if(/encoder|codec|avc|h264|encoding/i.test(e.message||''))msg('O navegador ou dispositivo não conseguiu codificar H.264 para MP4. Atualize o Edge/Chrome e tente novamente.',true);
+  if(current.cancelled)progress.textContent='Exportação cancelada.';
+ }finally{
+  if(objectUrl)URL.revokeObjectURL(objectUrl);if(job===current)job=null;
+  [load,city,cycle,hour,start,end,speed,make,mp4].forEach(x=>x.disabled=false);cancel.hidden=true;
+  if(!modal.hidden&&imageUrl)setDownload(true);
+ }
+}
 button.addEventListener('click',()=>{const cp=$('uiSkewtClickMode');if(cp?.getAttribute('aria-pressed')==='true')cp.click();overflow=document.body.style.overflow;modal.hidden=false;modal.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';void loadPng();close.focus({preventScroll:true});});
 function closeModal(){if(job){job.cancelled=true;try{job.gif?.abort();}catch(_){}}modal.hidden=true;modal.setAttribute('aria-hidden','true');document.body.style.overflow=overflow;button.focus({preventScroll:true});}
-close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capitals-close]')?.addEventListener('click',closeModal);load.addEventListener('click',()=>void loadPng());[city,cycle,hour].forEach(x=>x.addEventListener('change',()=>{imageUrl='';img.hidden=true;setDownload(false);msg('Seleção alterada. Abra o PNG publicado para visualizar.');}));start.addEventListener('change',()=>{if(+end.value<+start.value)end.value=start.value;});end.addEventListener('change',()=>{if(+end.value<+start.value)start.value=end.value;});down.addEventListener('click',()=>void downloadPng());downTop.addEventListener('click',()=>void downloadPng());make.addEventListener('click',()=>void makeGif());cancel.addEventListener('click',()=>{if(job){job.cancelled=true;try{job.gif?.abort();}catch(_){}msg('Cancelando GIF…');}});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!modal.hidden)closeModal();});console.info('[METBR capitals] using published PNGs only; GIF does not invoke on-demand rendering.');
+close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capitals-close]')?.addEventListener('click',closeModal);load.addEventListener('click',()=>void loadPng());[city,cycle,hour].forEach(x=>x.addEventListener('change',()=>{imageUrl='';img.hidden=true;setDownload(false);msg('Seleção alterada. Abra o PNG publicado para visualizar.');}));start.addEventListener('change',()=>{if(+end.value<+start.value)end.value=start.value;});end.addEventListener('change',()=>{if(+end.value<+start.value)start.value=end.value;});down.addEventListener('click',()=>void downloadPng());downTop.addEventListener('click',()=>void downloadPng());make.addEventListener('click',()=>void makeGif());mp4.addEventListener('click',()=>void makeMp4());cancel.addEventListener('click',()=>{if(job){job.cancelled=true;try{job.gif?.abort();}catch(_){}msg('Cancelando exportação '+(job.kind==='mp4'?'MP4':'GIF')+'…');}});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!modal.hidden)closeModal();});console.info('[METBR capitals] using published PNGs only; GIF does not invoke on-demand rendering.');
 })();
 </script>
 </body>
