@@ -1177,8 +1177,8 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
              fontsize=8.0, color=INK, fontweight="bold")
     fig.add_artist(plt.Line2D([0.015, 0.985], [0.932, 0.932],
                               transform=fig.transFigure, color="#c6ccd4", lw=0.75, zorder=10))
-    ax_skew = fig.add_axes([0.020, 0.325, 0.495, 0.595])
-    ax_hodo = fig.add_axes([0.535, 0.325, 0.445, 0.595])
+    ax_skew = fig.add_axes([0.025, 0.325, 0.315, 0.595])
+    ax_hodo = fig.add_axes([0.355, 0.325, 0.625, 0.595])
 
     _make_skew_axes(ax_skew, p, t, td, z, u, v, prof, station_label, date_text, elevation)
     _make_hodo(ax_hodo, z, u, v, "Hodógrafa (kt)", motion, elevation, critical_angle, preferred_label)
