@@ -304,10 +304,14 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
             ha="left", va="bottom", fontsize=6.5, weight="bold",
             color="#303030", clip_on=True,
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=0.2))
-    for pp in [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]:
-        height = _interp_pressure(h_agl, p, pp)
-        if math.isfinite(height) and pp <= surface_pressure + 0.1:
-            ax.text(-41.8, pp, f"{height:.1f} m AGL", ha="left", va="center", fontsize=6.6, color="#303030", clip_on=True)
+    # Height markers every 3 km, matching the sparse altitude labels in the reference.
+    for height_m in (3000, 6000, 9000, 12000, 15000):
+        level_pressure = _interp_height(p, h_agl, float(height_m))
+        if math.isfinite(level_pressure) and 100.0 <= level_pressure <= surface_pressure:
+            ax.text(-41.8, level_pressure, f"{height_m // 1000} km AGL",
+                    ha="left", va="center", fontsize=6.4, color="#b84a4a",
+                    weight="bold", clip_on=True,
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.72, pad=0.15))
     from sharppy.sharptab import thermo
     t_virtual = np.asarray([float(thermo.virtemp(float(pi), float(ti), float(di)))
                             for pi, ti, di in zip(p, t, td)], dtype=float)
@@ -373,16 +377,13 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
         marker_pressures[short] = pressure_value
         if pressure_value is not None and 100 <= pressure_value <= 1050:
             marker_color = marker_colors[short]
-            # White underlay keeps the level visible over temperature/dewpoint curves.
-            ax.axhline(pressure_value, color="white", lw=3.2,
-                       ls=(0, (5, 2)), alpha=1.0, zorder=7)
-            ax.axhline(pressure_value, color=marker_color, lw=1.65,
-                       ls=(0, (5, 2)), alpha=1.0, zorder=8)
-            ax.text(57.0, pressure_value, f" {short} ", fontsize=8.0, weight="bold",
+            # Short colored level tick and compact label; avoid drawing across the full chart.
+            ax.plot([43.0, 48.0], [pressure_value, pressure_value],
+                    color=marker_color, lw=1.35, zorder=8, solid_capstyle="round")
+            ax.text(49.2, pressure_value, short, fontsize=7.1, weight="bold",
                     ha="left", va="center", color=marker_color,
-                    bbox=dict(facecolor=marker_fills[short], edgecolor=marker_color,
-                              linewidth=0.9, alpha=0.99, pad=1.2),
-                    clip_on=False, zorder=10)
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=0.1),
+                    clip_on=True, zorder=10)
 
     # Freezing level, a common sounding reference mark.
     freeze_idx = np.where(np.isfinite(t[:-1]) & np.isfinite(t[1:]) & (t[:-1] * t[1:] <= 0))[0]
@@ -449,9 +450,8 @@ def _make_hodo(ax, z, u, v, station_text, motion):
     for r in [10, 20, 30, 40, 50, 60, 70]:
         ax.add_patch(plt.Circle((0, 0), r, fill=False, lw=0.8 if r % 20 == 0 else 0.45,
                                 edgecolor="#b7c0cb" if r % 20 == 0 else "#e0e5eb", linestyle=(0, (3, 3)), zorder=0))
-        if r % 20 == 10:
-            ax.text(-r, 1.5, f"{r}", fontsize=7, color="#7d8792", ha="center", va="bottom")
-            ax.text(1.8, r, f"{r}", fontsize=7, color="#7d8792", ha="left", va="center")
+        ax.text(-r, 1.5, f"{r}", fontsize=6.3, color="#7d8792", ha="center", va="bottom")
+        ax.text(1.8, r, f"{r}", fontsize=6.3, color="#7d8792", ha="left", va="center")
     ax.axhline(0, color="#9aa4b0", lw=0.85, zorder=1); ax.axvline(0, color="#9aa4b0", lw=0.85, zorder=1)
     order = np.argsort(h_agl)
     hh, uu, vv = h_agl[order], u[order], v[order]
