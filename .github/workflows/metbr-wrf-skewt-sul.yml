@@ -6,7 +6,10 @@ on:
     paths:
       - 'tools/skewt/metbr_native_spc_render.py'
       - 'wrf/metbr_skewt_south.py'
-      - '.github/workflows/metbr-wrf-skewt-sul.yml'
+  workflow_run:
+    workflows: ["METBR WRF 4 KM - ICON"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
