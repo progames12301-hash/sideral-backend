@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
 
-W, H, DPI = 1344, 1152, 100
+W, H, DPI = 1500, 1000, 100
 SKEW = 15.5
 RED = "#ff2020"
 BLUE = "#063cff"
@@ -595,14 +595,12 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
                                     "width": 0.22, "emptybarb": 0.15},
              barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, clip_on=True, zorder=7)
-    # Trace identification uses standard Skew-T colours; no legend is drawn
-    # over the thermodynamic curves, avoiding the overlap reported by the user.
-    ax.text(0.0, 1.050, f"Skew-T | {station}", transform=ax.transAxes,
-            fontsize=9.0, weight="bold", ha="left", va="bottom",
-            color=INK, clip_on=False)
-    ax.text(0.0, 1.006, date_text, transform=ax.transAxes,
-            fontsize=6.5, ha="left", va="bottom",
-            color="#333333", clip_on=False)
+    legend = ax.legend(loc="upper right", bbox_to_anchor=(0.88, 0.995), fontsize=7.0,
+                      frameon=True, framealpha=0.96, fancybox=False, borderpad=0.35,
+                      labelspacing=0.25, handlelength=1.45)
+    if legend is not None:
+        legend.get_frame().set_facecolor("white")
+        legend.get_frame().set_edgecolor("#b8c0ca")
 
 
 def _make_theta_axes(ax, p, t, td):
@@ -771,9 +769,9 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
     rm_speed = math.hypot(*rm)
     lm_speed = math.hypot(*lm)
     ax.set_title(
-        f"{title_text}\nV̄ 0–6 km {mean_speed:.1f} kt · RM {rm_speed:.1f} kt · LM {lm_speed:.1f} kt · "
-        f"Ciclônico {mover_short} ({hemisphere_short}) · Ângulo {ca}",
-        fontsize=5.9, loc="left", pad=3, color=INK,
+        f"HODOGRAPH / WIND (kt) · mean 0–6 km {mean_speed:.1f} kt · RM {rm_speed:.1f} kt · "
+        f"LM {lm_speed:.1f} kt · {mover_short} · critical angle {ca}",
+        fontsize=7.0, loc="left", pad=4, color=INK,
     )
     legend_handles = [
         plt.Line2D([0], [0], color=layer_colors[0], lw=2.2, label="0–0,5 km"),
@@ -781,8 +779,8 @@ def _make_hodo(ax, z, u, v, title_text, motion, ground_m, critical_angle, prefer
         plt.Line2D([0], [0], color=layer_colors[2], lw=2.2, label="3–6 km"),
         plt.Line2D([0], [0], color=layer_colors[3], lw=2.2, label="6–12 km"),
     ]
-    ax.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, -0.04),
-              ncol=4, fontsize=5.7, frameon=False, labelcolor=INK,
+    ax.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.995),
+              ncol=4, fontsize=5.9, frameon=True, framealpha=0.94, edgecolor="#d5dbe3", labelcolor=INK,
               handlelength=1.05, handletextpad=0.35, columnspacing=0.8)
 
 def _sweat_index_hemispheric(prof, latitude):
@@ -938,7 +936,7 @@ def _make_srw(ax, h_agl, u, v, storm, title_text):
 
 def _parcel_rows(prof, srh01, srh03):
     rows = []
-    for label, attr in [("SFC", "sfcpcl"), ("ML", "mlpcl"), ("MU", "mupcl"), ("FCST", "fcstpcl")]:
+    for label, attr in [("Surface-Based", "sfcpcl"), ("Mixed-Layer", "mlpcl"), ("Most Unstable", "mupcl")]:
         pcl = getattr(prof, attr, None)
         if pcl is None:
             rows.append([label, "--", "--", "--", "--", "--", "--", "--", "--"])
@@ -955,26 +953,26 @@ def _parcel_rows(prof, srh01, srh03):
     return rows
 
 
-def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude):
-    ax = fig.add_axes([0.035, 0.103, 0.63, 0.115]); ax.axis("off")
-    cols = ["", "CAPE [J/kg]", "CIN [J/kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0-1", "EHI 0-3"]
+def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude, hodo_motion):
+    ax = fig.add_axes([0.020, 0.185, 0.635, 0.105]); ax.axis("off")
+    cols = ["PARCEL", "CAPE [J/kg]", "CIN [J/kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0–1", "EHI 0–3"]
     table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
-                     colWidths=[0.07,0.13,0.13,0.12,0.12,0.12,0.08,0.10,0.10])
-    table.auto_set_font_size(False); table.set_fontsize(7.7); table.scale(1, 1.30)
+                     colWidths=[0.16, 0.105, 0.09, 0.105, 0.105, 0.105, 0.07, 0.13, 0.13])
+    table.auto_set_font_size(False); table.set_fontsize(6.4); table.scale(1, 1.12)
     level_styles = {
-        3: ("#e2f4ea", "#00643b"),  # LCL
-        4: ("#fff0d6", "#804000"),  # LFC
-        5: ("#f0e5fa", "#581b86"),  # EL
+        3: ("#e2f4ea", "#00643b"),
+        4: ("#fff0d6", "#804000"),
+        5: ("#f0e5fa", "#581b86"),
     }
-    for (r,c), cell in table.get_celld().items():
-        cell.set_edgecolor("#aeb8c4"); cell.set_linewidth(0.45)
-        cell.set_facecolor("#e8edf3" if r == 0 else "#ffffff")
+    for (r, c), cell in table.get_celld().items():
+        cell.set_edgecolor("#b8c1cc"); cell.set_linewidth(0.45)
+        cell.set_facecolor("#e9eef4" if r == 0 else ("#ffffff" if r % 2 else "#f7f9fb"))
         cell.get_text().set_color("#101010")
         cell.get_text().set_fontweight("bold" if r == 0 else "normal")
-        if c in level_styles:
+        if r > 0 and c in level_styles:
             fill, ink = level_styles[c]
             cell.set_facecolor(fill)
-            cell.set_edgecolor(ink); cell.set_linewidth(0.9)
+            cell.set_edgecolor(ink); cell.set_linewidth(0.8)
             cell.get_text().set_color(ink); cell.get_text().set_fontweight("bold")
 
     ground_m = _finite(getattr(prof, "hght", [0])[getattr(prof, "sfc", 0)])
@@ -1050,11 +1048,49 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh0
     sweat_label = "SWEAT-S" if latitude < 0 else "SWEAT"
     right = [f"DCAPE: {dcape} J/kg", f"{sweat_label}: {sweat}", f"µburst: {microburst}", f"DCP: {dcp_value}"]
     severe = [f"SigSevere: {sig} m³/s³", f"Wndg: {wndg}"]
-    columns = [(0.037, left), (0.225, mid1), (0.392, mid2), (0.535, lapse), (0.700, right), (0.835, severe)]
+    preferred = hodo_motion[2] if latitude < 0 else hodo_motion[1]
+    surface_pcl = getattr(prof, "sfcpcl", None)
+    surface_cape = _finite(getattr(surface_pcl, "bplus", None)) if surface_pcl is not None else None
+
+    def _mean_srw(top_m):
+        valid = (np.isfinite(h_agl) & np.isfinite(u) & np.isfinite(v)
+                 & (h_agl >= 0.0) & (h_agl <= float(top_m)))
+        if not np.any(valid):
+            return None
+        relative = np.hypot(u[valid] - preferred[0], v[valid] - preferred[1])
+        return float(np.nanmean(relative)) if np.isfinite(relative).any() else None
+
+    wind_specs = [
+        ("SFC–500 m", 500, _shear(prof, 500), srh005),
+        ("SFC–1 km", 1000, shear01, srh01),
+        ("SFC–3 km", 3000, shear03, srh03),
+        ("SFC–6 km", 6000, shear06, srh06),
+    ]
+    wind_rows = []
+    for layer, top_m, bwd, helicity in wind_specs:
+        srw = _mean_srw(top_m)
+        ehi = surface_cape * helicity / 160000.0 if surface_cape is not None and math.isfinite(helicity) else None
+        wind_rows.append([layer, _fmt(bwd, 1), _fmt(helicity, 0), _fmt(srw, 1), _fmt(ehi, 2)])
+
+    wind_ax = fig.add_axes([0.675, 0.035, 0.305, 0.245]); wind_ax.axis("off")
+    wind_table = wind_ax.table(cellText=wind_rows,
+                               colLabels=["LAYER", "BWD [kt]", "SRH", "SRW [kt]", "EHI"],
+                               cellLoc="center", colLoc="center", loc="upper left",
+                               colWidths=[0.27, 0.17, 0.23, 0.19, 0.14])
+    wind_table.auto_set_font_size(False); wind_table.set_fontsize(6.7); wind_table.scale(1, 1.34)
+    for (r, c), cell in wind_table.get_celld().items():
+        cell.set_edgecolor("#b8c1cc"); cell.set_linewidth(0.48)
+        cell.set_facecolor("#e9eef4" if r == 0 else ("#ffffff" if r % 2 else "#f7f9fb"))
+        cell.get_text().set_color("#101010")
+        cell.get_text().set_fontweight("bold" if r == 0 else "normal")
+
+    columns = [(0.025, left[:5]), (0.150, left[5:] + mid1[:3]),
+               (0.275, mid1[3:] + mid2[:3]), (0.400, mid2[3:] + lapse[:3]),
+               (0.525, lapse[3:] + right + severe)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.080 - j * 0.013, label, ha="left", va="center",
-                     fontsize=7.8, color="#080808", fontweight="bold", zorder=30)
+            fig.text(x, 0.160 - j * 0.016, label, ha="left", va="center",
+                     fontsize=6.2, color="#15191f", fontweight="bold", zorder=30)
 
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
@@ -1125,19 +1161,17 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
 
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 8, "axes.linewidth": 0.85, "savefig.facecolor": "white"})
     fig = plt.figure(figsize=(W / DPI, H / DPI), dpi=DPI, facecolor="white")
-    ax_skew = fig.add_axes([0.078, 0.236, 0.402, 0.704])
-    ax_theta = fig.add_axes([0.508, 0.236, 0.112, 0.704])
-    ax_hodo = fig.add_axes([0.628, 0.550, 0.336, 0.390])
-    ax_adv = fig.add_axes([0.650, 0.139, 0.142, 0.350])
-    ax_srw = fig.add_axes([0.832, 0.139, 0.140, 0.350])
+    header_text = f"{model_label} • {station_label} • ciclo {run_short} • F{fh:03d} • válido {valid_short} • {lat_text}, {lon_text}"
+    fig.text(0.016, 0.966, header_text, ha="left", va="center",
+             fontsize=8.0, color=INK, fontweight="bold")
+    fig.add_artist(plt.Line2D([0.015, 0.985], [0.932, 0.932],
+                              transform=fig.transFigure, color="#c6ccd4", lw=0.75, zorder=10))
+    ax_skew = fig.add_axes([0.020, 0.325, 0.495, 0.595])
+    ax_hodo = fig.add_axes([0.535, 0.325, 0.445, 0.595])
 
     _make_skew_axes(ax_skew, p, t, td, z, u, v, prof, station_label, date_text, elevation)
-    _make_theta_axes(ax_theta, p, t, td)
     _make_hodo(ax_hodo, z, u, v, "Hodógrafa (kt)", motion, elevation, critical_angle, preferred_label)
-    _make_advection(ax_adv, meta.get("thermal_advection"), float(p[0]))
-    srw_title = "Vento relativo à tempestade (LM)" if is_southern else "Vento relativo à tempestade (RM)"
-    _make_srw(ax_srw, h_agl, u, v, preferred, srw_title)
-    _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude)
+    _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh06, shear01, shear03, shear06, latitude, motion)
 
     # Use the exact Sideral logo asset supplied for the brand; do not synthesize a text logo.
     logo_path = Path(__file__).resolve().parents[2] / "assets" / "sideral-logo.png"
@@ -1145,7 +1179,7 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
         raise FileNotFoundError(f"Logo oficial Sideral ausente: {logo_path}")
     with Image.open(logo_path) as source_logo:
         logo = source_logo.convert("RGBA")
-    logo_ax = fig.add_axes([0.862, 0.008, 0.112, 0.046], zorder=20)
+    logo_ax = fig.add_axes([0.872, 0.938, 0.112, 0.038], zorder=20)
     logo_ax.imshow(logo, interpolation="lanczos")
     logo_ax.set_axis_off()
     fig.savefig(out_dir / "full.png", dpi=DPI, facecolor="white", bbox_inches=None)
