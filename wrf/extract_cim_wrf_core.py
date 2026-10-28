@@ -13,7 +13,11 @@ import numpy as np
 import xarray as xr
 
 from extract_wrf_json import native_composite_reflectivity
-from extract_wrf_severe import compute, flat, idx, runenv, validtime, write_gz
+from extract_wrf_severe import (
+    compute, flat, idx, runenv, validtime, write_gz,
+    FIELDS as SEVERE_FIELDS, METHODS as SEVERE_METHODS,
+    payload as build_severe_payload,
+)
 
 FIELDS = ("reflectivity", "stp", "scp", "temperature", "humidity")
 
@@ -53,6 +57,9 @@ def main():
     )
     date, cycle = init.strftime("%Y%m%d"), init.strftime("%H")
     frames = []
+    severe_frames = []
+    severe_history = {name: [] for name in SEVERE_FIELDS}
+    severe_methods = dict(SEVERE_METHODS)
     native_dx = native_dy = None
 
     for path in files:
@@ -82,6 +89,16 @@ def main():
             native_dx = dx_m if native_dx is None else native_dx
             native_dy = dy_m if native_dy is None else native_dy
             resolution_km = round((dx_m + dy_m) / 2000.0, 3)
+
+            severe_payload = build_severe_payload(
+                args.model, date, cycle, iso(init), hour, iso(valid),
+                derived, variables, methods, dx_m, dy_m,
+            )
+            severe_payload["source"] = (
+                f"CIM WRF {resolution_km:g} km {args.model.upper()} · "
+                "CAPE/CIN e diagnósticos severos"
+            )
+            severe_rel = f"severe/{args.model}/f{hour:03d}.json.gz"
 
             payload = {
                 "schema": "sideral-cim-wrf-native-v2",
@@ -114,12 +131,26 @@ def main():
 
         rel = f"frames/f{hour:03d}.json.gz"
         write_gz(output / rel, payload)
+        write_gz(output / severe_rel, severe_payload)
+        severe_frames.append({
+            "index": len(severe_frames),
+            "forecastHour": hour,
+            "validTime": iso(valid),
+            "file": severe_rel,
+            "gridX": len(cols),
+            "gridY": len(rows),
+            "nativeGrid": True,
+        })
+        for field in SEVERE_FIELDS:
+            severe_history[field].append(variables[field])
+        severe_methods = methods
         frames.append(
             {
                 "index": len(frames),
                 "forecastHour": hour,
                 "validTime": iso(valid),
                 "file": rel,
+                "severeFile": severe_rel,
                 "gridX": len(cols),
                 "gridY": len(rows),
                 "nativeGrid": True,
@@ -136,6 +167,60 @@ def main():
             f"Resolucao nativa inesperada: {actual_resolution_km} km; "
             f"esperado {expected_resolution_km:g} km"
         )
+
+    expected_hours = list(range(0, max_published_hour + 1, output_interval_hours))
+    actual_hours = [int(frame["forecastHour"]) for frame in frames]
+    missing_hours = sorted(set(expected_hours) - set(actual_hours))
+    severe_variables = {}
+    for field in SEVERE_FIELDS:
+        entries = severe_history[field]
+        available_frames = sum(entry.get("status") == "available" for entry in entries)
+        classes = {entry.get("classification", "unavailable") for entry in entries}
+        classification = "derived" if "derived" in classes else ("native" if "native" in classes else "unavailable")
+        severe_variables[field] = {
+            "classification": classification if available_frames else "unavailable",
+            "status": "available" if available_frames else "unavailable",
+            "availableFrames": available_frames,
+            "totalFrames": len(entries),
+        }
+        reasons = sorted({reason for entry in entries for reason in (entry.get("diagnostics") or [])})
+        if reasons:
+            severe_variables[field]["diagnostics"] = reasons
+
+    required_cape = ("sbcape", "mlcape", "mucapeWrf2", "cin")
+    missing_cape = [
+        field for field in required_cape
+        if severe_variables[field]["status"] != "available"
+        or severe_variables[field]["availableFrames"] != len(frames)
+    ]
+    if missing_hours or len(severe_frames) != len(frames) or missing_cape:
+        raise SystemExit(
+            "CIM incompleto: "
+            f"horas ausentes={missing_hours}; frames severos={len(severe_frames)}/{len(frames)}; "
+            f"CAPE/CIN ausentes ou incompletos={missing_cape}"
+        )
+
+    severe_metadata = {
+        "schema": "sideral-wrf2-severe-metadata-v2",
+        "model": args.model,
+        "source": f"CIM WRF {actual_resolution_km:g} km {args.model.upper()} · CAPE/CIN e diagnósticos severos",
+        "runDate": date,
+        "runCycle": f"{cycle}Z",
+        "initTime": iso(init),
+        "generatedAt": iso(dt.datetime.now(dt.timezone.utc)),
+        "status": "complete",
+        "frameCount": len(severe_frames),
+        "temporalResolutionMinutes": output_interval_hours * 60,
+        "variables": severe_variables,
+        "diagnosticMethods": severe_methods,
+        "expectedForecastHours": expected_hours,
+        "publishedForecastHours": actual_hours,
+        "missingForecastHours": missing_hours,
+        "frames": severe_frames,
+    }
+    severe_meta_path = output / "severe" / "metadata.json"
+    severe_meta_path.parent.mkdir(parents=True, exist_ok=True)
+    severe_meta_path.write_text(json.dumps(severe_metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
     metadata = {
         "schema": "sideral-cim-wrf-native-metadata-v2",
@@ -155,6 +240,12 @@ def main():
         "temporalResolutionMinutes": output_interval_hours * 60,
         "reflectivitySource": "REFL_10CM_NATIVE",
         "availableVariables": list(FIELDS),
+        "wrf2SevereDiagnostics": True,
+        "wrf2SeverePathTemplate": "severe/{model}/f{forecastHour:03d}.json.gz",
+        "wrf2SevereFields": list(SEVERE_FIELDS),
+        "wrf2DiagnosticMethods": severe_methods,
+        "severeMetadataFile": "severe/metadata.json",
+        "severeStatus": severe_metadata["status"],
         "frames": frames,
     }
     (output / "metadata.json").write_text(
