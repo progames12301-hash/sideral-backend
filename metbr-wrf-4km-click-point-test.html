@@ -5063,13 +5063,17 @@
     const frameText = document.getElementById('uiFrameReadout')?.textContent || 'F000';
     const matchFrame = frameText.match(/F\s*(\d{1,3})/i);
     const forecastHour = matchFrame ? Number(matchFrame[1]) : 0;
+    if (!Number.isInteger(forecastHour) || forecastHour < 0 || forecastHour > 42) {
+      status.textContent = 'O Click-to-Point METBR está publicado até F042. Selecione uma validade entre F000 e F042.';
+      return;
+    }
     const cycleText = document.getElementById('uiCycleLine')?.textContent || '';
     const matchCycle = cycleText.match(/\b(00|06|12|18|21):\d{2}\s*UTC\b/i);
     const params = new URLSearchParams({
       model: 'metbr',
       lat: point.lat.toFixed(5),
       lon: point.lon.toFixed(5),
-      fh: String(Number.isInteger(forecastHour) ? Math.max(0, Math.min(42, forecastHour)) : 0),
+      fh: String(forecastHour),
       from: 'metbr-map-test'
     });
     if (matchCycle) params.set('cycle', matchCycle[1]);
