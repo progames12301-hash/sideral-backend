@@ -50,6 +50,13 @@ jobs:
           ref: wrf-runner
           fetch-depth: 0
 
+      - name: Checkout do gerador Skew-T nativo
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: sideral-skewt
+          fetch-depth: 1
+
       - name: Preparar runner
         shell: bash
         run: |
@@ -234,6 +241,101 @@ jobs:
           git push origin HEAD:wrf-brasil-12km-data
           cd - >/dev/null
           git worktree remove --force /tmp/wrf-publication
+
+
+      - name: Preparar ambiente isolado SHARPpy
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv-skewt
+          .venv-skewt/bin/python -m pip install --upgrade pip setuptools wheel
+          .venv-skewt/bin/python -m pip install --disable-pip-version-check \
+            'numpy==1.26.4' 'netCDF4>=1.7,<2' 'matplotlib>=3.8,<4' \
+            'Pillow>=10,<11' 'SHARPpy @ git+https://github.com/sharppy/SHARPpy.git@main'
+          .venv-skewt/bin/python -m py_compile sideral-skewt/wrf/skewt_brasil_21km_capitais.py
+          .venv-skewt/bin/python -m py_compile sideral-skewt/tools/skewt/native_spc_render.py
+
+      - name: Gerar Skew-T nativo das 27 capitais
+        if: success()
+        env:
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_RUN_DATE: ${{ steps.run.outputs.run_date }}
+          SOURCE_RUN_CYCLE: ${{ steps.run.outputs.run_cycle }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/skewt-wrf-brasil21km
+          .venv-skewt/bin/python sideral-skewt/wrf/skewt_brasil_21km_capitais.py \
+            --run-dir wrf_work/run \
+            --out-root build/skewt-wrf-brasil21km \
+            --run-date "$SOURCE_RUN_DATE" \
+            --cycle "$SOURCE_RUN_CYCLE" \
+            --source-run-id "$SOURCE_RUN_ID"
+          test -s build/skewt-wrf-brasil21km/manifest.json
+          test -s build/skewt-wrf-brasil21km/publication.json
+          test "$(find build/skewt-wrf-brasil21km -mindepth 2 -maxdepth 2 -type f -name '*.png' -size +10000c | wc -l | tr -d '[:space:]')" -eq 459
+          .venv-skewt/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("build/skewt-wrf-brasil21km")
+          manifest=json.loads((root/"manifest.json").read_text(encoding="utf-8"))
+          assert manifest["model"] == "SIDERAL WRF Brasil 21 km"
+          assert manifest["cycle"] in {"00","06","12","18"}
+          assert manifest["source"] == "WRF-ARW native WRFOUT"
+          assert len(manifest["cities"]) == 27
+          assert manifest["forecast_hours"] == list(range(0,49,3))
+          pngs=sorted(root.glob("*/*.png"))
+          assert len(pngs)==459, f"PNG count: {len(pngs)}"
+          for p in pngs:
+              with Image.open(p) as im: im.verify()
+          print(f"Native WRF Skew-T validated: 27 capitals × 17 frames = {len(pngs)} PNGs.")
+          PY
+
+      - name: Publicar Skew-T WRF Brasil 21 km
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CYCLE: ${{ steps.run.outputs.run_cycle }}
+          RUN_DATE: ${{ steps.run.outputs.run_date }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="skewt-wrf-brasil21km-live-$CYCLE"
+          title="SIDERAL WRF Brasil 21 km — Skew-T 27 capitais — $CYCLE Z — $RUN_DATE"
+          notes="Perfis Skew-T renderizados de colunas verticais nativas WRF-ARW (WRFOUT) do SIDERAL WRF Brasil 21 km. 27 capitais, F000-F048 em passos de 3 horas. Não usa o WRF SCM nem calcula perfis fora do domínio."
+
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$GH_REPO" --title "$title" --notes "$notes" --latest=false
+          else
+            gh release create "$tag" --repo "$GH_REPO" --title "$title" --notes "$notes" --latest=false
+          fi
+
+          mapfile -d '' pngs < <(find build/skewt-wrf-brasil21km -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
+          test "${#pngs[@]}" -eq 459
+          for ((offset=0; offset<${#pngs[@]}; offset+=40)); do
+            chunk=("${pngs[@]:offset:40}")
+            gh release upload "$tag" --repo "$GH_REPO" --clobber "${chunk[@]}"
+          done
+          gh release upload "$tag" --repo "$GH_REPO" --clobber \
+            build/skewt-wrf-brasil21km/manifest.json \
+            build/skewt-wrf-brasil21km/publication.json
+          png_count="$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')"
+          test "$png_count" -eq 459
+          echo "Published $png_count native WRF Skew-T PNGs in $tag."
+
+      - name: Diagnosticos Skew-T WRF Brasil
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skewt-wrf-brasil21km-${{ github.run_id }}
+          path: |
+            build/skewt-wrf-brasil21km/**
+            .venv-skewt/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Diagnosticos
         if: always()
