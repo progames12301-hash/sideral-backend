@@ -191,11 +191,13 @@ jobs:
           missing_hours = sorted(set(range(43)) - published_hours)
           publication_status = "complete" if len(source_frames) == 43 and not missing_hours else "partial"
           meta["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
+          meta["sourceReleaseTag"] = f"metbr-wrf-4km-checkpoint-{meta['sourceRunId']}"
           meta["sourceWorkflow"] = "METBR WRF 4 KM - ICON"
           meta["publicationStatus"] = publication_status
           meta["expectedFrameCount"] = 43
           meta["missingForecastHours"] = missing_hours
           data["sourceRunId"] = int(os.environ["SOURCE_RUN_ID"])
+          data["sourceReleaseTag"] = f"metbr-wrf-4km-checkpoint-{data['sourceRunId']}"
           data["sourceWorkflow"] = "METBR WRF 4 KM - ICON"
           data["publicationStatus"] = publication_status
           data["expectedFrameCount"] = 43
