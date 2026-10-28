@@ -322,7 +322,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
         except Exception:
             tw_values.append(np.nan)
     t_wet = np.asarray(tw_values, dtype=float)
-    # Trace colours follow the METBR operational chart convention.
+    # Reference palette: red temperature, green dew point, cyan wet-bulb and distinct parcel traces.
     ax.plot(_xskew(t, p), p, color="#e53935", lw=1.75, zorder=6, label="Temperatura")
     ax.plot(_xskew(td, p), p, color="#159957", lw=1.75, zorder=7, label="Ponto de orvalho")
     ax.plot(_xskew(t_virtual, p), p, color="#b84a4a", lw=0.95, ls=(0, (4, 2)), zorder=5, label="Temperatura virtual")
