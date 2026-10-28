@@ -100,7 +100,6 @@ jobs:
     if: ${{ false }}
     name: Notificar dados indisponíveis
     needs: check-icon-data
-    if: ${{ needs.check-icon-data.outputs.data_available == 'false' }}
     runs-on: ubuntu-22.04
     steps:
       - run: |
