@@ -4739,7 +4739,7 @@
     window.__metbrPairCacheKey = `${dedicatedWrfJsonBase(currentModel)}|${frame?.dataFile || frame?.file || ''}`;
     window.__metbrPairCacheResult = null;
     try {
-      const variables = [{side:'A', key:UI.selectA.value}];
+      const variables = [{side:'A', key:UI.selectA.value}, {side:'B', key:UI.selectB.value}];
       for (const item of variables) {
         if (version !== renderVersion) return;
         const target = item.side === 'A' ? UI.canvasA : UI.canvasB;
