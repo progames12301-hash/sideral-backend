@@ -23,7 +23,7 @@ permissions:
 
 concurrency:
   group: sideral-skewt-${{ github.event_name == 'workflow_dispatch' && inputs.cycle || (github.event_name == 'push' && 'refresh') || (github.event.schedule == '45 13 * * *' && '06') || (github.event.schedule == '45 19 * * *' && '12') || '18' }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   QT_QPA_PLATFORM: offscreen
