@@ -377,12 +377,11 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     barb_good = np.isfinite(barb_u) & np.isfinite(barb_v)
     if int(barb_good.sum()) < 50:
         raise RuntimeError(f"Somente {int(barb_good.sum())} barbelas de vento válidas; esperadas pelo menos 50.")
-    # ECMWF barbs are deliberately larger and heavier to remain legible at full chart scale.
-    # Keep 55 height samples, but use full-sized feathers/flags rather than tiny glyphs.
+    # Slim, restrained wind barbs: preserve 55 levels without oversized feathers.
     ax.barbs(np.full(int(barb_good.sum()), 66.0), barb_pressure[barb_good],
-             barb_u[barb_good], barb_v[barb_good], length=8.6,
-             linewidth=1.18, sizes={"spacing": 0.20, "height": 0.46,
-                                    "width": 0.34, "emptybarb": 0.20},
+             barb_u[barb_good], barb_v[barb_good], length=5.2,
+             linewidth=0.62, sizes={"spacing": 0.11, "height": 0.25,
+                                    "width": 0.18, "emptybarb": 0.12},
              barb_increments={"half": 5, "full": 10, "flag": 50},
              pivot="middle", color=INK, clip_on=True, zorder=9)
     legend = ax.legend(loc="upper right", bbox_to_anchor=(0.88, 0.995), fontsize=7.0,
