@@ -144,104 +144,95 @@ jobs:
           done
           test -s "$root/manifest.json"
 
-      - name: Agrupar os 459 PNGs em 27 ZIPs por capital
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          from zipfile import ZIP_STORED, ZipFile
-          root = Path(f"build/skewt-models/{os.environ['MODELE']}")
-          cities = sorted(p for p in root.iterdir() if p.is_dir())
-          frames = [f"{h:03d}" for h in range(0, 49, 3)]
-          if len(cities) != 27: raise SystemExit(f"Esperadas 27 capitais; encontradas {len(cities)}")
-          for city in cities:
-              expected = {f"{city.name}-f{frame}.png" for frame in frames}
-              actual = {p.name for p in city.glob("*.png")}
-              if actual != expected: raise SystemExit(f"Frames inesperados: {city.name}")
-              archive = root / f"{city.name}.zip"
-              with ZipFile(archive, "w", compression=ZIP_STORED) as z:
-                  for name in sorted(expected): z.write(city / name, arcname=name)
-              with ZipFile(archive) as z:
-                  if sorted(z.namelist()) != sorted(expected) or z.testzip() is not None:
-                      raise SystemExit(f"ZIP inválido: {archive}")
-              if archive.stat().st_size >= 95 * 1024 * 1024:
-                  raise SystemExit(f"ZIP quase no limite de 100 MB: {archive}")
-          if len(list(root.glob("*.zip"))) != 27: raise SystemExit("Esperados 27 ZIPs")
-          print("27 ZIPs validados; 459 PNGs preservados.")
-          PY
       - name: Preparar nome da publicação
         shell: bash
         run: |
           set -euo pipefail
           case "$MODELE" in
-            icon) tag_base='skewt-icon-global'; title_base='DWD ICON Global ~11 km'; data_base='skewt-data-icon-global' ;;
-            ecmwf-hybrid) tag_base='skewt-ecmwf-hres9km-hybrid'; title_base='ECMWF HRES ~9 km híbrido + IFS 0.25° níveis de pressão'; data_base='skewt-data-ecmwf-hybrid' ;;
-            ukmo10km) tag_base='skewt-ukmo-global10km'; title_base='UK Met Office Global 10 km'; data_base='skewt-data-ukmo10km' ;;
-            nems10) tag_base='skewt-nems10-nemssa-live'; title_base='meteoblue NEMS10 NEMSSA 10 km — previsão mais recente'; data_base='skewt-data-nems10' ;;
+            icon) tag_base='skewt-icon-global'; title_base='DWD ICON Global ~11 km' ;;
+            ecmwf-hybrid) tag_base='skewt-ecmwf-hres9km-hybrid'; title_base='ECMWF HRES ~9 km híbrido + IFS 0.25° níveis de pressão' ;;
+            ukmo10km) tag_base='skewt-ukmo-global10km'; title_base='UK Met Office Global 10 km' ;;
+            nems10) tag_base='skewt-nems10-nemssa-live'; title_base='meteoblue NEMS10 NEMSSA 10 km — previsão mais recente' ;;
             *) echo "Modelo inválido"; exit 1 ;;
           esac
           if [[ "$MODELE" == "nems10" ]]; then
-            tag="$tag_base"; title="$title_base — 27 capitais"; data_branch="$data_base-live"
+            tag="$tag_base"
+            title="$title_base — 27 capitais"
           else
-            tag="${tag_base}-${CYCLE}"; title="$title_base $CYCLE Z — 27 capitais"; data_branch="${data_base}-${CYCLE}"
+            tag="${tag_base}-${CYCLE}"
+            title="$title_base ${CYCLE}Z — 27 capitais"
           fi
           echo "TAG=$tag" >> "$GITHUB_ENV"
           echo "TITLE=$title" >> "$GITHUB_ENV"
-          echo "DATA_BRANCH=$data_branch" >> "$GITHUB_ENV"
 
-
-      - name: Construir índice público dos assets compactados
+      - name: Construir índice público dos assets
         shell: bash
         run: |
-          set -euo pipefail
           python - <<'PY'
           import json, os
           from pathlib import Path
-          from zipfile import ZipFile
           root=Path(f"build/skewt-models/{os.environ['MODELE']}")
-          branch=os.environ["DATA_BRANCH"]
-          cities=sorted(p for p in root.iterdir() if p.is_dir())
-          archives=sorted(p.name for p in root.glob("*.zip"))
-          if len(cities)!=27 or len(archives)!=27: raise SystemExit("Esperados 27 diretórios e 27 ZIPs")
-          for city in cities:
-              with ZipFile(root/f"{city.name}.zip") as z:
-                  if len(z.namelist())!=17 or z.testzip() is not None: raise SystemExit(f"ZIP inválido: {city.name}")
+          assets=sorted(p.name for p in root.glob('*/*.png'))
+          if len(assets)!=459: raise SystemExit(f"Esperados 459 PNG, encontrados {len(assets)}")
           publication={
-            "schema":"sideral-skewt-publication-v2","repository":os.environ["GH_REPO"],
-            "tag":os.environ["TAG"],"data_branch":branch,"model_id":os.environ["MODELE"],
-            "asset_count":27,"png_count":459,"cities":27,"frames_per_city":17,
-            "frames":[f"{h:03d}" for h in range(0,49,3)],"cycles":["06","12","18"],
-            "archive_format":"zip",
-            "download_base":f"https://raw.githubusercontent.com/{os.environ['GH_REPO']}/{branch}/",
-            "city_archives":{city.name:f"{city.name}.zip" for city in cities},"assets":archives
+            "schema":"sideral-skewt-publication-v1",
+            "repository":os.environ["GH_REPO"],
+            "tag":os.environ["TAG"],
+            "model_id":os.environ["MODELE"],
+            "asset_count":459,
+            "cities":27,
+            "frames_per_city":17,
+            "cycles":["06","12","18"],
+            "download_base":f"https://github.com/{os.environ['GH_REPO']}/releases/download/{os.environ['TAG']}/",
+            "assets":assets
           }
           (root/"publication.json").write_text(json.dumps(publication,ensure_ascii=False,indent=2),encoding="utf-8")
           PY
 
-
-      - name: Publicar pacote estático sem API REST
+      - name: Publicar release operacional
         shell: bash
         env:
-          SIDERAL_RELEASE_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           root="build/skewt-models/$MODELE"
-          mapfile -d '' zip_files < <(find "$root" -maxdepth 1 -type f -name '*.zip' -print0 | sort -z)
-          test "${#zip_files[@]}" -eq 27
-          publish_dir="$(mktemp -d)"
-          cp "${zip_files[@]}" "$root/manifest.json" "$root/publication.json" "$publish_dir/"
-          test "$(find "$publish_dir" -maxdepth 1 -name '*.zip' | wc -l)" -eq 27
-          test "$(find "$publish_dir" -maxdepth 1 -type f | wc -l)" -eq 29
-          git -C "$publish_dir" init -b "$DATA_BRANCH"
-          git -C "$publish_dir" config user.name "github-actions[bot]"
-          git -C "$publish_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "$publish_dir" add .
-          git -C "$publish_dir" commit -m "Publish $MODELE Skew-T $CYCLE Z: 27 capital ZIPs"
-          git -C "$publish_dir" remote add origin "https://github.com/${GH_REPO}.git"
-          auth_header="$(printf '%s:%s' "$GITHUB_REPOSITORY_OWNER" "$SIDERAL_RELEASE_TOKEN" | base64 -w0)"
-          git -C "$publish_dir" -c "http.extraheader=AUTHORIZATION: basic $auth_header" push --force origin "HEAD:refs/heads/$DATA_BRANCH"
-          unset auth_header
-          echo "Pacotes publicados na branch $DATA_BRANCH via Git, sem chamadas REST de Release."
+          if [[ "$MODELE" == "ecmwf-hybrid" ]]; then
+            notes="Perfil híbrido deliberado: superfície ECMWF IFS HRES nativa (~9 km); temperaturas, umidade, vento, geopotencial e omega em níveis de pressão do ECMWF IFS 0.25°. Não representa uma coluna vertical integral de 9 km."
+          elif [[ "$MODELE" == "nems10" ]]; then
+            notes="meteoblue NEMS10 NEMSSA ~10 km sobre a América do Sul. Perfil vertical do próprio NEMSSA, com temperatura, umidade relativa, vento U/V e geopotencial até os níveis disponibilizados pela API. Previsão mais recente por validade horária; chave da API não faz parte dos assets."
+          else
+            notes="Skew-T SHARPpy pré-gerado para 27 capitais e F000–F048 em passos de 3 horas. Fonte: Open-Meteo Single Runs; modelo e resolução descritos no manifest.json."
+          fi
+          release_state=unknown
+          for attempt in 1 2 3 4 5; do
+            if response="$(gh api "repos/$GH_REPO/releases/tags/$TAG" 2>&1)"; then
+              release_state=present; break
+            elif grep -Eqi 'HTTP 404|404 Not Found|Not Found' <<< "$response"; then
+              release_state=missing; break
+            else
+              echo "Consulta da release falhou (tentativa $attempt/5): $response"; sleep $((attempt * 5))
+            fi
+          done
+          [[ "$release_state" != unknown ]] || { echo "Estado da release desconhecido; não será apagada."; exit 1; }
+          if [[ "$release_state" == missing ]]; then
+            gh release create "$TAG" --repo "$GH_REPO" --title "$TITLE" --notes "$notes"
+          else
+            gh release edit "$TAG" --repo "$GH_REPO" --title "$TITLE" --notes "$notes"
+          fi
+          mapfile -d '' png_files < <(find "$root" -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
+          test "${#png_files[@]}" -eq 459
+          files=("${png_files[@]}" "$root/manifest.json" "$root/publication.json")
+          upload_ok=false
+          for attempt in 1 2 3; do
+            if gh release upload "$TAG" --repo "$GH_REPO" --clobber "${files[@]}"; then upload_ok=true; break; fi
+            echo "Upload falhou, tentativa $attempt/3"; sleep $((attempt * 10))
+          done
+          [[ "$upload_ok" == true ]] || { echo "Falha ao publicar assets."; exit 1; }
 
+      - name: Verificar publicação
+        env:
+          GH_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')" -eq 459
+          test "$(gh release view "$TAG" --repo "$GH_REPO" --json assets --jq '.assets|map(.name)|map(select(.=="publication.json"))|length')" -eq 1
