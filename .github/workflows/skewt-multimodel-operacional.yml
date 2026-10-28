@@ -240,7 +240,7 @@ jobs:
           git -C "$publish_dir" add .
           git -C "$publish_dir" commit -m "Publish $MODELE Skew-T $CYCLE Z: 27 capital ZIPs"
           git -C "$publish_dir" remote add origin "https://github.com/${GH_REPO}.git"
-          auth_header="$(printf 'x-access-token:%s' "$SIDERAL_RELEASE_TOKEN" | base64 -w0)"
+          auth_header="$(printf '%s:%s' "$GITHUB_REPOSITORY_OWNER" "$SIDERAL_RELEASE_TOKEN" | base64 -w0)"
           git -C "$publish_dir" -c "http.extraheader=AUTHORIZATION: basic $auth_header" push --force origin "HEAD:refs/heads/$DATA_BRANCH"
           unset auth_header
           echo "Pacotes publicados na branch $DATA_BRANCH via Git, sem chamadas REST de Release."

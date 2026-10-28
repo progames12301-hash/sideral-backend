@@ -74,3 +74,47 @@ jobs:
             tools/skewt/ecmwf_profile.py \
             tools/skewt/render_operational_interface.py \
             tools/skewt/render_operational_interface_v2.py
+
+      - name: Compile inline JavaScript in Skew-T pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class InlineScripts(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.collect = False
+                  self.current = []
+                  self.scripts = []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() == "script":
+                      self.collect = "src" not in dict(attrs)
+                      self.current = []
+
+              def handle_data(self, data):
+                  if self.collect:
+                      self.current.append(data)
+
+              def handle_endtag(self, tag):
+                  if tag.lower() == "script" and self.collect:
+                      self.scripts.append("".join(self.current))
+                      self.collect = False
+                      self.current = []
+
+          for source, output in (
+              ("Skew t.html", "/tmp/skewt-main-inline.js"),
+              ("skewt-capitais.html", "/tmp/skewt-capitais-inline.js"),
+          ):
+              parser = InlineScripts()
+              parser.feed(Path(source).read_text(encoding="utf-8"))
+              if not parser.scripts:
+                  raise SystemExit(f"Nenhum script inline encontrado em {source}")
+              Path(output).write_text("\\n;\\n".join(parser.scripts), encoding="utf-8")
+              print(f"{source}: {len(parser.scripts)} script(s) extraídos")
+          PY
+          node --check /tmp/skewt-main-inline.js
+          node --check /tmp/skewt-capitais-inline.js
