@@ -1,0 +1,36 @@
+name: Validate Skew-T Python syntax
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/skewt/*.py"
+      - ".github/workflows/validate-skewt-syntax.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Skew-T scripts before any rendering
+        run: |
+          python -m py_compile \
+            tools/skewt/native_spc_render.py \
+            tools/skewt/metbr_native_spc_render.py \
+            tools/skewt/generate_capitals_sharppy.py \
+            tools/skewt/generate_multimodel_capitals.py \
+            tools/skewt/generate_sharppy_product.py \
+            tools/skewt/generate_sharppy_product_operational.py \
+            tools/skewt/ecmwf_profile.py \
+            tools/skewt/render_operational_interface.py \
+            tools/skewt/render_operational_interface_v2.py
