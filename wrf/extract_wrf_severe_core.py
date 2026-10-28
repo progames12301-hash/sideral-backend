@@ -5,6 +5,9 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+if not hasattr(np, "trapezoid"):
+    np.trapezoid = np.trapz
+
 G,RD,CP,EPS=9.80665,287.05,1004.0,0.622
 K=RD/CP
 FIELDS=["stp","scp","srh01","srh03","bulkShear06","effectiveBulkShear","lclHeight","cin","sbcape","mlcape","mucapeWrf2","pwat","thetaE850","thetaEAdvection","wind850","wind500","vorticity500","omega700","mslp","thickness","dewpoint2m","kIndex","totalTotals"]
@@ -267,6 +270,6 @@ def main():
         reasons=sorted({y for x in h for y in x.get("diagnostics",[])});
         if reasons:vm[f]["diagnostics"]=reasons
     status="unavailable" if not frames else ("partial" if missing or diag["frameErrors"] else "complete")
-    meta={"schema":"sideral-wrf2-severe-metadata-v2","model":a.model,"source":f"WRF 2 Sudeste 4 km {a.model.upper()} · diagnósticos severos","runDate":date,"runCycle":f"{cycle}Z" if cycle else None,"initTime":init_s,"generatedAt":now(),"status":status,"frameCount":len(frames),"temporalResolutionMinutes":a.interval_hours*60,"variables":vm,"diagnosticMethods":methods,"diagnostics":{"file":"diagnostics.json","missingFrameCount":len(missing),"frameErrorCount":len(diag["frameErrors"])},"reflectivity":{"status":"independent","source":"REFL_10CM_NATIVE","note":"Os diagnósticos severos não alteram a refletividade nativa."},"expectedFrames":[f"severe/{a.model}/f{x:03d}.json.gz" for x in expected_all],"frames":frames}
+    meta={"schema":"sideral-wrf2-severe-metadata-v2","model":a.model,"source":os.environ.get("WRF_PRODUCT_LABEL", "").strip() or f"WRF severe diagnostics · {a.model.upper()}","runDate":date,"runCycle":f"{cycle}Z" if cycle else None,"initTime":init_s,"generatedAt":now(),"status":status,"frameCount":len(frames),"temporalResolutionMinutes":a.interval_hours*60,"variables":vm,"diagnosticMethods":methods,"diagnostics":{"file":"diagnostics.json","missingFrameCount":len(missing),"frameErrorCount":len(diag["frameErrors"])},"reflectivity":{"status":"independent","source":"REFL_10CM_NATIVE","note":"Os diagnósticos severos não alteram a refletividade nativa."},"expectedFrames":[f"severe/{a.model}/f{x:03d}.json.gz" for x in expected_all],"frames":frames}
     diag["status"]=status;diag["metadata"]={"runDate":date,"runCycle":f"{cycle}Z" if cycle else None,"initTime":init_s};write_json(out/"metadata.json",meta);write_json(out/"diagnostics.json",diag);print(json.dumps(meta,ensure_ascii=False,indent=2))
 if __name__=="__main__":main()
