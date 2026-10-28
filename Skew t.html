@@ -31,15 +31,15 @@
     <div class="panel"><div class="title">VALIDADE</div><div class="body" id="valid">--</div></div>
     <div class="panel"><div class="title">PUBLICAÇÃO</div><div class="body" id="source">GitHub Release — --</div></div>
   </div>
-  <div class="note">O SHARPpy gera 459 PNGs agrupados em 27 ZIPs, um por capital. O navegador baixa o pacote da capital selecionada e extrai o frame escolhido. Os pacotes ficam em uma branch pública de dados; a página não consulta a API REST do GitHub.</div>
+  <div class="note">O navegador não calcula nem desenha o sounding. Ele resolve o índice de publicação do GitHub Release e abre diretamente o PNG produzido pelo SHARPpy. São 27 capitais × 17 frames (F000–F048, passo de 3h) = 459 PNG por ciclo.</div>
 </div>
 
 <div class="loading" id="loading">Localizando publicação SHARPpy...</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const OWNER='progames12301-hash';
 const REPO='sideral-backend';
+const API=`https://api.github.com/repos/${OWNER}/${REPO}`;
 const RELEASE_BASE=`https://github.com/${OWNER}/${REPO}/releases/download`;
 const CAPITALS=[
  ['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']
@@ -47,12 +47,6 @@ const CAPITALS=[
 const $=id=>document.getElementById(id);
 let publication=null;
 let currentUrl='';
-let archiveCache=new Map();
-let imageRequest=0;
-function clearCurrentUrl(){
-  if(currentUrl.startsWith('blob:'))URL.revokeObjectURL(currentUrl);
-  currentUrl='';
-}
 for(let h=0;h<=48;h+=3){const o=document.createElement('option');o.value=h;o.textContent='F'+String(h).padStart(3,'0');$('fh').appendChild(o)}
 function setStatus(t,cls=''){$('status').textContent=t;$('status').className='status '+cls}
 function assetName(slug,fh){return `${slug}-f${String(fh).padStart(3,'0')}.png`}
@@ -61,20 +55,6 @@ function releaseTag(cycle){
   if(model==='nems10')return 'skewt-nems10-nemssa-live';
   const prefix=({ecmwf:'skewt-live',icon:'skewt-icon-global','ecmwf-hybrid':'skewt-ecmwf-hres9km-hybrid',ukmo10km:'skewt-ukmo-global10km'})[model]||'skewt-live';
   return prefix+'-'+cycle;
-}
-function publicationBranch(cycle){
-  const model=$('model').value;
-  if(model==='nems10')return 'skewt-data-nems10-live';
-  const bases={
-    ecmwf:'skewt-data-ecmwf',
-    icon:'skewt-data-icon-global',
-    'ecmwf-hybrid':'skewt-data-ecmwf-hybrid',
-    ukmo10km:'skewt-data-ukmo10km'
-  };
-  return (bases[model]||bases.ecmwf)+'-'+cycle;
-}
-function legacyAssetNames(){
-  return CAPITALS.flatMap(c=>Array.from({length:17},(_,i)=>assetName(c[1],i*3)));
 }
 function modelLabel(){return $('model').selectedOptions[0]?.textContent||'ECMWF IFS';}
 function cycleLabel(){return $('model').value==='nems10'?'previsão mais recente':$('cycle').value+'Z';}
@@ -88,121 +68,59 @@ function assetUrl(name){
 }
 function fillCities(){
   const s=$('city');const previous=s.value;s.innerHTML='';
-  const names=publication?.schema==='sideral-skewt-publication-v2'
-    ? Object.keys(publication.city_archives||{})
-    : (publication?.assets||[]).map(a=>a.replace(/-f\d{3}\.png$/,''));
-  CAPITALS.filter(c=>names.some(n=>n===c[1])).forEach(c=>{
-    const o=document.createElement('option');o.value=c[1];o.textContent=c[0];s.appendChild(o);
-  });
+  const names=(publication?.assets||[]).map(a=>a.replace(/-f\d{3}\.png$/,''));
+  CAPITALS.filter(c=>names.some(n=>n===c[1])).forEach(c=>{const o=document.createElement('option');o.value=c[1];o.textContent=c[0];s.appendChild(o)});
   if([...s.options].some(o=>o.value===previous))s.value=previous;
 }
 async function fetchPublication(cycle){
-  const branch=publicationBranch(cycle);
-  const rawBase='https://raw.githubusercontent.com/'+OWNER+'/'+REPO+'/'+branch+'/';
-  try{
-    const response=await fetch(rawBase+'publication.json?v='+Date.now(),{cache:'no-store'});
-    if(response.ok){
-      const p=await response.json();
-      if(p?.schema==='sideral-skewt-publication-v2'&&Array.isArray(p.assets)&&p.city_archives)return p;
-      if(p?.schema==='sideral-skewt-publication-v1'&&Array.isArray(p.assets))return p;
-    }
-  }catch(e){}
-  // Compatibility with previous individual-PNG releases; no GitHub REST API calls.
   const tag=releaseTag(cycle);
-  return {
-    schema:'legacy-release',repository:OWNER+'/'+REPO,tag:tag,asset_count:459,
-    download_base:RELEASE_BASE+'/'+tag+'/',assets:legacyAssetNames()
-  };
+  // First use the deterministic publication manifest shipped as a release asset.
+  const manifestUrl=`${RELEASE_BASE}/${tag}/publication.json?v=${Date.now()}`;
+  try{
+    const r=await fetch(manifestUrl,{cache:'no-store'});
+    if(r.ok){const p=await r.json();if(p?.schema==='sideral-skewt-publication-v1'&&Array.isArray(p.assets))return p}
+  }catch(e){}
+  // Backward compatibility for releases generated before publication.json existed.
+  const r=await fetch(`${API}/releases/tags/${tag}`,{cache:'no-store'});
+  if(!r.ok)throw new Error(`release ${tag} não encontrado (${r.status})`);
+  const release=await r.json();
+  const assets=(release.assets||[]).map(a=>a.name).filter(n=>n.endsWith('.png'));
+  return {schema:'legacy-release',repository:`${OWNER}/${REPO}`,tag,asset_count:assets.length,download_base:`${RELEASE_BASE}/${tag}/`,assets};
 }
 async function refreshAvailability(){
-  const request=++imageRequest;
-  clearCurrentUrl();archiveCache.clear();
   syncModelDisplay();
-  $('loading').style.display='flex';
-  setStatus('Localizando publicação '+cycleLabel()+'...');
-  publication=null;fillCities();
+  $('loading').style.display='flex';setStatus('Localizando publicação '+cycleLabel()+'...');publication=null;fillCities();
   try{
-    const next=await fetchPublication($('cycle').value);
-    if(request!==imageRequest)return;
-    publication=next;fillCities();
-    const assetCount=publication.assets?.length||0;
-    const pngCount=publication.png_count||assetCount;
-    const compact=publication.schema==='sideral-skewt-publication-v2';
-    $('pub').textContent=compact
-      ? 'PUBLICAÇÃO: '+publication.tag+' • '+assetCount+' ZIPs / '+pngCount+' PNG'
-      : 'PUBLICAÇÃO: '+publication.tag+' • '+pngCount+' PNG';
-    $('source').textContent='GitHub — '+publication.tag;
+    publication=await fetchPublication($('cycle').value);
+    fillCities();
+    const count=publication.assets?.length||0;
+    $('pub').textContent=`PUBLICAÇÃO: ${publication.tag} • ${count} PNG`;
+    $('source').textContent=`GitHub Release — ${publication.tag}`;
     $('loading').style.display='none';
-    if(compact)setStatus(pngCount+' PNG em '+assetCount+' ZIPs; baixa só a capital escolhida.','ok');
-    else setStatus('Modo compatibilidade: imagens individuais antigas.','ok');
-    if($('city').options.length)await openImage();
-    else $('viewer').innerHTML='<div class="empty">Nenhuma capital encontrada nesta publicação.</div>';
+    if(count===459)setStatus(`Publicação encontrada: 459 PNG / 27 capitais.`,'ok');
+    else if(count>0)setStatus(`Publicação encontrada: ${count} PNG.`,'ok');
+    else setStatus('Release encontrado, mas sem PNG.','error');
+    if($('city').options.length)openImage();
+    else $('viewer').innerHTML='<div class="empty">Nenhuma capital encontrada no índice desta publicação.</div>';
   }catch(e){
-    if(request!==imageRequest)return;
     $('loading').style.display='none';
-    $('viewer').innerHTML='<div class="empty">Não foi possível localizar a publicação '+cycleLabel()+'.<br><br>'+e.message+'</div>';
+    $('viewer').innerHTML=`<div class="empty">Não foi possível localizar a publicação ${cycleLabel()}.<br><br>${e.message}</div>`;
     setStatus('Publicação não localizada para este ciclo.','error');
     $('pub').textContent='PUBLICAÇÃO: indisponível';
   }
 }
-async function openImage(){
-  const slug=$('city').value,fh=Number($('fh').value);
-  if(!slug||!publication)return;
-  const request=++imageRequest;
-  const cap=CAPITALS.find(x=>x[1]===slug);
-  const filename=assetName(slug,fh);
-  const compact=publication.schema==='sideral-skewt-publication-v2';
-  const zipName=publication.city_archives?.[slug];
-  if(compact?!zipName:!(publication.assets||[]).includes(filename)){
-    clearCurrentUrl();$('download').disabled=true;
-    $('viewer').innerHTML='<div class="empty">Este frame não está no índice da publicação.</div>';
-    return;
+function openImage(){
+  const slug=$('city').value,fh=Number($('fh').value);if(!slug||!publication)return;
+  const cap=CAPITALS.find(x=>x[1]===slug);const name=assetName(slug,fh);
+  if(!(publication.assets||[]).includes(name)){
+    $('download').disabled=true;$('viewer').innerHTML='<div class="empty">Este frame não está no índice da publicação.</div>';return;
   }
-  clearCurrentUrl();$('download').disabled=true;
-  $('loading').style.display='flex';$('viewer').innerHTML='';
-  try{
-    let src;
-    if(compact){
-      if(!window.JSZip)throw new Error('JSZip não carregou; recarregue a página.');
-      let zip=archiveCache.get(slug);
-      if(!zip){
-        setStatus('Baixando pacote da capital '+(cap?cap[0]:slug)+'...');
-        const response=await fetch(assetUrl(zipName),{cache:'force-cache'});
-        if(!response.ok)throw new Error('Falha ao baixar '+zipName+': HTTP '+response.status);
-        zip=await JSZip.loadAsync(await response.arrayBuffer());
-        if(request!==imageRequest)return;
-        archiveCache.clear();archiveCache.set(slug,zip);
-      }
-      const entry=zip.file(filename);
-      if(!entry)throw new Error(filename+' não está dentro de '+zipName);
-      src=URL.createObjectURL(await entry.async('blob'));
-    }else{
-      src=assetUrl(filename);
-    }
-    if(request!==imageRequest){if(src.startsWith('blob:'))URL.revokeObjectURL(src);return;}
-    const im=new Image();
-    im.alt='Sideral Skew-T '+modelLabel()+' — '+(cap?cap[0]:slug)+' — '+cycleLabel()+' — F'+String(fh).padStart(3,'0');
-    im.onload=()=>{
-      if(request!==imageRequest){if(src.startsWith('blob:'))URL.revokeObjectURL(src);return;}
-      $('loading').style.display='none';$('viewer').appendChild(im);
-      currentUrl=src;$('download').disabled=false;
-      $('valid').textContent=cycleLabel()+' • F'+String(fh).padStart(3,'0');
-      setStatus('PNG carregado.','ok');
-    };
-    im.onerror=()=>{
-      if(src.startsWith('blob:'))URL.revokeObjectURL(src);
-      if(request!==imageRequest)return;
-      $('loading').style.display='none';$('download').disabled=true;
-      $('viewer').innerHTML='<div class="empty">O PNG não pôde ser aberto.</div>';
-      setStatus('Asset localizado, porém não abriu.','error');
-    };
-    im.src=src;
-  }catch(e){
-    if(request!==imageRequest)return;
-    $('loading').style.display='none';$('download').disabled=true;
-    $('viewer').innerHTML='<div class="empty">Não foi possível abrir este frame.<br><br>'+e.message+'</div>';
-    setStatus('Falha ao carregar pacote da capital.','error');
-  }
+  const src=assetUrl(name);$('loading').style.display='flex';$('viewer').innerHTML='';
+  const im=new Image();
+  im.alt=`Sideral Skew-T ${modelLabel()} — ${cap?cap[0]:slug} — ${cycleLabel()} — F${String(fh).padStart(3,'0')}`;
+  im.onload=()=>{$('loading').style.display='none';$('viewer').appendChild(im);currentUrl=src;$('download').disabled=false;$('valid').textContent=`${cycleLabel()} • F${String(fh).padStart(3,'0')}`};
+  im.onerror=()=>{$('loading').style.display='none';$('download').disabled=true;$('viewer').innerHTML='<div class="empty">O PNG está no índice, mas o asset não pôde ser aberto.</div>';setStatus('Asset localizado, porém não abriu.', 'error')};
+  im.src=src;
 }
 $('model').addEventListener('change',refreshAvailability);$('cycle').addEventListener('change',refreshAvailability);$('city').addEventListener('change',openImage);$('fh').addEventListener('change',openImage);$('load').addEventListener('click',openImage);
 $('download').addEventListener('click',()=>{if(!currentUrl)return;const a=document.createElement('a');a.href=currentUrl;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove()});
