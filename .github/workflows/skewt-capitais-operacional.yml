@@ -41,6 +41,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validar token de publicação antes de renderizar
+        shell: bash
+        env:
+          SIDERAL_RELEASE_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIDERAL_RELEASE_TOKEN" ]]; then
+            echo "::error title=Token de publicação ausente::Crie o segredo SIDERAL_RELEASE_TOKEN com um Fine-grained PAT que tenha Contents: Read and write neste repositório. A renderização foi interrompida para evitar gastar runners sem conseguir publicar."
+            exit 1
+          fi
+
       - name: Selecionar ciclo
         shell: bash
         run: |
@@ -145,7 +156,7 @@ jobs:
       - name: Publicar release operacional
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           tag="skewt-live-${CYCLE}"
@@ -203,7 +214,7 @@ jobs:
       - name: Verificar release publicado
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           tag="skewt-live-${CYCLE}"
