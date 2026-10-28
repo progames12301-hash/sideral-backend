@@ -73,7 +73,8 @@ jobs:
             tools/skewt/generate_sharppy_product_operational.py \
             tools/skewt/ecmwf_profile.py \
             tools/skewt/render_operational_interface.py \
-            tools/skewt/render_operational_interface_v2.py
+            tools/skewt/render_operational_interface_v2.py \
+            wrf/skewt_brasil_21km_capitais.py
 
       - name: Compile inline JavaScript in Skew-T pages
         shell: bash
