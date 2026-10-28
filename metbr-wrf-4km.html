@@ -2592,7 +2592,7 @@
             if (count < 16 || ![minLat, maxLat, minLon, maxLon].every(Number.isFinite) || maxLat <= minLat || maxLon <= minLon) return bounds;
 
             const resolutionKm = Number(currentFrameMeta?.resolutionKm) ||
-                (currentModel === 'metbr_wrf' ? 4 : currentModel === 'brasil_wrf_21km' ? 21 : currentModel.startsWith('cim_') ? 8 : 7);
+                (isMetbrWrfVariant() ? 4 : currentModel === 'brasil_wrf_21km' ? 21 : currentModel.startsWith('cim_') ? 8 : 7);
             const meanLat = (minLat + maxLat) / 2;
             const trimKm = Math.max(8, resolutionKm * 1.0);
             const latTrim = Math.min(trimKm / 111.32, (maxLat - minLat) * 0.08);
@@ -2642,7 +2642,7 @@
             if (selectedBounds) bounds = selectedBounds;
             bounds = shrinkBoletimToDataFootprint(dataPoints, bounds);
             const canvas = document.createElement('canvas');
-            const metbrPreview = currentModel === 'metbr_wrf' && window.__metbrPreviewMode === true && window.__metbrForceFullResolution !== true;
+            const metbrPreview = isMetbrWrfVariant() && window.__metbrPreviewMode === true && window.__metbrForceFullResolution !== true;
             canvas.width = metbrPreview ? 900 : 2400;
             canvas.height = metbrPreview ? 600 : 1600;
             const ctx = canvas.getContext('2d');
@@ -2705,8 +2705,12 @@
             return swrLogoPromise;
         }
 
-        // Rótulo do modelo no boletim: só o metbr_wrf é METBR.
-        // Sul 7 km, Sudeste 7 km e Brasil 21 km são WRF Sideral.
+        // Os dois produtos METBR usam o cabeçalho dedicado de 4 km.
+        // Sul/Sudeste 7 km e Brasil 21 km continuam com os rótulos WRF Sideral.
+        function isMetbrWrfVariant(modelName = currentModel) {
+            return modelName === 'metbr_wrf' || modelName === 'metbr_wrf2';
+        }
+
         function bulletinModelLabel(modelName = currentModel) {
             if (modelName === 'metbr_wrf' || modelName === 'metbr_wrf2') return dedicatedWrfLabel(modelName);
             const input = { gfs: 'GFS', icon: 'ICON', ecmwf: 'ECMWF' }[backendModelKey(modelName)] || 'GFS';
@@ -2734,9 +2738,9 @@
 
             const key = backendModelKey(currentModel);
             const input = { gfs: 'GFS', icon: 'ICON', ecmwf: 'ECMWF' }[key] || 'GFS';
-            const res = currentModel === 'metbr_wrf' ? 4 : isCimModel() ? 8 : currentModel === 'brasil_wrf_21km' ? 21 : 7;
-            const title = currentModel === 'metbr_wrf'
-                ? 'METBR WRF 4km'
+            const res = isMetbrWrfVariant() ? 4 : isCimModel() ? 8 : currentModel === 'brasil_wrf_21km' ? 21 : 7;
+            const title = isMetbrWrfVariant()
+                ? dedicatedWrfLabel(currentModel)
                 : isCimModel()
                     ? `CIM WRF 8km - Inicializado com o modelo ${input}`
                     : `WRF/Sideral ${res}km - Inicializado com o modelo ${input}`;
@@ -2823,7 +2827,7 @@
 
         function createMapArea(canvas, bounds) {
             // V3 reserva margem para o cabeçalho de 3 colunas, eixos e barra de cores.
-            const isPreview = currentModel === 'metbr_wrf' && window.__metbrPreviewMode === true && window.__metbrForceFullResolution !== true;
+            const isPreview = isMetbrWrfVariant() && window.__metbrPreviewMode === true && window.__metbrForceFullResolution !== true;
             const frame = isPreview
                 ? { x: 10, y: 10, width: canvas.width - 20, height: canvas.height - 100 }
                 : { x: 10, y: 68, width: canvas.width - 20, height: canvas.height - 168 };
@@ -2936,7 +2940,7 @@
             const minClipY = Math.max(0, Math.floor(mapArea.y));
             const maxClipY = Math.min(outH - 1, Math.ceil(mapArea.y + mapArea.height));
             const nominalResolutionKm = Number(currentFrameMeta?.resolutionKm) ||
-                (currentModel === 'metbr_wrf' ? 4 : currentModel === 'brasil_wrf_21km' ? 21 : currentModel.startsWith('cim_') ? 8 : 7);
+                (isMetbrWrfVariant() ? 4 : currentModel === 'brasil_wrf_21km' ? 21 : currentModel.startsWith('cim_') ? 8 : 7);
             const maxNeighborKm = Math.max(12, nominalResolutionKm * 2.7);
             const indexAt = (row, col) => row * gx + col;
 
