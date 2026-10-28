@@ -5086,9 +5086,12 @@
   const skewtStatus = document.getElementById('uiMetbrSkewtStatus');
   const loading = document.getElementById('uiMetbrSkewtLoading');
   const image = document.getElementById('uiMetbrSkewtImage');
-  if (!button || !root || !status || !modal || !closeButton || !hourSelect || !image) return;
+  if (!button || !root || !status || !modal || !closeButton || !hourSelect || !image || !skewtStatus || !loading) {
+    console.error('[METBR Click-to-Point] Elemento da interface ausente; verifique o HTML integrado.');
+    return;
+  }
 
-  let enabled = false, pointerStart = null, selectedPoint = null, selectedHour = 0;
+  let enabled = false, selectedPoint = null, selectedHour = 0;
   let selectedCycleValue = '', requestSerial = 0;
   for (let h = 0; h <= 42; h++) {
     const option = document.createElement('option');
@@ -5099,7 +5102,9 @@
   const hint = document.createElement('output');
   hint.id = 'uiSkewtClickHint';
   hint.hidden = true;
-  hint.textContent = 'CLICK-TO-POINT ATIVO — clique diretamente sobre uma célula do mapa METBR para gerar a sondagem Skew-T nativa.';
+  hint.setAttribute('role', 'status');
+  hint.setAttribute('aria-live', 'polite');
+  hint.textContent = 'CLICK-TO-POINT ATIVO — clique no mapa METBR para gerar o Skew-T.';
   document.body.appendChild(hint);
 
   function setEnabled(value) {
@@ -5107,27 +5112,47 @@
     button.setAttribute('aria-pressed', String(enabled));
     button.title = enabled ? 'Cancelar Click-to-Point Skew-T' : 'Ativar Click-to-Point Skew-T do METBR';
     root.classList.toggle('skewt-click-mode', enabled);
-    hint.hidden = !enabled;
-    pointerStart = null;
     if (enabled) {
       const model = document.getElementById('uiModelVariant')?.value;
-      status.textContent = model === 'metbr_wrf'
-        ? 'Click-to-Point ativo: clique diretamente no mapa meteorológico.'
-        : 'Click-to-Point disponível somente no METBR WRF 4 km; selecione essa execução.';
-    } else if (!modal.hidden) status.textContent = 'Skew-T METBR aberto nesta página.';
-    else status.textContent = 'Click-to-Point desativado.';
+      const message = model === 'metbr_wrf'
+        ? 'CLICK-TO-POINT ATIVO — clique no mapa METBR WRF 4 km para gerar o Skew-T.'
+        : 'Selecione METBR WRF 4 km no painel antes de clicar no mapa.';
+      hint.textContent = message;
+      hint.style.borderColor = model === 'metbr_wrf' ? '#ed3448' : '#ff596b';
+      hint.hidden = false;
+      status.textContent = message;
+    } else {
+      hint.hidden = true;
+      status.textContent = modal.hidden ? 'Click-to-Point desativado.' : 'Skew-T METBR aberto nesta página.';
+    }
+  }
+
+  function sampleNativeCim(inspection, x, y) {
+    const area = inspection.mapArea, bounds = inspection.bounds, points = inspection.points || [];
+    if (!area || !bounds || !points.length || x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height) return null;
+    const lon = bounds.west + ((x - area.x) / area.width) * (bounds.east - bounds.west);
+    const lat = bounds.north - ((y - area.y) / area.height) * (bounds.north - bounds.south);
+    let nearest = null, nearestDistance = Infinity;
+    for (const point of points) {
+      const plat = Number(point.lat), plon = Number(point.lon);
+      if (!Number.isFinite(plat) || !Number.isFinite(plon)) continue;
+      const dLat = plat - lat, dLon = (plon - lon) * Math.cos(lat * Math.PI / 180);
+      const distance = dLat * dLat + dLon * dLon;
+      if (distance < nearestDistance) { nearestDistance = distance; nearest = point; }
+    }
+    return nearest ? {lat:Number(nearest.lat), lon:Number(nearest.lon)} : {lat,lon};
   }
 
   function inspectPoint(event, canvas) {
     const inspection = canvas.wrfInspection, area = inspection?.mapArea;
-    if (!inspection || !area || !window.WrfGrid?.sample) throw new Error('O mapa ainda está sendo renderizado. Aguarde o quadro terminar.');
+    if (!inspection || !area) throw new Error('O mapa ainda não terminou de renderizar os dados. Aguarde e tente novamente.');
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (canvas.width / Math.max(1, rect.width));
     const y = (event.clientY - rect.top) * (canvas.height / Math.max(1, rect.height));
     if (x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height) {
       throw new Error('Clique dentro da área geográfica do mapa, não no título ou na legenda.');
     }
-    const point = inspection.nativeCim ? window.sampleCimNative?.(inspection, x, y) : window.WrfGrid.sample(inspection, x, y);
+    const point = inspection.nativeCim ? sampleNativeCim(inspection, x, y) : window.WrfGrid?.sample?.(inspection, x, y);
     if (!point || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lon))) {
       throw new Error('Não foi possível resolver a coordenada desse pixel. Clique em outra célula do mapa.');
     }
@@ -5269,25 +5294,31 @@
     anchor.remove();
   }
 
-  button.addEventListener('click', () => setEnabled(!enabled));
-  document.addEventListener('pointerdown', event => {
+  button.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setEnabled(!enabled);
+  });
+  document.addEventListener('click', event => {
     if (!enabled) return;
-    const canvas = event.target instanceof Element ? event.target.closest('#uiCanvasA') : null;
-    if (!canvas || (event.pointerType === 'mouse' && event.button !== 0)) { pointerStart = null; return; }
-    pointerStart = { x: event.clientX, y: event.clientY, canvas };
-  }, true);
-  document.addEventListener('pointerup', event => {
-    if (!enabled || !pointerStart) return;
-    const start = pointerStart;
-    pointerStart = null;
-    const canvas = event.target instanceof Element ? event.target.closest('#uiCanvasA') : null;
-    if (!canvas || canvas !== start.canvas || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
+    const target = event.target;
+    const canvas = target instanceof Element ? target.closest('#uiCanvasA') : null;
+    if (!canvas) return;
     event.preventDefault();
     event.stopPropagation();
     try {
-      if (document.getElementById('uiModelVariant')?.value !== 'metbr_wrf') throw new Error('Selecione METBR WRF 4 km no painel lateral antes de escolher o ponto.');
+      if (document.getElementById('uiModelVariant')?.value !== 'metbr_wrf') {
+        throw new Error('Selecione METBR WRF 4 km no painel lateral antes de escolher o ponto.');
+      }
       openSounding(inspectPoint(event, canvas));
-    } catch (error) { status.textContent = error.message || 'Falha ao localizar a coordenada selecionada.'; }
+    } catch (error) {
+      const message = error?.message || 'Falha ao localizar a coordenada selecionada.';
+      status.textContent = message;
+      hint.textContent = message;
+      hint.style.borderColor = '#ff596b';
+      hint.style.background = '#3a1119';
+      hint.hidden = false;
+    }
   }, true);
   closeButton.addEventListener('click', closeModal);
   modal.querySelector('[data-skewt-close]')?.addEventListener('click', closeModal);
@@ -5299,6 +5330,7 @@
     if (event.key === 'Escape' && enabled) setEnabled(false);
     else if (event.key === 'Escape' && !modal.hidden) closeModal();
   });
+  console.info('[METBR Click-to-Point] Sistema nativo carregado. Ative o botão de mira e clique no mapa.');
 })();
 </script>
 
