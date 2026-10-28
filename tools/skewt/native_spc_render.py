@@ -19,10 +19,10 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
 
 W, H, DPI = 1500, 1000, 100
 SKEW = 15.5
-RED = "#ff2020"
-BLUE = "#063cff"
-GREEN = "#168b32"
-INK = "#101010"
+RED = "#ff3030"
+BLUE = "#168cff"
+GREEN = "#00ff55"
+INK = "#f2f2f2"
 
 
 def _arr(value):
@@ -228,44 +228,44 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     ax.set_yscale("log")
     surface_pressure = float(p[0])
     ax.set_ylim(surface_pressure, 100)
-    ax.set_xlim(-43, 79)
-    ax.set_facecolor("white")
-    ax.spines[:].set_color(INK)
+    ax.set_xlim(-55, 79)
+    ax.set_facecolor("#000000")
+    ax.spines[:].set_color("#555555")
     ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=8, colors=INK, direction="out", length=3, pad=2)
-    ax.set_xlabel("Temperature (°C)", fontsize=9, labelpad=4)
-    ax.set_ylabel("Pressure (hPa)", fontsize=9, labelpad=8)
+    # Reference image uses temperature tick labels without an extra axis title.
+    # Pressure levels are identified by their tick labels only.
 
     # Pressure grid: major every 100 hPa, supporting levels every 25 hPa.
-    p_ticks = [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]
+    p_ticks = [1000, 850, 700, 500, 300, 200, 100]
     p_minor = [float(pp) for pp in np.arange(125, 1050, 25)
                if pp not in p_ticks and pp <= surface_pressure]
     ax.yaxis.set_major_locator(FixedLocator(p_ticks))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f"{int(val)}" if any(abs(val-x)<0.5 for x in p_ticks) else ""))
     ax.yaxis.set_minor_locator(FixedLocator(p_minor))
     ax.yaxis.set_minor_formatter(NullFormatter())
-    ax.set_xticks(np.arange(-40, 56, 10))
-    ax.set_xticks(np.arange(-40, 56, 5), minor=True)
-    ax.tick_params(axis="x", which="minor", length=2, color="#777777")
+    ax.set_xticks(np.arange(-50, 56, 10))
+    ax.set_xticks(np.arange(-50, 56, 5), minor=True)
+    ax.tick_params(axis="x", which="minor", length=2, color="#5a5a5a")
     ps = np.geomspace(100, max(100.0, surface_pressure), 240)
     for pp in p_ticks:
         if pp <= surface_pressure + 0.1:
-            ax.axhline(pp, color="#b8c0ca", lw=0.52, zorder=0)
+            ax.axhline(pp, color="#4c4c4c", lw=0.52, zorder=0)
     for pp in p_minor:
-        ax.axhline(pp, color="#e5e8ec", lw=0.30, zorder=0)
+        ax.axhline(pp, color="#252525", lw=0.30, zorder=0)
 
     # Isotherms every 5 C; every 10 C is emphasized.
     for temp in np.arange(-90, 66, 5):
         major = (int(temp) % 10 == 0)
         ax.plot(_xskew(np.full_like(ps, temp), ps), ps,
-                ls="-", color="#9eacbc" if major else "#d0d7df",
+                ls="-", color="#6c3c2e" if major else "#3e2823",
                 lw=0.48 if major else 0.30, alpha=0.78 if major else 0.58, zorder=0)
 
     # Dry adiabats every 5 K (10 K emphasized), giving a denser thermodynamic mesh.
     for theta_k in np.arange(250, 506, 5):
         tt = theta_k * (ps / 1000.0) ** 0.2854 - 273.15
         major = (int(theta_k) % 10 == 0)
-        ax.plot(_xskew(tt, ps), ps, color="#b99565" if major else "#ddc9aa",
+        ax.plot(_xskew(tt, ps), ps, color="#78432f" if major else "#4b3025",
                 ls="-", lw=0.54 if major else 0.32,
                 alpha=0.80 if major else 0.56, zorder=0)
 
@@ -283,7 +283,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
             if len(curve) == len(pp_grid):
                 major = (int(start_t) % 10 == 0)
                 ax.plot(_xskew(curve[visible_moist], pp_grid[visible_moist]), pp_grid[visible_moist],
-                        color="#719f7b" if major else "#b8d0bd",
+                        color="#34723a" if major else "#24482b",
                         ls="-", lw=0.52 if major else 0.32,
                         alpha=0.76 if major else 0.54, zorder=0)
     except Exception:
@@ -295,23 +295,23 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
         loge = np.log(np.maximum(e, 0.01) / 6.112)
         tdline = 243.5 * loge / (17.67 - loge)
         major = r in (0.4, 1, 2, 4, 8, 16, 24, 32)
-        ax.plot(_xskew(tdline, ps), ps, color="#91b59a" if major else "#c5d7c9",
+        ax.plot(_xskew(tdline, ps), ps, color="#386b39" if major else "#203b25",
                 ls=(0, (1, 2)), lw=0.48 if major else 0.30,
                 alpha=0.70 if major else 0.48, zorder=0)
     h_agl = z - z[0]
     ax.axhline(surface_pressure, color="#555555", lw=0.95, ls=(0, (4, 2)), alpha=0.95, zorder=3)
-    ax.text(-41.8, surface_pressure, f"SFC {surface_pressure:.0f} hPa / 0 m AGL",
+    ax.text(-52.0, surface_pressure, "SFC",
             ha="left", va="bottom", fontsize=6.5, weight="bold",
-            color="#303030", clip_on=True,
-            bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=0.2))
+            color="#ff3b3b", clip_on=True,
+            bbox=dict(facecolor="#000000", edgecolor="none", alpha=0.78, pad=0.2))
     # Height markers every 3 km, matching the sparse altitude labels in the reference.
     for height_m in (3000, 6000, 9000, 12000, 15000):
         level_pressure = _interp_height(p, h_agl, float(height_m))
         if math.isfinite(level_pressure) and 100.0 <= level_pressure <= surface_pressure:
-            ax.text(-41.8, level_pressure, f"{height_m // 1000} km AGL",
-                    ha="left", va="center", fontsize=6.4, color="#b84a4a",
+            ax.text(-52.0, level_pressure, f"{height_m // 1000} km",
+                    ha="left", va="center", fontsize=6.4, color="#ff3b3b",
                     weight="bold", clip_on=True,
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.72, pad=0.15))
+                    bbox=dict(facecolor="#000000", edgecolor="none", alpha=0.72, pad=0.15))
     from sharppy.sharptab import thermo
     t_virtual = np.asarray([float(thermo.virtemp(float(pi), float(ti), float(di)))
                             for pi, ti, di in zip(p, t, td)], dtype=float)
@@ -323,11 +323,11 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
             tw_values.append(np.nan)
     t_wet = np.asarray(tw_values, dtype=float)
     # Reference palette: red temperature, green dew point, cyan wet-bulb and distinct parcel traces.
-    ax.plot(_xskew(t, p), p, color="#e53935", lw=1.75, zorder=6, label="Temperatura")
-    ax.plot(_xskew(td, p), p, color="#159957", lw=1.75, zorder=7, label="Ponto de orvalho")
-    ax.plot(_xskew(t_virtual, p), p, color="#b84a4a", lw=0.95, ls=(0, (4, 2)), zorder=5, label="Temperatura virtual")
+    ax.plot(_xskew(t, p), p, color="#ff3030", lw=1.55, zorder=6, label="Temperatura")
+    ax.plot(_xskew(td, p), p, color="#00ff55", lw=1.55, zorder=7, label="Ponto de orvalho")
+    ax.plot(_xskew(t_virtual, p), p, color="#ff3030", lw=1.0, ls=(0, (4, 2)), zorder=5, label="Temperatura virtual")
     if np.isfinite(t_wet).sum() >= 3:
-        ax.plot(_xskew(t_wet, p), p, color="#00a6b2", lw=1.20, zorder=5, label="Temp. bulbo úmido")
+        ax.plot(_xskew(t_wet, p), p, color="#00eaff", lw=1.20, zorder=5, label="Temp. bulbo úmido")
     def parcel_trace(parcel_name):
         parcel_obj = getattr(pcl, parcel_name, None)
         trace_p = _arr(getattr(parcel_obj, "ptrace", [])) if parcel_obj is not None else np.asarray([])
@@ -346,9 +346,9 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
         return result
 
     parcel_specs = [
-        ("sfcpcl", "Parcela SFC", "#bd348e", "-"),
-        ("mlpcl", "Parcela efetiva ML", "#d2a000", (0, (4, 2))),
-        ("mupcl", "Parcela mais instável MU", "#55616f", (0, (2, 2))),
+        ("sfcpcl", "Parcela Descendente", "#ff34f4", (0, (2, 2))),
+        ("mlpcl", "Parcela Efetiva", "#ffe600", (0, (4, 2))),
+        ("mupcl", "Parcela Most Instable", "#f1f1f1", (0, (2, 2))),
     ]
     for parcel_name, parcel_label, parcel_color, parcel_style in parcel_specs:
         parcel_trace_values = parcel_trace(parcel_name)
@@ -361,8 +361,8 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
     # Mark LCL/LFC/EL using whichever SHARPpy parcel contains each value.
     parcel_objects = [getattr(pcl, n, None) for n in ("sfcpcl", "mlpcl", "mupcl", "fcstpcl")]
     markers = (("lclpres", "LCL"), ("lfcpres", "LFC"), ("elpres", "EL"))
-    marker_colors = {"LCL": "#007546", "LFC": "#964b00", "EL": "#68249a"}
-    marker_fills = {"LCL": "#e2f4ea", "LFC": "#fff0d6", "EL": "#f0e5fa"}
+    marker_colors = {"LCL": "#3dff62", "LFC": "#ffe600", "EL": "#ff35f4"}
+    marker_fills = {"LCL": "#000000", "LFC": "#000000", "EL": "#000000"}
     marker_pressures = {}
     for attr, short in markers:
         pressure_value = next((_finite(getattr(parcel, attr, None))
@@ -382,7 +382,7 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
                     color=marker_color, lw=1.35, zorder=8, solid_capstyle="round")
             ax.text(49.2, pressure_value, short, fontsize=7.1, weight="bold",
                     ha="left", va="center", color=marker_color,
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=0.1),
+                    bbox=dict(facecolor="#000000", edgecolor="none", alpha=0.82, pad=0.1),
                     clip_on=True, zorder=10)
 
     # Freezing level, a common sounding reference mark.
@@ -393,9 +393,9 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
             frac = -t[i] / (t[i + 1] - t[i])
             p0 = float(np.exp(np.log(p[i]) + frac * (np.log(p[i + 1]) - np.log(p[i]))))
             if 100 <= p0 <= 1050:
-                ax.axhline(p0, color="#5d75a5", lw=0.6, ls=(0, (1, 3)), alpha=0.8, zorder=2)
-                ax.text(43.0, p0, "0°C", fontsize=6.6, color="#526991",
-                        ha="left", va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=0.25))
+                ax.axhline(p0, color="#6f6f6f", lw=0.6, ls=(0, (1, 3)), alpha=0.8, zorder=2)
+                ax.text(43.0, p0, "0°C", fontsize=6.6, color="#00dfff",
+                        ha="left", va="bottom", bbox=dict(facecolor="#000000", edgecolor="none", alpha=0.65, pad=0.25))
 
     # Frequent wind barbs, as in an operational sounding.
     idx = np.unique(np.linspace(0, len(p) - 1, min(50, len(p))).round().astype(int))
@@ -416,16 +416,16 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text):
                       frameon=True, framealpha=0.96, fancybox=False, borderpad=0.35,
                       labelspacing=0.25, handlelength=1.45)
     if legend is not None:
-        legend.get_frame().set_facecolor("white")
-        legend.get_frame().set_edgecolor("#b8c0ca")
+        legend.get_frame().set_facecolor("#000000")
+        legend.get_frame().set_edgecolor("#4c4c4c")
 
 
 def _make_theta_axes(ax, p, t, td):
     theta, thetae, thetaes = _theta_profiles(p, t, td)
     surface_pressure = float(p[0])
     ax.set_yscale("log"); ax.set_ylim(surface_pressure, 100); ax.set_xlim(245, 380)
-    ax.set_facecolor("white")
-    ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
+    ax.set_facecolor("#000000")
+    ax.spines[:].set_color("#555555"); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
     ax.set_xticks([245, 270, 295, 320, 345, 370])
     ax.set_yticks([1000, 900, 800, 700, 600, 500, 400, 300, 200, 100])
@@ -433,25 +433,25 @@ def _make_theta_axes(ax, p, t, td):
     ax.yaxis.set_minor_formatter(NullFormatter())
     for pp in [1000,900,800,700,600,500,400,300,200,100]:
         if pp <= surface_pressure + 0.1:
-            ax.axhline(pp, color="#dddddd", lw=0.48, zorder=0)
+            ax.axhline(pp, color="#454545", lw=0.48, zorder=0)
     ax.plot(theta, p, color=GREEN, lw=1.3, label=r"$\theta$")
     ax.plot(thetae, p, color=RED, lw=1.2, label=r"$\theta_e$")
     ax.plot(thetaes, p, color=BLUE, lw=1.2, label=r"$\theta_{es}$")
     leg = ax.legend(loc="upper left", fontsize=7, frameon=True, framealpha=0.9, borderpad=0.25, handlelength=2)
-    leg.get_frame().set_facecolor("white"); leg.get_frame().set_edgecolor("#bcbcbc")
+    leg.get_frame().set_facecolor("#000000"); leg.get_frame().set_edgecolor("#4c4c4c")
 
 
 def _make_hodo(ax, z, u, v, station_text, motion):
     h_agl = z - z[0]
-    ax.set_facecolor("white"); ax.set_aspect("equal", adjustable="box")
+    ax.set_facecolor("#000000"); ax.set_aspect("equal", adjustable="box")
     ax.set_xlim(-75, 75); ax.set_ylim(-75, 75)
-    ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.9)
+    ax.spines[:].set_color("#555555"); ax.spines[:].set_linewidth(0.9)
     ax.set_xticks([]); ax.set_yticks([])
     for r in [10, 20, 30, 40, 50, 60, 70]:
         ax.add_patch(plt.Circle((0, 0), r, fill=False, lw=0.8 if r % 20 == 0 else 0.45,
-                                edgecolor="#b7c0cb" if r % 20 == 0 else "#e0e5eb", linestyle=(0, (3, 3)), zorder=0))
-        ax.text(-r, 1.5, f"{r}", fontsize=6.3, color="#7d8792", ha="center", va="bottom")
-        ax.text(1.8, r, f"{r}", fontsize=6.3, color="#7d8792", ha="left", va="center")
+                                edgecolor="#3a3a3a" if r % 20 == 0 else "#252525", linestyle=(0, (3, 3)), zorder=0))
+        ax.text(-r, 1.5, f"{r}", fontsize=6.3, color="#b7b7b7", ha="center", va="bottom")
+        ax.text(1.8, r, f"{r}", fontsize=6.3, color="#b7b7b7", ha="left", va="center")
     ax.axhline(0, color="#9aa4b0", lw=0.85, zorder=1); ax.axvline(0, color="#9aa4b0", lw=0.85, zorder=1)
     order = np.argsort(h_agl)
     hh, uu, vv = h_agl[order], u[order], v[order]
@@ -460,7 +460,7 @@ def _make_hodo(ax, z, u, v, station_text, motion):
         segments = np.concatenate([pts[:-1], pts[1:]], axis=1)
         mids = (hh[:-1] + hh[1:]) / 2.0
         bounds = [500, 3000, 6000, 12000, np.inf]
-        colors = ["#b44bc7", "#d65b76", "#d9a33a", "#319c7c", "#319c7c"]
+        colors = ["#ff3030", "#ff7a00", "#ffb000", "#ffe600", "#ffe600"]
         seg_colors = [colors[min(np.searchsorted(bounds[1:], hz, side="right"), len(colors)-1)] for hz in mids]
         ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=1.45, zorder=4))
         label_offsets = [(4, 4), (4, -5), (-5, 4), (5, 4), (-5, -5),
@@ -470,33 +470,33 @@ def _make_hodo(ax, z, u, v, station_text, motion):
             if hh.min() <= target <= min(hh.max(), 10000.0):
                 px, py = float(np.interp(target, hh, uu)), float(np.interp(target, hh, vv))
                 ax.plot(px, py, "o", ms=3.0, markerfacecolor="white",
-                        markeredgecolor="#657181", markeredgewidth=0.55, zorder=5)
+                        markeredgecolor="#777777", markeredgewidth=0.55, zorder=5)
                 ax.annotate(str(km), (px, py), xytext=(dx, dy), textcoords="offset points",
-                            fontsize=5.5, weight="bold", color="#354154", ha="center", va="center",
+                            fontsize=5.5, weight="bold", color="#222222", ha="center", va="center",
                             bbox=dict(boxstyle="circle,pad=0.10", facecolor="white",
-                                      edgecolor="#8994a3", linewidth=0.45), zorder=6)
+                                      edgecolor="#777777", linewidth=0.45), zorder=6)
     mw, rm, lm = motion
     for sx, sy, label in [(lm[0], lm[1], "LM"), (mw[0], mw[1], "MW"), (rm[0], rm[1], "RM")]:
         ax.annotate("", xy=(sx, sy), xytext=(0, 0),
-                    arrowprops=dict(arrowstyle="-|>", lw=0.85, color={"LM":"#476fbd","MW":"#84909d","RM":"#c94f4f"}[label], shrinkA=0, shrinkB=0), zorder=2)
+                    arrowprops=dict(arrowstyle="-|>", lw=0.85, color={"LM":"#4a9cff","MW":"#dddddd","RM":"#ff4545"}[label], shrinkA=0, shrinkB=0), zorder=2)
         ax.plot(sx, sy, marker="o", ms=3.8, mfc="white", mec={"LM":"#476fbd","MW":"#84909d","RM":"#c94f4f"}[label], mew=0.8, zorder=5)
-        ax.text(sx + 2.5, sy + 2.0, label, fontsize=7.2, weight="bold", color={"LM":"#476fbd","MW":"#637080","RM":"#c94f4f"}[label], zorder=6)
-    ax.set_title("HODOGRAPH / WIND (kt)", fontsize=9.0, loc="left", pad=5, color=INK)
+        ax.text(sx + 2.5, sy + 2.0, label, fontsize=7.2, weight="bold", color={"LM":"#4a9cff","MW":"#eeeeee","RM":"#ff4545"}[label], zorder=6)
+    ax.set_title("Hodógrafa — vento (kt)", fontsize=8.0, loc="left", pad=3, color=INK)
     legend_handles = [
-        plt.Line2D([0], [0], color="#b44bc7", lw=1.6, label="0–0,5 km"),
-        plt.Line2D([0], [0], color="#d65b76", lw=1.6, label="0,5–3 km"),
-        plt.Line2D([0], [0], color="#d9a33a", lw=1.6, label="3–6 km"),
-        plt.Line2D([0], [0], color="#319c7c", lw=1.6, label="6–12 km"),
+        plt.Line2D([0], [0], color="#ff3030", lw=1.6, label="0–0,5 km"),
+        plt.Line2D([0], [0], color="#ff7a00", lw=1.6, label="0,5–3 km"),
+        plt.Line2D([0], [0], color="#ffb000", lw=1.6, label="3–6 km"),
+        plt.Line2D([0], [0], color="#ffe600", lw=1.6, label="6–12 km"),
     ]
-    ax.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, -0.025),
-              ncol=4, fontsize=5.5, frameon=False, labelcolor="#354154",
+    ax.legend(handles=legend_handles, loc="upper right", bbox_to_anchor=(0.99, 1.005),
+              ncol=4, fontsize=5.5, frameon=False, labelcolor="#e6e6e6",
               handlelength=1.0, handletextpad=0.25, columnspacing=0.6)
 
 
 def _make_advection(ax, p, t, omega):
     surface_pressure = float(p[0])
-    ax.set_facecolor("white"); ax.set_yscale("log"); ax.set_ylim(surface_pressure, 100); ax.set_xlim(-5, 5)
-    ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
+    ax.set_facecolor("#000000"); ax.set_yscale("log"); ax.set_ylim(surface_pressure, 100); ax.set_xlim(-5, 5)
+    ax.spines[:].set_color("#555555"); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7, colors=INK, direction="out", length=3, pad=2)
     ax.set_xlabel("Inf. Temp.\nAdvec. (C/hr)", fontsize=8.5, labelpad=3)
     ax.set_xticks([-5, -2.5, 0, 2.5, 5])
@@ -520,13 +520,13 @@ def _make_advection(ax, p, t, omega):
 
 
 def _make_srw(ax, h_agl, u, v, rm):
-    ax.set_facecolor("white"); ax.set_xlim(0, 50); ax.set_ylim(0, 16)
-    ax.spines[:].set_color(INK); ax.spines[:].set_linewidth(0.85)
+    ax.set_facecolor("#000000"); ax.set_xlim(0, 50); ax.set_ylim(0, 16)
+    ax.spines[:].set_color("#555555"); ax.spines[:].set_linewidth(0.85)
     ax.tick_params(axis="both", labelsize=7.5, colors=INK, direction="out", length=3, pad=2)
     ax.set_ylabel("Height (km)", fontsize=8, labelpad=3)
     ax.set_xticks([0, 10, 20, 30, 40, 50]); ax.set_yticks([0,2,4,6,8,10,12,14,16])
     for hz in [2,4,6,8,10,12,14,16]:
-        ax.axhline(hz, color="#e4e4e4", lw=0.42, zorder=0)
+        ax.axhline(hz, color="#252525", lw=0.42, zorder=0)
     rel = np.hypot(u - rm[0], v - rm[1])
     good = np.isfinite(h_agl) & np.isfinite(rel)
     if good.sum() >= 2:
@@ -539,48 +539,58 @@ def _make_srw(ax, h_agl, u, v, rm):
         ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=1.7, zorder=3))
     ax.set_title("Storm Relative Wind", fontsize=8.5, loc="left", pad=4, color=INK)
     ax.legend(handles=[
-        plt.Line2D([0],[0], color="#ff8a00", lw=1.2, label="0-2 km"),
-        plt.Line2D([0],[0], color="#003cff", lw=1.2, label="2-4 km"),
-        plt.Line2D([0],[0], color="#a900d8", lw=1.2, label="4-9 km"),
-        plt.Line2D([0],[0], color="#ff3030", lw=1.2, label="Wind"),
+        plt.Line2D([0],[0], color="#ff3030", lw=1.2, label="0-2 km"),
+        plt.Line2D([0],[0], color="#ff7a00", lw=1.2, label="2-4 km"),
+        plt.Line2D([0],[0], color="#ffb000", lw=1.2, label="4-9 km"),
+        plt.Line2D([0],[0], color="#ffe600", lw=1.2, label="Wind"),
     ], loc="upper left", fontsize=5.8, frameon=True, framealpha=0.8, borderpad=0.2, handlelength=1.7, labelspacing=0.15)
 
 
 def _parcel_rows(prof, srh01, srh03):
+    """Native SHARPpy parcel metrics, formatted for the reference's compact table."""
     rows = []
+    def first_value(obj, names):
+        for name in names:
+            value = _finite(getattr(obj, name, None)) if obj is not None else None
+            if value is not None:
+                return value
+        return None
     for label, attr in [("Surface-Based", "sfcpcl"), ("Mixed-Layer", "mlpcl"), ("Most Unstable", "mupcl")]:
         pcl = getattr(prof, attr, None)
-        if pcl is None:
-            rows.append([label, "--", "--", "--", "--", "--", "--", "--", "--"])
-            continue
-        cape = _finite(getattr(pcl, "bplus", None))
-        cin = _finite(getattr(pcl, "bminus", None))
-        lcl = _finite(getattr(pcl, "lclhght", None))
-        lfc = _finite(getattr(pcl, "lfchght", None))
-        el = _finite(getattr(pcl, "elhght", None))
-        li = _finite(getattr(pcl, "li5", None))
-        ehi1 = cape * srh01 / 160000.0 if cape is not None and math.isfinite(srh01) else None
-        ehi3 = cape * srh03 / 160000.0 if cape is not None and math.isfinite(srh03) else None
-        rows.append([label, _fmt(cape, 2), _fmt(cin, 2), _fmt(lcl, 2), _fmt(lfc, 2), _fmt(el, 2), _fmt(li, 2), _fmt(ehi1, 2), _fmt(ehi3, 2)])
+        ecape = first_value(pcl, ("ecape", "effective_cape"))
+        ncape = first_value(pcl, ("ncape", "normalized_cape"))
+        cape = first_value(pcl, ("bplus", "cape"))
+        cape3 = first_value(pcl, ("cape3km", "cape_3km", "3cape", "bplus3km"))
+        cape6 = first_value(pcl, ("cape6km", "cape_6km", "6cape", "bplus6km"))
+        cin = first_value(pcl, ("bminus", "cin", "cinh"))
+        lcl = first_value(pcl, ("lclhght", "lcl_height"))
+        lfc = first_value(pcl, ("lfchght", "lfc_height"))
+        el = first_value(pcl, ("elhght", "el_height"))
+        rows.append([
+            label, _fmt(ecape, 0), _fmt(ncape, 2), _fmt(cape, 0),
+            _fmt(cape3, 0), _fmt(cape6, 0), _fmt(cin, 0),
+            _fmt(lcl, 0) if lcl is None else f"{lcl:.0f}m",
+            _fmt(lfc, 0) if lfc is None else f"{lfc:.0f}m",
+            _fmt(el, 0) if el is None else f"{el:.0f}m",
+        ])
     return rows
 
 
 def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear01, shear03, shear06, hodo_motion, latitude):
-    ax = fig.add_axes([0.020, 0.185, 0.635, 0.105]); ax.axis("off")
-    cols = ["PARCEL", "CAPE [J/kg]", "CIN [J/kg]", "LCL [m AGL]", "LFC [m AGL]", "EL [m AGL]", "LI [°C]", "EHI 0–1", "EHI 0–3"]
+    ax = fig.add_axes([0.007, 0.125, 0.650, 0.095]); ax.axis("off")
+    cols = ["PARCEL", "ECAPE", "NCAPE", "CAPE", "3CAPE", "6CAPE", "CINH", "LCL", "LFC", "EL"]
     table = ax.table(cellText=_parcel_rows(prof, srh01, srh03), colLabels=cols, cellLoc="center", colLoc="center", loc="upper left",
-                     colWidths=[0.16, 0.105, 0.09, 0.105, 0.105, 0.105, 0.07, 0.13, 0.13])
-    table.auto_set_font_size(False); table.set_fontsize(6.4); table.scale(1, 1.12)
-    level_styles = {
-        3: ("#e2f4ea", "#00643b"),
-        4: ("#fff0d6", "#804000"),
-        5: ("#f0e5fa", "#581b86"),
-    }
+                     colWidths=[0.18, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.10, 0.10, 0.10])
+    table.auto_set_font_size(False); table.set_fontsize(6.3); table.scale(1, 1.08)
+    level_styles = {7: ("#000000", "#3dff62"), 8: ("#000000", "#ffe600"), 9: ("#000000", "#ff35f4")}
     for (r, c), cell in table.get_celld().items():
-        cell.set_edgecolor("#b8c1cc"); cell.set_linewidth(0.45)
-        cell.set_facecolor("#e9eef4" if r == 0 else ("#ffffff" if r % 2 else "#f7f9fb"))
-        cell.get_text().set_color("#101010")
+        cell.set_edgecolor("#4c4c4c"); cell.set_linewidth(0.45)
+        cell.set_facecolor("#151515" if r == 0 else ("#000000" if r % 2 else "#080808"))
+        cell.get_text().set_color("#f0f0f0")
         cell.get_text().set_fontweight("bold" if r == 0 else "normal")
+        if r > 0 and c in (2, 3, 4, 5):
+            cell.get_text().set_color("#ffe600")
+            cell.get_text().set_fontweight("bold")
         if r > 0 and c in level_styles:
             fill, ink = level_styles[c]
             cell.set_facecolor(fill)
@@ -654,24 +664,24 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh01, srh03, srh06, shear
         ehi = surface_cape * helicity / 160000.0 if surface_cape is not None and math.isfinite(helicity) else None
         wind_rows.append([layer, _fmt(bwd, 1), _fmt(helicity, 0), _fmt(srw, 1), _fmt(ehi, 2)])
 
-    wind_ax = fig.add_axes([0.675, 0.035, 0.305, 0.245]); wind_ax.axis("off")
+    wind_ax = fig.add_axes([0.665, 0.005, 0.330, 0.215]); wind_ax.axis("off")
     wind_table = wind_ax.table(cellText=wind_rows,
                                colLabels=["LAYER", "BWD [kt]", "SRH", "SRW [kt]", "EHI"],
                                cellLoc="center", colLoc="center", loc="upper left",
                                colWidths=[0.27, 0.17, 0.23, 0.19, 0.14])
-    wind_table.auto_set_font_size(False); wind_table.set_fontsize(6.7); wind_table.scale(1, 1.34)
+    wind_table.auto_set_font_size(False); wind_table.set_fontsize(6.3); wind_table.scale(1, 1.18)
     for (r, c), cell in wind_table.get_celld().items():
-        cell.set_edgecolor("#b8c1cc"); cell.set_linewidth(0.48)
-        cell.set_facecolor("#e9eef4" if r == 0 else ("#ffffff" if r % 2 else "#f7f9fb"))
-        cell.get_text().set_color("#101010")
+        cell.set_edgecolor("#4c4c4c"); cell.set_linewidth(0.48)
+        cell.set_facecolor("#151515" if r == 0 else ("#000000" if r % 2 else "#080808"))
+        cell.get_text().set_color("#f0f0f0")
         cell.get_text().set_fontweight("bold" if r == 0 else "normal")
 
-    columns = [(0.025, left), (0.150, mid1), (0.275, mid2 + severe),
-               (0.400, lapse), (0.525, right)]
+    columns = [(0.010, left), (0.140, mid1), (0.270, mid2 + severe),
+               (0.400, lapse), (0.530, right)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.160 - j * 0.016, label, ha="left", va="center",
-                     fontsize=6.2, color="#15191f", fontweight="bold", zorder=30)
+            fig.text(x, 0.108 - j * 0.018, label, ha="left", va="center",
+                     fontsize=6.0, color="#e6e6e6", fontweight="bold", family="DejaVu Sans Mono", zorder=30)
 
 
 def render_native_spc(prof, out_dir: Path, meta: dict):
@@ -710,16 +720,16 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
     if srh06 is None: srh06 = _srh(h_agl, u, v, 0, 6000, motion[1])
     shear01, shear03, shear06 = (_shear(h_agl, u, v, h) for h in (1000, 3000, 6000))
 
-    plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 8, "axes.linewidth": 0.85, "savefig.facecolor": "white"})
-    fig = plt.figure(figsize=(W / DPI, H / DPI), dpi=DPI, facecolor="white")
+    plt.rcParams.update({"font.family": "DejaVu Sans Mono", "font.size": 7, "axes.linewidth": 0.85, "text.color": INK, "axes.labelcolor": INK, "xtick.color": INK, "ytick.color": INK, "savefig.facecolor": "#000000", "figure.facecolor": "#000000"})
+    fig = plt.figure(figsize=(W / DPI, H / DPI), dpi=DPI, facecolor="#000000")
     model_label = str(meta.get("model", meta.get("source", "ECMWF IFS")) or "ECMWF IFS")
     header_text = f"{model_label} • {station} • {run_text} • F{fh:03d} • válido {valid_text} • {lat_text}, {lon_text}"
-    fig.text(0.016, 0.966, header_text, ha="left", va="center",
-             fontsize=8.0, color=INK, fontweight="bold")
-    fig.add_artist(plt.Line2D([0.015, 0.985], [0.932, 0.932],
-                              transform=fig.transFigure, color="#c6ccd4", lw=0.75, zorder=10))
-    ax_skew = fig.add_axes([0.025, 0.325, 0.315, 0.595])
-    ax_hodo = fig.add_axes([0.355, 0.325, 0.625, 0.595])
+    fig.text(0.007, 0.978, header_text, ha="left", va="center",
+             fontsize=7.0, color=INK, fontweight="bold", family="DejaVu Sans Mono")
+    fig.add_artist(plt.Line2D([0.007, 0.993], [0.952, 0.952],
+                              transform=fig.transFigure, color="#414141", lw=0.75, zorder=10))
+    ax_skew = fig.add_axes([0.007, 0.237, 0.504, 0.715])
+    ax_hodo = fig.add_axes([0.522, 0.237, 0.471, 0.715])
 
     _make_skew_axes(ax_skew, p, t, td, z, u, v, prof, station, f"{run_text} - {valid_text}")
     _make_hodo(ax_hodo, z, u, v, station_text, motion)
@@ -731,12 +741,12 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
         raise FileNotFoundError(f"Logo oficial Sideral ausente: {logo_path}")
     with Image.open(logo_path) as source_logo:
         logo = source_logo.convert("RGBA")
-    logo_ax = fig.add_axes([0.872, 0.938, 0.112, 0.038], zorder=20)
+    logo_ax = fig.add_axes([0.872, 0.958, 0.112, 0.030], zorder=20)
     logo_ax.imshow(logo, interpolation="lanczos")
     logo_ax.set_axis_off()
-    fig.savefig(out_dir / "full.png", dpi=DPI, facecolor="white", bbox_inches=None)
+    fig.savefig(out_dir / "full.png", dpi=DPI, facecolor="#000000", bbox_inches=None)
     for ax, name in ((ax_skew, "skewt.png"), (ax_hodo, "hodograph.png")):
         bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-        fig.savefig(out_dir / name, dpi=DPI, facecolor="white", bbox_inches=bbox.expanded(1.03, 1.03), pad_inches=0.02)
+        fig.savefig(out_dir / name, dpi=DPI, facecolor="#000000", bbox_inches=bbox.expanded(1.03, 1.03), pad_inches=0.02)
     plt.close(fig)
     return out_dir / "full.png"
