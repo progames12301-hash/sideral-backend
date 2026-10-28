@@ -1,6 +1,12 @@
 name: METBR WRF 4 KM — Skew-T Sul
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/skewt/metbr_native_spc_render.py'
+      - 'wrf/metbr_skewt_south.py'
+      - '.github/workflows/metbr-wrf-skewt-sul.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -48,7 +54,6 @@ jobs:
           node --check /tmp/skewt-capitais.js
           echo "Preflight METBR Skew-T concluído."
   publish:
-    if: false  # Desativado para reduzir carga de runners.
     name: Extract native METBR columns and publish Southern Skew-Ts
     runs-on: ubuntu-22.04
     timeout-minutes: 120
