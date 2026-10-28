@@ -138,83 +138,109 @@ jobs:
           done
           test -s build/skewt-capitals/manifest.json
 
-      - name: Agrupar os 459 PNGs em 27 ZIPs por capital
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          from zipfile import ZIP_STORED, ZipFile
-          root = Path("build/skewt-capitals")
-          cities = sorted(p for p in root.iterdir() if p.is_dir())
-          frames = [f"{h:03d}" for h in range(0, 49, 3)]
-          if len(cities) != 27: raise SystemExit(f"Esperadas 27 capitais; encontradas {len(cities)}")
-          for city in cities:
-              expected = {f"{city.name}-f{frame}.png" for frame in frames}
-              actual = {p.name for p in city.glob("*.png")}
-              if actual != expected: raise SystemExit(f"Frames inesperados: {city.name}")
-              archive = root / f"{city.name}.zip"
-              with ZipFile(archive, "w", compression=ZIP_STORED) as z:
-                  for name in sorted(expected): z.write(city / name, arcname=name)
-              with ZipFile(archive) as z:
-                  if sorted(z.namelist()) != sorted(expected) or z.testzip() is not None:
-                      raise SystemExit(f"ZIP inválido: {archive}")
-              if archive.stat().st_size >= 95 * 1024 * 1024:
-                  raise SystemExit(f"ZIP quase no limite de 100 MB: {archive}")
-          if len(list(root.glob("*.zip"))) != 27: raise SystemExit("Esperados 27 ZIPs")
-          print("27 ZIPs validados; 459 PNGs preservados.")
-          PY
-      - name: Construir índice público dos assets compactados
+      - name: Construir índice público dos assets
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           import json, os
           from pathlib import Path
-          from zipfile import ZipFile
-          root=Path("build/skewt-capitals"); cycle=os.environ["CYCLE"]
-          tag=f"skewt-live-{cycle}"; branch=f"skewt-data-ecmwf-{cycle}"
-          cities=sorted(p for p in root.iterdir() if p.is_dir())
-          archives=sorted(p.name for p in root.glob("*.zip"))
-          if len(cities)!=27 or len(archives)!=27: raise SystemExit("Esperados 27 diretórios e 27 ZIPs")
-          for city in cities:
-              with ZipFile(root/f"{city.name}.zip") as z:
-                  if len(z.namelist())!=17 or z.testzip() is not None: raise SystemExit(f"ZIP inválido: {city.name}")
-          publication={
-            "schema":"sideral-skewt-publication-v2","repository":os.environ["GH_REPO"],
-            "tag":tag,"data_branch":branch,"model_id":"ecmwf-ifs","asset_count":27,"png_count":459,
-            "cities":27,"frames_per_city":17,"frames":[f"{h:03d}" for h in range(0,49,3)],
-            "cycles":["06","12","18"],"archive_format":"zip",
-            "download_base":f"https://raw.githubusercontent.com/{os.environ['GH_REPO']}/{branch}/",
-            "city_archives":{city.name:f"{city.name}.zip" for city in cities},"assets":archives
-          }
-          (root/"publication.json").write_text(json.dumps(publication,ensure_ascii=False,indent=2),encoding="utf-8")
+          root=Path('build/skewt-capitals'); cycle=os.environ['CYCLE']; tag=f'skewt-live-{cycle}'
+          assets=sorted(p.name for p in root.glob('*/*.png'))
+          if len(assets)!=459: raise SystemExit(f'Esperados 459 PNG, encontrados {len(assets)}')
+          publication={'schema':'sideral-skewt-publication-v1','repository':os.environ['GH_REPO'],'tag':tag,'asset_count':459,'cities':27,'frames_per_city':17,'cycles':['06','12','18'],'download_base':f'https://github.com/{os.environ["GH_REPO"]}/releases/download/{tag}/','assets':assets}
+          (root/'publication.json').write_text(json.dumps(publication,ensure_ascii=False,indent=2),encoding='utf-8')
           PY
           test -s build/skewt-capitals/publication.json
 
-
-      - name: Publicar pacote estático sem API REST
+      - name: Publicar release operacional
         shell: bash
         env:
-          SIDERAL_RELEASE_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          data_branch="skewt-data-ecmwf-${CYCLE}"
-          publish_dir="$(mktemp -d)"
-          cp build/skewt-capitals/*.zip build/skewt-capitals/manifest.json build/skewt-capitals/publication.json "$publish_dir/"
-          test "$(find "$publish_dir" -maxdepth 1 -name '*.zip' | wc -l)" -eq 27
-          test "$(find "$publish_dir" -maxdepth 1 -type f | wc -l)" -eq 29
-          git -C "$publish_dir" init -b "$data_branch"
-          git -C "$publish_dir" config user.name "github-actions[bot]"
-          git -C "$publish_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "$publish_dir" add .
-          git -C "$publish_dir" commit -m "Publish ECMWF Skew-T ${CYCLE}Z: 27 capital ZIPs"
-          git -C "$publish_dir" remote add origin "https://github.com/${GH_REPO}.git"
-          auth_header="$(printf '%s:%s' "$GITHUB_REPOSITORY_OWNER" "$SIDERAL_RELEASE_TOKEN" | base64 -w0)"
-          git -C "$publish_dir" -c "http.extraheader=AUTHORIZATION: basic $auth_header" push --force origin "HEAD:refs/heads/$data_branch"
-          unset auth_header
-          echo "Pacotes publicados na branch $data_branch via Git, sem chamadas REST de Release."
+          tag="skewt-live-${CYCLE}"
+          title="Sideral Skew-T ECMWF ${CYCLE}Z — 27 capitais"
+          notes="PNG pré-renderizado pelo SHARPpy. ECMWF IFS 0.25° via Open-Meteo Single Runs; HRES 9 km não expõe campos de pressão nesta API. F000–F048 em passos de 3h. 459 PNGs: 27 capitais × 17 frames."
 
+          mapfile -d '' png_files < <(find build/skewt-capitals -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
+          test "${#png_files[@]}" -eq 459
+          files=("${png_files[@]}" build/skewt-capitals/manifest.json build/skewt-capitals/publication.json)
+          test "${#files[@]}" -eq 461
+
+          # Never delete the existing release as a pre-publication step.
+          # A transient GitHub API 502 during deletion left the old release/tag
+          # in place, and the subsequent create command failed with "tag exists".
+          release_state="unknown"
+          for attempt in 1 2 3 4 5; do
+            if response="$(gh api "repos/${GH_REPO}/releases/tags/${tag}" 2>&1)"; then
+              release_state="present"
+              break
+            elif grep -Eqi 'HTTP 404|404 Not Found|Not Found' <<< "$response"; then
+              release_state="missing"
+              break
+            else
+              echo "Consulta da release falhou (tentativa $attempt/5): $response"
+              sleep $((attempt * 5))
+            fi
+          done
+          if [[ "$release_state" == "unknown" ]]; then
+            echo "Não foi possível determinar o estado da release após 5 tentativas; sem apagar ou recriar nada."
+            exit 1
+          fi
+
+          if [[ "$release_state" == "missing" ]]; then
+            echo "Criando release $tag"
+            gh release create "$tag" --repo "$GH_REPO" --title "$title" --notes "$notes"
+          else
+            echo "Atualizando release existente $tag sem apagar a tag"
+            gh release edit "$tag" --repo "$GH_REPO" --title "$title" --notes "$notes"
+          fi
+
+          # If an upload has a transient failure, retry the same idempotent
+          # upsert. --clobber replaces same-named assets instead of rejecting
+          # duplicate asset names; the 459 PNGs and both manifests are refreshed.
+          upload_ok=false
+          for attempt in 1 2 3; do
+            if gh release upload "$tag" --repo "$GH_REPO" --clobber "${files[@]}"; then
+              upload_ok=true
+              break
+            fi
+            echo "Upload da release falhou (tentativa $attempt/3); repetindo após pausa."
+            sleep $((attempt * 10))
+          done
+          [[ "$upload_ok" == "true" ]] || { echo "Não foi possível publicar todos os assets de $tag."; exit 1; }
+
+      - name: Verificar release publicado
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SIDERAL_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="skewt-live-${CYCLE}"
+          verified=false
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$tag" --repo "$GH_REPO" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'; then
+              verified=true
+              break
+            fi
+            echo "Ainda não foi possível consultar a release (tentativa $attempt/5)."
+            sleep $((attempt * 3))
+          done
+          [[ "$verified" == "true" ]] || { echo "Release não pôde ser verificada."; exit 1; }
+          png_count=""
+          for attempt in 1 2 3 4 5; do
+            if png_count="$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')"; then break; fi
+            sleep $((attempt * 3))
+          done
+          echo "PNG no release: $png_count"
+          test "$png_count" -eq 459
+          publication_count=""
+          for attempt in 1 2 3 4 5; do
+            if publication_count="$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '.assets|map(.name)|map(select(.=="publication.json"))|length')"; then break; fi
+            sleep $((attempt * 3))
+          done
+          test "$publication_count" -eq 1
 
       - name: Artefato de diagnóstico
         uses: actions/upload-artifact@v4
