@@ -376,24 +376,41 @@
     #metbrUI .map-export-row{border-top:0}
     #metbrUI .header-nav:not(.metbr-nav){display:none!important}
 </style>
-<style id="metbrSkewtClickPointTestStyles">
-  #metbrUI .icon-btn#uiSkewtClickMode[aria-pressed="true"]{background:rgba(237,52,72,.24);border-color:#ed3448;color:#fff;box-shadow:inset 0 0 0 1px rgba(237,52,72,.22)}
-  #metbrUI.skewt-click-mode #uiCanvasA{cursor:crosshair!important}
-  #uiSkewtClickHint{position:fixed;left:50%;bottom:34px;transform:translateX(-50%);z-index:2500;max-width:calc(100vw - 24px);padding:10px 15px;border:1px solid #ed3448;border-radius:6px;background:#20242c;color:#fff;box-shadow:0 8px 28px #0008;font:700 12px/1.45 Arial,sans-serif;text-align:center}
-  #uiSkewtClickHint[hidden]{display:none!important}
-  @media(max-width:720px){#uiSkewtClickHint{bottom:28px;width:calc(100vw - 24px)}}
-</style>
-<style id="metbrSkewtClickPointModalStyles">
-  #uiSkewtModal[hidden]{display:none!important}
-  #uiSkewtModal{position:fixed;inset:0;z-index:6000;display:flex;align-items:center;justify-content:center;padding:12px}
-  #uiSkewtModal .skewt-modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.84);backdrop-filter:blur(4px)}
-  #uiSkewtModal .skewt-modal-dialog{position:relative;z-index:1;display:flex;flex-direction:column;width:min(1500px,100%);height:min(95vh,100%);min-height:380px;background:#050505;border:1px solid #393940;box-shadow:0 18px 70px #000b;overflow:hidden}
-  #uiSkewtModal .skewt-modal-head{flex:0 0 44px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 14px;background:#08080a;border-bottom:1px solid #29292e;color:#f4f4f5;font:800 11px Consolas,monospace}
-  #uiSkewtModal .skewt-modal-head small{display:block;color:#92929a;font-weight:600;margin-top:3px}
-  #uiSkewtModal .skewt-modal-close{height:30px;padding:0 12px;border:1px solid #45454d;background:#17171c;color:#fff;font:800 11px Consolas,monospace;cursor:pointer}
-  #uiSkewtModal .skewt-modal-close:hover{border-color:#ed3448;background:#24242a}
-  #uiSkewtFrame{display:block;flex:1;min-width:0;min-height:0;width:100%;height:100%;border:0;background:#050505}
-  @media(max-width:720px){#uiSkewtModal{padding:0}#uiSkewtModal .skewt-modal-dialog{width:100%;height:100%;min-height:0;border:0}#uiSkewtModal .skewt-modal-head{padding:0 10px}}
+<style id="metbrSkewtClickPointStyles">
+#metbrUI .icon-btn#uiSkewtClickMode[aria-pressed="true"]{background:rgba(237,52,72,.24);border-color:#ed3448;color:#fff;box-shadow:inset 0 0 0 1px rgba(237,52,72,.22)}
+#metbrUI.skewt-click-mode #uiCanvasA{cursor:crosshair!important;outline:1px solid rgba(237,52,72,.52);outline-offset:-1px}
+#uiSkewtClickHint{position:fixed;left:50%;bottom:34px;transform:translateX(-50%);z-index:2500;max-width:calc(100vw - 24px);padding:10px 15px;border:1px solid #ed3448;border-radius:6px;background:#20242c;color:#fff;box-shadow:0 8px 28px #0008;font:700 12px/1.45 Arial,sans-serif;text-align:center}
+#uiSkewtClickHint[hidden],#uiSkewtModal[hidden]{display:none!important}
+#uiSkewtModal{position:fixed;inset:0;z-index:6000;display:flex;align-items:center;justify-content:center;padding:12px}
+#uiSkewtModal .skewt-modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.84);backdrop-filter:blur(4px)}
+#uiSkewtModal .skewt-modal-dialog{position:relative;z-index:1;display:flex;flex-direction:column;width:min(1500px,100%);height:min(95vh,100%);min-height:420px;background:#050505;border:1px solid #393940;box-shadow:0 18px 70px #000b;overflow:hidden}
+#uiSkewtModal .skewt-modal-head{flex:0 0 48px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 14px;background:#08080a;border-bottom:1px solid #29292e;color:#f4f4f5;font:800 11px Consolas,monospace}
+#uiSkewtModal .skewt-modal-head small{display:block;color:#92929a;font-weight:600;margin-top:3px}
+#uiSkewtModal .skewt-modal-actions{display:flex;align-items:center;gap:8px}
+#uiSkewtModal .skewt-modal-action,#uiSkewtModal .skewt-modal-close{height:30px;padding:0 12px;border:1px solid #45454d;background:#17171c;color:#fff;font:800 11px Consolas,monospace;cursor:pointer}
+#uiSkewtModal .skewt-modal-action:hover,#uiSkewtModal .skewt-modal-close:hover{border-color:#ed3448;background:#24242a}
+#uiSkewtModal .skewt-modal-action:disabled{opacity:.4;cursor:not-allowed}
+#uiMetbrSkewtBody{display:grid;grid-template-columns:280px minmax(0,1fr);flex:1;min-width:0;min-height:0;background:#050505}
+#uiMetbrSkewtPanel{min-width:0;overflow:auto;padding:14px;background:#09090c;border-right:1px solid #29292e;color:#f3f4f6;font:12px/1.45 Arial,sans-serif}
+#uiMetbrSkewtPanel h3{margin:0 0 12px;color:#fff;font:800 11px Consolas,monospace;letter-spacing:.08em}
+#uiMetbrSkewtDetails{display:grid;gap:0;margin:0 0 16px;border-top:1px solid #25252b}
+#uiMetbrSkewtDetails div{display:flex;flex-direction:column;gap:3px;padding:9px 0;border-bottom:1px solid #25252b;min-width:0}
+#uiMetbrSkewtDetails dt{color:#8f929b;font:700 9px Consolas,monospace;letter-spacing:.08em;text-transform:uppercase}
+#uiMetbrSkewtDetails dd{margin:0;color:#f5f5f6;font:700 12px/1.4 Consolas,monospace;overflow-wrap:anywhere}
+#uiMetbrSkewtPanel label{display:block;margin:14px 0 6px;color:#a4a5ad;font:700 10px Consolas,monospace;text-transform:uppercase;letter-spacing:.06em}
+#uiMetbrSkewtHour{width:100%;height:36px;padding:0 9px;border:1px solid #373740;border-radius:0;background:#15151a;color:#fff;font:700 12px Consolas,monospace}
+#uiMetbrSkewtLoadHour,#uiMetbrSkewtDownload{display:block;width:100%;min-height:36px;margin-top:8px;padding:8px;border:1px solid #484851;border-radius:0;background:#17171c;color:#fff;font:800 10px Consolas,monospace;cursor:pointer}
+#uiMetbrSkewtLoadHour{border-color:#ed3448;background:#a91f32}
+#uiMetbrSkewtLoadHour:hover{background:#c72a40}
+#uiMetbrSkewtLoadHour:disabled,#uiMetbrSkewtDownload:disabled{opacity:.45;cursor:not-allowed}
+#uiMetbrSkewtStatus{margin:13px 0 0;color:#9ea0a9;font:11px/1.5 Arial,sans-serif;overflow-wrap:anywhere}
+#uiMetbrSkewtStage{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;overflow:auto;padding:12px;background:#030304}
+#uiMetbrSkewtImage{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;background:#fff;box-shadow:0 4px 24px #0008}
+#uiMetbrSkewtImage[hidden],#uiMetbrSkewtLoading[hidden]{display:none!important}
+#uiMetbrSkewtLoading{max-width:460px;padding:24px;color:#bfc0c7;text-align:center;font:700 12px/1.6 Consolas,monospace;overflow-wrap:anywhere}
+#uiMetbrSkewtLoading:before{content:"";display:block;width:24px;height:24px;margin:0 auto 14px;border:2px solid #34343c;border-top-color:#ed3448;border-radius:50%;animation:metbrSkewtSpin .8s linear infinite}
+@keyframes metbrSkewtSpin{to{transform:rotate(360deg)}}
+@media(max-width:760px){#uiSkewtClickHint{bottom:24px;width:calc(100vw - 24px)}#uiSkewtModal{padding:0}#uiSkewtModal .skewt-modal-dialog{width:100%;height:100%;min-height:0;border:0}#uiSkewtModal .skewt-modal-head{padding:0 10px;flex-basis:54px}#uiSkewtModal .skewt-modal-actions{gap:5px}#uiSkewtModal .skewt-modal-action,#uiSkewtModal .skewt-modal-close{padding:0 8px;font-size:9px}#uiMetbrSkewtBody{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);overflow:auto}#uiMetbrSkewtPanel{border-right:0;border-bottom:1px solid #29292e;padding:10px;overflow:visible}#uiMetbrSkewtPanel h3{margin-bottom:6px}#uiMetbrSkewtDetails{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:12px;margin-bottom:8px}#uiMetbrSkewtDetails div{padding:6px 0}#uiMetbrSkewtPanel label{margin-top:8px}#uiMetbrSkewtStage{min-height:45vh;padding:6px}}
 </style>
 </head>
 <body>
@@ -458,14 +475,39 @@
   </main>
 </div>
 
-<div id="uiSkewtModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Skew-T METBR Click-to-Point">
+<div id="uiSkewtModal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Skew-T nativo METBR Click-to-Point">
   <div class="skewt-modal-backdrop" data-skewt-close></div>
   <section class="skewt-modal-dialog">
     <header class="skewt-modal-head">
-      <div>SIDERAL / SKEW-T <small id="uiSkewtModalCaption">METBR WRF 4 km · Click-to-Point</small></div>
-      <button type="button" class="skewt-modal-close" id="uiSkewtClose">FECHAR ×</button>
+      <div>METBR / SKEW-T <small id="uiSkewtModalCaption">WRF 4 km · Perfil vertical nativo</small></div>
+      <div class="skewt-modal-actions">
+        <button type="button" class="skewt-modal-action" id="uiMetbrSkewtDownloadTop" disabled>BAIXAR PNG</button>
+        <button type="button" class="skewt-modal-close" id="uiSkewtClose">FECHAR ×</button>
+      </div>
     </header>
-    <iframe id="uiSkewtFrame" title="Interface Skew-T SHARPpy da Sideral" src="about:blank" loading="eager" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe>
+    <div id="uiMetbrSkewtBody">
+      <aside id="uiMetbrSkewtPanel">
+        <h3>SONDAGEM SELECIONADA</h3>
+        <dl id="uiMetbrSkewtDetails">
+          <div><dt>Modelo</dt><dd>METBR WRF 4 km</dd></div>
+          <div><dt>Coordenadas do clique</dt><dd id="uiMetbrSkewtCoords">—</dd></div>
+          <div><dt>Rodada</dt><dd id="uiMetbrSkewtRun">—</dd></div>
+          <div><dt>Validade</dt><dd id="uiMetbrSkewtValid">—</dd></div>
+          <div><dt>Hora de previsão</dt><dd id="uiMetbrSkewtFh">—</dd></div>
+          <div><dt>Altitude do terreno</dt><dd id="uiMetbrSkewtElevation">—</dd></div>
+          <div><dt>Fonte do perfil</dt><dd id="uiMetbrSkewtSource">WRF nativo</dd></div>
+        </dl>
+        <label for="uiMetbrSkewtHour">Alterar validade do perfil</label>
+        <select id="uiMetbrSkewtHour" aria-label="Validade do perfil Skew-T"></select>
+        <button type="button" id="uiMetbrSkewtLoadHour">GERAR PERFIL</button>
+        <button type="button" id="uiMetbrSkewtDownload" disabled>BAIXAR IMAGEM PNG</button>
+        <p id="uiMetbrSkewtStatus" role="status" aria-live="polite">Preparando perfil vertical METBR…</p>
+      </aside>
+      <main id="uiMetbrSkewtStage" aria-label="Diagrama Skew-T do ponto selecionado">
+        <div id="uiMetbrSkewtLoading">Gerando o perfil vertical diretamente com os dados METBR WRF 4 km…</div>
+        <img id="uiMetbrSkewtImage" alt="Diagrama Skew-T nativo do METBR WRF 4 km" hidden />
+      </main>
+    </div>
   </section>
 </div>
 
@@ -5019,26 +5061,45 @@
   }, {once:true});
 })();
 </script>
-<script id="metbrSkewtClickPointTest">
+<script id="metbrSkewtClickPoint">
 (() => {
   'use strict';
   const BACKEND = 'https://sideral-backend.onrender.com';
-  const SKEWT_PAGE = BACKEND + '/skewt-click-point-test.html';
   const button = document.getElementById('uiSkewtClickMode');
   const root = document.getElementById('metbrUI');
   const status = document.getElementById('uiFrameStatus');
   const modal = document.getElementById('uiSkewtModal');
-  const frame = document.getElementById('uiSkewtFrame');
   const closeButton = document.getElementById('uiSkewtClose');
   const caption = document.getElementById('uiSkewtModalCaption');
-  if (!button || !root || !status || !modal || !frame || !closeButton) return;
+  const details = {
+    coords: document.getElementById('uiMetbrSkewtCoords'),
+    run: document.getElementById('uiMetbrSkewtRun'),
+    valid: document.getElementById('uiMetbrSkewtValid'),
+    fh: document.getElementById('uiMetbrSkewtFh'),
+    elevation: document.getElementById('uiMetbrSkewtElevation'),
+    source: document.getElementById('uiMetbrSkewtSource')
+  };
+  const hourSelect = document.getElementById('uiMetbrSkewtHour');
+  const loadHourButton = document.getElementById('uiMetbrSkewtLoadHour');
+  const downloadButton = document.getElementById('uiMetbrSkewtDownload');
+  const downloadTopButton = document.getElementById('uiMetbrSkewtDownloadTop');
+  const skewtStatus = document.getElementById('uiMetbrSkewtStatus');
+  const loading = document.getElementById('uiMetbrSkewtLoading');
+  const image = document.getElementById('uiMetbrSkewtImage');
+  if (!button || !root || !status || !modal || !closeButton || !hourSelect || !image) return;
 
-  let enabled = false;
-  let pointerStart = null;
+  let enabled = false, pointerStart = null, selectedPoint = null, selectedHour = 0;
+  let selectedCycleValue = '', requestSerial = 0;
+  for (let h = 0; h <= 42; h++) {
+    const option = document.createElement('option');
+    option.value = String(h);
+    option.textContent = 'F' + String(h).padStart(3, '0');
+    hourSelect.appendChild(option);
+  }
   const hint = document.createElement('output');
   hint.id = 'uiSkewtClickHint';
   hint.hidden = true;
-  hint.textContent = 'CLICK-TO-POINT ATIVO — clique diretamente sobre uma célula do mapa METBR para abrir o Skew-T nesta janela.';
+  hint.textContent = 'CLICK-TO-POINT ATIVO — clique diretamente sobre uma célula do mapa METBR para gerar a sondagem Skew-T nativa.';
   document.body.appendChild(hint);
 
   function setEnabled(value) {
@@ -5050,33 +5111,23 @@
     pointerStart = null;
     if (enabled) {
       const model = document.getElementById('uiModelVariant')?.value;
-      if (model !== 'metbr_wrf') {
-        status.textContent = 'Click-to-Point disponível somente no METBR WRF 4 km; selecione essa execução.';
-      } else {
-        status.textContent = 'Click-to-Point ativo: clique diretamente no mapa meteorológico.';
-      }
-    } else if (!modal.hidden) {
-      status.textContent = 'Skew-T METBR aberto nesta página.';
-    } else {
-      status.textContent = 'Click-to-Point desativado.';
-    }
+      status.textContent = model === 'metbr_wrf'
+        ? 'Click-to-Point ativo: clique diretamente no mapa meteorológico.'
+        : 'Click-to-Point disponível somente no METBR WRF 4 km; selecione essa execução.';
+    } else if (!modal.hidden) status.textContent = 'Skew-T METBR aberto nesta página.';
+    else status.textContent = 'Click-to-Point desativado.';
   }
 
   function inspectPoint(event, canvas) {
-    const inspection = canvas.wrfInspection;
-    const area = inspection?.mapArea;
-    if (!inspection || !area || !window.WrfGrid?.sample) {
-      throw new Error('O mapa ainda está sendo renderizado. Aguarde o quadro terminar.');
-    }
+    const inspection = canvas.wrfInspection, area = inspection?.mapArea;
+    if (!inspection || !area || !window.WrfGrid?.sample) throw new Error('O mapa ainda está sendo renderizado. Aguarde o quadro terminar.');
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * (canvas.width / Math.max(1, rect.width));
     const y = (event.clientY - rect.top) * (canvas.height / Math.max(1, rect.height));
     if (x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height) {
       throw new Error('Clique dentro da área geográfica do mapa, não no título ou na legenda.');
     }
-    const point = inspection.nativeCim
-      ? window.sampleCimNative?.(inspection, x, y)
-      : window.WrfGrid.sample(inspection, x, y);
+    const point = inspection.nativeCim ? window.sampleCimNative?.(inspection, x, y) : window.WrfGrid.sample(inspection, x, y);
     if (!point || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lon))) {
       throw new Error('Não foi possível resolver a coordenada desse pixel. Clique em outra célula do mapa.');
     }
@@ -5085,85 +5136,165 @@
 
   function selectedCycle() {
     const line = document.getElementById('uiCycleLine')?.textContent || '';
-    const match = line.match(/\b(00|06|12|18|21):\d{2}\s*UTC\b/i)
-      || line.match(/\b(00|06|12|18|21)Z\b/i);
+    const match = line.match(/(00|06|12|18|21):\d{2}\s*UTC/i) || line.match(/(00|06|12|18|21)Z/i);
     return match ? match[1] : '';
+  }
+  function showValue(node, value, fallback) {
+    if (node) node.textContent = value === undefined || value === null || value === '' ? (fallback || '—') : String(value);
+  }
+  function formatValid(value) {
+    return value ? String(value).replace('T', ' ').replace('Z', ' UTC') : '—';
+  }
+  function setDownloadEnabled(value) {
+    downloadButton.disabled = !value;
+    downloadTopButton.disabled = !value;
+  }
+  function setBusy(value, message) {
+    loading.hidden = !value;
+    if (value) image.hidden = true;
+    skewtStatus.textContent = message;
+    loadHourButton.disabled = value;
+    hourSelect.disabled = value;
+  }
+
+  async function renderSelectedProfile() {
+    if (!selectedPoint) return;
+    const thisRequest = ++requestSerial, fh = Number(hourSelect.value);
+    if (!Number.isInteger(fh) || fh < 0 || fh > 42) {
+      setBusy(false, 'Validade inválida. Selecione uma hora entre F000 e F042.');
+      return;
+    }
+    selectedHour = fh;
+    const paddedHour = String(fh).padStart(3, '0');
+    showValue(details.coords, selectedPoint.lat.toFixed(4) + '°, ' + selectedPoint.lon.toFixed(4) + '°');
+    showValue(details.fh, 'F' + paddedHour);
+    showValue(details.run, selectedCycleValue ? selectedCycleValue + 'Z' : 'Última rodada disponível');
+    showValue(details.valid, 'Calculando…');
+    showValue(details.elevation, 'Calculando…');
+    showValue(details.source, 'METBR WRF 4 km · SHARPpy');
+    caption.textContent = 'METBR WRF 4 km · ' + selectedPoint.lat.toFixed(3) + '°, ' + selectedPoint.lon.toFixed(3) + '° · F' + paddedHour;
+    image.hidden = true;
+    setDownloadEnabled(false);
+    setBusy(true, 'Consultando o Render e calculando o perfil nativo F' + paddedHour + '…');
+
+    const params = new URLSearchParams({
+      model: 'metbr_wrf_4km', lat: selectedPoint.lat.toFixed(5),
+      lon: selectedPoint.lon.toFixed(5), fh: String(fh)
+    });
+    if (selectedCycleValue) params.set('cycle', selectedCycleValue);
+    try {
+      const response = await fetch(BACKEND + '/api/wrf/sounding/render?' + params.toString(), {
+        method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store'
+      });
+      let data;
+      try { data = await response.json(); }
+      catch { throw new Error('O Render retornou uma resposta inválida (HTTP ' + response.status + ').'); }
+      if (thisRequest !== requestSerial || modal.hidden) return;
+      if (!response.ok) throw new Error((data && data.error) || ('Falha ao calcular o perfil (HTTP ' + response.status + ').'));
+      if (typeof data?.png_data_uri !== 'string' || !data.png_data_uri.startsWith('data:image/png;base64,')) {
+        throw new Error('O serviço respondeu, mas não retornou o diagrama Skew-T em PNG.');
+      }
+      image.src = data.png_data_uri;
+      image.alt = 'Skew-T METBR WRF 4 km em ' + selectedPoint.lat.toFixed(4) + ', ' + selectedPoint.lon.toFixed(4) + ', validade F' + paddedHour;
+      image.hidden = false;
+      loading.hidden = true;
+      showValue(details.run, data.run_cycle || (selectedCycleValue ? selectedCycleValue + 'Z' : 'Última rodada disponível'));
+      showValue(details.valid, formatValid(data.valid));
+      const elevation = data.surface_elevation_m ?? data.terrain_elevation_m;
+      showValue(details.elevation, Number.isFinite(Number(elevation)) ? Math.round(Number(elevation)) + ' m' : '—');
+      showValue(details.source, data.source || 'METBR WRF 4 km · SHARPpy');
+      setDownloadEnabled(true);
+      skewtStatus.textContent = 'Perfil nativo gerado' + (data.render_cache ? ' (cache)' : '') +
+        (Number.isFinite(Number(data.render_ms)) && Number(data.render_ms) > 0 ? ' em ' + (Number(data.render_ms) / 1000).toFixed(1) + ' s.' : '.');
+    } catch (error) {
+      if (thisRequest !== requestSerial || modal.hidden) return;
+      image.hidden = true;
+      loading.hidden = false;
+      loading.textContent = error?.message || 'Não foi possível gerar o perfil Skew-T do METBR.';
+      setDownloadEnabled(false);
+      setBusy(false, error?.message || 'Falha ao gerar o perfil nativo METBR.');
+      loading.hidden = false;
+    }
   }
 
   function openSounding(point) {
-    const model = document.getElementById('uiModelVariant')?.value;
-    if (model !== 'metbr_wrf') {
-      status.textContent = 'Selecione METBR WRF 4 km. O teste ainda não aceita METBR WRF2.';
+    if (document.getElementById('uiModelVariant')?.value !== 'metbr_wrf') {
+      status.textContent = 'Selecione METBR WRF 4 km. O Click-to-Point não está disponível para METBR WRF2.';
       return;
     }
     const frameText = document.getElementById('uiFrameReadout')?.textContent || 'F000';
-    const matchFrame = frameText.match(/F\s*(\d{1,3})/i);
-    const forecastHour = matchFrame ? Number(matchFrame[1]) : 0;
-    if (!Number.isInteger(forecastHour) || forecastHour < 0 || forecastHour > 42) {
+    const match = frameText.match(/F\s*(\d{1,3})/i);
+    const fh = match ? Number(match[1]) : 0;
+    if (!Number.isInteger(fh) || fh < 0 || fh > 42) {
       status.textContent = 'O Click-to-Point METBR está publicado até F042. Selecione uma validade entre F000 e F042.';
       return;
     }
-
-    const params = new URLSearchParams({
-      model: 'metbr',
-      lat: point.lat.toFixed(5),
-      lon: point.lon.toFixed(5),
-      fh: String(forecastHour),
-      from: 'metbr-map-embedded'
-    });
-    const cycle = selectedCycle();
-    if (cycle) params.set('cycle', cycle);
-
-    caption.textContent = 'METBR WRF 4 km · ' + point.lat.toFixed(3) + '°, ' + point.lon.toFixed(3) + '° · ' + frameText + (cycle ? ' · ' + cycle + 'Z' : '');
+    selectedPoint = point;
+    selectedHour = fh;
+    selectedCycleValue = selectedCycle();
+    hourSelect.value = String(fh);
+    image.removeAttribute('src');
+    image.hidden = true;
+    loading.textContent = 'Gerando o perfil vertical diretamente com os dados METBR WRF 4 km…';
     modal.hidden = false;
     modal.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
-    frame.src = SKEWT_PAGE + '?' + params.toString();
-    closeButton.focus({ preventScroll: true });
-    status.textContent = 'Gerando Skew-T para ' + point.lat.toFixed(3) + '°, ' + point.lon.toFixed(3) + '° · ' + frameText + '. A interface será exibida sobre o mapa METBR.';
     setEnabled(false);
+    void renderSelectedProfile();
+    closeButton.focus({ preventScroll: true });
+    status.textContent = 'Gerando Skew-T nativo para ' + point.lat.toFixed(3) + '°, ' + point.lon.toFixed(3) + '° · ' + frameText + '.';
   }
-
   function closeModal() {
+    requestSerial++;
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
-    frame.src = 'about:blank';
+    image.removeAttribute('src');
+    image.hidden = true;
+    loading.hidden = false;
+    loading.textContent = 'Gerando o perfil vertical diretamente com os dados METBR WRF 4 km…';
+    setDownloadEnabled(false);
     document.body.style.overflow = '';
     button.focus({ preventScroll: true });
     status.textContent = 'Skew-T fechado. O mapa METBR continua na mesma página.';
+  }
+  function downloadPng() {
+    if (!image.src || image.hidden) return;
+    const lat = selectedPoint ? selectedPoint.lat.toFixed(3) : 'ponto';
+    const lon = selectedPoint ? selectedPoint.lon.toFixed(3) : 'ponto';
+    const anchor = document.createElement('a');
+    anchor.href = image.src;
+    anchor.download = 'METBR-SkewT-' + lat + '_' + lon + '-F' + String(selectedHour).padStart(3, '0') + '.png';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
   }
 
   button.addEventListener('click', () => setEnabled(!enabled));
   document.addEventListener('pointerdown', event => {
     if (!enabled) return;
     const canvas = event.target instanceof Element ? event.target.closest('#uiCanvasA') : null;
-    if (!canvas || (event.pointerType === 'mouse' && event.button !== 0)) {
-      pointerStart = null;
-      return;
-    }
+    if (!canvas || (event.pointerType === 'mouse' && event.button !== 0)) { pointerStart = null; return; }
     pointerStart = { x: event.clientX, y: event.clientY, canvas };
   }, true);
-
   document.addEventListener('pointerup', event => {
     if (!enabled || !pointerStart) return;
     const start = pointerStart;
     pointerStart = null;
     const canvas = event.target instanceof Element ? event.target.closest('#uiCanvasA') : null;
-    if (!canvas || canvas !== start.canvas) return;
-    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
+    if (!canvas || canvas !== start.canvas || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
     event.preventDefault();
     event.stopPropagation();
     try {
-      const model = document.getElementById('uiModelVariant')?.value;
-      if (model !== 'metbr_wrf') throw new Error('Selecione METBR WRF 4 km no painel lateral antes de escolher o ponto.');
+      if (document.getElementById('uiModelVariant')?.value !== 'metbr_wrf') throw new Error('Selecione METBR WRF 4 km no painel lateral antes de escolher o ponto.');
       openSounding(inspectPoint(event, canvas));
-    } catch (error) {
-      status.textContent = error.message || 'Falha ao localizar a coordenada selecionada.';
-    }
+    } catch (error) { status.textContent = error.message || 'Falha ao localizar a coordenada selecionada.'; }
   }, true);
-
   closeButton.addEventListener('click', closeModal);
   modal.querySelector('[data-skewt-close]')?.addEventListener('click', closeModal);
+  loadHourButton.addEventListener('click', () => void renderSelectedProfile());
+  hourSelect.addEventListener('keydown', event => { if (event.key === 'Enter') void renderSelectedProfile(); });
+  downloadButton.addEventListener('click', downloadPng);
+  downloadTopButton.addEventListener('click', downloadPng);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && enabled) setEnabled(false);
     else if (event.key === 'Escape' && !modal.hidden) closeModal();
