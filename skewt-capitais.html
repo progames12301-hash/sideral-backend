@@ -29,37 +29,21 @@
 </section>
 </main>
 <div id="busy" class="busy">CARREGANDO...</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const BASE='https://github.com/progames12301-hash/sideral-backend/releases/download';
 const CAPITALS=[
 ['Rio Branco','rio-branco'],['Maceió','maceio'],['Macapá','macapa'],['Manaus','manaus'],['Salvador','salvador'],['Fortaleza','fortaleza'],['Brasília','brasilia'],['Vitória','vitoria'],['Goiânia','goiania'],['São Luís','sao-luis'],['Cuiabá','cuiaba'],['Campo Grande','campo-grande'],['Belo Horizonte','belo-horizonte'],['Belém','belem'],['João Pessoa','joao-pessoa'],['Curitiba','curitiba'],['Recife','recife'],['Teresina','teresina'],['Rio de Janeiro','rio-de-janeiro'],['Natal','natal'],['Porto Alegre','porto-alegre'],['Porto Velho','porto-velho'],['Boa Vista','boa-vista'],['Florianópolis','florianopolis'],['São Paulo','sao-paulo'],['Aracaju','aracaju'],['Palmas','palmas']];
 const SOUTH_CAPITALS=[['Curitiba','curitiba'],['Florianópolis','florianopolis'],['Porto Alegre','porto-alegre']];
 const $=id=>document.getElementById(id);
-let current='',available=[],publication=null,archiveCache=new Map(),imageRequest=0;
+let current='',available=[];
 function isMetbr(){return $('model').value==='metbr'}
 function cities(){return isMetbr()?SOUTH_CAPITALS:CAPITALS}
 function modelInfo(){return ({ecmwf:{label:'ECMWF IFS 0,25°',tag:'skewt-live'},icon:{label:'DWD ICON Global ~11 km',tag:'skewt-icon-global'},'ecmwf-hybrid':{label:'ECMWF HRES ~9 km híbrido + IFS 0,25°',tag:'skewt-ecmwf-hres9km-hybrid'},ukmo10km:{label:'UK Met Office Global 10 km',tag:'skewt-ukmo-global10km'},nems10:{label:'meteoblue NEMS10 NEMSSA 10 km',tag:'skewt-nems10-nemssa-live'},metbr:{label:'WRF METBR 4 km',tag:'skewt-metbr-sul-live'}})[$('model').value]||{label:'ECMWF IFS 0,25°',tag:'skewt-live'};} 
-function dataBranch(cycle){
- const model=$('model').value;
- if(model==='metbr')return null;
- if(model==='nems10')return 'skewt-data-nems10-live';
- const bases={
-  ecmwf:'skewt-data-ecmwf',
-  icon:'skewt-data-icon-global',
-  'ecmwf-hybrid':'skewt-data-ecmwf-hybrid',
-  ukmo10km:'skewt-data-ukmo10km'
- };
- return (bases[model]||bases.ecmwf)+'-'+cycle;
-}
-function assetName(slug,fh){return slug+'-f'+String(fh).padStart(3,'0')+'.png'}
 function asset(slug,cycle,fh){
- return BASE+'/'+releaseTag(cycle)+'/'+assetName(slug,fh);
-}
-function archiveAsset(slug,cycle){
- const archive=publication?.city_archives?.[slug]||slug+'.zip';
- const base=publication?.download_base||('https://raw.githubusercontent.com/progames12301-hash/sideral-backend/'+dataBranch(cycle)+'/');
- return base+encodeURIComponent(archive);
+ const frame=slug+'-f'+String(fh).padStart(3,'0')+'.png';
+ const info=modelInfo();
+ const tag=(isMetbr()||$('model').value==='nems10')?info.tag:info.tag+'-'+cycle;
+ return BASE+'/'+tag+'/'+frame;
 }
 function setStatus(text,cls=''){$('status').textContent=text;$('status').className='status '+cls}
 function updateModelMeta(){
@@ -92,37 +76,14 @@ function probe(cap,cycle){
  });
 }
 async function check(){
- const request=++imageRequest;
- if(current.startsWith('blob:'))URL.revokeObjectURL(current);
- current='';archiveCache.clear();publication=null;
  updateModelMeta();
  $('busy').style.display='grid';
  $('viewer').innerHTML='<div class="empty">Verificando sondagens publicadas...</div>';
- $('download').disabled=true;available=[];fillCities();
+ $('download').disabled=true;current='';available=[];fillCities();
  const cycle=$('cycle').value;
  const candidates=cities();
- const branch=dataBranch(cycle);
- if(branch){
-  try{
-   const response=await fetch('https://raw.githubusercontent.com/progames12301-hash/sideral-backend/'+branch+'/publication.json?v='+Date.now(),{cache:'no-store'});
-   if(response.ok){
-    const p=await response.json();
-    if((p?.schema==='sideral-skewt-publication-v2'&&p.city_archives&&Array.isArray(p.assets))||
-       (p?.schema==='sideral-skewt-publication-v1'&&Array.isArray(p.assets)))publication=p;
-   }
-  }catch(e){}
- }
- if(request!==imageRequest)return;
- if(publication?.schema==='sideral-skewt-publication-v2'){
-  available=candidates.filter(c=>Object.prototype.hasOwnProperty.call(publication.city_archives,c[1]));
- }else if(publication?.assets){
-  available=candidates.filter(c=>publication.assets.includes(assetName(c[1],0)));
- }else{
-  // Fallback for the old PNG releases: image probes do not use the GitHub REST API.
-  const results=await Promise.all(candidates.map(c=>probe(c,cycle)));
-  if(request!==imageRequest)return;
-  available=results.filter(Boolean);
- }
+ const results=await Promise.all(candidates.map(c=>probe(c,cycle)));
+ available=results.filter(Boolean);
  fillCities();
  $('busy').style.display='none';
  if(!available.length){
@@ -131,67 +92,27 @@ async function check(){
   $('viewer').innerHTML='<div class="empty">Nenhuma rodada disponível nesta fonte. O ECMWF continua independente da publicação WRF.</div>';
   return;
  }
- if(publication?.schema==='sideral-skewt-publication-v2'){
-  setStatus(available.length+' capitais disponíveis; '+(publication.png_count||459)+' PNGs dentro de ZIPs.','ok');
- }else{
-  setStatus(isMetbr()?available.length+'/3 capitais do Sul disponíveis no METBR WRF 4 km.':available.length+'/'+candidates.length+' capitais disponíveis · '+modelInfo().label+' '+($('model').value==='nems10'?'(previsão mais recente)':cycle+'Z')+'.','ok');
- }
- await load();
+ setStatus(isMetbr()?available.length+'/3 capitais do Sul disponíveis no METBR WRF 4 km.':available.length+'/27 capitais disponíveis · '+modelInfo().label+' '+($('model').value==='nems10'?'(previsão mais recente)':cycle+'Z')+'.','ok');
+ load();
 }
-async function load(){
+function load(){
  const slug=$('city').value;if(!slug)return;
- const request=++imageRequest;
  const cycle=$('cycle').value;const fh=Number($('fh').value);
- const cap=cities().find(c=>c[1]===slug);const filename=assetName(slug,fh);
- const compact=publication?.schema==='sideral-skewt-publication-v2';
- if(publication?.schema==='sideral-skewt-publication-v1'&&!publication.assets.includes(filename)){
-  setStatus('Este frame não consta no índice publicado.','err');return;
- }
- $('busy').style.display='grid';$('viewer').innerHTML='';$('download').disabled=true;
- if(current.startsWith('blob:'))URL.revokeObjectURL(current);
- current='';
- try{
-  let src;
-  if(compact){
-   if(!window.JSZip)throw new Error('JSZip não carregou; recarregue a página.');
-   let zip=archiveCache.get(slug);
-   if(!zip){
-    setStatus('Baixando pacote '+(cap?cap[0]:slug)+'...');
-    const response=await fetch(archiveAsset(slug,cycle),{cache:'force-cache'});
-    if(!response.ok)throw new Error('Falha ao baixar ZIP: HTTP '+response.status);
-    zip=await JSZip.loadAsync(await response.arrayBuffer());
-    if(request!==imageRequest)return;
-    archiveCache.clear();archiveCache.set(slug,zip);
-   }
-   const entry=zip.file(filename);
-   if(!entry)throw new Error(filename+' não está no ZIP da capital.');
-   src=URL.createObjectURL(await entry.async('blob'));
-  }else{
-   src=asset(slug,cycle,fh)+(publication?'':'?t='+Date.now());
-  }
-  if(request!==imageRequest){if(src.startsWith('blob:'))URL.revokeObjectURL(src);return;}
-  const im=new Image();
-  im.alt='Skew-T '+(cap?cap[0]:slug)+' '+(isMetbr()?'METBR WRF 4 km':modelInfo().label+' '+cycle+'Z')+' F'+String(fh).padStart(3,'0');
-  im.onload=()=>{
-   if(request!==imageRequest){if(src.startsWith('blob:'))URL.revokeObjectURL(src);return;}
-   $('busy').style.display='none';$('viewer').appendChild(im);current=src;$('download').disabled=false;
-   $('frame').textContent=(cap?cap[0]:slug)+' • '+(isMetbr()?'METBR WRF 4 km':modelInfo().label+' '+cycle+'Z')+' • F'+String(fh).padStart(3,'0');
-   setStatus('PNG carregado.','ok');
-  };
-  im.onerror=()=>{
-   if(src.startsWith('blob:'))URL.revokeObjectURL(src);
-   if(request!==imageRequest)return;
-   $('busy').style.display='none';$('download').disabled=true;
-   $('viewer').innerHTML='<div class="empty">Este frame ainda não foi publicado para esta rodada.</div>';
-   setStatus('PNG não disponível para este frame.','err');
-  };
-  im.src=src;
- }catch(e){
-  if(request!==imageRequest)return;
+ const cap=cities().find(c=>c[1]===slug);const src=asset(slug,cycle,fh)+'?t='+Date.now();
+ $('busy').style.display='grid';$('viewer').innerHTML='';$('download').disabled=true;current='';
+ const im=new Image();
+ im.alt='Skew-T '+(cap?cap[0]:slug)+' '+(isMetbr()?'METBR WRF 4 km':modelInfo().label+' '+cycle+'Z')+' F'+String(fh).padStart(3,'0');
+ im.onload=()=>{
+  $('busy').style.display='none';$('viewer').appendChild(im);current=src.split('?')[0];$('download').disabled=false;
+  $('frame').textContent=(cap?cap[0]:slug)+' • '+(isMetbr()?'METBR WRF 4 km':modelInfo().label+' '+cycle+'Z')+' • F'+String(fh).padStart(3,'0');
+  setStatus('PNG carregado.','ok');
+ };
+ im.onerror=()=>{
   $('busy').style.display='none';$('download').disabled=true;
-  $('viewer').innerHTML='<div class="empty">Não foi possível abrir este frame.<br><br>'+e.message+'</div>';
-  setStatus('Falha ao carregar pacote.','err');
- }
+  $('viewer').innerHTML='<div class="empty">Este frame ainda não foi publicado para esta rodada.</div>';
+  setStatus('PNG não disponível para este frame.','err');
+ };
+ im.src=src;
 }
 $('model').addEventListener('change',()=>{fillHours();check()});
 $('cycle').addEventListener('change',check);
