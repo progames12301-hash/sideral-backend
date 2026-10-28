@@ -2995,8 +2995,10 @@ class Handler(SimpleHTTPRequestHandler):
             "ecmwf-hybrid": ("ECMWF HRES ~9 km híbrido + IFS 0.25°", f"skewt-ecmwf-hres9km-hybrid-{cycle}"),
             "ukmo10km": ("UK Met Office Global 10 km", f"skewt-ukmo-global10km-{cycle}"),
             "nems10": ("meteoblue NEMS10 NEMSSA 10 km", "skewt-nems10-nemssa-live"),
+            "wrf-brasil-21km": ("SIDERAL WRF Brasil 21 km", f"skewt-wrf-brasil21km-live-{cycle}"),
         }
-        if model not in products or city not in allowed_cities or cycle not in {"06", "12", "18"} or fh not in range(0, 49, 3):
+        allowed_cycles = {"00", "06", "12", "18"} if model == "wrf-brasil-21km" else {"06", "12", "18"}
+        if model not in products or city not in allowed_cities or cycle not in allowed_cycles or fh not in range(0, 49, 3):
             self.send_json(400, {"error": "Modelo, capital, ciclo ou validade inválidos."}); return
 
         label, tag = products[model]
