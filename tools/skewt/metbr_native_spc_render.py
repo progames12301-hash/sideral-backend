@@ -389,16 +389,17 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
     h_agl = z - float(ground_m)
     h_agl[np.abs(h_agl) < 2.0] = 0.0
     surface_pressure = float(p[0])
-    for pp in [1050, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100]:
-        height = _interp_pressure(h_agl, p, pp)
-        if (math.isfinite(height) and pp <= surface_pressure + 0.1
-                and abs(pp - surface_pressure) >= 25.0):
-            ax.text(-41.8, pp, f"{height:.0f} m AGL", ha="left", va="center",
-                    fontsize=6.2, color="#303030", clip_on=True,
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.55, pad=0.15))
+    # Sparse altitude markers (every 3 km) keep the thermodynamic plot readable.
+    for height_m in (3000, 6000, 9000, 12000, 15000):
+        level_pressure = _interp_height(p, h_agl, float(height_m))
+        if math.isfinite(level_pressure) and 100.0 <= level_pressure <= surface_pressure:
+            ax.text(-41.8, level_pressure, f"{height_m // 1000} km AGL",
+                    ha="left", va="center", fontsize=6.4, color="#b84a4a",
+                    weight="bold", clip_on=True,
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.72, pad=0.15))
     ax.text(-41.8, surface_pressure, f"SFC {surface_pressure:.0f} hPa / 0 m AGL",
             ha="left", va="bottom", fontsize=6.5, weight="bold",
-            color="#303030", clip_on=True,
+            color="#b84a4a", clip_on=True,
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=0.2))
     # Add the standard sounding traces in addition to T and Td: virtual
     # temperature and wet-bulb temperature. SHARPpy documents both as part of
@@ -527,20 +528,13 @@ def _make_skew_axes(ax, p, t, td, z, u, v, pcl, station, date_text, ground_m):
             label = f"{short} 0 km"
         else:
             label = f"{short} {height_agl / 1000.0:.1f} km"
-        # White casing plus a saturated foreground line improves legibility.
-        ax.axhline(pressure_value, color="white", lw=3.2,
-                   ls=(0, (5, 2)), alpha=1.0, zorder=7)
-        ax.axhline(pressure_value, color=marker_color, lw=1.6,
-                   ls=(0, (5, 2)), alpha=1.0, zorder=8)
-        ax.annotate(
-            label, xy=(marker_x, pressure_value), xycoords="data",
-            xytext=(7, marker_offsets[short]), textcoords="offset points",
-            fontsize=7.4, color=marker_color, weight="bold",
-            ha="left", va="center", clip_on=True, zorder=10,
-            bbox=dict(facecolor=marker_fills[short], edgecolor=marker_color,
-                      linewidth=0.95, alpha=0.99, pad=0.65),
-            arrowprops=dict(arrowstyle="-", color=marker_color, lw=0.9, alpha=1.0),
-        )
+        # Use a short colored level tick instead of a dashed line across the entire sounding.
+        ax.plot([marker_x - 4.0, marker_x], [pressure_value, pressure_value],
+                color=marker_color, lw=1.35, zorder=8, solid_capstyle="round")
+        ax.text(marker_x + 1.5, pressure_value, label, fontsize=6.7,
+                color=marker_color, weight="bold", ha="left", va="center",
+                clip_on=True, zorder=10,
+                bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=0.1))
 
     lfc_for_shading = parcel_levels.get("LFC", {}).get("pressure")
     el_for_shading = parcel_levels.get("EL", {}).get("pressure")
