@@ -1,7 +1,11 @@
-name: WRF Maestro - garantia diaria
+name: WRF Maestro - monitoramento e recuperacao operacional
 
 on:
   workflow_dispatch:
+  schedule:
+    # GitHub cron pode atrasar; o watchdog revisa saude e recupera falhas a cada 2 horas.
+    - cron: '13 */2 * * *'
+
 permissions:
   contents: read
   actions: write
@@ -10,102 +14,171 @@ concurrency:
   group: sideral-wrf-maestro-diario
   cancel-in-progress: false
 
-env:
-  REPO: ${{ github.repository }}
-
 jobs:
   maestro:
-    if: false  # Desativado: despachante auxiliar, os WRF mantêm seus próprios agendamentos.
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Preparar GitHub CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh --version
-        env:
-          GH_TOKEN: ${{ github.token }}
 
-      - name: Fiscalizar METBR primeiro
+      - name: Conferir produtos WRF e recuperar publicacoes atrasadas
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TODAY="$(date -u +%Y%m%d)"
-          BRANCH="metbr-json-data"
-          URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/metadata.json?maestro=${GITHUB_RUN_ID}"
-          healthy=false
-          if curl -fsSL --connect-timeout 10 --max-time 30 "$URL" -o /tmp/metbr.json; then
-            python3 - <<'PY'
-          import json
-          d=json.load(open('/tmp/metbr.json',encoding='utf-8'))
-          today='${TODAY}'
-          ok=(str(d.get('runDate',''))==today and int(d.get('frameCount',0))>=3 and len(d.get('availableMapFields') or [])>0)
-          print('METBR metadata:', d.get('runDate'), d.get('runCycle'), 'frames=', d.get('frameCount'), 'mapFields=', len(d.get('availableMapFields') or []), 'healthy=', ok)
-          raise SystemExit(0 if ok else 1)
-          PY
-            healthy=true
-          fi
-
-          in_progress=false
-          runs="$(gh run list --repo "$REPO" --workflow metbr-wrf-4km.yml --limit 10 --json status,conclusion,createdAt,databaseId)"
-          if echo "$runs" | jq -e '.[] | select(.status == "queued" or .status == "in_progress")' >/dev/null; then
-            in_progress=true
-          fi
-
-          if [[ "$healthy" == true ]]; then
-            echo 'METBR já está atualizado hoje.'
-          elif [[ "$in_progress" == true ]]; then
-            echo 'METBR está em execução; não criar execução concorrente.'
-          else
-            echo 'METBR atrasado/inválido: disparando prioridade 1.'
-            gh workflow run metbr-wrf-4km.yml --repo "$REPO"
-          fi
-
-      - name: Fiscalizar todos os WRF
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TODAY="$(date -u +%Y%m%d)"
           python3 - <<'PY'
-          import json, subprocess, urllib.request
+          import datetime as dt
+          import json
+          import subprocess
+          import time
+          import urllib.error
+          import urllib.request
 
-          repo='${{ github.repository }}'
-          today='${TODAY}'
-          products=[
-            ('wrf-4km-next-day-auto.yml','wrf-data'),
-            ('wrf-icon-4km-native.yml','wrf-icon-data'),
-            ('wrf-ecmwf-4km-native.yml','wrf-ecmwf-data'),
-            ('wrf-sudeste-gfs-4km.yml','wrf-sudeste-gfs-data'),
-            ('wrf-sudeste-icon-4km.yml','wrf-sudeste-icon-data'),
-            ('wrf-sudeste-ecmwf-4km.yml','wrf-sudeste-ecmwf-data'),
+          repo = __import__("os").environ["GITHUB_REPOSITORY"]
+          now = dt.datetime.now(dt.timezone.utc)
+
+          # Somente produtos operacionais atuais. Os WRF Sudeste de 7 km
+          # descontinuados em 26/10/2026 nao sao reativados.
+          targets = [
+              {"workflow":"metbr-wrf-4km.yml", "branches":["metbr-json-data"], "frames":49, "age":30, "future":6},
+              {"workflow":"metbr-wrf2-4km-tomorrow.yml", "branches":["metbr-wrf2-json-data"], "frames":49, "age":30, "future":36},
+              {"workflow":"wrf-4km-next-day-auto.yml", "branches":["wrf-data"], "frames":41, "age":30, "future":3, "severe":True},
+              {"workflow":"wrf-icon-4km-native.yml", "branches":["wrf-icon-data"], "frames":41, "age":30, "future":3, "severe":True},
+              {"workflow":"wrf-ecmwf-4km-native.yml", "branches":["wrf-ecmwf-data"], "frames":41, "age":30, "future":3, "severe":True},
+              {"workflow":"wrf-brasil-12km.yml", "branches":["wrf-brasil-12km-data"], "frames":49, "age":30, "future":3},
+              {"workflow":"cim-wrf-3km-operational.yml", "branches":["cim-wrf-3km-icon-data","cim-wrf-3km-ecmwf-data"], "frames":41, "age":30, "future":3, "severe":True},
+              {"workflow":"wrf-tarc-3km.yml", "branches":["tarc-json-data"], "frames":17, "age":30, "future":6},
+              {"workflow":"wrf2-tarc-3km-tomorrow.yml", "branches":["tarc-wrf2-json-data"], "frames":17, "age":30, "future":36},
+              {"workflow":"wrf-cbr-4km.yml", "branches":["cbr-json-data"], "frames":15, "age":30, "future":6},
+              {"workflow":"wrf2-cbr-4km-tomorrow.yml", "branches":["cbr-wrf2-json-data"], "frames":15, "age":30, "future":36},
+              {"workflow":"wrf-sideral-4km-sudeste.yml", "branches":["sideral-wrf-4km-sudeste-data"], "frames":49, "age":30, "future":3},
+              {"workflow":"wrf-sideral-5km-sudeste.yml", "branches":["sideral-wrf-5km-sudeste-data"], "frames":49, "age":30, "future":3},
+              {"workflow":"wrf-sideral-4km-2-sudeste.yml", "branches":["sideral-wrf-4km-2-sudeste-data"], "frames":49, "age":30, "future":36},
+              {"workflow":"wrf-sideral-5km-2-sudeste.yml", "branches":["sideral-wrf-5km-2-sudeste-data"], "frames":49, "age":30, "future":36},
           ]
 
-          for workflow, branch in products:
-              url=f'https://raw.githubusercontent.com/{repo}/{branch}/metadata.json?maestro={today}'
-              healthy=False
+          def fetch_metadata(branch):
+              url = f"https://raw.githubusercontent.com/{repo}/{branch}/metadata.json?watch={int(now.timestamp())}"
+              request = urllib.request.Request(url, headers={
+                  "Cache-Control": "no-cache",
+                  "User-Agent": "Sideral-WRF-daily-watchdog",
+              })
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  data = json.load(response)
+              if not isinstance(data, dict):
+                  raise ValueError(f"{branch}: metadata.json nao e um objeto")
+              return data
+
+          def parse_time(value):
+              if not value:
+                  return None
               try:
-                  with urllib.request.urlopen(url, timeout=20) as r:
-                      d=json.load(r)
-                  severe=bool(d.get('wrf2SevereDiagnostics'))
-                  frames=int(d.get('frameCount',0))
-                  healthy=(str(d.get('runDate',''))==today and frames>=1 and severe)
-                  print(f'{workflow}: runDate={d.get("runDate")} cycle={d.get("runCycle")} frames={frames} WRF2={severe} healthy={healthy}')
+                  stamp = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                  if stamp.tzinfo is None:
+                      stamp = stamp.replace(tzinfo=dt.timezone.utc)
+                  return stamp.astimezone(dt.timezone.utc)
+              except (TypeError, ValueError):
+                  return None
+
+          def healthy_branch(target, branch):
+              try:
+                  meta = fetch_metadata(branch)
               except Exception as exc:
-                  print(f'{workflow}: metadata indisponível: {exc}')
+                  print(f"  {branch}: metadata indisponivel: {exc}")
+                  return False
 
-              runs=json.loads(subprocess.check_output(['gh','run','list','--repo',repo,'--workflow',workflow,'--limit','10','--json','status,conclusion,createdAt,databaseId'],text=True))
-              running=any(x.get('status') in {'queued','in_progress'} for x in runs)
-              if healthy:
+              count = int(meta.get("frameCount") or len(meta.get("frames") or []))
+              expected = int(meta.get("expectedFrameCount") or 0)
+              state = str(meta.get("status") or meta.get("publicationStatus") or "").lower()
+              missing = meta.get("missingForecastHours")
+              if isinstance(missing, list) and missing:
+                  print(f"  {branch}: faltam horas de previsao: {len(missing)}")
+                  return False
+              if count < target["frames"] or (expected and count < expected):
+                  print(f"  {branch}: produto incompleto ({count}/{max(target['frames'], expected)} frames)")
+                  return False
+              if any(word in state for word in ("partial", "incomplete", "unavailable", "failed", "error")):
+                  print(f"  {branch}: status nao completo ({state})")
+                  return False
+              if target.get("severe") and not meta.get("wrf2SevereDiagnostics"):
+                  print(f"  {branch}: metadata sem a flag de diagnosticos severos")
+                  return False
+
+              stamp = parse_time(meta.get("generatedAt")) or parse_time(meta.get("initTime"))
+              if stamp is None and meta.get("runDate"):
+                  date = str(meta.get("runDate")).replace("-", "")
+                  cycle = str(meta.get("runCycle") or "00").replace("Z", "")
+                  try:
+                      stamp = dt.datetime.strptime(date + cycle[:2], "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+                  except ValueError:
+                      stamp = None
+              if stamp is None:
+                  print(f"  {branch}: timestamp ausente/ilegitimo")
+                  return False
+              age_h = (now - stamp).total_seconds() / 3600
+              if age_h > target["age"] or age_h < -target["future"]:
+                  print(f"  {branch}: dados fora da janela ({age_h:.1f} h)")
+                  return False
+              print(f"  {branch}: OK; frames={count}, idade={age_h:.1f} h, status={state or 'sem campo status'}")
+              return True
+
+          def list_runs(workflow):
+              result = subprocess.run(
+                  ["gh", "run", "list", "--repo", repo, "--workflow", workflow,
+                   "--limit", "10", "--json", "status,conclusion,createdAt,updatedAt,databaseId"],
+                  text=True, capture_output=True, check=True, timeout=40,
+              )
+              data = json.loads(result.stdout or "[]")
+              if not isinstance(data, list):
+                  raise ValueError(f"Resposta inesperada de gh run list: {workflow}")
+              return data
+
+          def hours_since(value):
+              stamp = parse_time(value)
+              return (now - stamp).total_seconds() / 3600 if stamp else 9999
+
+          for target in targets:
+              workflow = target["workflow"]
+              print(f"\n=== {workflow} ===")
+              checks = [healthy_branch(target, branch) for branch in target["branches"]]
+              if all(checks):
                   continue
-              if running:
-                  print('  -> já existe execução em andamento; aguardando.')
+
+              try:
+                  runs = list_runs(workflow)
+              except Exception as exc:
+                  print(f"  Nao foi possivel consultar as execucoes; sem disparo para evitar duplicatas: {exc}")
                   continue
-              print('  -> produto atrasado/incompleto: disparando workflow.')
-              subprocess.run(['gh','workflow','run',workflow,'--repo',repo],check=True)
+
+              active = [run for run in runs if run.get("status") in
+                        {"queued", "in_progress", "waiting", "pending", "requested"}]
+              if active:
+                  print(f"  Ja existe execucao ativa ({len(active)}); nao duplicar WRF.")
+                  continue
+
+              latest = runs[0] if runs else {}
+              age = hours_since(latest.get("updatedAt") or latest.get("createdAt"))
+              conclusion = latest.get("conclusion")
+              # Aguarda o publicador do workflow_run terminar apos uma execucao recente.
+              if latest.get("status") == "completed" and conclusion == "success" and age < 1.5:
+                  print(f"  Execucao terminou ha {age:.1f} h; dando janela ao publicador.")
+                  continue
+              if latest.get("status") == "completed" and conclusion != "success" and age < 0.75:
+                  print(f"  Execucao falhou ha {age:.1f} h; evitando um ciclo de repeticao imediato.")
+                  continue
+
+              print(f"  RECUPERACAO: produto ausente/atrasado/incompleto; enviando dispatch de {workflow}.")
+              try:
+                  subprocess.run(["gh", "workflow", "run", workflow, "--repo", repo, "--ref", "main"],
+                                 check=True, timeout=40)
+              except Exception as exc:
+                  print(f"  FALHA NO DISPATCH de {workflow}: {exc}")
+              # Nao iniciar todos os modelos no mesmo instante se varias publicacoes falharem.
+              time.sleep(8)
+
+          print("\nWRF Maestro finalizado; produtos atuais verificados e falhas elegiveis encaminhadas.")
           PY
-
-      - name: Resumo
-        run: |
-          echo 'WRF Maestro concluído: METBR foi fiscalizado primeiro; os seis WRF regionais foram verificados e disparados apenas quando ausentes, atrasados ou sem WRF2.'
