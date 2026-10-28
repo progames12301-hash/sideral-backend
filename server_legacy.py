@@ -2506,8 +2506,7 @@ def _metbr_source_release_tag(metadata: dict[str, Any], asset_name: str) -> str:
         source_run_id_int = 0
     if source_run_id_int > 0:
         derived_tag = f"metbr-wrf-4km-checkpoint-{source_run_id_int}"
-        if re.fullmatch(r"metbr-wrf-4km-checkpoint-\\d+", derived_tag):
-            return derived_tag
+        return derived_tag
 
     run_key = str(metadata.get("initTime") or "")
     now = time.monotonic()
