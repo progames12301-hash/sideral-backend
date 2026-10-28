@@ -1,0 +1,195 @@
+{
+  "schema": "sideral-capitals-skewt-multimodel-v1",
+  "provider": "Open-Meteo Single Runs",
+  "model_id": "ukmo10km",
+  "model": "UK Met Office Global 10 km",
+  "resolution": "0.09° (~10 km)",
+  "surface_source": "UK Met Office Global 10 km",
+  "pressure_source": "UK Met Office Global 10 km",
+  "renderer": "SHARPpy",
+  "run_utc": "2026-10-28 06:00Z",
+  "cycle": "06",
+  "forecast_hours": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15,
+    18,
+    21,
+    24,
+    27,
+    30,
+    33,
+    36,
+    39,
+    42,
+    45,
+    48
+  ],
+  "cities": [
+    {
+      "name": "Rio Branco",
+      "slug": "rio-branco",
+      "latitude": -9.9754,
+      "longitude": -67.8249
+    },
+    {
+      "name": "Maceió",
+      "slug": "maceio",
+      "latitude": -9.6658,
+      "longitude": -35.7353
+    },
+    {
+      "name": "Macapá",
+      "slug": "macapa",
+      "latitude": 0.0349,
+      "longitude": -51.0694
+    },
+    {
+      "name": "Manaus",
+      "slug": "manaus",
+      "latitude": -3.119,
+      "longitude": -60.0217
+    },
+    {
+      "name": "Salvador",
+      "slug": "salvador",
+      "latitude": -12.9777,
+      "longitude": -38.5016
+    },
+    {
+      "name": "Fortaleza",
+      "slug": "fortaleza",
+      "latitude": -3.7319,
+      "longitude": -38.5267
+    },
+    {
+      "name": "Brasília",
+      "slug": "brasilia",
+      "latitude": -15.7939,
+      "longitude": -47.8828
+    },
+    {
+      "name": "Vitória",
+      "slug": "vitoria",
+      "latitude": -20.3155,
+      "longitude": -40.3128
+    },
+    {
+      "name": "Goiânia",
+      "slug": "goiania",
+      "latitude": -16.6869,
+      "longitude": -49.2648
+    },
+    {
+      "name": "São Luís",
+      "slug": "sao-luis",
+      "latitude": -2.5307,
+      "longitude": -44.3068
+    },
+    {
+      "name": "Cuiabá",
+      "slug": "cuiaba",
+      "latitude": -15.6014,
+      "longitude": -56.0979
+    },
+    {
+      "name": "Campo Grande",
+      "slug": "campo-grande",
+      "latitude": -20.4697,
+      "longitude": -54.6201
+    },
+    {
+      "name": "Belo Horizonte",
+      "slug": "belo-horizonte",
+      "latitude": -19.9167,
+      "longitude": -43.9345
+    },
+    {
+      "name": "Belém",
+      "slug": "belem",
+      "latitude": -1.4558,
+      "longitude": -48.5039
+    },
+    {
+      "name": "João Pessoa",
+      "slug": "joao-pessoa",
+      "latitude": -7.1195,
+      "longitude": -34.845
+    },
+    {
+      "name": "Curitiba",
+      "slug": "curitiba",
+      "latitude": -25.4284,
+      "longitude": -49.2733
+    },
+    {
+      "name": "Recife",
+      "slug": "recife",
+      "latitude": -8.0476,
+      "longitude": -34.877
+    },
+    {
+      "name": "Teresina",
+      "slug": "teresina",
+      "latitude": -5.0892,
+      "longitude": -42.8019
+    },
+    {
+      "name": "Rio de Janeiro",
+      "slug": "rio-de-janeiro",
+      "latitude": -22.9068,
+      "longitude": -43.1729
+    },
+    {
+      "name": "Natal",
+      "slug": "natal",
+      "latitude": -5.7945,
+      "longitude": -35.211
+    },
+    {
+      "name": "Porto Alegre",
+      "slug": "porto-alegre",
+      "latitude": -30.0346,
+      "longitude": -51.2177
+    },
+    {
+      "name": "Porto Velho",
+      "slug": "porto-velho",
+      "latitude": -8.7608,
+      "longitude": -63.8999
+    },
+    {
+      "name": "Boa Vista",
+      "slug": "boa-vista",
+      "latitude": 2.8235,
+      "longitude": -60.6758
+    },
+    {
+      "name": "Florianópolis",
+      "slug": "florianopolis",
+      "latitude": -27.5949,
+      "longitude": -48.5482
+    },
+    {
+      "name": "São Paulo",
+      "slug": "sao-paulo",
+      "latitude": -23.5505,
+      "longitude": -46.6333
+    },
+    {
+      "name": "Aracaju",
+      "slug": "aracaju",
+      "latitude": -10.9472,
+      "longitude": -37.0731
+    },
+    {
+      "name": "Palmas",
+      "slug": "palmas",
+      "latitude": -10.184,
+      "longitude": -48.3336
+    }
+  ]
+}
