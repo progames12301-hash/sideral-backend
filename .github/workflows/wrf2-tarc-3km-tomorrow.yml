@@ -580,22 +580,3 @@ jobs:
           gh release upload "$CHECKPOINT_TAG" tarc-products-3km.tar.gz tarc-severe-3km.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
           gh release upload "$CHECKPOINT_TAG" wrf/tarc_variable_catalog.json --repo "$GITHUB_REPOSITORY" --clobber
           echo "TARC 3 KM: produtos e diagnósticos publicados."
-
-      - name: Checkout das ferramentas Skew-T nativas (main)
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: sideral-skewt
-          fetch-depth: 1
-
-      - name: Publicar Skew-T nativo WRF2 das capitais cobertas
-        if: success()
-        continue-on-error: true
-        uses: ./sideral-skewt/.github/actions/publish-wrf-skewt
-        with:
-          run-dir: tarc_all_wrfout
-          model-key: wrf-tarc2-3km
-          model-label: WRF2 TARC 3 km
-          resolution-km: '3'
-          source-run-id: ${{ github.run_id }}
-          repo-path: sideral-skewt
