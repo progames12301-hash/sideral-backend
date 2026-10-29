@@ -277,24 +277,53 @@ jobs:
           git worktree remove --force publish-tree
           echo "PUBLICADO: $BRANCH"
 
-      - name: Checkout das ferramentas Skew-T nativas (main)
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: sideral-skewt
-          fetch-depth: 1
-
-      - name: Publicar Skew-T CIM WRF 8 km das capitais cobertas
+      - name: Preparar quadros nativos para o publicador individual de Skew-T
         if: success()
-        continue-on-error: true
-        uses: ./sideral-skewt/.github/actions/publish-wrf-skewt
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf skewt-staged skewt-wrfout.tar.gz
+          python - <<'PY'
+          import datetime as dt, re, shutil
+          from pathlib import Path
+          root=Path("wrf_work/run")
+          staged=Path("skewt-staged")
+          staged.mkdir(parents=True,exist_ok=True)
+          pattern=re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[:.](\d{2})[:.](\d{2})$")
+          files={}
+          for path in root.glob("wrfout_d01_*"):
+              m=pattern.fullmatch(path.name)
+              if not m or not path.is_file() or path.stat().st_size==0:
+                  continue
+              valid=dt.datetime.strptime("_".join((m.group(1),m.group(2),m.group(3),m.group(4))),"%Y-%m-%d_%H_%M_%S")
+              files[valid]=path
+          if len(files)<5:
+              raise SystemExit(f"Poucos WRFOUTs para Skew-T: {len(files)}")
+          start=min(files)
+          max_hours=int((max(files)-start).total_seconds()//3600)
+          end=min(48,(max_hours//3)*3)
+          selected=[]
+          for hour in range(0,end+1,3):
+              valid=start+dt.timedelta(hours=hour)
+              if valid not in files:
+                  raise SystemExit(f"F{hour:03d} ausente: {valid:%Y-%m-%d %H:%M:%S}")
+              target=staged/("wrfout_d01_"+valid.strftime("%Y-%m-%d_%H:%M:%S"))
+              shutil.copy2(files[valid],target)
+              selected.append(target)
+          if len(selected)<5:
+              raise SystemExit(f"Skew-T precisa de pelo menos 5 quadros de 3 em 3 h; obtidos {len(selected)}")
+          print(f"Skew-T artifact: {len(selected)} quadros nativos {start:%Y-%m-%d %H:%MZ} a F{end:03d}")
+          PY
+          tar -czf skewt-wrfout.tar.gz -C skewt-staged .
+          test -s skewt-wrfout.tar.gz
+      - name: Disponibilizar WRFOUTs nativos ao runner de publicação de Skew-T
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
-          run-dir: wrf_work/run
-          model-key: wrf-cim-${{ matrix.model }}-8km
-          model-label: CIM WRF 8 km ${{ matrix.model }}
-          resolution-km: '8'
-          source-run-id: ${{ github.run_id }}
-          repo-path: sideral-skewt
+          name: skewt-wrfout-cim-${{ matrix.model }}-8km
+          path: skewt-wrfout.tar.gz
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Guardar diagnosticos se falhar
         if: failure()
