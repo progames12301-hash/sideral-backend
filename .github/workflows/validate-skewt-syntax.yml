@@ -6,8 +6,15 @@ on:
       - main
     paths:
       - "tools/skewt/*.py"
+      - "wrf/skewt_native_capitals.py"
+      - "wrf/skewt_brasil_21km_capitais.py"
+      - ".github/actions/**/*.yml"
+      - ".github/actions/**/*.yaml"
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
+      - "skewt.html"
+      - "metbr-wrf-4km.html"
+      - "metbr-wrf-4km-click-point-test.html"
   workflow_dispatch:
 
 permissions:
@@ -111,6 +118,7 @@ jobs:
               ("Skew t.html", "/tmp/skewt-main-inline.js"),
               ("skewt.html", "/tmp/skewt-current-inline.js"),
               ("skewt-capitais.html", "/tmp/skewt-capitais-inline.js"),
+              ("metbr-wrf-4km-click-point-test.html", "/tmp/metbr-wrf-skewt-capitals-inline.js"),
           ):
               parser = InlineScripts()
               parser.feed(Path(source).read_text(encoding="utf-8"))
@@ -122,3 +130,4 @@ jobs:
           node --check /tmp/skewt-main-inline.js
           node --check /tmp/skewt-current-inline.js
           node --check /tmp/skewt-capitais-inline.js
+          node --check /tmp/metbr-wrf-skewt-capitals-inline.js
