@@ -1,0 +1,39 @@
+name: Publish Skew-T — WRF TARC 3 km
+
+on:
+  workflow_run:
+    workflows: ["WRF TARC 3 KM — fallback ICON → ECMWF → GFS"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: ID da execução concluída do modelo WRF de origem
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: skewt-publish-wrf-tarc-3km-${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success') }}
+    uses: ./.github/workflows/skewt-wrf-publish-reusable.yml
+    permissions:
+      contents: write
+      actions: read
+    with:
+      source-run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+      expected-source-workflow: "WRF TARC 3 KM — fallback ICON → ECMWF → GFS"
+      model-key: "wrf-tarc-3km"
+      model-label: "WRF TARC 3 km"
+      resolution-km: "3"
+      source-mode: checkpoint
+      checkpoint-prefix: "tarc-wrf-3km-checkpoint-"
+      asset-prefix: "tarc-wrfout-"
+      require-metbr-marker: false
