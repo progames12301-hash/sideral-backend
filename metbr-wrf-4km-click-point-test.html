@@ -5401,7 +5401,7 @@ const label=h=>'F'+String(h).padStart(3,'0'), cityName=()=>city.options[city.sel
 const isNativeWrf=()=>model.value.startsWith('wrf-');
 const currentHours=()=>isNativeWrf()?(manifestModel===model.value&&wrfNativeManifest?wrfNativeManifest.forecast_hours.map(Number):[]):METBR_HOURS;
 const url=(c,r,h)=>isNativeWrf()
- ? API+'/api/skewt/frame?model='+encodeURIComponent(model.value)+'&city='+encodeURIComponent(c)+'&cycle=latest&fh='+encodeURIComponent(h)
+ ? API+'/api/skewt/frame?model='+encodeURIComponent(model.value)+'&city='+encodeURIComponent(c)+'&cycle=latest&fh='+encodeURIComponent(h)+'&v='+encodeURIComponent(String(nativeManifest?.sourceRunId||nativeManifest?.run_utc||''))
  : API+'/api/skewt/metbr-frame?city='+encodeURIComponent(c)+'&cycle='+encodeURIComponent(r)+'&fh='+encodeURIComponent(h);
 function fill(sel,hours,chosen){sel.replaceChildren();hours.forEach(h=>sel.add(new Option(label(h),String(h))));if(hours.length)sel.value=String(chosen);}
 function configureSelectors(resetCity=false){
