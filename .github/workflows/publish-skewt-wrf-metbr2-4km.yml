@@ -94,7 +94,7 @@ jobs:
           import datetime as dt, re
           from pathlib import Path
           names=Path("metbr_meta/assets.txt").read_text(encoding="utf-8").splitlines()
-          pattern=re.compile(r"^wrfout_d01_(\\d{4}-\\d{2}-\\d{2})_(\\d{2})[.:](\\d{2})[.:](\\d{2})$")
+          pattern=re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[.:](\d{2})[.:](\d{2})$")
           found={}
           for name in names:
               m=pattern.fullmatch(name)
@@ -110,7 +110,7 @@ jobs:
               if valid not in found:
                   raise SystemExit(f"F{fh:03d} ausente: {valid:%Y-%m-%d %H:%M:%S}")
               selected.append(found[valid])
-          Path("metbr_meta/selected-assets.txt").write_text("\\n".join(selected)+"\\n",encoding="utf-8")
+          Path("metbr_meta/selected-assets.txt").write_text("\n".join(selected)+"\n",encoding="utf-8")
           print(f"Rodada {start:%Y-%m-%d %H:%MZ}: selecionados {len(selected)} WRFOUTs nativos.")
           PY
           while IFS= read -r asset; do
