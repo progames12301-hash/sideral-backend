@@ -1,0 +1,183 @@
+name: METBR WRF / WRF2 4 km — Skew-T nativo das capitais
+
+on:
+  workflow_run:
+    workflows:
+      - METBR WRF 4 KM - ICON
+      - METBR WRF2 4 KM - ICON válido amanhã
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Modelo de origem
+        required: true
+        type: choice
+        options:
+          - wrf-metbr-4km
+          - wrf-metbr2-4km
+      source_run_id:
+        description: ID da execução concluída do WRF escolhido
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: metbr-wrf-capitals-skewt-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish-skewt:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout da interface e do gerador nativo
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Resolver execução e modelo de origem
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_MODEL: ${{ inputs.model }}
+          DISPATCH_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            RUN_ID="$(python - <<'PY'
+          import json, os
+          event=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))
+          print(event["workflow_run"]["id"])
+          PY
+          )"
+          else
+            RUN_ID="$DISPATCH_RUN_ID"
+            [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "source_run_id inválido." >&2; exit 2; }
+          fi
+
+          RUN_JSON="$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,workflowName,status)"
+          read -r STATUS CONCLUSION WORKFLOW_NAME < <(python - "$RUN_JSON" <<'PY'
+          import json, sys
+          r=json.loads(sys.argv[1])
+          print(r.get("status",""), r.get("conclusion",""), r.get("workflowName",""))
+          PY
+          )
+          [[ "$STATUS" == "completed" && "$CONCLUSION" == "success" ]] || {
+            echo "Execução de origem não foi concluída com sucesso: status=$STATUS, conclusão=$CONCLUSION" >&2
+            exit 3
+          }
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            case "$DISPATCH_MODEL" in
+              wrf-metbr-4km) EXPECTED_NAME="METBR WRF 4 KM - ICON" ;;
+              wrf-metbr2-4km) EXPECTED_NAME="METBR WRF2 4 KM - ICON válido amanhã" ;;
+              *) echo "Modelo manual desconhecido: $DISPATCH_MODEL" >&2; exit 4 ;;
+            esac
+            [[ "$WORKFLOW_NAME" == "$EXPECTED_NAME" ]] || {
+              echo "O run $RUN_ID pertence a '$WORKFLOW_NAME', não a '$EXPECTED_NAME'." >&2
+              exit 5
+            }
+          fi
+
+          case "$WORKFLOW_NAME" in
+            "METBR WRF 4 KM - ICON")
+              MODEL_KEY="wrf-metbr-4km"
+              MODEL_LABEL="METBR WRF 4 km"
+              CHECKPOINT_TAG="metbr-wrf-4km-checkpoint-$RUN_ID"
+              ;;
+            "METBR WRF2 4 KM - ICON válido amanhã")
+              MODEL_KEY="wrf-metbr2-4km"
+              MODEL_LABEL="METBR WRF2 4 km"
+              CHECKPOINT_TAG="metbr-wrf2-4km-checkpoint-$RUN_ID"
+              ;;
+            *)
+              echo "Workflow de origem não permitido: '$WORKFLOW_NAME'." >&2
+              exit 6
+              ;;
+          esac
+
+          {
+            echo "SOURCE_RUN_ID=$RUN_ID"
+            echo "SOURCE_WORKFLOW_NAME=$WORKFLOW_NAME"
+            echo "SKEWT_MODEL_KEY=$MODEL_KEY"
+            echo "SKEWT_MODEL_LABEL=$MODEL_LABEL"
+            echo "CHECKPOINT_TAG=$CHECKPOINT_TAG"
+          } >> "$GITHUB_ENV"
+          echo "Origem validada: $WORKFLOW_NAME / run $RUN_ID / release $CHECKPOINT_TAG"
+
+      - name: Conferir checkpoint e marcador de rodada completa
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p metbr_meta metbr_wrfout
+          gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > metbr_meta/assets.txt
+          grep -Fxq 'metbr-publication-F42.txt' metbr_meta/assets.txt || {
+            echo "Release sem metbr-publication-F42.txt; a rodada não está completa." >&2
+            exit 10
+          }
+          grep -Eq '^wrfout_d01_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}[:.][0-9]{2}[:.][0-9]{2}$' metbr_meta/assets.txt || {
+            echo "Não foram encontrados WRFOUTs nativos no checkpoint." >&2
+            exit 11
+          }
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'metbr-publication-F42.txt' --dir metbr_meta --clobber
+          grep -Fxq "run_id=$SOURCE_RUN_ID" metbr_meta/metbr-publication-F42.txt
+          grep -Fxq "segment=F39-F42" metbr_meta/metbr-publication-F42.txt
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'wrfout_d01_*' --dir metbr_meta --clobber
+          test -s metbr_meta/metbr-publication-F42.txt
+
+      - name: Selecionar F000, F003, ... F042 para reduzir downloads e manter sequência nativa
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import datetime as dt, re
+          from pathlib import Path
+          root=Path("metbr_meta")
+          names=(root/"assets.txt").read_text(encoding="utf-8").splitlines()
+          pattern=re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[.:](\d{2})[.:](\d{2})$")
+          lookup={}
+          for name in names:
+              m=pattern.fullmatch(name)
+              if m:
+                  stamp=dt.datetime.strptime("_".join((m.group(1),m.group(2),m.group(3),m.group(4))), "%Y-%m-%d_%H_%M_%S")
+                  lookup[stamp]=name
+          if len(lookup)<15:
+              raise SystemExit(f"Checkpoint incompleto: apenas {len(lookup)} timestamps WRFOUT.")
+          start=min(lookup)
+          selected=[]
+          for hour in range(0,43,3):
+              valid=start+dt.timedelta(hours=hour)
+              if valid not in lookup:
+                  raise SystemExit(f"F{hour:03d} ausente no checkpoint: {valid:%Y-%m-%d %H:%M:%S}")
+              selected.append(lookup[valid])
+          (root/"selected-assets.txt").write_text("\n".join(selected)+"\n",encoding="utf-8")
+          print(f"Rodada nativa inicializada em {start:%Y-%m-%d %H:%MZ}; {len(selected)} WRFOUTs selecionados.")
+          print("\n".join(selected))
+          PY
+          while IFS= read -r asset; do
+            [[ -n "$asset" ]] || continue
+            gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" --dir metbr_wrfout --clobber
+          done < metbr_meta/selected-assets.txt
+          count="$(find metbr_wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l | tr -d '[:space:]')"
+          [[ "$count" == "15" ]] || { echo "Esperados 15 WRFOUTs nativos; encontrados $count." >&2; exit 12; }
+
+      - name: Publicar Skew-T nativo das capitais cobertas
+        uses: ./.github/actions/publish-wrf-skewt
+        with:
+          run-dir: metbr_wrfout
+          model-key: ${{ env.SKEWT_MODEL_KEY }}
+          model-label: ${{ env.SKEWT_MODEL_LABEL }}
+          resolution-km: '4'
+          source-run-id: ${{ env.SOURCE_RUN_ID }}
+          repo-path: .
