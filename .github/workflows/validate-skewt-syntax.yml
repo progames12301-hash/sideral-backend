@@ -63,6 +63,8 @@ jobs:
           paths = sorted(
               glob.glob(".github/workflows/*.yml")
               + glob.glob(".github/workflows/*.yaml")
+              + glob.glob(".github/actions/**/*.yml", recursive=True)
+              + glob.glob(".github/actions/**/*.yaml", recursive=True)
           )
           for path in paths:
               with open(path, encoding="utf-8") as stream:
