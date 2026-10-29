@@ -1,0 +1,37 @@
+name: Publish Skew-T — CIM WRF 8 km ECMWF
+
+on:
+  workflow_run:
+    workflows: ["CIM WRF 8 km - 40h horario"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: ID da execução concluída do modelo WRF de origem
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: skewt-publish-wrf-cim-ecmwf-8km-${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success') }}
+    uses: ./.github/workflows/skewt-wrf-publish-reusable.yml
+    permissions:
+      contents: write
+      actions: read
+    with:
+      source-run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+      expected-source-workflow: "CIM WRF 8 km - 40h horario"
+      model-key: "wrf-cim-ecmwf-8km"
+      model-label: "CIM WRF 8 km ECMWF"
+      resolution-km: "8"
+      source-mode: artifact
+      artifact-name: "skewt-wrfout-cim-ecmwf-8km"
