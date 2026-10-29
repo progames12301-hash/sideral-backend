@@ -106,7 +106,7 @@ function setStatus(message,kind){$('status').textContent=message;$('status').cla
 function setBusy(on){$('busy').classList.toggle('show',!!on);}
 function showEmpty(message){$('viewer').innerHTML='<div class="empty">'+message+'</div>';}
 function setFrame(label){$('frame').textContent=label||'--';}
-function previewUrl(city,cycle,hour,modelOverride){return API_BASE+'/api/skewt/frame?model='+encodeURIComponent(modelOverride||$('model').value)+'&city='+encodeURIComponent(city)+'&cycle='+encodeURIComponent(cycle)+'&fh='+encodeURIComponent(hour);}
+function previewUrl(city,cycle,hour,modelOverride){const model=modelOverride||$('model').value;const query=new URLSearchParams({model,city,cycle,fh:String(hour)});if(model.startsWith('wrf-')&&wrfNativeManifest&&wrfNativeManifest.modelKey===model){query.set('v',String(wrfNativeManifest.sourceRunId||wrfNativeManifest.run_utc||''));}return API_BASE+'/api/skewt/frame?'+query.toString();}
 function metbrPregenUrl(city,cycle,hour){return API_BASE+'/api/skewt/metbr-frame?city='+encodeURIComponent(city)+'&cycle='+encodeURIComponent(cycle)+'&fh='+encodeURIComponent(hour);}
 function populateSelect(select, values, selected){select.replaceChildren();values.forEach(item=>{const o=document.createElement('option');o.value=String(item.value);o.textContent=item.label;select.appendChild(o);});if(values.some(item=>String(item.value)===String(selected)))select.value=String(selected);}
 function populateCities(){const list=currentCities();if(!list.length){$('city').replaceChildren();return;}const old=isMetbr()?activeMetbrCity:activeCity;populateSelect($('city'),list.map(c=>({value:c[1],label:c[0]})),list.some(c=>c[1]===old)?old:list[0][1]);if(isMetbr())activeMetbrCity=$('city').value;else activeCity=$('city').value;}
