@@ -16,6 +16,9 @@
 <header class="bar">
   <div class="brand">SIDERAL / SKEW-T</div>
   <div class="field"><label for="model">MODELO</label><select id="model"><option value="ecmwf" selected>ECMWF IFS 0,25° — 27 capitais</option><option value="icon">DWD ICON Global ~11 km</option><option value="ecmwf-hybrid">ECMWF HRES 9 km + pressão IFS 0,25°</option><option value="ukmo10km">UK Met Office Global 10 km</option><option value="nems10">meteoblue NEMS10 — América do Sul 10 km</option><option value="wrf-brasil-21km">SIDERAL WRF Brasil 21 km — 27 capitais</option>
+<option value="wrf-sul-gfs-7km">WRF Sul 7 km GFS — capitais na grade</option>
+<option value="wrf-sul-icon-7km">WRF Sul 7 km ICON — capitais na grade</option>
+<option value="wrf-sul-ecmwf-7km">WRF Sul 7 km ECMWF — capitais na grade</option>
 <option value="wrf-cim-icon-8km">CIM WRF 8 km ICON — capitais na grade</option>
 <option value="wrf-cim-ecmwf-8km">CIM WRF 8 km ECMWF — capitais na grade</option>
 <option value="wrf-cbr-4km">WRF CBR 4 km — capitais na grade</option>
@@ -115,6 +118,9 @@ function populateExportHours(){const list=hours();const start=Number($('exportSt
 function isNems10(){return $('model').value==='nems10';}
 const NATIVE_WRF_INFO={
  'wrf-brasil-21km':{label:'SIDERAL WRF Brasil 21 km',source:'WRFOUT nativo · grade nacional',title:'Sideral — Skew-T WRF Brasil 21 km',note:'Perfis nativos das colunas WRFOUT do modelo Brasil 21 km para as 27 capitais, F000–F048 a cada 3 horas.'},
+ 'wrf-sul-gfs-7km':{label:'WRF Sul 7 km GFS',source:'WRFOUT nativo · grade Sul',title:'Sideral — Skew-T WRF Sul 7 km GFS',note:'Perfis nativos do WRF Sul 7 km inicializado pelo GFS. Exibe somente capitais dentro da cobertura da grade.'},
+ 'wrf-sul-icon-7km':{label:'WRF Sul 7 km ICON',source:'WRFOUT nativo · grade Sul',title:'Sideral — Skew-T WRF Sul 7 km ICON',note:'Perfis nativos do WRF Sul 7 km inicializado pelo ICON. Exibe somente capitais dentro da cobertura da grade.'},
+ 'wrf-sul-ecmwf-7km':{label:'WRF Sul 7 km ECMWF',source:'WRFOUT nativo · grade Sul',title:'Sideral — Skew-T WRF Sul 7 km ECMWF',note:'Perfis nativos do WRF Sul 7 km inicializado pelo ECMWF. Exibe somente capitais dentro da cobertura da grade.'},
  'wrf-cim-icon-8km':{label:'CIM WRF 8 km ICON',source:'WRFOUT nativo · release',title:'Sideral — Skew-T CIM WRF 8 km ICON',note:'Perfis calculados das colunas WRFOUT do CIM ICON. Exibe somente as capitais dentro do domínio Sul/Sudeste.'},
  'wrf-cim-ecmwf-8km':{label:'CIM WRF 8 km ECMWF',source:'WRFOUT nativo · release',title:'Sideral — Skew-T CIM WRF 8 km ECMWF',note:'Perfis calculados das colunas WRFOUT do CIM ECMWF. Exibe somente as capitais dentro do domínio Sul/Sudeste.'},
  'wrf-cbr-4km':{label:'WRF CBR 4 km',source:'WRFOUT nativo · release',title:'Sideral — Skew-T WRF CBR 4 km',note:'Perfis nativos do WRF CBR 4 km. Capitais fora da grade não são extrapoladas.'},
