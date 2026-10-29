@@ -264,7 +264,7 @@ jobs:
           PY
 
       - name: Publicar Skew-T nativo METBR das capitais cobertas
-        if: success()
+        if: success() && steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         continue-on-error: true
         uses: ./.github/actions/publish-wrf-skewt
         with:
