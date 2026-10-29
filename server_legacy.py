@@ -2976,6 +2976,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     SKEWT_NATIVE_WRF_PRODUCTS = {
         "wrf-brasil-21km": "SIDERAL WRF Brasil 21 km",
+        "wrf-sul-gfs-7km": "WRF Sul 7 km GFS",
+        "wrf-sul-icon-7km": "WRF Sul 7 km ICON",
+        "wrf-sul-ecmwf-7km": "WRF Sul 7 km ECMWF",
         "wrf-cim-icon-8km": "CIM WRF 8 km ICON",
         "wrf-cim-ecmwf-8km": "CIM WRF 8 km ECMWF",
         "wrf-cbr-4km": "WRF CBR 4 km",
