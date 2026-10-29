@@ -1,0 +1,194 @@
+name: Reusable — publish one native WRF Skew-T product
+
+on:
+  workflow_call:
+    inputs:
+      source-run-id:
+        required: true
+        type: string
+      expected-source-workflow:
+        required: true
+        type: string
+      model-key:
+        required: true
+        type: string
+      model-label:
+        required: true
+        type: string
+      resolution-km:
+        required: true
+        type: string
+      source-mode:
+        required: true
+        type: string
+      artifact-name:
+        required: false
+        default: ''
+        type: string
+      checkpoint-prefix:
+        required: false
+        default: ''
+        type: string
+      asset-prefix:
+        required: false
+        default: ''
+        type: string
+      require-metbr-marker:
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: Render and publish ${{ inputs.model-label }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout production Skew-T renderer
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Verify the exact successful source WRF run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+          EXPECTED_WORKFLOW: ${{ inputs.expected-source-workflow }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "source-run-id must be numeric." >&2; exit 2; }
+          RUN_JSON="$(gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,workflowName,status)"
+          STATUS="$(jq -r '.status // ""' <<< "$RUN_JSON")"
+          CONCLUSION="$(jq -r '.conclusion // ""' <<< "$RUN_JSON")"
+          NAME="$(jq -r '.workflowName // ""' <<< "$RUN_JSON")"
+          [[ "$STATUS" == "completed" && "$CONCLUSION" == "success" ]] || {
+            echo "Source WRF run is not completed successfully: $STATUS / $CONCLUSION" >&2
+            exit 3
+          }
+          [[ "$NAME" == "$EXPECTED_WORKFLOW" ]] || {
+            echo "Source run mismatch: expected '$EXPECTED_WORKFLOW', got '$NAME'." >&2
+            exit 4
+          }
+          echo "Verified source workflow: $NAME / run $SOURCE_RUN_ID"
+
+      - name: Download native WRFOUT artifact from source run
+        if: ${{ inputs.source-mode == 'artifact' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          run-id: ${{ inputs.source-run-id }}
+          github-token: ${{ github.token }}
+          path: skewt-source-artifact
+
+      - name: Prepare native WRFOUT directory from artifact
+        if: ${{ inputs.source-mode == 'artifact' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p wrfout-native
+          test -s skewt-source-artifact/skewt-wrfout.tar.gz
+          tar -xzf skewt-source-artifact/skewt-wrfout.tar.gz -C wrfout-native
+          count="$(find wrfout-native -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l | tr -d '[:space:]')"
+          [[ "$count" =~ ^[0-9]+$ && "$count" -ge 5 ]] || { echo "Native Skew-T artifact is incomplete: $count WRFOUTs." >&2; exit 5; }
+          echo "Native WRFOUT frames from artifact: $count"
+
+      - name: Download 3-hour native WRFOUTs from checkpoint release
+        if: ${{ inputs.source-mode == 'checkpoint' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+          CHECKPOINT_PREFIX: ${{ inputs.checkpoint-prefix }}
+          ASSET_PREFIX: ${{ inputs.asset-prefix }}
+          REQUIRE_METBR_MARKER: ${{ inputs.require-metbr-marker }}
+        run: |
+          set -euo pipefail
+          [[ -n "$CHECKPOINT_PREFIX" ]] || { echo "checkpoint-prefix is required." >&2; exit 6; }
+          tag="$CHECKPOINT_PREFIX$SOURCE_RUN_ID"
+          mkdir -p skewt-checkpoint-raw skewt-meta wrfout-native
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > skewt-meta/assets.txt
+          test -s skewt-meta/assets.txt
+
+          if [[ "$REQUIRE_METBR_MARKER" == "true" ]]; then
+            grep -Fxq 'metbr-publication-F42.txt' skewt-meta/assets.txt || {
+              echo "METBR source release lacks its F042 completion marker." >&2; exit 7;
+            }
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+              --pattern 'metbr-publication-F42.txt' --dir skewt-meta --clobber
+            grep -Fxq "run_id=$SOURCE_RUN_ID" skewt-meta/metbr-publication-F42.txt
+            grep -Fxq 'segment=F39-F42' skewt-meta/metbr-publication-F42.txt
+          fi
+
+          ASSET_PREFIX="$ASSET_PREFIX" REQUIRE_METBR_MARKER="$REQUIRE_METBR_MARKER" python - <<'PY'
+          import datetime as dt, os, re
+          from pathlib import Path
+          names=Path("skewt-meta/assets.txt").read_text(encoding="utf-8").splitlines()
+          asset_prefix=os.environ.get("ASSET_PREFIX","")
+          require_marker=os.environ.get("REQUIRE_METBR_MARKER","false").lower()=="true"
+          wrapper=re.compile(r"^"+re.escape(asset_prefix)+r"[0-9]+-(wrfout_d01_.*)$") if asset_prefix else None
+          stamp_re=re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[:.](\d{2})[:.](\d{2})$")
+          available={}
+          for asset in names:
+              inner=asset
+              if wrapper:
+                  match=wrapper.fullmatch(asset)
+                  if not match: continue
+                  inner=match.group(1)
+              match=stamp_re.fullmatch(inner)
+              if not match: continue
+              stamp=dt.datetime.strptime("_".join((match.group(1),match.group(2),match.group(3),match.group(4))), "%Y-%m-%d_%H_%M_%S")
+              available[stamp]=asset
+          if len(available)<5: raise SystemExit(f"Checkpoint has too few WRFOUT timestamps: {len(available)}")
+          start=min(available)
+          max_hours=int((max(available)-start).total_seconds()//3600)
+          end=42 if require_marker else min(48,(max_hours//3)*3)
+          selected=[]
+          for hour in range(0,end+1,3):
+              valid=start+dt.timedelta(hours=hour)
+              if valid not in available:
+                  raise SystemExit(f"Missing native WRFOUT for F{hour:03d}: {valid:%Y-%m-%d %H:%M:%S}")
+              asset=available[valid]
+              native="wrfout_d01_"+valid.strftime("%Y-%m-%d_%H:%M:%S")
+              selected.append((asset,native))
+          if len(selected)<5: raise SystemExit(f"Insufficient frames for Skew-T: {len(selected)}")
+          Path("skewt-meta/selected-assets.tsv").write_text("".join(asset+"\t"+native+"\n" for asset,native in selected),encoding="utf-8")
+          print(f"Selected {len(selected)} native frames from {start:%Y-%m-%d %H:%MZ} through F{end:03d}.")
+          PY
+
+          while IFS=$'\t' read -r asset native; do
+            [[ -n "$asset" && -n "$native" ]] || continue
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" --dir skewt-checkpoint-raw --clobber
+            test -s "skewt-checkpoint-raw/$asset" || { echo "Missing downloaded asset: $asset" >&2; exit 8; }
+            mv "skewt-checkpoint-raw/$asset" "wrfout-native/$native"
+          done < skewt-meta/selected-assets.tsv
+          count="$(find wrfout-native -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l | tr -d '[:space:]')"
+          [[ "$count" =~ ^[0-9]+$ && "$count" -ge 5 ]] || { echo "Checkpoint unpack produced only $count frames." >&2; exit 9; }
+
+      - name: Publish model-specific Skew-T release
+        uses: ./.github/actions/publish-wrf-skewt
+        with:
+          run-dir: wrfout-native
+          model-key: ${{ inputs.model-key }}
+          model-label: ${{ inputs.model-label }}
+          resolution-km: ${{ inputs.resolution-km }}
+          source-run-id: ${{ inputs.source-run-id }}
+          repo-path: .
+
+      - name: Save source and renderer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skewt-${{ inputs.model-key }}-${{ inputs.source-run-id }}
+          path: |
+            wrfout-native/**
+            build/skewt-native-capitals/**
+            skewt-meta/**
+          if-no-files-found: ignore
+          retention-days: 3
