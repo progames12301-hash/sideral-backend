@@ -153,7 +153,7 @@ def profile_column(ds: Dataset, cell: dict, valid: dt.datetime, fh: int):
     u_faces = read_var(ds, "U", (sl, j, slice(i, i + 2)))
     v_faces = read_var(ds, "V", (sl, slice(j, j + 2), i))
     u = np.nanmean(u_faces, axis=-1) * MS_TO_KT
-    v = np.nanmean(v_faces, axis=-2) * MS_TO_KT
+    v = np.nanmean(v_faces, axis=-1) * MS_TO_KT
     w_stag = read_var(ds, "W", (sl, j, i))
     w = 0.5 * (w_stag[:-1] + w_stag[1:])
 
