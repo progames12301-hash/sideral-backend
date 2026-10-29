@@ -17,6 +17,10 @@ inputs:
     description: Source WRF run ID; empty uses this workflow run ID.
     required: false
     default: ''
+  repo-path:
+    description: Relative path where the main-branch Sideral sources were checked out.
+    required: false
+    default: '.'
 runs:
   using: composite
   steps:
@@ -34,7 +38,7 @@ runs:
           'numpy==1.26.4' 'netCDF4>=1.7,<2' 'matplotlib>=3.8,<4' \
           'Pillow>=10,<11' 'SHARPpy @ git+https://github.com/sharppy/SHARPpy.git@main'
         "$RUNNER_TEMP/skewt-native-venv/bin/python" -m py_compile \
-          wrf/skewt_native_capitals.py tools/skewt/native_spc_render.py
+          "$SKEWT_REPO_PATH/wrf/skewt_native_capitals.py" "$SKEWT_REPO_PATH/tools/skewt/native_spc_render.py"
     - name: Generate Skew-Ts from native WRF columns
       shell: bash
       env:
@@ -48,7 +52,7 @@ runs:
         source_run_id="\${SKEWT_SOURCE_RUN_ID:-$GITHUB_RUN_ID}"
         test "$source_run_id" -gt 0
         rm -rf build/skewt-native-capitals
-        "$RUNNER_TEMP/skewt-native-venv/bin/python" wrf/skewt_native_capitals.py \
+        "$RUNNER_TEMP/skewt-native-venv/bin/python" "$SKEWT_REPO_PATH/wrf/skewt_native_capitals.py" \
           --run-dir "$SKEWT_RUN_DIR" \
           --out-root build/skewt-native-capitals \
           --model-key "$SKEWT_MODEL_KEY" \
