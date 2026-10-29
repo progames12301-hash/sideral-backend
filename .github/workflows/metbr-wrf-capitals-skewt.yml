@@ -42,6 +42,7 @@ jobs:
           fetch-depth: 1
 
       - name: Resolver execução e modelo de origem
+        id: resolve-source
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,6 +110,11 @@ jobs:
             echo "SKEWT_MODEL_LABEL=$MODEL_LABEL"
             echo "CHECKPOINT_TAG=$CHECKPOINT_TAG"
           } >> "$GITHUB_ENV"
+          {
+            echo "source_run_id=$RUN_ID"
+            echo "model_key=$MODEL_KEY"
+            echo "model_label=$MODEL_LABEL"
+          } >> "$GITHUB_OUTPUT"
           echo "Origem validada: $WORKFLOW_NAME / run $RUN_ID / release $CHECKPOINT_TAG"
 
       - name: Conferir checkpoint e marcador de rodada completa
@@ -131,12 +137,12 @@ jobs:
             --pattern 'metbr-publication-F42.txt' --dir metbr_meta --clobber
           grep -Fxq "run_id=$SOURCE_RUN_ID" metbr_meta/metbr-publication-F42.txt
           grep -Fxq "segment=F39-F42" metbr_meta/metbr-publication-F42.txt
-          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern 'wrfout_d01_*' --dir metbr_meta --clobber
           test -s metbr_meta/metbr-publication-F42.txt
 
       - name: Selecionar F000, F003, ... F042 para reduzir downloads e manter sequência nativa
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -176,8 +182,8 @@ jobs:
         uses: ./.github/actions/publish-wrf-skewt
         with:
           run-dir: metbr_wrfout
-          model-key: ${{ env.SKEWT_MODEL_KEY }}
-          model-label: ${{ env.SKEWT_MODEL_LABEL }}
+          model-key: ${{ steps.resolve-source.outputs.model_key }}
+          model-label: ${{ steps.resolve-source.outputs.model_label }}
           resolution-km: '4'
-          source-run-id: ${{ env.SOURCE_RUN_ID }}
+          source-run-id: ${{ steps.resolve-source.outputs.source_run_id }}
           repo-path: .
