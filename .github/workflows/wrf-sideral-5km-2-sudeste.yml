@@ -586,22 +586,3 @@ jobs:
           test -s "$CATALOG_PATH"
           gh release upload "$CHECKPOINT_TAG" "$CATALOG_PATH" --repo "$GITHUB_REPOSITORY" --clobber
           echo "SIDERAL: produtos, diagnósticos e catálogo publicados."
-
-      - name: Checkout do gerador Skew-T nativo (main)
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: sideral-skewt
-          fetch-depth: 1
-
-      - name: Publicar Skew-T nativo das capitais cobertas
-        if: success()
-        continue-on-error: true
-        uses: ./sideral-skewt/.github/actions/publish-wrf-skewt
-        with:
-          run-dir: tarc_all_wrfout
-          model-key: wrf-sideral-5km-2-sudeste
-          model-label: WRF SIDERAL 5 km 2 Sudeste
-          resolution-km: '5'
-          source-run-id: ${{ github.run_id }}
-          repo-path: sideral-skewt
