@@ -49,6 +49,7 @@ runs:
         SKEWT_RESOLUTION_KM: ${{ inputs.resolution-km }}
         SKEWT_SOURCE_RUN_ID: ${{ inputs.source-run-id }}
         SKEWT_RUN_DIR: ${{ inputs.run-dir }}
+        SKEWT_REPO_PATH: ${{ inputs.repo-path }}
       run: |
         set -euo pipefail
         source_run_id="${SKEWT_SOURCE_RUN_ID:-$GITHUB_RUN_ID}"
