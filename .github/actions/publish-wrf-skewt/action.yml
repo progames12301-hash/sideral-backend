@@ -44,14 +44,14 @@ runs:
     - name: Generate Skew-Ts from native WRF columns
       shell: bash
       env:
-        SKEWT_MODEL_KEY: \${{ inputs.model-key }}
-        SKEWT_MODEL_LABEL: \${{ inputs.model-label }}
-        SKEWT_RESOLUTION_KM: \${{ inputs.resolution-km }}
-        SKEWT_SOURCE_RUN_ID: \${{ inputs.source-run-id }}
-        SKEWT_RUN_DIR: \${{ inputs.run-dir }}
+        SKEWT_MODEL_KEY: ${{ inputs.model-key }}
+        SKEWT_MODEL_LABEL: ${{ inputs.model-label }}
+        SKEWT_RESOLUTION_KM: ${{ inputs.resolution-km }}
+        SKEWT_SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        SKEWT_RUN_DIR: ${{ inputs.run-dir }}
       run: |
         set -euo pipefail
-        source_run_id="\${SKEWT_SOURCE_RUN_ID:-$GITHUB_RUN_ID}"
+        source_run_id="${SKEWT_SOURCE_RUN_ID:-$GITHUB_RUN_ID}"
         test "$source_run_id" -gt 0
         rm -rf build/skewt-native-capitals
         "$RUNNER_TEMP/skewt-native-venv/bin/python" "$SKEWT_REPO_PATH/wrf/skewt_native_capitals.py" \
@@ -66,7 +66,7 @@ runs:
     - name: Validate Skew-T publication
       shell: bash
       env:
-        SKEWT_MODEL_KEY: \${{ inputs.model-key }}
+        SKEWT_MODEL_KEY: ${{ inputs.model-key }}
       run: |
         set -euo pipefail
         "$RUNNER_TEMP/skewt-native-venv/bin/python" - <<'PY'
@@ -93,10 +93,10 @@ runs:
     - name: Publish stable model-specific Skew-T release
       shell: bash
       env:
-        GH_TOKEN: \${{ github.token }}
-        GH_REPO: \${{ github.repository }}
-        SKEWT_MODEL_KEY: \${{ inputs.model-key }}
-        SKEWT_MODEL_LABEL: \${{ inputs.model-label }}
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        SKEWT_MODEL_KEY: ${{ inputs.model-key }}
+        SKEWT_MODEL_LABEL: ${{ inputs.model-label }}
       run: |
         set -euo pipefail
         tag="skewt-$SKEWT_MODEL_KEY-live"
@@ -105,30 +105,30 @@ runs:
         cycle="$(python -c 'import json,sys;print(json.load(open(sys.argv[1],encoding="utf-8"))["cycle"])' "$meta")"
         city_count="$(python -c 'import json,sys;print(len(json.load(open(sys.argv[1],encoding="utf-8"))["cities"]))' "$meta")"
         png_count="$(find build/skewt-native-capitals -mindepth 2 -maxdepth 2 -type f -name '*.png' | wc -l | tr -d '[:space:]')"
-        title="$SKEWT_MODEL_LABEL — Skew-T capitais — rodada \${cycle}Z — \${run_utc}"
-        notes="Skew-T nativo das colunas verticais WRFOUT. \${city_count} capitais na cobertura; \${png_count} PNGs; resolução nativa detalhada no manifest.json. Capitais fora da grade não são extrapoladas."
+        title="$SKEWT_MODEL_LABEL — Skew-T capitais — rodada ${cycle}Z — ${run_utc}"
+        notes="Skew-T nativo das colunas verticais WRFOUT. ${city_count} capitais na cobertura; ${png_count} PNGs; resolução nativa detalhada no manifest.json. Capitais fora da grade não são extrapoladas."
         if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
           gh release edit "$tag" --repo "$GH_REPO" --title "$title" --notes "$notes" --latest=false
         else
           gh release create "$tag" --repo "$GH_REPO" --title "$title" --notes "$notes" --latest=false
         fi
         mapfile -d '' files < <(find build/skewt-native-capitals -mindepth 2 -maxdepth 2 -type f -name '*.png' -print0 | sort -z)
-        test "\${#files[@]}" -eq "$png_count"
-        for ((offset=0; offset<\${#files[@]}; offset+=40)); do
-          chunk=("\${files[@]:offset:40}")
-          gh release upload "$tag" --repo "$GH_REPO" --clobber "\${chunk[@]}"
+        test "${#files[@]}" -eq "$png_count"
+        for ((offset=0; offset<${#files[@]}; offset+=40)); do
+          chunk=("${files[@]:offset:40}")
+          gh release upload "$tag" --repo "$GH_REPO" --clobber "${chunk[@]}"
         done
         gh release upload "$tag" --repo "$GH_REPO" --clobber \
           build/skewt-native-capitals/manifest.json \
           build/skewt-native-capitals/publication.json
         published="$(gh release view "$tag" --repo "$GH_REPO" --json assets --jq '[.assets[].name | select(endswith(".png"))] | length')"
         test "$published" -ge "$png_count"
-        echo "Publicados $png_count PNGs para $SKEWT_MODEL_KEY em $tag (rodada \${cycle}Z)."
+        echo "Publicados $png_count PNGs para $SKEWT_MODEL_KEY em $tag (rodada ${cycle}Z)."
     - name: Save Skew-T diagnostics
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: skewt-\${{ inputs.model-key }}-\${{ github.run_id }}
+        name: skewt-${{ inputs.model-key }}-${{ github.run_id }}
         path: |
           build/skewt-native-capitals/**
         if-no-files-found: ignore
