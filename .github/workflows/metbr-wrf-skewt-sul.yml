@@ -304,6 +304,17 @@ jobs:
           test "$json_count" -eq 47
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,assets --jq '{tag:.tagName,assets:(.assets|length)}'
 
+      - name: Publicar Skew-T nativo METBR das capitais cobertas
+        if: success()
+        continue-on-error: true
+        uses: ./.github/actions/publish-wrf-skewt
+        with:
+          run-dir: metbr_wrfout
+          model-key: wrf-metbr-4km
+          model-label: METBR WRF 4 km
+          resolution-km: '4'
+          source-run-id: ${{ github.event.workflow_run.id || github.run_id }}
+
       - name: Save METBR WRF Skew-T products and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
