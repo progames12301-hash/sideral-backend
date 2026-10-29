@@ -1,0 +1,115 @@
+name: Publicar Skew-T — WRF TARC 3 km
+
+on:
+  workflow_run:
+    workflows:
+      - "WRF TARC 3 KM — fallback ICON → ECMWF → GFS"
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: ID da execução de origem concluída com sucesso
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-skewt-wrf-tarc-3km-${{ github.event.workflow_run.id || inputs.source_run_id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout das ferramentas e da interface Sideral
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Validar execução de origem
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_WORKFLOW: WRF TARC 3 KM — fallback ICON → ECMWF → GFS
+          DISPATCH_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            SOURCE_RUN_ID="$(jq -r '.workflow_run.id' "$GITHUB_EVENT_PATH")"
+          else
+            SOURCE_RUN_ID="$DISPATCH_SOURCE_RUN_ID"
+          fi
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "source_run_id inválido." >&2; exit 2; }
+          RUN_JSON="$(gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,workflowName,status)"
+          STATUS="$(jq -r '.status // ""' <<< "$RUN_JSON")"
+          CONCLUSION="$(jq -r '.conclusion // ""' <<< "$RUN_JSON")"
+          WORKFLOW_NAME="$(jq -r '.workflowName // ""' <<< "$RUN_JSON")"
+          [[ "$STATUS" == completed && "$CONCLUSION" == success ]] || {
+            echo "Origem não concluída com sucesso: $WORKFLOW_NAME / $STATUS / $CONCLUSION" >&2; exit 3;
+          }
+          [[ "$WORKFLOW_NAME" == "$EXPECTED_WORKFLOW" ]] || {
+            echo "Run $SOURCE_RUN_ID pertence a '$WORKFLOW_NAME', não a '$EXPECTED_WORKFLOW'." >&2; exit 4;
+          }
+          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
+          echo "Origem validada: $WORKFLOW_NAME / $SOURCE_RUN_ID"
+
+      - name: Baixar WRFOUTs da Release de checkpoint desta rodada
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_PREFIX: tarc-wrf-3km-checkpoint
+          WRFOUT_PREFIX: tarc-wrfout
+        run: |
+          set -euo pipefail
+          CHECKPOINT_TAG="${CHECKPOINT_PREFIX}-${SOURCE_RUN_ID}"
+          mkdir -p checkpoint_assets wrfout
+          gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' > checkpoint_assets/assets.txt
+          grep -Eq "^${WRFOUT_PREFIX}-[0-9]+-wrfout_d01_" checkpoint_assets/assets.txt || {
+            echo "A Release $CHECKPOINT_TAG não contém WRFOUTs para wrf-tarc-3km." >&2; exit 21;
+          }
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "${WRFOUT_PREFIX}-*" --dir checkpoint_assets --clobber
+          for f in checkpoint_assets/"${WRFOUT_PREFIX}"-*; do
+            [[ -f "$f" ]] || continue
+            n="$(basename "$f" | sed -E "s/^${WRFOUT_PREFIX}-[0-9]+-//; s/_([0-9]{2})[.]([0-9]{2})[.]([0-9]{2})$/_\\1:\\2:\\3/")"
+            [[ "$n" == wrfout_d01_* ]] || { echo "Nome WRFOUT inválido: $n" >&2; exit 22; }
+            mv -f "$f" "wrfout/$n"
+          done
+          count="$(find wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l | tr -d '[:space:]')"
+          [[ "$count" =~ ^[0-9]+$ ]] && (( count >= 5 )) || {
+            echo "A Release $CHECKPOINT_TAG contém apenas $count WRFOUTs." >&2; exit 23;
+          }
+          echo "Skew-T wrf-tarc-3km: $count WRFOUTs nativos recuperados de $CHECKPOINT_TAG."
+
+      - name: Gerar e publicar Skew-T nativo das capitais cobertas
+        uses: ./.github/actions/publish-wrf-skewt
+        with:
+          run-dir: wrfout
+          model-key: wrf-tarc-3km
+          model-label: WRF TARC 3 km
+          resolution-km: '3'
+          source-run-id: ${{ env.SOURCE_RUN_ID }}
+          repo-path: .
+
+      - name: Guardar artefatos para diagnóstico se falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skewt-wrf-tarc-3km-diagnostics-${{ github.run_id }}
+          path: |
+            build/skewt-native-capitals/**
+            checkpoint_assets/**
+            metbr_meta/**
+            metbr_wrfout/**
+            wrfout/**
+          if-no-files-found: ignore
+          retention-days: 7
