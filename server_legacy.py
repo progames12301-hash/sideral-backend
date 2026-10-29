@@ -3090,13 +3090,38 @@ class Handler(SimpleHTTPRequestHandler):
             "ecmwf-hybrid": ("ECMWF HRES ~9 km híbrido + IFS 0.25°", f"skewt-ecmwf-hres9km-hybrid-{cycle}"),
             "ukmo10km": ("UK Met Office Global 10 km", f"skewt-ukmo-global10km-{cycle}"),
             "nems10": ("meteoblue NEMS10 NEMSSA 10 km", "skewt-nems10-nemssa-live"),
-            "wrf-brasil-21km": ("SIDERAL WRF Brasil 21 km", f"skewt-wrf-brasil21km-live-{cycle}"),
         }
-        allowed_cycles = {"00", "06", "12", "18"} if model == "wrf-brasil-21km" else {"06", "12", "18"}
-        if model not in products or city not in allowed_cities or cycle not in allowed_cycles or fh not in range(0, 49, 3):
-            self.send_json(400, {"error": "Modelo, capital, ciclo ou validade inválidos."}); return
-
-        label, tag = products[model]
+        is_native_wrf = model in self.SKEWT_NATIVE_WRF_PRODUCTS
+        if city not in allowed_cities or fh not in range(0, 49, 3):
+            self.send_json(400, {"error": "Capital ou validade inválida."}); return
+        if is_native_wrf:
+            if cycle not in {"latest", "00", "06", "12", "18", "21"}:
+                self.send_json(400, {"error": "Use latest para a rodada WRF publicada."}); return
+            try:
+                manifest = self._load_skewt_native_manifest(model)
+            except FileNotFoundError as exc:
+                self.send_json(404, {"error": str(exc), "model": model, "published": False}); return
+            except (ValueError, RuntimeError) as exc:
+                self.send_json(502, {"error": str(exc), "model": model}); return
+            available_cities = {
+                str(item.get("slug") or "") for item in manifest.get("cities", [])
+                if isinstance(item, dict)
+            }
+            available_hours = {int(hour) for hour in manifest.get("forecast_hours", [])}
+            if city not in available_cities or fh not in available_hours:
+                self.send_json(404, {
+                    "error": f"Skew-T nativo indisponível para {city} F{fh:03d}; a capital/validade não pertence à publicação atual deste domínio.",
+                    "model": model, "city": city, "forecast_hour": fh,
+                    "available_cities": sorted(available_cities),
+                    "available_forecast_hours": sorted(available_hours),
+                }); return
+            label = self.SKEWT_NATIVE_WRF_PRODUCTS[model]
+            tag = f"skewt-{model}-live"
+            cycle = str(manifest.get("cycle") or cycle)
+        else:
+            if model not in products or cycle not in {"06", "12", "18"}:
+                self.send_json(400, {"error": "Modelo ou ciclo inválido."}); return
+            label, tag = products[model]
         asset_url = (
             "https://github.com/progames12301-hash/sideral-backend/releases/download/"
             f"{tag}/{city}-f{fh:03d}.png"
