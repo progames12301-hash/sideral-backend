@@ -30,6 +30,8 @@ runs:
         python-version: '3.11'
     - name: Install isolated SHARPpy renderer
       shell: bash
+      env:
+        SKEWT_REPO_PATH: ${{ inputs.repo-path }}
       run: |
         set -euo pipefail
         python -m venv "$RUNNER_TEMP/skewt-native-venv"
