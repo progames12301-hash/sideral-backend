@@ -112,7 +112,7 @@ def choose_capital_cells(lat_grid, lon_grid, resolution_km):
     # A capital is included only if its nearest actual WRF grid point is close.
     # Threshold is about one-and-a-half grid diagonals and prevents extrapolating
     # a regional model beyond its domain.
-    max_distance = max(7.0, float(resolution_km) * 1.6)
+    max_distance = max(6.0, float(resolution_km) * 1.05)
     selected, excluded = [], []
     for name, slug, lat, lon in CAPITALS:
         distance = haversine_km(lat_grid, lon_grid, lat, lon)
