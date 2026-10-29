@@ -1,0 +1,37 @@
+name: Publish Skew-T — SIDERAL WRF Brasil 21 km
+
+on:
+  workflow_run:
+    workflows: ["SIDERAL WRF Brasil 21 km - 48h horario"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: ID da execução concluída do modelo WRF de origem
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: skewt-publish-wrf-brasil-21km-${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success') }}
+    uses: ./.github/workflows/skewt-wrf-publish-reusable.yml
+    permissions:
+      contents: write
+      actions: read
+    with:
+      source-run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+      expected-source-workflow: "SIDERAL WRF Brasil 21 km - 48h horario"
+      model-key: "wrf-brasil-21km"
+      model-label: "SIDERAL WRF Brasil 21 km"
+      resolution-km: "21"
+      source-mode: artifact
+      artifact-name: "skewt-wrfout-brasil-21km"
