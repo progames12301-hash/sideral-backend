@@ -1132,3 +1132,22 @@ jobs:
           test -s cbr-products-4km.tar.gz
           gh release upload "$CHECKPOINT_TAG" cbr-products-4km.tar.gz wrf/cbr_variable_catalog.json --repo "$GITHUB_REPOSITORY" --clobber
           echo "CBR 4 KM: rodada completa publicada.";
+
+      - name: Checkout do gerador Skew-T nativo (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: sideral-skewt
+          fetch-depth: 1
+
+      - name: Publicar Skew-T nativo das capitais cobertas
+        if: success()
+        continue-on-error: true
+        uses: ./sideral-skewt/.github/actions/publish-wrf-skewt
+        with:
+          run-dir: cbr_all_wrfout
+          model-key: wrf-cbr-4km
+          model-label: WRF CBR 4 km
+          resolution-km: '4'
+          source-run-id: ${{ github.run_id }}
+          repo-path: sideral-skewt
