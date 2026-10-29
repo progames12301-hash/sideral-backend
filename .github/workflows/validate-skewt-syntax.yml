@@ -98,10 +98,13 @@ jobs:
                   self.collect = False
                   self.current = []
                   self.scripts = []
+                  self.current_module = False
 
               def handle_starttag(self, tag, attrs):
                   if tag.lower() == "script":
-                      self.collect = "src" not in dict(attrs)
+                      attributes = dict(attrs)
+                      self.collect = "src" not in attributes
+                      self.current_module = attributes.get("type", "").lower() == "module"
                       self.current = []
 
               def handle_data(self, data):
@@ -110,24 +113,38 @@ jobs:
 
               def handle_endtag(self, tag):
                   if tag.lower() == "script" and self.collect:
-                      self.scripts.append("".join(self.current))
+                      self.scripts.append(("".join(self.current), self.current_module))
                       self.collect = False
                       self.current = []
+                      self.current_module = False
 
-          for source, output in (
-              ("Skew t.html", "/tmp/skewt-main-inline.js"),
-              ("skewt.html", "/tmp/skewt-current-inline.js"),
-              ("skewt-capitais.html", "/tmp/skewt-capitais-inline.js"),
-              ("metbr-wrf-4km-click-point-test.html", "/tmp/metbr-wrf-skewt-capitals-inline.js"),
-          ):
+          sources = (
+              ("Skew t.html", "/tmp/skewt-main-inline"),
+              ("skewt.html", "/tmp/skewt-current-inline"),
+              ("skewt-capitais.html", "/tmp/skewt-capitais-inline"),
+              ("metbr-wrf-4km-click-point-test.html", "/tmp/metbr-wrf-skewt-capitals-inline"),
+          )
+          for source, output_dir in sources:
               parser = InlineScripts()
               parser.feed(Path(source).read_text(encoding="utf-8"))
               if not parser.scripts:
                   raise SystemExit(f"Nenhum script inline encontrado em {source}")
-              Path(output).write_text("\\n;\\n".join(parser.scripts), encoding="utf-8")
-              print(f"{source}: {len(parser.scripts)} script(s) extraídos")
+              root = Path(output_dir)
+              root.mkdir(parents=True, exist_ok=True)
+              for index, (code, is_module) in enumerate(parser.scripts):
+                  extension = ".mjs" if is_module else ".js"
+                  target = root / f"inline-{index:02d}{extension}"
+                  target.write_text(code, encoding="utf-8")
+              print(f"{source}: {len(parser.scripts)} script(s) extraídos individualmente")
           PY
-          node --check /tmp/skewt-main-inline.js
-          node --check /tmp/skewt-current-inline.js
-          node --check /tmp/skewt-capitais-inline.js
-          node --check /tmp/metbr-wrf-skewt-capitals-inline.js
+          for directory in \
+            /tmp/skewt-main-inline \
+            /tmp/skewt-current-inline \
+            /tmp/skewt-capitais-inline \
+            /tmp/metbr-wrf-skewt-capitals-inline; do
+            for file in "$directory"/*.js "$directory"/*.mjs; do
+              [[ -f "$file" ]] || continue
+              echo "Verificando $file"
+              node --check "$file"
+            done
+          done
