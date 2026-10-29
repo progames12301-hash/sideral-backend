@@ -263,6 +263,17 @@ jobs:
 
           PY
 
+      - name: Publicar Skew-T nativo METBR das capitais cobertas
+        if: success()
+        continue-on-error: true
+        uses: ./.github/actions/publish-wrf-skewt
+        with:
+          run-dir: metbr_work/run
+          model-key: wrf-metbr2-4km
+          model-label: METBR WRF2 4 km
+          resolution-km: '4'
+          source-run-id: ${{ steps.meta.outputs.run_id }}
+
       - name: Selecionar branch do ciclo METBR
         if: steps.meta.outputs.publish == 'true' && steps.checkpoint.outputs.available == 'true'
         run: |
