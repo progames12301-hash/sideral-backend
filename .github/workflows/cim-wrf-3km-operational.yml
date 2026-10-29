@@ -277,6 +277,25 @@ jobs:
           git worktree remove --force publish-tree
           echo "PUBLICADO: $BRANCH"
 
+      - name: Checkout das ferramentas Skew-T nativas (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: sideral-skewt
+          fetch-depth: 1
+
+      - name: Publicar Skew-T CIM WRF 8 km das capitais cobertas
+        if: success()
+        continue-on-error: true
+        uses: ./sideral-skewt/.github/actions/publish-wrf-skewt
+        with:
+          run-dir: wrf_work/run
+          model-key: wrf-cim-${{ matrix.model }}-8km
+          model-label: CIM WRF 8 km ${{ matrix.model }}
+          resolution-km: '8'
+          source-run-id: ${{ github.run_id }}
+          repo-path: sideral-skewt
+
       - name: Guardar diagnosticos se falhar
         if: failure()
         uses: actions/upload-artifact@v4
