@@ -2946,6 +2946,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/api/sinotica/chart.png": self.handle_synoptic_png(); return
         if parsed_path == "/api/sinotica/sideral.svg": self.handle_synoptic_svg(); return
         
+        if parsed_path == "/api/skewt/wrf-manifest":
+            self.handle_skewt_wrf_manifest(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/skewt/frame":
             self.handle_skewt_frame(parse_qs(urlparse(self.path).query)); return
         if parsed_path == "/api/skewt/metbr-frame":
@@ -2971,6 +2973,99 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed_path == "/mapa_estacoes_inmet_com_dados.html":
             self.path = "/mapa_estacoes_inmet_corrigido.html"
         super().do_GET()
+
+    SKEWT_NATIVE_WRF_PRODUCTS = {
+        "wrf-brasil-21km": "SIDERAL WRF Brasil 21 km",
+        "wrf-cim-icon-8km": "CIM WRF 8 km ICON",
+        "wrf-cim-ecmwf-8km": "CIM WRF 8 km ECMWF",
+        "wrf-cbr-4km": "WRF CBR 4 km",
+        "wrf-cbr2-4km": "WRF2 CBR 4 km",
+        "wrf-tarc-3km": "WRF TARC 3 km",
+        "wrf-tarc2-3km": "WRF2 TARC 3 km",
+        "wrf-sideral-4km-sudeste": "WRF SIDERAL 4 km Sudeste",
+        "wrf-sideral-4km-2-sudeste": "WRF SIDERAL 4 km 2 Sudeste",
+        "wrf-sideral-5km-sudeste": "WRF SIDERAL 5 km Sudeste",
+        "wrf-sideral-5km-2-sudeste": "WRF SIDERAL 5 km 2 Sudeste",
+        "wrf-metbr-4km": "METBR WRF 4 km",
+        "wrf-metbr2-4km": "METBR WRF2 4 km",
+    }
+    _skewt_native_manifest_cache: dict[str, dict[str, Any]] = {}
+    _skewt_native_manifest_lock = threading.Lock()
+
+    def _load_skewt_native_manifest(self, model: str, force: bool = False) -> dict[str, Any]:
+        """Fetch the manifest from a fixed public release tag (never enumerate releases)."""
+        model = str(model or "").strip().lower()
+        label = self.SKEWT_NATIVE_WRF_PRODUCTS.get(model)
+        if not label:
+            raise ValueError("Modelo WRF Skew-T inválido.")
+        now = time.monotonic()
+        with self._skewt_native_manifest_lock:
+            cached = self._skewt_native_manifest_cache.get(model)
+            if cached and not force and now - float(cached.get("_cached_at", 0.0)) < 60:
+                return {k: v for k, v in cached.items() if k != "_cached_at"}
+
+        tag = f"skewt-{model}-live"
+        asset_url = (
+            "https://github.com/progames12301-hash/sideral-backend/releases/download/"
+            f"{tag}/manifest.json"
+        )
+        try:
+            with requests.get(
+                asset_url,
+                headers={"User-Agent": "SideralMeteorologia/2.0 (native WRF Skew-T manifest)",
+                         "Accept": "application/json"},
+                timeout=(8, 25),
+                allow_redirects=True,
+            ) as response:
+                if response.status_code == 404:
+                    raise FileNotFoundError(f"Skew-T {label} ainda não foi publicado.")
+                response.raise_for_status()
+                final_url = urlparse(response.url)
+                allowed_hosts = {
+                    "github.com", "release-assets.githubusercontent.com",
+                    "objects.githubusercontent.com", "github-releases.githubusercontent.com",
+                }
+                if final_url.scheme != "https" or (final_url.hostname or "").lower() not in allowed_hosts:
+                    raise RuntimeError("O manifesto Skew-T redirecionou para uma origem não permitida.")
+                body = response.content
+                if len(body) > 2 * 1024 * 1024:
+                    raise RuntimeError("Manifesto Skew-T excede 2 MiB.")
+                manifest = json.loads(body.decode("utf-8"))
+        except FileNotFoundError:
+            raise
+        except (requests.RequestException, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Manifesto Skew-T {label} temporariamente indisponível: {exc}") from exc
+
+        if not isinstance(manifest, dict) or manifest.get("modelKey") != model:
+            raise RuntimeError(f"O manifesto publicado para {tag} não corresponde ao modelo solicitado.")
+        cities = manifest.get("cities")
+        hours = manifest.get("forecast_hours")
+        if not isinstance(cities, list) or not 1 <= len(cities) <= 27:
+            raise RuntimeError("O manifesto Skew-T não contém capitais válidas.")
+        if (not isinstance(hours, list) or len(hours) < 5
+                or any(not isinstance(h, int) or h < 0 or h > 48 or h % 3 for h in hours)
+                or hours[0] != 0 or hours != sorted(set(hours))):
+            raise RuntimeError("O manifesto Skew-T contém validades inválidas.")
+
+        manifest["tag"] = tag
+        manifest["label"] = label
+        manifest["_cached_at"] = time.monotonic()
+        with self._skewt_native_manifest_lock:
+            self._skewt_native_manifest_cache[model] = manifest
+        return {k: v for k, v in manifest.items() if k != "_cached_at"}
+
+    def handle_skewt_wrf_manifest(self, query: dict[str, list[str]]) -> None:
+        model = str(query.get("model", [""])[0]).lower().strip()
+        if model not in self.SKEWT_NATIVE_WRF_PRODUCTS:
+            self.send_json(400, {"error": "Modelo WRF Skew-T inválido.", "model": model})
+            return
+        try:
+            manifest = self._load_skewt_native_manifest(model)
+            self.send_json(200, manifest)
+        except FileNotFoundError as exc:
+            self.send_json(404, {"error": str(exc), "model": model, "published": False})
+        except (ValueError, RuntimeError) as exc:
+            self.send_json(502, {"error": str(exc), "model": model})
 
     def handle_skewt_frame(self, query: dict[str, list[str]]) -> None:
         """CORS-safe proxy for approved pre-generated model-specific Skew-T assets."""
