@@ -1,0 +1,146 @@
+name: Publicar Skew-T — METBR WRF 4 km
+
+on:
+  workflow_run:
+    workflows:
+      - "METBR WRF 4 KM - ICON"
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: ID da execução de origem concluída com sucesso
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-skewt-wrf-metbr-4km-${{ github.event.workflow_run.id || inputs.source_run_id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout das ferramentas e da interface Sideral
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Validar execução de origem
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_WORKFLOW: METBR WRF 4 KM - ICON
+          DISPATCH_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            SOURCE_RUN_ID="$(jq -r '.workflow_run.id' "$GITHUB_EVENT_PATH")"
+          else
+            SOURCE_RUN_ID="$DISPATCH_SOURCE_RUN_ID"
+          fi
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "source_run_id inválido." >&2; exit 2; }
+          RUN_JSON="$(gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,workflowName,status)"
+          STATUS="$(jq -r '.status // ""' <<< "$RUN_JSON")"
+          CONCLUSION="$(jq -r '.conclusion // ""' <<< "$RUN_JSON")"
+          WORKFLOW_NAME="$(jq -r '.workflowName // ""' <<< "$RUN_JSON")"
+          [[ "$STATUS" == completed && "$CONCLUSION" == success ]] || {
+            echo "Origem não concluída com sucesso: $WORKFLOW_NAME / $STATUS / $CONCLUSION" >&2; exit 3;
+          }
+          [[ "$WORKFLOW_NAME" == "$EXPECTED_WORKFLOW" ]] || {
+            echo "Run $SOURCE_RUN_ID pertence a '$WORKFLOW_NAME', não a '$EXPECTED_WORKFLOW'." >&2; exit 4;
+          }
+          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
+          echo "Origem validada: $WORKFLOW_NAME / $SOURCE_RUN_ID"
+
+      - name: Verificar marcador de rodada completa e listar WRFOUTs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_PREFIX: metbr-wrf-4km-checkpoint
+        run: |
+          set -euo pipefail
+          CHECKPOINT_TAG="${CHECKPOINT_PREFIX}-${SOURCE_RUN_ID}"
+          mkdir -p metbr_meta metbr_wrfout
+          gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' > metbr_meta/assets.txt
+          grep -Fxq 'metbr-publication-F42.txt' metbr_meta/assets.txt || {
+            echo "A rodada METBR ainda não publicou o marcador F042." >&2; exit 30;
+          }
+          grep -Eq '^wrfout_d01_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}[:.][0-9]{2}[:.][0-9]{2}$' metbr_meta/assets.txt || {
+            echo "A Release $CHECKPOINT_TAG não contém WRFOUTs nativos." >&2; exit 31;
+          }
+          gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'metbr-publication-F42.txt' --dir metbr_meta --clobber
+          grep -Fxq "run_id=$SOURCE_RUN_ID" metbr_meta/metbr-publication-F42.txt
+          grep -Fxq "segment=F39-F42" metbr_meta/metbr-publication-F42.txt
+      - name: Selecionar 15 WRFOUTs F000–F042 a cada 3 horas
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_PREFIX: metbr-wrf-4km-checkpoint
+        run: |
+          set -euo pipefail
+          CHECKPOINT_TAG="${CHECKPOINT_PREFIX}-${SOURCE_RUN_ID}"
+          python - <<'PY'
+          import datetime as dt, re
+          from pathlib import Path
+          names=Path("metbr_meta/assets.txt").read_text(encoding="utf-8").splitlines()
+          pattern=re.compile(r"^wrfout_d01_(\\d{4}-\\d{2}-\\d{2})_(\\d{2})[.:](\\d{2})[.:](\\d{2})$")
+          found={}
+          for name in names:
+              m=pattern.fullmatch(name)
+              if m:
+                  stamp=dt.datetime.strptime("_".join((m.group(1),m.group(2),m.group(3),m.group(4))), "%Y-%m-%d_%H_%M_%S")
+                  found[stamp]=name
+          if len(found)<15:
+              raise SystemExit(f"Checkpoint incompleto: {len(found)} horários WRFOUT.")
+          start=min(found)
+          selected=[]
+          for fh in range(0,43,3):
+              valid=start+dt.timedelta(hours=fh)
+              if valid not in found:
+                  raise SystemExit(f"F{fh:03d} ausente: {valid:%Y-%m-%d %H:%M:%S}")
+              selected.append(found[valid])
+          Path("metbr_meta/selected-assets.txt").write_text("\\n".join(selected)+"\\n",encoding="utf-8")
+          print(f"Rodada {start:%Y-%m-%d %H:%MZ}: selecionados {len(selected)} WRFOUTs nativos.")
+          PY
+          while IFS= read -r asset; do
+            [[ -n "$asset" ]] || continue
+            gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" --dir metbr_wrfout --clobber
+          done < metbr_meta/selected-assets.txt
+          count="$(find metbr_wrfout -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l | tr -d '[:space:]')"
+          [[ "$count" == "15" ]] || { echo "Esperados 15 WRFOUTs; encontrados $count." >&2; exit 32; }
+
+      - name: Gerar e publicar Skew-T nativo das capitais cobertas
+        uses: ./.github/actions/publish-wrf-skewt
+        with:
+          run-dir: metbr_wrfout
+          model-key: wrf-metbr-4km
+          model-label: METBR WRF 4 km
+          resolution-km: '4'
+          source-run-id: ${{ env.SOURCE_RUN_ID }}
+          repo-path: .
+
+      - name: Guardar artefatos para diagnóstico se falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skewt-wrf-metbr-4km-diagnostics-${{ github.run_id }}
+          path: |
+            build/skewt-native-capitals/**
+            checkpoint_assets/**
+            metbr_meta/**
+            metbr_wrfout/**
+            wrfout/**
+          if-no-files-found: ignore
+          retention-days: 7
