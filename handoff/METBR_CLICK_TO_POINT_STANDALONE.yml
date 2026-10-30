@@ -195,12 +195,6 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
-      - name: Checkout do extrator Sideral
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 1
-
       - name: Preparar Python e SHARPpy
         uses: actions/setup-python@v5
         with:
