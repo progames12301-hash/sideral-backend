@@ -3045,10 +3045,10 @@ class Handler(SimpleHTTPRequestHandler):
         hours = manifest.get("forecast_hours")
         if not isinstance(cities, list) or not 1 <= len(cities) <= 27:
             raise RuntimeError("O manifesto Skew-T não contém capitais válidas.")
-        if (not isinstance(hours, list) or len(hours) < 5
+        if (not isinstance(hours, list) or len(hours) < 3
                 or any(not isinstance(h, int) or h < 0 or h > 48 or h % 3 for h in hours)
                 or hours[0] != 0 or hours != sorted(set(hours))):
-            raise RuntimeError("O manifesto Skew-T contém validades inválidas.")
+            raise RuntimeError("O manifesto Skew-T contém validades inválidas (mínimo de 3 quadros).")
 
         manifest["tag"] = tag
         manifest["label"] = label
