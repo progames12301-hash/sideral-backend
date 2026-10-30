@@ -8,16 +8,9 @@ from PIL import Image, ImageFilter
 
 ROOT = Path(__file__).resolve().parent
 
-def cors(h):
-    h.send_header('Access-Control-Allow-Origin', '*')
-    h.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    h.send_header('Access-Control-Allow-Headers', 'Content-Type, Accept, Range, Origin')
-    h.send_header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type')
-
 def send_binary(h, status, payload, content_type='application/octet-stream', extra_headers=None):
     h.send_response(status)
     h.send_header('Content-Type', content_type)
-    cors(h)
     h.send_header('Cache-Control', 'public, max-age=60')
     h.send_header('Content-Length', str(len(payload)))
     for k,v in (extra_headers or {}).items(): h.send_header(k, str(v))
@@ -28,7 +21,6 @@ def send_json(h, status, payload):
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     h.send_response(status)
     h.send_header('Content-Type', 'application/json; charset=utf-8')
-    cors(h)
     h.send_header('Cache-Control', 'no-store')
     h.send_header('Content-Length', str(len(body)))
     h.end_headers()
@@ -37,7 +29,6 @@ def send_json(h, status, payload):
 class Handler(legacy.Handler):
     def do_OPTIONS(self):
         self.send_response(204)
-        cors(self)
         self.send_header('Access-Control-Max-Age', '86400')
         self.end_headers()
 
