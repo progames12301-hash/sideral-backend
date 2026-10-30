@@ -370,7 +370,7 @@ jobs:
           PY
 
       - name: Publicar PNGs, perfis e manifesto no release deste pedido
-        if: ${{ needs.prepare.outputs.release_tag != '' }}
+        if: always()
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
