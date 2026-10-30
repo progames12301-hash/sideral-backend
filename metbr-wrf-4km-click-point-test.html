@@ -5538,8 +5538,12 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
     return data;
   }
 
-  async function startBatch() {
+  async function startBatch(options = {}) {
     if (generateButton.disabled) return;
+    const requestedValue = options && typeof options === 'object' ? Number(options.autoLoadHour) : NaN;
+    const requestedHour = Number.isInteger(requestedValue) && requestedValue >= 0 && requestedValue <= 42
+      ? requestedValue
+      : Number(hourSelect.value);
     let point;
     try { point = selectedPoint(); }
     catch (error) { setBatchStatus(error.message, true); return; }
@@ -5555,7 +5559,7 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
     loading.textContent = 'Aguardando o GitHub gerar as sondagens para este ponto…';
     downloadButtons.forEach(button => { button.disabled = true; });
     updateLoadButton();
-    setBatchStatus('Enviando coordenada ao Render para disparar um workflow independente no GitHub Actions…');
+    setBatchStatus('Enviando solicitação ao gateway para iniciar o workflow no GitHub Actions…');
 
     try {
       const request = await requestJson(BACKEND + '/api/wrf/sounding/batch/request', {
@@ -5564,9 +5568,9 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
         cache: 'no-store',
         body: JSON.stringify({ latitude: point.latitude, longitude: point.longitude, cycle: selectedCycle() })
       });
-      if (!request.request_id) throw new Error('O Render não retornou o identificador do lote.');
+      if (!request.request_id) throw new Error('O gateway não retornou o identificador do lote.');
       activeRequestId = request.request_id;
-      setBatchStatus('GitHub recebeu o pedido. Gerando sondagens nativas para a coordenada ' + point.latitude.toFixed(4) + '°, ' + point.longitude.toFixed(4) + '° · rodada ' + (request.cycle || 'latest') + '. O Click-to-Point original do Render continua funcionando.');
+      setBatchStatus('GitHub Actions recebeu o pedido. Gerando sondagens WRF nativas para ' + point.latitude.toFixed(4) + '°, ' + point.longitude.toFixed(4) + '° · rodada ' + (request.cycle || 'latest') + '.');
 
       const deadline = Date.now() + 25 * 60 * 1000;
       while (Date.now() < deadline && generation === pollGeneration) {
@@ -5577,15 +5581,20 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
           const manifest = state.manifest || {};
           availableHours = (manifest.forecast_hours || state.available_hours || []).map(Number).filter(h => Number.isInteger(h) && h >= 0 && h <= 42).sort((a,b) => a-b);
           if (!availableHours.length) throw new Error('O GitHub concluiu o workflow, mas não publicou nenhuma validade utilizável.');
-          setBatchStatus('Concluído pelo GitHub: ' + availableHours.length + ' sondagens publicadas (' + availableHours.map(h => 'F' + String(h).padStart(3, '0')).join(', ') + '). Selecione uma validade e use CARREGAR para abrir o PNG pré-gerado.');
+          const preferredHour = Number.isInteger(requestedHour) && availableHours.includes(requestedHour)
+            ? requestedHour
+            : availableHours[0];
+          hourSelect.value = String(preferredHour);
+          setBatchStatus('Concluído pelo GitHub: ' + availableHours.length + ' sondagens publicadas. Abrindo F' + String(preferredHour).padStart(3, '0') + ' automaticamente.');
           updateLoadButton();
           generateButton.disabled = false;
+          await loadBatchHour();
           return;
         }
         if (state.status === 'failed') {
           throw new Error(state.error || 'O workflow do GitHub terminou com falha. Consulte as execuções do Actions.');
         }
-        setBatchStatus('GitHub Actions em execução' + (state.status ? ' · ' + state.status : '') + '. As validades estão sendo calculadas em paralelo; o Click-to-Point do Render permanece disponível.');
+        setBatchStatus('GitHub Actions em execução' + (state.status ? ' · ' + state.status : '') + '. As validades estão sendo calculadas em paralelo.');
       }
       if (generation === pollGeneration) throw new Error('O lote ainda não foi concluído após 25 minutos. O workflow pode continuar no GitHub; tente consultar novamente mais tarde.');
     } catch (error) {
@@ -5598,7 +5607,10 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
     }
   }
 
-  async function loadBatchHour() {
+  async function loadBatchHour(forecastHour) {
+    if (Number.isInteger(Number(forecastHour)) && Number(forecastHour) >= 0 && Number(forecastHour) <= 42) {
+      hourSelect.value = String(Number(forecastHour));
+    }
     const hour = Number(hourSelect.value);
     if (!activeRequestId || !availableHours.includes(hour)) return;
     loadButton.disabled = true;
@@ -5631,7 +5643,7 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
       if (fhNode) fhNode.textContent = label;
       const sourceNode = document.getElementById('uiMetbrSkewtSource');
       if (sourceNode) sourceNode.textContent = 'GitHub Actions · PNG pré-gerado · WRFOUT nativo';
-      setBatchStatus(label + ' carregado da publicação GitHub. O botão GERAR PERFIL continua sendo a geração individual original pelo Render.');
+      setBatchStatus(label + ' carregado diretamente da publicação do GitHub Actions.');
     } catch (error) {
       image.hidden = true;
       loading.hidden = false;
@@ -5656,8 +5668,12 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
     anchor.remove();
   }
 
-  generateButton.addEventListener('click', startBatch);
-  loadButton.addEventListener('click', loadBatchHour);
+  generateButton.addEventListener('click', () => void startBatch());
+  loadButton.addEventListener('click', () => void loadBatchHour());
+  window.SideralMETBRGithubBatch = {
+    start: forecastHour => startBatch({ autoLoadHour: forecastHour }),
+    loadHour: forecastHour => loadBatchHour(forecastHour)
+  };
   hourSelect.addEventListener('change', updateLoadButton);
   downloadButtons.forEach(button => button.addEventListener('click', downloadBatchPng, true));
   let lastCoordinates = String(coordsNode.textContent || '').trim();
@@ -5683,7 +5699,7 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
   });
   observer.observe(image, { attributes: true, attributeFilter: ['src'] });
   updateLoadButton();
-  console.info('[METBR Skew-T GitHub Batch] Integração separada carregada. Nenhum fluxo atual foi substituído.');
+  console.info('[METBR Skew-T GitHub Batch] Geração e publicação exclusivamente no GitHub Actions; Render funciona somente como gateway de API.');
 })();
 </script>
 
