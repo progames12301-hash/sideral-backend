@@ -12,6 +12,7 @@ import datetime as dt
 import importlib.util
 import json
 import math
+import shutil
 from pathlib import Path
 
 from netCDF4 import Dataset
@@ -122,6 +123,7 @@ def main() -> None:
             raise RuntimeError(f"Renderizador não produziu PNG válido para F{args.forecast_hour:03d}.")
         png_path = output_dir / f"f{args.forecast_hour:03d}.png"
         png_path.write_bytes(candidate.read_bytes())
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     profile = native.profile_json(
         city, point, run_time, valid_time, args.forecast_hour, rows, terrain
