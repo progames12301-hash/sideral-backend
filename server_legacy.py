@@ -2979,6 +2979,7 @@ class Handler(SimpleHTTPRequestHandler):
         "wrf-sul-gfs-7km": "WRF Sul 7 km GFS",
         "wrf-sul-icon-7km": "WRF Sul 7 km ICON",
         "wrf-sul-ecmwf-7km": "WRF Sul 7 km ECMWF",
+        "wrf-sul-gfs-4km-legacy": "WRF Sul 4 km legado GFS",
         "wrf-cim-icon-8km": "CIM WRF 8 km ICON",
         "wrf-cim-ecmwf-8km": "CIM WRF 8 km ECMWF",
         "wrf-cbr-4km": "WRF CBR 4 km",
