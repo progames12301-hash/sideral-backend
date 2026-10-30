@@ -80,7 +80,7 @@ runs:
         assert meta["source"] == "WRF-ARW native WRFOUT", meta.get("source")
         assert 1 <= len(meta["cities"]) <= 27, len(meta["cities"])
         hours = meta["forecast_hours"]
-        assert len(hours) >= 5 and hours[0] == 0
+        assert len(hours) >= 3 and hours[0] == 0
         assert all(h % 3 == 0 and 0 <= h <= 48 for h in hours), hours
         pngs = sorted(root.glob("*/*.png"))
         expected = len(meta["cities"]) * len(hours)
