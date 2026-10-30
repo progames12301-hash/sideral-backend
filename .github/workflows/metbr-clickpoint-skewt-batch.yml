@@ -208,7 +208,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Instalar dependências nativas
         shell: bash
@@ -281,6 +280,7 @@ jobs:
 
       - name: Baixar todas as validades geradas
         if: ${{ needs.prepare.outputs.release_tag != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: metbr-clickpoint-${{ inputs.request_id }}-*
