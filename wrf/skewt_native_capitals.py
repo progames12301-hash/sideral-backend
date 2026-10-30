@@ -244,8 +244,8 @@ def main():
         raise SystemExit("resolution-km deve ser positiva.")
     run_dir, out_root = Path(args.run_dir).resolve(), Path(args.out_root).resolve()
     files = sorted(run_dir.glob("wrfout_d01_*"))
-    if len(files) < 5:
-        raise RuntimeError(f"Esperados pelo menos 5 WRFOUTs; encontrados {len(files)}")
+    if len(files) < 3:
+        raise RuntimeError(f"Esperados pelo menos 3 WRFOUTs; encontrados {len(files)}")
     timed_files = []
     for file in files:
         with Dataset(str(file), "r") as ds:
@@ -268,8 +268,8 @@ def main():
         and 0 <= (valid - init).total_seconds() / 3600 <= 48
     ]
     forecast_hours = [frame[0] for frame in selected_frames]
-    if len(selected_frames) < 5 or forecast_hours[0] != 0 or len(set(forecast_hours)) != len(forecast_hours):
-        raise RuntimeError(f"Sequência insuficiente para Skew-T em passos de 3 h: {forecast_hours}")
+    if len(selected_frames) < 3 or forecast_hours[0] != 0 or len(set(forecast_hours)) != len(forecast_hours):
+        raise RuntimeError(f"Sequência insuficiente para Skew-T em passos de 3 h (mínimo 3 quadros): {forecast_hours}")
     if forecast_hours != list(range(0, forecast_hours[-1] + 1, 3)):
         raise RuntimeError(f"Sequência de validades Skew-T incompleta: {forecast_hours}")
 
