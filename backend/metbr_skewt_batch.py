@@ -35,7 +35,7 @@ def _request_id(value: str) -> str:
 def _release_asset_url(request_id: str, asset_name: str) -> str:
     request_id = _request_id(request_id)
     if asset_name not in {"status.json", "manifest.json"} and not re.fullmatch(
-        r"f(?:00[0-9]|0[1-3][0-9]|04[0-2])\\.png", asset_name
+        r"f(?:00[0-9]|0[1-3][0-9]|04[0-2])\.png", asset_name
     ):
         raise ValueError("Arquivo de sondagem inválido.")
     tag = f"metbr-skewt-click-{request_id}"
@@ -201,6 +201,6 @@ def get_png(request_id: str, forecast_hour: int) -> bytes:
         ) from exc
     if len(response.content) < 10000 or len(response.content) > 25 * 1024 * 1024:
         raise BatchRequestError("O PNG publicado está vazio ou excede o tamanho permitido.")
-    if not response.content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if not response.content.startswith(b"\x89PNG\r\n\x1a\n"):
         raise BatchRequestError("O arquivo publicado para esta validade não é um PNG válido.")
     return response.content
