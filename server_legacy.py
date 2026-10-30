@@ -2882,6 +2882,40 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path).path
+        if parsed_path == "/api/wrf/sounding/batch/status":
+            from backend.metbr_skewt_batch import BatchRequestError, get_status
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                self.send_json(200, get_status(query.get("request_id", [""])[0]))
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+            except BatchRequestError as exc:
+                self.send_json(503, {"error": str(exc)})
+            return
+        if parsed_path == "/api/wrf/sounding/batch/image":
+            from backend.metbr_skewt_batch import BatchRequestError, get_png
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                png = get_png(
+                    query.get("request_id", [""])[0],
+                    int(query.get("fh", ["-1"])[0]),
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png)))
+                self.send_header("Cache-Control", "private, max-age=300")
+                self.end_headers()
+                try:
+                    self.wfile.write(png)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+            except (ValueError, TypeError) as exc:
+                self.send_json(400, {"error": str(exc)})
+            except FileNotFoundError as exc:
+                self.send_json(404, {"error": str(exc)})
+            except BatchRequestError as exc:
+                self.send_json(503, {"error": str(exc)})
+            return
         if parsed_path.startswith('/api/radar/v3/'):
             from backend.radar_v3.integration import dispatch
             dispatch(self); return
@@ -4827,7 +4861,25 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as exc: self.send_json(502, {"error": "Erro ao interpretar observação do INMET.", "details": f"{type(exc).__name__}: {exc}"})
 
     def do_POST(self) -> None:
-        path = self.path.lower().strip()
+        path = urlparse(self.path).path.lower().strip()
+        if path == "/api/wrf/sounding/batch/request":
+            from backend.metbr_skewt_batch import (
+                BatchRateLimitError, BatchRequestError, dispatch_request,
+            )
+            try:
+                payload = self.read_json_body()
+                result = dispatch_request(payload, self.client_address[0])
+                self.send_json(202, result)
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                self.send_json(400, {"error": f"Pedido de lote inválido: {exc}"})
+            except BatchRateLimitError as exc:
+                self.send_json(429, {"error": str(exc)})
+            except BatchRequestError as exc:
+                self.send_json(503, {"error": str(exc)})
+            except Exception as exc:
+                _log_sounding_error("METBR Click-to-Point GitHub batch dispatch", exc)
+                self.send_json(500, {"error": "Não foi possível solicitar o lote Skew-T ao GitHub."})
+            return
         if path not in {"/api/gfs/cells", "/api/wrf/cells", "/api/ecmwf/cells", "/api/meteoblue/cells"}:
             self.send_json(404, {"error": f"Rota invalida: {self.path}"}); return
         try:
