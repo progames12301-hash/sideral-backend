@@ -37,6 +37,58 @@ def parse_time(value: str) -> dt.datetime:
     return dt.datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
 
 
+def choose_click_gridpoint(native, dataset, latitude: float, longitude: float) -> dict:
+    """Select the closest native WRF cell using the same 8-km rule as Render Click-to-Point."""
+    import numpy as np
+
+    lat_grid, lon_grid = native.grid_latlon(dataset)
+    lat_r = np.radians(lat_grid)
+    lon_r = np.radians(lon_grid)
+    lat0 = math.radians(float(latitude))
+    lon0 = math.radians(float(longitude))
+    dlat = lat_r - lat0
+    dlon = lon_r - lon0
+    a = (
+        np.sin(dlat / 2.0) ** 2
+        + math.cos(lat0) * np.cos(lat_r) * np.sin(dlon / 2.0) ** 2
+    )
+    distance = 6371.0 * 2.0 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+    distance[~np.isfinite(distance)] = np.inf
+
+    j, i = np.unravel_index(int(np.argmin(distance)), distance.shape)
+    distance_km = float(distance[j, i])
+    ny, nx = lat_grid.shape
+    domain = {
+        "south": float(np.nanmin(lat_grid)),
+        "north": float(np.nanmax(lat_grid)),
+        "west": float(np.nanmin(lon_grid)),
+        "east": float(np.nanmax(lon_grid)),
+    }
+    if (
+        latitude < domain["south"] - 0.02
+        or latitude > domain["north"] + 0.02
+        or longitude < domain["west"] - 0.02
+        or longitude > domain["east"] + 0.02
+    ):
+        raise RuntimeError("Ponto fora da cobertura METBR WRF 4 km.")
+    if not math.isfinite(distance_km) or distance_km > 8.0:
+        raise RuntimeError(
+            "O ponto selecionado está muito distante da grade nativa METBR WRF 4 km "
+            f"({distance_km:.2f} km; limite 8 km)."
+        )
+    if not (1 <= j < ny - 1 and 1 <= i < nx - 1):
+        raise RuntimeError("O ponto selecionado está perto demais da borda da grade METBR.")
+
+    return {
+        "i": int(i),
+        "j": int(j),
+        "distance_km": distance_km,
+        "grid_latitude": float(lat_grid[j, i]),
+        "grid_longitude": float(lon_grid[j, i]),
+        "grid_shape": {"ny": int(ny), "nx": int(nx)},
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--wrfout", required=True)
@@ -85,7 +137,7 @@ def main() -> None:
                 f"O WRFOUT {wrfout.name} não contém {valid_time:%Y-%m-%d %H:%MZ}."
             )
         time_index = matches[0]
-        point = native.choose_gridpoint(dataset, city)
+        point = choose_click_gridpoint(native, dataset, args.latitude, args.longitude)
         distance_km = float(point.get("distance_km", math.inf))
         if not math.isfinite(distance_km) or distance_km > 8.0:
             raise RuntimeError(
