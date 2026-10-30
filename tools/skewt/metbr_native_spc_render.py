@@ -1086,7 +1086,7 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh0
         ehi = surface_cape * helicity / 160000.0 if surface_cape is not None and math.isfinite(helicity) else None
         wind_rows.append([layer, _fmt(bwd, 1), _fmt(helicity, 0), _fmt(srw, 1), _fmt(ehi, 2)])
 
-    wind_ax = fig.add_axes([0.665, 0.005, 0.330, 0.215]); wind_ax.axis("off")
+    wind_ax = fig.add_axes([0.665, 0.035, 0.330, 0.185]); wind_ax.axis("off")
     wind_table = wind_ax.table(cellText=wind_rows,
                                colLabels=["LAYER", "BWD [kt]", "SRH", "SRW [kt]", "EHI"],
                                cellLoc="center", colLoc="center", loc="upper left",
@@ -1103,7 +1103,7 @@ def _bottom_diagnostics(fig, prof, p, t, td, z, u, v, srh005, srh01, srh03, srh0
                (0.530, lapse[3:] + right + severe)]
     for x, items in columns:
         for j, label in enumerate(items):
-            fig.text(x, 0.108 - j * 0.018, label, ha="left", va="center",
+            fig.text(x, 0.145 - j * 0.018, label, ha="left", va="center",
                      fontsize=6.0, color="#e6e6e6", fontweight="bold", family="DejaVu Sans Mono", zorder=30)
 
 
@@ -1180,6 +1180,9 @@ def render_native_spc(prof, out_dir: Path, meta: dict):
              fontsize=7.0, color=INK, fontweight="bold", family="DejaVu Sans Mono")
     fig.add_artist(plt.Line2D([0.007, 0.993], [0.952, 0.952],
                               transform=fig.transFigure, color="#414141", lw=0.75, zorder=10))
+    fig.text(0.5, 0.014, "Powered By SHARPY • SIDERALMETEOROLOGIA.COM.BR",
+             ha="center", va="center", fontsize=7.0, color="#FFFFFF",
+             fontweight="bold", family="DejaVu Sans Mono", zorder=40)
     ax_skew = fig.add_axes([0.007, 0.237, 0.504, 0.715])
     ax_hodo = fig.add_axes([0.522, 0.237, 0.471, 0.715])
 
