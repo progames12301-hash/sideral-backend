@@ -5586,6 +5586,11 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
     loadButton.disabled = true;
     availableHours = [];
     activeRequestId = '';
+    batchImageActive = false;
+    image.hidden = true;
+    loading.hidden = false;
+    loading.textContent = 'Aguardando o GitHub gerar as sondagens para este ponto…';
+    downloadButtons.forEach(button => { button.disabled = true; });
     updateLoadButton();
     setBatchStatus('Enviando coordenada ao Render para disparar um workflow independente no GitHub Actions…');
 
@@ -5692,8 +5697,26 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
   loadButton.addEventListener('click', loadBatchHour);
   hourSelect.addEventListener('change', updateLoadButton);
   downloadButtons.forEach(button => button.addEventListener('click', downloadBatchPng, true));
+  let lastCoordinates = String(coordsNode.textContent || '').trim();
+  const coordinatesObserver = new MutationObserver(() => {
+    const nextCoordinates = String(coordsNode.textContent || '').trim();
+    if (nextCoordinates === lastCoordinates) return;
+    lastCoordinates = nextCoordinates;
+    pollGeneration++;
+    activeRequestId = '';
+    availableHours = [];
+    batchImageActive = false;
+    const oldUrl = image.dataset.metbrBatchObjectUrl;
+    if (oldUrl) URL.revokeObjectURL(oldUrl);
+    delete image.dataset.metbrBatchObjectUrl;
+    loadButton.disabled = true;
+    downloadButtons.forEach(button => { button.disabled = true; });
+    setBatchStatus('Novo ponto selecionado. Solicite um novo lote para gerar as validades desta coordenada.');
+  });
+  coordinatesObserver.observe(coordsNode, { childList: true, characterData: true, subtree: true });
+
   const observer = new MutationObserver(() => {
-    if (image.src && image.src.startsWith('data:image/png;base64,')) batchImageActive = false;
+    if (!image.src || image.src.startsWith('data:image/png;base64,')) batchImageActive = false;
   });
   observer.observe(image, { attributes: true, attributeFilter: ['src'] });
   updateLoadButton();
