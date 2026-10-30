@@ -529,15 +529,14 @@
         </dl>
         <label for="uiMetbrSkewtHour">Alterar validade do perfil</label>
         <select id="uiMetbrSkewtHour" aria-label="Validade do perfil Skew-T"></select>
-        <button type="button" id="uiMetbrSkewtLoadHour">GERAR PERFIL</button>
-        <button type="button" id="uiMetbrSkewtGithubBatchGenerate">SOLICITAR TODAS AS VALIDADES AO GITHUB</button>
-        <button type="button" id="uiMetbrSkewtGithubBatchLoad" disabled>CARREGAR VALIDADE PRÉ-GERADA</button>
-        <p id="uiMetbrSkewtGithubBatchStatus" role="status" aria-live="polite">Geração em lote independente. O Click-to-Point do Render continua disponível acima.</p>
+        <button type="button" id="uiMetbrSkewtGithubBatchGenerate">GERAR TODAS AS VALIDADES NO GITHUB ACTIONS</button>
+        <button type="button" id="uiMetbrSkewtGithubBatchLoad" disabled>CARREGAR VALIDADE SELECIONADA</button>
+        <p id="uiMetbrSkewtGithubBatchStatus" role="status" aria-live="polite">A geração é executada pelo GitHub Actions. O serviço intermediário apenas inicia o workflow e entrega os PNGs.</p>
         <button type="button" id="uiMetbrSkewtDownload" disabled>BAIXAR IMAGEM PNG</button>
         <p id="uiMetbrSkewtStatus" role="status" aria-live="polite">Preparando perfil vertical METBR…</p>
       </aside>
       <main id="uiMetbrSkewtStage" aria-label="Diagrama Skew-T do ponto selecionado">
-        <div id="uiMetbrSkewtLoading">Gerando o perfil vertical diretamente com os dados METBR WRF 4 km…</div>
+        <div id="uiMetbrSkewtLoading">Aguardando a geração das sondagens pelo GitHub Actions…</div>
         <img id="uiMetbrSkewtImage" alt="Diagrama Skew-T nativo do METBR WRF 4 km" hidden />
       </main>
     </div>
@@ -5127,7 +5126,6 @@
 <script id="metbrSkewtClickPoint">
 (() => {
   'use strict';
-  const BACKEND = 'https://sideral-backend.onrender.com';
   const button = document.getElementById('uiSkewtClickMode');
   const root = document.getElementById('metbrUI');
   const status = document.getElementById('uiFrameStatus');
@@ -5143,7 +5141,6 @@
     source: document.getElementById('uiMetbrSkewtSource')
   };
   const hourSelect = document.getElementById('uiMetbrSkewtHour');
-  const loadHourButton = document.getElementById('uiMetbrSkewtLoadHour');
   const downloadButton = document.getElementById('uiMetbrSkewtDownload');
   const downloadTopButton = document.getElementById('uiMetbrSkewtDownloadTop');
   const skewtStatus = document.getElementById('uiMetbrSkewtStatus');
@@ -5155,7 +5152,7 @@
   }
 
   let enabled = false, selectedPoint = null, selectedHour = 0;
-  let selectedCycleValue = '', requestSerial = 0;
+  let selectedCycleValue = '';
   for (let h = 0; h <= 42; h++) {
     const option = document.createElement('option');
     option.value = String(h);
@@ -5167,7 +5164,7 @@
   hint.hidden = true;
   hint.setAttribute('role', 'status');
   hint.setAttribute('aria-live', 'polite');
-  hint.textContent = 'CLICK-TO-POINT ATIVO — clique no mapa METBR para gerar o Skew-T.';
+  hint.textContent = 'CLICK-TO-POINT ATIVO — clique no mapa METBR para solicitar o Skew-T ao GitHub Actions.';
   document.body.appendChild(hint);
 
   function setEnabled(value) {
@@ -5178,7 +5175,7 @@
     if (enabled) {
       const model = document.getElementById('uiModelVariant')?.value;
       const message = model === 'metbr_wrf'
-        ? 'CLICK-TO-POINT ATIVO — clique no mapa METBR WRF 4 km para gerar o Skew-T.'
+        ? 'CLICK-TO-POINT ATIVO — clique no mapa METBR WRF 4 km para gerar o Skew-T no GitHub Actions.'
         : 'Selecione METBR WRF 4 km no painel antes de clicar no mapa.';
       hint.textContent = message;
       hint.style.borderColor = model === 'metbr_wrf' ? '#ed3448' : '#ff596b';
@@ -5237,19 +5234,11 @@
     downloadButton.disabled = !value;
     downloadTopButton.disabled = !value;
   }
-  function setBusy(value, message) {
-    loading.hidden = !value;
-    if (value) image.hidden = true;
-    skewtStatus.textContent = message;
-    loadHourButton.disabled = value;
-    hourSelect.disabled = value;
-  }
-
-  async function renderSelectedProfile() {
+  function requestGitHubProfile() {
     if (!selectedPoint) return;
-    const thisRequest = ++requestSerial, fh = Number(hourSelect.value);
+    const fh = Number(hourSelect.value);
     if (!Number.isInteger(fh) || fh < 0 || fh > 42) {
-      setBusy(false, 'Validade inválida. Selecione uma hora entre F000 e F042.');
+      skewtStatus.textContent = 'Validade inválida. Selecione uma hora entre F000 e F042.';
       return;
     }
     selectedHour = fh;
@@ -5257,52 +5246,23 @@
     showValue(details.coords, selectedPoint.lat.toFixed(4) + '°, ' + selectedPoint.lon.toFixed(4) + '°');
     showValue(details.fh, 'F' + paddedHour);
     showValue(details.run, selectedCycleValue ? selectedCycleValue + 'Z' : 'Última rodada disponível');
-    showValue(details.valid, 'Calculando…');
-    showValue(details.elevation, 'Calculando…');
-    showValue(details.source, 'METBR WRF 4 km · SHARPpy');
+    showValue(details.valid, 'Aguardando GitHub Actions…');
+    showValue(details.elevation, 'Será informada após a geração');
+    showValue(details.source, 'GitHub Actions · WRFOUT nativo');
     caption.textContent = 'METBR WRF 4 km · ' + selectedPoint.lat.toFixed(3) + '°, ' + selectedPoint.lon.toFixed(3) + '° · F' + paddedHour;
     image.hidden = true;
     setDownloadEnabled(false);
-    setBusy(true, 'Consultando o Render e calculando o perfil nativo F' + paddedHour + '…');
+    loading.hidden = false;
+    loading.textContent = 'Enviando a coordenada ao workflow do GitHub Actions…';
+    skewtStatus.textContent = 'Solicitando geração ao GitHub Actions para F' + paddedHour + '…';
 
-    const params = new URLSearchParams({
-      model: 'metbr_wrf_4km', lat: selectedPoint.lat.toFixed(5),
-      lon: selectedPoint.lon.toFixed(5), fh: String(fh)
-    });
-    if (selectedCycleValue) params.set('cycle', selectedCycleValue);
-    try {
-      const response = await fetch(BACKEND + '/api/wrf/sounding/render?' + params.toString(), {
-        method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store'
-      });
-      let data;
-      try { data = await response.json(); }
-      catch { throw new Error('O Render retornou uma resposta inválida (HTTP ' + response.status + ').'); }
-      if (thisRequest !== requestSerial || modal.hidden) return;
-      if (!response.ok) throw new Error((data && data.error) || ('Falha ao calcular o perfil (HTTP ' + response.status + ').'));
-      if (typeof data?.png_data_uri !== 'string' || !data.png_data_uri.startsWith('data:image/png;base64,')) {
-        throw new Error('O serviço respondeu, mas não retornou o diagrama Skew-T em PNG.');
-      }
-      image.src = data.png_data_uri;
-      image.alt = 'Skew-T METBR WRF 4 km em ' + selectedPoint.lat.toFixed(4) + ', ' + selectedPoint.lon.toFixed(4) + ', validade F' + paddedHour;
-      image.hidden = false;
-      loading.hidden = true;
-      showValue(details.run, data.run_cycle || (selectedCycleValue ? selectedCycleValue + 'Z' : 'Última rodada disponível'));
-      showValue(details.valid, formatValid(data.valid));
-      const elevation = data.surface_elevation_m ?? data.terrain_elevation_m;
-      showValue(details.elevation, Number.isFinite(Number(elevation)) ? Math.round(Number(elevation)) + ' m' : '—');
-      showValue(details.source, data.source || 'METBR WRF 4 km · SHARPpy');
-      setDownloadEnabled(true);
-      skewtStatus.textContent = 'Perfil nativo gerado' + (data.render_cache ? ' (cache)' : '') +
-        (Number.isFinite(Number(data.render_ms)) && Number(data.render_ms) > 0 ? ' em ' + (Number(data.render_ms) / 1000).toFixed(1) + ' s.' : '.');
-    } catch (error) {
-      if (thisRequest !== requestSerial || modal.hidden) return;
-      image.hidden = true;
-      loading.hidden = false;
-      loading.textContent = error?.message || 'Não foi possível gerar o perfil Skew-T do METBR.';
-      setDownloadEnabled(false);
-      setBusy(false, error?.message || 'Falha ao gerar o perfil nativo METBR.');
-      loading.hidden = false;
+    const batch = window.SideralMETBRGithubBatch;
+    if (!batch || typeof batch.start !== 'function') {
+      loading.textContent = 'O módulo de integração com GitHub Actions não foi inicializado. Recarregue a página.';
+      skewtStatus.textContent = 'Integração GitHub Actions indisponível.';
+      return;
     }
+    void batch.start(fh);
   }
 
   function openSounding(point) {
@@ -5323,23 +5283,28 @@
     hourSelect.value = String(fh);
     image.removeAttribute('src');
     image.hidden = true;
-    loading.textContent = 'Gerando o perfil vertical diretamente com os dados METBR WRF 4 km…';
+    loading.textContent = 'Aguardando as sondagens do METBR WRF 4 km no GitHub Actions…';
+    showValue(details.coords, point.lat.toFixed(4) + '°, ' + point.lon.toFixed(4) + '°');
+    showValue(details.run, selectedCycleValue ? selectedCycleValue + 'Z' : 'Última rodada disponível');
+    showValue(details.fh, 'F' + String(fh).padStart(3, '0'));
+    showValue(details.valid, 'Aguardando GitHub Actions…');
+    showValue(details.elevation, '—');
+    showValue(details.source, 'GitHub Actions · WRFOUT nativo');
     modal.hidden = false;
     modal.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
     setEnabled(false);
-    void renderSelectedProfile();
+    void requestGitHubProfile();
     closeButton.focus({ preventScroll: true });
-    status.textContent = 'Gerando Skew-T nativo para ' + point.lat.toFixed(3) + '°, ' + point.lon.toFixed(3) + '° · ' + frameText + '.';
+    status.textContent = 'Solicitando Skew-T ao GitHub Actions para ' + point.lat.toFixed(3) + '°, ' + point.lon.toFixed(3) + '° · ' + frameText + '.';
   }
   function closeModal() {
-    requestSerial++;
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
     image.removeAttribute('src');
     image.hidden = true;
     loading.hidden = false;
-    loading.textContent = 'Gerando o perfil vertical diretamente com os dados METBR WRF 4 km…';
+    loading.textContent = 'Aguardando as sondagens do METBR WRF 4 km no GitHub Actions…';
     setDownloadEnabled(false);
     document.body.style.overflow = '';
     button.focus({ preventScroll: true });
@@ -5385,15 +5350,13 @@
   }, true);
   closeButton.addEventListener('click', closeModal);
   modal.querySelector('[data-skewt-close]')?.addEventListener('click', closeModal);
-  loadHourButton.addEventListener('click', () => void renderSelectedProfile());
-  hourSelect.addEventListener('keydown', event => { if (event.key === 'Enter') void renderSelectedProfile(); });
   downloadButton.addEventListener('click', downloadPng);
   downloadTopButton.addEventListener('click', downloadPng);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && enabled) setEnabled(false);
     else if (event.key === 'Escape' && !modal.hidden) closeModal();
   });
-  console.info('[METBR Click-to-Point] Sistema nativo carregado. Ative o botão de mira e clique no mapa.');
+  console.info('[METBR Click-to-Point] A geração é feita exclusivamente pelo GitHub Actions; esta interface não chama o gerador do Render.');
 })();
 </script>
 
