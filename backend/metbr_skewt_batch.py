@@ -47,8 +47,8 @@ def _check_dispatch_rate(client_ip: str) -> None:
         previous = _dispatch_ip_last.get(key)
         if previous is not None and now - previous < 45:
             raise BatchRateLimitError("Aguarde 45 segundos antes de solicitar outro lote neste navegador.")
-        if len(_dispatch_times) >= 8:
-            raise BatchRateLimitError("O serviço atingiu o limite temporário de lotes. Tente novamente em um minuto.")
+        if len(_dispatch_times) >= 2:
+            raise BatchRateLimitError("O limite temporário de dois lotes por minuto foi atingido. Tente novamente em um minuto.")
         _dispatch_ip_last[key] = now
         _dispatch_times.append(now)
 
