@@ -399,16 +399,14 @@
 #uiMetbrSkewtDetails dd{margin:0;color:#f5f5f6;font:700 12px/1.4 Consolas,monospace;overflow-wrap:anywhere}
 #uiMetbrSkewtPanel label{display:block;margin:14px 0 6px;color:#a4a5ad;font:700 10px Consolas,monospace;text-transform:uppercase;letter-spacing:.06em}
 #uiMetbrSkewtHour{width:100%;height:36px;padding:0 9px;border:1px solid #373740;border-radius:0;background:#15151a;color:#fff;font:700 12px Consolas,monospace}
-#uiMetbrSkewtLoadHour,#uiMetbrSkewtDownload{display:block;width:100%;min-height:36px;margin-top:8px;padding:8px;border:1px solid #484851;border-radius:0;background:#17171c;color:#fff;font:800 10px Consolas,monospace;cursor:pointer}
-#uiMetbrSkewtLoadHour{border-color:#ed3448;background:#a91f32}
-#uiMetbrSkewtLoadHour:hover{background:#c72a40}
+#uiMetbrSkewtDownload{display:block;width:100%;min-height:36px;margin-top:8px;padding:8px;border:1px solid #484851;border-radius:0;background:#17171c;color:#fff;font:800 10px Consolas,monospace;cursor:pointer}
 #uiMetbrSkewtGithubBatchGenerate,#uiMetbrSkewtGithubBatchLoad{display:block;width:100%;min-height:36px;margin-top:8px;padding:8px;border:1px solid #484851;border-radius:0;background:#202a38;color:#fff;font:800 10px Consolas,monospace;cursor:pointer}
 #uiMetbrSkewtGithubBatchGenerate{border-color:#b12a3c;background:#751d2b}
 #uiMetbrSkewtGithubBatchGenerate:hover{background:#922438}
 #uiMetbrSkewtGithubBatchLoad:hover{border-color:#ed3448}
 #uiMetbrSkewtGithubBatchGenerate:disabled,#uiMetbrSkewtGithubBatchLoad:disabled{opacity:.45;cursor:not-allowed}
 #uiMetbrSkewtGithubBatchStatus{margin:10px 0 0;padding:8px;border:1px solid #34343c;background:#111117;color:#aeb9c8;font:11px/1.5 Arial,sans-serif;overflow-wrap:anywhere}
-#uiMetbrSkewtLoadHour:disabled,#uiMetbrSkewtDownload:disabled{opacity:.45;cursor:not-allowed}
+#uiMetbrSkewtDownload:disabled{opacity:.45;cursor:not-allowed}
 #uiMetbrSkewtStatus{margin:13px 0 0;color:#9ea0a9;font:11px/1.5 Arial,sans-serif;overflow-wrap:anywhere}
 #uiMetbrSkewtStage{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;overflow:auto;padding:12px;background:#030304}
 #uiMetbrSkewtImage{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;background:#fff;box-shadow:0 4px 24px #0008}
@@ -533,7 +531,7 @@
         <button type="button" id="uiMetbrSkewtGithubBatchLoad" disabled>CARREGAR VALIDADE SELECIONADA</button>
         <p id="uiMetbrSkewtGithubBatchStatus" role="status" aria-live="polite">A geração é executada pelo GitHub Actions. O serviço intermediário apenas inicia o workflow e entrega os PNGs.</p>
         <button type="button" id="uiMetbrSkewtDownload" disabled>BAIXAR IMAGEM PNG</button>
-        <p id="uiMetbrSkewtStatus" role="status" aria-live="polite">Preparando perfil vertical METBR…</p>
+        <p id="uiMetbrSkewtStatus" role="status" aria-live="polite">Pronto para solicitar as sondagens ao GitHub Actions.</p>
       </aside>
       <main id="uiMetbrSkewtStage" aria-label="Diagrama Skew-T do ponto selecionado">
         <div id="uiMetbrSkewtLoading">Aguardando a geração das sondagens pelo GitHub Actions…</div>
@@ -5539,11 +5537,10 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
   }
 
   async function startBatch(options = {}) {
-    if (generateButton.disabled) return;
     const requestedValue = options && typeof options === 'object' ? Number(options.autoLoadHour) : NaN;
-    const requestedHour = Number.isInteger(requestedValue) && requestedValue >= 0 && requestedValue <= 42
-      ? requestedValue
-      : Number(hourSelect.value);
+    const isAutomaticPointRequest = Number.isInteger(requestedValue) && requestedValue >= 0 && requestedValue <= 42;
+    if (generateButton.disabled && !isAutomaticPointRequest) return;
+    const requestedHour = isAutomaticPointRequest ? requestedValue : Number(hourSelect.value);
     let point;
     try { point = selectedPoint(); }
     catch (error) { setBatchStatus(error.message, true); return; }
@@ -5568,6 +5565,7 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
         cache: 'no-store',
         body: JSON.stringify({ latitude: point.latitude, longitude: point.longitude, cycle: selectedCycle() })
       });
+      if (generation !== pollGeneration) return;
       if (!request.request_id) throw new Error('O gateway não retornou o identificador do lote.');
       activeRequestId = request.request_id;
       setBatchStatus('GitHub Actions recebeu o pedido. Gerando sondagens WRF nativas para ' + point.latitude.toFixed(4) + '°, ' + point.longitude.toFixed(4) + '° · rodada ' + (request.cycle || 'latest') + '.');
@@ -5681,6 +5679,8 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
     const nextCoordinates = String(coordsNode.textContent || '').trim();
     if (nextCoordinates === lastCoordinates) return;
     lastCoordinates = nextCoordinates;
+    // O clique no mapa inicia o novo lote imediatamente; não invalide esse pedido.
+    if (generateButton.disabled) return;
     pollGeneration++;
     activeRequestId = '';
     availableHours = [];
@@ -5689,8 +5689,9 @@ close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capi
     if (oldUrl) URL.revokeObjectURL(oldUrl);
     delete image.dataset.metbrBatchObjectUrl;
     loadButton.disabled = true;
+    generateButton.disabled = false;
     downloadButtons.forEach(button => { button.disabled = true; });
-    setBatchStatus('Novo ponto selecionado. Solicite um novo lote para gerar as validades desta coordenada.');
+    setBatchStatus('Novo ponto selecionado. O pedido anterior foi descartado nesta interface.');
   });
   coordinatesObserver.observe(coordsNode, { childList: true, characterData: true, subtree: true });
 
