@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate one native METBR WRF 4-km Skew-T PNG for a requested map point/hour.
 
-This is an isolated GitHub Actions worker. It imports the established METBR
-profile extraction and renderer, but does not modify the existing scheduled
-capital publisher or the Render Click-to-Point endpoint.
+This is an isolated batch worker. It imports the established METBR profile
+extraction and renderer without changing the existing scheduled capital
+publisher or any other Click-to-Point service.
 """
 from __future__ import annotations
 
@@ -164,7 +164,7 @@ def main() -> None:
             "fh": args.forecast_hour,
             "valid": valid_time,
             "run": run_time,
-            "source": "native WRFOUT · GitHub Actions sob demanda",
+            "source": "WRFOUT nativo · sondagem pontual METBR",
             "thermal_advection": thermal_advection,
         }
         result_path = renderer.render_native_spc(sounding, temp_dir, meta)
@@ -201,7 +201,7 @@ def main() -> None:
         encoding="utf-8",
     )
     print(
-        f"[METBR Click-to-Point GitHub] F{args.forecast_hour:03d} concluído · "
+        f"[METBR Click-to-Point] F{args.forecast_hour:03d} concluído · "
         f"{len(rows)} níveis · grade a {distance_km:.2f} km · {png_path.stat().st_size} bytes",
         flush=True,
     )
