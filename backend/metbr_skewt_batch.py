@@ -15,10 +15,10 @@ from typing import Any
 
 import requests
 
-GITHUB_REPOSITORY = "progames12301-hash/sideral-backend"
-WORKFLOW_FILE = "metbr-clickpoint-skewt-batch.yml"
+GITHUB_REPOSITORY = "slaksjsjjjjjj-dev/multimodelsss"
+WORKFLOW_FILE = "METBR_CLICK_TO_POINT_STANDALONE.yml"
 GITHUB_API = "https://api.github.com"
-GITHUB_RELEASE_DOWNLOAD = "https://github.com/progames12301-hash/sideral-backend/releases/download"
+GITHUB_RELEASE_DOWNLOAD = "https://github.com/slaksjsjjjjjj-dev/multimodelsss/releases/download"
 REQUEST_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 ALLOWED_CYCLES = {"latest", "00", "06", "12", "18", "21"}
 
