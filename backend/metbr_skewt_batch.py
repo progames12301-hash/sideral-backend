@@ -9,6 +9,8 @@ import json
 import os
 import re
 import uuid
+import time
+import threading
 from typing import Any
 
 import requests
@@ -23,6 +25,32 @@ ALLOWED_CYCLES = {"latest", "00", "06", "12", "18", "21"}
 
 class BatchRequestError(RuntimeError):
     """A safe, user-displayable error raised by the isolated batch feature."""
+
+
+class BatchRateLimitError(BatchRequestError):
+    """A caller exceeded the lightweight public batch endpoint throttle."""
+
+
+_dispatch_lock = threading.Lock()
+_dispatch_ip_last: dict[str, float] = {}
+_dispatch_times: list[float] = []
+
+
+def _check_dispatch_rate(client_ip: str) -> None:
+    now = time.monotonic()
+    key = str(client_ip or "unknown")[:80]
+    with _dispatch_lock:
+        for address, stamp in list(_dispatch_ip_last.items()):
+            if now - stamp > 180:
+                _dispatch_ip_last.pop(address, None)
+        _dispatch_times[:] = [stamp for stamp in _dispatch_times if now - stamp < 60]
+        previous = _dispatch_ip_last.get(key)
+        if previous is not None and now - previous < 45:
+            raise BatchRateLimitError("Aguarde 45 segundos antes de solicitar outro lote neste navegador.")
+        if len(_dispatch_times) >= 8:
+            raise BatchRateLimitError("O serviço atingiu o limite temporário de lotes. Tente novamente em um minuto.")
+        _dispatch_ip_last[key] = now
+        _dispatch_times.append(now)
 
 
 def _request_id(value: str) -> str:
@@ -42,7 +70,7 @@ def _release_asset_url(request_id: str, asset_name: str) -> str:
     return f"{GITHUB_RELEASE_DOWNLOAD}/{tag}/{asset_name}"
 
 
-def dispatch_request(payload: dict[str, Any]) -> dict[str, Any]:
+def dispatch_request(payload: dict[str, Any], client_ip: str = "") -> dict[str, Any]:
     """Request one complete point-specific forecast-hour batch through workflow_dispatch."""
     try:
         latitude = float(payload.get("latitude"))
@@ -52,6 +80,7 @@ def dispatch_request(payload: dict[str, Any]) -> dict[str, Any]:
     if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
         raise ValueError("Latitude/longitude fora dos limites geográficos.")
 
+    _check_dispatch_rate(client_ip)
     cycle = str(payload.get("cycle") or "latest").strip().lower()
     if cycle not in ALLOWED_CYCLES:
         raise ValueError("Rodada inválida. Use latest, 00, 06, 12, 18 ou 21.")
