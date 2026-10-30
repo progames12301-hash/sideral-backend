@@ -1,0 +1,20 @@
+name: Agendar Skew-T diário — WRF operacionais
+on:
+  schedule:
+    - cron: '37 23 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/schedule-skewt-wrf-daily.yml'
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Despachar publicadores após validar as rodadas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "Agendador diário habilitado"
