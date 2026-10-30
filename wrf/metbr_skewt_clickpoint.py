@@ -164,7 +164,7 @@ def main() -> None:
             "fh": args.forecast_hour,
             "valid": valid_time,
             "run": run_time,
-            "source": "WRFOUT nativo · sondagem pontual METBR",
+            "source": "Sondagem pontual METBR",
             "thermal_advection": thermal_advection,
         }
         result_path = renderer.render_native_spc(sounding, temp_dir, meta)
