@@ -402,6 +402,12 @@
 #uiMetbrSkewtLoadHour,#uiMetbrSkewtDownload{display:block;width:100%;min-height:36px;margin-top:8px;padding:8px;border:1px solid #484851;border-radius:0;background:#17171c;color:#fff;font:800 10px Consolas,monospace;cursor:pointer}
 #uiMetbrSkewtLoadHour{border-color:#ed3448;background:#a91f32}
 #uiMetbrSkewtLoadHour:hover{background:#c72a40}
+#uiMetbrSkewtGithubBatchGenerate,#uiMetbrSkewtGithubBatchLoad{display:block;width:100%;min-height:36px;margin-top:8px;padding:8px;border:1px solid #484851;border-radius:0;background:#202a38;color:#fff;font:800 10px Consolas,monospace;cursor:pointer}
+#uiMetbrSkewtGithubBatchGenerate{border-color:#b12a3c;background:#751d2b}
+#uiMetbrSkewtGithubBatchGenerate:hover{background:#922438}
+#uiMetbrSkewtGithubBatchLoad:hover{border-color:#ed3448}
+#uiMetbrSkewtGithubBatchGenerate:disabled,#uiMetbrSkewtGithubBatchLoad:disabled{opacity:.45;cursor:not-allowed}
+#uiMetbrSkewtGithubBatchStatus{margin:10px 0 0;padding:8px;border:1px solid #34343c;background:#111117;color:#aeb9c8;font:11px/1.5 Arial,sans-serif;overflow-wrap:anywhere}
 #uiMetbrSkewtLoadHour:disabled,#uiMetbrSkewtDownload:disabled{opacity:.45;cursor:not-allowed}
 #uiMetbrSkewtStatus{margin:13px 0 0;color:#9ea0a9;font:11px/1.5 Arial,sans-serif;overflow-wrap:anywhere}
 #uiMetbrSkewtStage{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;overflow:auto;padding:12px;background:#030304}
@@ -524,6 +530,9 @@
         <label for="uiMetbrSkewtHour">Alterar validade do perfil</label>
         <select id="uiMetbrSkewtHour" aria-label="Validade do perfil Skew-T"></select>
         <button type="button" id="uiMetbrSkewtLoadHour">GERAR PERFIL</button>
+        <button type="button" id="uiMetbrSkewtGithubBatchGenerate">SOLICITAR TODAS AS VALIDADES AO GITHUB</button>
+        <button type="button" id="uiMetbrSkewtGithubBatchLoad" disabled>CARREGAR VALIDADE PRÉ-GERADA</button>
+        <p id="uiMetbrSkewtGithubBatchStatus" role="status" aria-live="polite">Geração em lote independente. O Click-to-Point do Render continua disponível acima.</p>
         <button type="button" id="uiMetbrSkewtDownload" disabled>BAIXAR IMAGEM PNG</button>
         <p id="uiMetbrSkewtStatus" role="status" aria-live="polite">Preparando perfil vertical METBR…</p>
       </aside>
@@ -5506,5 +5515,191 @@ function closeModal(){if(job){job.cancelled=true;try{job.gif?.abort();}catch(_){
 close.addEventListener('click',closeModal);modal.querySelector('[data-skewt-capitals-close]')?.addEventListener('click',closeModal);load.addEventListener('click',()=>void loadPng());[city,cycle,hour].forEach(x=>x.addEventListener('change',()=>{imageUrl='';img.hidden=true;setDownload(false);msg('Seleção alterada. Abra o PNG publicado para visualizar.');}));start.addEventListener('change',()=>{if(+end.value<+start.value)end.value=start.value;});end.addEventListener('change',()=>{if(+end.value<+start.value)start.value=end.value;});down.addEventListener('click',()=>void downloadPng());downTop.addEventListener('click',()=>void downloadPng());make.addEventListener('click',()=>void makeGif());mp4.addEventListener('click',()=>void makeMp4());cancel.addEventListener('click',()=>{if(job){job.cancelled=true;try{job.gif?.abort();}catch(_){}msg('Cancelando exportação '+(job.kind==='mp4'?'MP4':'GIF')+'…');}});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!modal.hidden)closeModal();});console.info('[METBR capitals] using published PNGs only; GIF does not invoke on-demand rendering.');
 })();
 </script>
+<script id="metbrSkewtGithubBatch">
+(() => {
+  'use strict';
+  const BACKEND = 'https://sideral-backend.onrender.com';
+  const generateButton = document.getElementById('uiMetbrSkewtGithubBatchGenerate');
+  const loadButton = document.getElementById('uiMetbrSkewtGithubBatchLoad');
+  const batchStatus = document.getElementById('uiMetbrSkewtGithubBatchStatus');
+  const hourSelect = document.getElementById('uiMetbrSkewtHour');
+  const coordsNode = document.getElementById('uiMetbrSkewtCoords');
+  const image = document.getElementById('uiMetbrSkewtImage');
+  const loading = document.getElementById('uiMetbrSkewtLoading');
+  const modal = document.getElementById('uiSkewtModal');
+  const downloadButtons = [
+    document.getElementById('uiMetbrSkewtDownload'),
+    document.getElementById('uiMetbrSkewtDownloadTop')
+  ].filter(Boolean);
+  if (!generateButton || !loadButton || !batchStatus || !hourSelect || !coordsNode || !image || !loading || !modal) return;
+
+  let activeRequestId = '';
+  let availableHours = [];
+  let batchImageActive = false;
+  let pollGeneration = 0;
+  const wait = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+
+  function setBatchStatus(message, isError = false) {
+    batchStatus.textContent = message;
+    batchStatus.style.color = isError ? '#ff858d' : '#aeb9c8';
+    batchStatus.style.borderColor = isError ? '#9f2636' : '#34343c';
+  }
+
+  function selectedPoint() {
+    const match = String(coordsNode.textContent || '').match(/(-?\d+(?:\.\d+)?)\s*°\s*,\s*(-?\d+(?:\.\d+)?)\s*°/);
+    if (!match) throw new Error('Selecione primeiro um ponto no mapa METBR.');
+    const latitude = Number(match[1]), longitude = Number(match[2]);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('As coordenadas do ponto são inválidas.');
+    return { latitude, longitude };
+  }
+
+  function selectedCycle() {
+    const line = document.getElementById('uiCycleLine')?.textContent || '';
+    const match = line.match(/\b(00|06|12|18|21)(?::00)?\s*UTC\b/i) || line.match(/\b(00|06|12|18|21)Z\b/i);
+    return match ? match[1] : 'latest';
+  }
+
+  function updateLoadButton() {
+    const hour = Number(hourSelect.value);
+    const available = Boolean(activeRequestId) && availableHours.includes(hour);
+    loadButton.disabled = !available;
+    loadButton.textContent = Number.isInteger(hour) ? 'CARREGAR F' + String(hour).padStart(3, '0') + ' PRÉ-GERADO' : 'CARREGAR VALIDADE PRÉ-GERADA';
+  }
+
+  async function requestJson(url, options) {
+    const response = await fetch(url, options);
+    const text = await response.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+    if (!response.ok) throw new Error(data.error || ('Falha HTTP ' + response.status));
+    return data;
+  }
+
+  async function startBatch() {
+    if (generateButton.disabled) return;
+    let point;
+    try { point = selectedPoint(); }
+    catch (error) { setBatchStatus(error.message, true); return; }
+
+    const generation = ++pollGeneration;
+    generateButton.disabled = true;
+    loadButton.disabled = true;
+    availableHours = [];
+    activeRequestId = '';
+    updateLoadButton();
+    setBatchStatus('Enviando coordenada ao Render para disparar um workflow independente no GitHub Actions…');
+
+    try {
+      const request = await requestJson(BACKEND + '/api/wrf/sounding/batch/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ latitude: point.latitude, longitude: point.longitude, cycle: selectedCycle() })
+      });
+      if (!request.request_id) throw new Error('O Render não retornou o identificador do lote.');
+      activeRequestId = request.request_id;
+      setBatchStatus('GitHub recebeu o pedido. Gerando sondagens nativas para a coordenada ' + point.latitude.toFixed(4) + '°, ' + point.longitude.toFixed(4) + '° · rodada ' + (request.cycle || 'latest') + '. O Click-to-Point original do Render continua funcionando.');
+
+      const deadline = Date.now() + 25 * 60 * 1000;
+      while (Date.now() < deadline && generation === pollGeneration) {
+        await wait(5000);
+        if (generation !== pollGeneration) return;
+        const state = await requestJson(BACKEND + '/api/wrf/sounding/batch/status?request_id=' + encodeURIComponent(activeRequestId), { cache: 'no-store', headers: { 'Accept': 'application/json' } });
+        if (state.status === 'completed') {
+          const manifest = state.manifest || {};
+          availableHours = (manifest.forecast_hours || state.available_hours || []).map(Number).filter(h => Number.isInteger(h) && h >= 0 && h <= 42).sort((a,b) => a-b);
+          if (!availableHours.length) throw new Error('O GitHub concluiu o workflow, mas não publicou nenhuma validade utilizável.');
+          setBatchStatus('Concluído pelo GitHub: ' + availableHours.length + ' sondagens publicadas (' + availableHours.map(h => 'F' + String(h).padStart(3, '0')).join(', ') + '). Selecione uma validade e use CARREGAR para abrir o PNG pré-gerado.');
+          updateLoadButton();
+          generateButton.disabled = false;
+          return;
+        }
+        if (state.status === 'failed') {
+          throw new Error(state.error || 'O workflow do GitHub terminou com falha. Consulte as execuções do Actions.');
+        }
+        setBatchStatus('GitHub Actions em execução' + (state.status ? ' · ' + state.status : '') + '. As validades estão sendo calculadas em paralelo; o Click-to-Point do Render permanece disponível.');
+      }
+      if (generation === pollGeneration) throw new Error('O lote ainda não foi concluído após 25 minutos. O workflow pode continuar no GitHub; tente consultar novamente mais tarde.');
+    } catch (error) {
+      if (generation === pollGeneration) setBatchStatus(error?.message || 'Falha ao solicitar as sondagens ao GitHub.', true);
+    } finally {
+      if (generation === pollGeneration) {
+        generateButton.disabled = false;
+        updateLoadButton();
+      }
+    }
+  }
+
+  async function loadBatchHour() {
+    const hour = Number(hourSelect.value);
+    if (!activeRequestId || !availableHours.includes(hour)) return;
+    loadButton.disabled = true;
+    const label = 'F' + String(hour).padStart(3, '0');
+    loading.hidden = false;
+    loading.textContent = 'Carregando PNG ' + label + ' já gerado pelo GitHub Actions…';
+    image.hidden = true;
+    downloadButtons.forEach(button => { button.disabled = true; });
+    try {
+      const src = BACKEND + '/api/wrf/sounding/batch/image?request_id=' + encodeURIComponent(activeRequestId) + '&fh=' + encodeURIComponent(hour);
+      const response = await fetch(src, { cache: 'no-store' });
+      if (!response.ok) {
+        let data = {};
+        try { data = await response.json(); } catch (_) {}
+        throw new Error(data.error || ('Não foi possível carregar ' + label + ' (HTTP ' + response.status + ').'));
+      }
+      const blob = await response.blob();
+      if (!blob.size || blob.type !== 'image/png') throw new Error('O GitHub não retornou um PNG válido para ' + label + '.');
+      const objectUrl = URL.createObjectURL(blob);
+      const oldUrl = image.dataset.metbrBatchObjectUrl;
+      if (oldUrl) URL.revokeObjectURL(oldUrl);
+      image.dataset.metbrBatchObjectUrl = objectUrl;
+      image.src = objectUrl;
+      image.alt = 'Skew-T METBR WRF 4 km pré-gerado pelo GitHub para ' + label;
+      image.hidden = false;
+      loading.hidden = true;
+      batchImageActive = true;
+      downloadButtons.forEach(button => { button.disabled = false; });
+      const fhNode = document.getElementById('uiMetbrSkewtFh');
+      if (fhNode) fhNode.textContent = label;
+      const sourceNode = document.getElementById('uiMetbrSkewtSource');
+      if (sourceNode) sourceNode.textContent = 'GitHub Actions · PNG pré-gerado · WRFOUT nativo';
+      setBatchStatus(label + ' carregado da publicação GitHub. O botão GERAR PERFIL continua sendo a geração individual original pelo Render.');
+    } catch (error) {
+      image.hidden = true;
+      loading.hidden = false;
+      loading.textContent = error?.message || 'Não foi possível carregar a validade pré-gerada.';
+      setBatchStatus(error?.message || 'Falha ao carregar o PNG do GitHub.', true);
+    } finally {
+      updateLoadButton();
+    }
+  }
+
+  function downloadBatchPng(event) {
+    if (!batchImageActive || !image.dataset.metbrBatchObjectUrl) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const hour = Number(hourSelect.value);
+    const point = selectedPoint();
+    const anchor = document.createElement('a');
+    anchor.href = image.dataset.metbrBatchObjectUrl;
+    anchor.download = 'METBR-SkewT-' + point.latitude.toFixed(3) + '_' + point.longitude.toFixed(3) + '-F' + String(hour).padStart(3, '0') + '-GITHUB.png';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
+  generateButton.addEventListener('click', startBatch);
+  loadButton.addEventListener('click', loadBatchHour);
+  hourSelect.addEventListener('change', updateLoadButton);
+  downloadButtons.forEach(button => button.addEventListener('click', downloadBatchPng, true));
+  const observer = new MutationObserver(() => {
+    if (image.src && image.src.startsWith('data:image/png;base64,')) batchImageActive = false;
+  });
+  observer.observe(image, { attributes: true, attributeFilter: ['src'] });
+  updateLoadButton();
+  console.info('[METBR Skew-T GitHub Batch] Integração separada carregada. Nenhum fluxo atual foi substituído.');
+})();
+</script>
+
 </body>
 </html>
