@@ -90,6 +90,51 @@ jobs:
           git -C published-wrf commit -m "WRF Sul 4 km manual: $(jq -r '.runDate + " " + .runCycle' wrf_publish/metadata.json)"
           git -C published-wrf push origin HEAD:wrf-data
 
+      - name: Preparar três quadros nativos do WRF Sul 4 km para Skew-T
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf skewt-staged skewt-wrfout.tar.gz
+          python - <<'PY'
+          import datetime as dt, re, shutil
+          from pathlib import Path
+          root=Path("wrf_work/run")
+          staged=Path("skewt-staged")
+          staged.mkdir(parents=True,exist_ok=True)
+          pattern=re.compile(r"^wrfout_d01_(\d{4}-\d{2}-\d{2})_(\d{2})[:.](\d{2})[:.](\d{2})$")
+          found={}
+          for path in root.glob("wrfout_d01_*"):
+              match=pattern.fullmatch(path.name)
+              if not match or not path.is_file() or path.stat().st_size==0:
+                  continue
+              valid=dt.datetime.strptime("_".join((match.group(1),match.group(2),match.group(3),match.group(4))),"%Y-%m-%d_%H_%M_%S")
+              found[valid]=path
+          if len(found)<3:
+              raise SystemExit(f"WRF Sul 4 km legado precisa de 3 WRFOUTs; encontrou {len(found)}")
+          start=min(found)
+          selected=[]
+          for hour in (0,3,6):
+              valid=start+dt.timedelta(hours=hour)
+              if valid not in found:
+                  raise SystemExit(f"Validade F{hour:03d} ausente no WRF Sul 4 km legado: {valid}")
+              target=staged/("wrfout_d01_"+valid.strftime("%Y-%m-%d_%H:%M:%S"))
+              shutil.copy2(found[valid],target)
+              selected.append(target)
+          print("Skew-T WRF Sul 4 km legado: F000, F003 e F006 nativos.")
+          PY
+          tar -czf skewt-wrfout.tar.gz -C skewt-staged .
+          test -s skewt-wrfout.tar.gz
+
+      - name: Disponibilizar WRFOUTs nativos ao publicador individual do Skew-T
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skewt-wrfout-sul-gfs-4km-legacy
+          path: skewt-wrfout.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Salvar diagnósticos em caso de falha
         if: failure()
         uses: actions/upload-artifact@v4
