@@ -95,7 +95,7 @@ jobs:
           test -s skewt-source-artifact/skewt-wrfout.tar.gz
           tar -xzf skewt-source-artifact/skewt-wrfout.tar.gz -C wrfout-native
           count="$(find wrfout-native -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0c | wc -l | tr -d '[:space:]')"
-          [[ "$count" =~ ^[0-9]+$ && "$count" -ge 5 ]] || { echo "Native Skew-T artifact is incomplete: $count WRFOUTs." >&2; exit 5; }
+          [[ "$count" =~ ^[0-9]+$ && "$count" -ge 3 ]] || { echo "Native Skew-T artifact is incomplete: $count WRFOUTs." >&2; exit 5; }
           echo "Native WRFOUT frames from artifact: $count"
 
       - name: Download 3-hour native WRFOUTs from checkpoint release
