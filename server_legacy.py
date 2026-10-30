@@ -2865,9 +2865,15 @@ class Handler(SimpleHTTPRequestHandler):
         print(f"[LOG] {format % args}")
 
     def end_headers(self) -> None:
+        # Centralized CORS policy: every response (including OPTIONS and errors)
+        # receives exactly one copy of each CORS header.
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, Range, Origin")
+        self.send_header(
+            "Access-Control-Expose-Headers",
+            "Content-Length, Content-Range, Accept-Ranges, Content-Type",
+        )
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
