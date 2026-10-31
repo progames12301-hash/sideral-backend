@@ -1,0 +1,669 @@
+{
+  "schema": "sideral-wrf2-severe-metadata-v2",
+  "model": "icon",
+  "source": "CIM WRF 8 km ICON · CAPE/CIN e diagnósticos severos",
+  "runDate": "20261030",
+  "runCycle": "12Z",
+  "initTime": "2026-10-30T12:00:00Z",
+  "generatedAt": "2026-10-30T19:33:28.382245Z",
+  "status": "complete",
+  "frameCount": 41,
+  "temporalResolutionMinutes": 60,
+  "variables": {
+    "stp": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "scp": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "srh01": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "srh03": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "bulkShear06": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "effectiveBulkShear": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "lclHeight": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "cin": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "sbcape": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "mlcape": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "mucapeWrf2": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "pwat": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "thetaE850": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "thetaEAdvection": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "wind850": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "wind500": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "vorticity500": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "omega700": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "mslp": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "thickness": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "dewpoint2m": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "kIndex": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    },
+    "totalTotals": {
+      "classification": "derived",
+      "status": "available",
+      "availableFrames": 41,
+      "totalFrames": 41
+    }
+  },
+  "diagnosticMethods": {
+    "stp": {
+      "classification": "derived",
+      "method": "fixed-layer STP",
+      "components": [
+        "MLCAPE",
+        "surface LCL height",
+        "cyclonic SRH 0-1 km",
+        "bulk shear 0-6 km",
+        "MLCIN"
+      ],
+      "rule": "Only calculated where CAPE, LCL, SRH, shear and CIN components are finite."
+    },
+    "scp": {
+      "classification": "derived",
+      "method": "SCP",
+      "components": [
+        "MUCAPE",
+        "cyclonic SRH 0-3 km",
+        "effective bulk shear proxy"
+      ],
+      "rule": "Only calculated where MUCAPE, SRH 0-3 km and shear are finite."
+    },
+    "srh01": "Bunkers cyclonic motion; 250 m hodograph; 0-1 km AGL",
+    "srh03": "Bunkers cyclonic motion; 250 m hodograph; 0-3 km AGL",
+    "bulkShear06": "10 m to 6 km AGL vector difference",
+    "effectiveBulkShear": "derived 0-6 km bulk-shear proxy; never native",
+    "lclHeight": "Bolton surface parcel",
+    "pwat": "vertical integral QVAPOR dp/g",
+    "thetaE850": "Bolton theta-e at 850 hPa",
+    "thetaEAdvection": "-V.grad(theta-e) at 850 hPa",
+    "wind850": "interpolated wind magnitude at 850 hPa",
+    "wind500": "interpolated wind magnitude at 500 hPa",
+    "vorticity500": "dvdx-dudy at 500 hPa",
+    "omega700": "-rho*g*w at 700 hPa",
+    "mslp": "hypsometric reduction from PSFC/T2/HGT",
+    "thickness": "Z500 minus extrapolated Z1000",
+    "dewpoint2m": "dewpoint from Q2/PSFC",
+    "kIndex": "T850-T500+Td850-(T700-Td700)",
+    "totalTotals": "T850+Td850-2*T500",
+    "cape": {
+      "sbcape": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "mlcape": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "mucapeWrf2": {
+        "classification": "derived",
+        "nativeSource": null
+      },
+      "cin": {
+        "classification": "derived",
+        "nativeSource": null
+      }
+    }
+  },
+  "expectedForecastHours": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40
+  ],
+  "publishedForecastHours": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40
+  ],
+  "missingForecastHours": [],
+  "frames": [
+    {
+      "index": 0,
+      "forecastHour": 0,
+      "validTime": "2026-10-30T12:00:00Z",
+      "file": "severe/icon/f000.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 1,
+      "forecastHour": 1,
+      "validTime": "2026-10-30T13:00:00Z",
+      "file": "severe/icon/f001.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 2,
+      "forecastHour": 2,
+      "validTime": "2026-10-30T14:00:00Z",
+      "file": "severe/icon/f002.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 3,
+      "forecastHour": 3,
+      "validTime": "2026-10-30T15:00:00Z",
+      "file": "severe/icon/f003.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 4,
+      "forecastHour": 4,
+      "validTime": "2026-10-30T16:00:00Z",
+      "file": "severe/icon/f004.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 5,
+      "forecastHour": 5,
+      "validTime": "2026-10-30T17:00:00Z",
+      "file": "severe/icon/f005.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 6,
+      "forecastHour": 6,
+      "validTime": "2026-10-30T18:00:00Z",
+      "file": "severe/icon/f006.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 7,
+      "forecastHour": 7,
+      "validTime": "2026-10-30T19:00:00Z",
+      "file": "severe/icon/f007.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 8,
+      "forecastHour": 8,
+      "validTime": "2026-10-30T20:00:00Z",
+      "file": "severe/icon/f008.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 9,
+      "forecastHour": 9,
+      "validTime": "2026-10-30T21:00:00Z",
+      "file": "severe/icon/f009.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 10,
+      "forecastHour": 10,
+      "validTime": "2026-10-30T22:00:00Z",
+      "file": "severe/icon/f010.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 11,
+      "forecastHour": 11,
+      "validTime": "2026-10-30T23:00:00Z",
+      "file": "severe/icon/f011.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 12,
+      "forecastHour": 12,
+      "validTime": "2026-10-31T00:00:00Z",
+      "file": "severe/icon/f012.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 13,
+      "forecastHour": 13,
+      "validTime": "2026-10-31T01:00:00Z",
+      "file": "severe/icon/f013.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 14,
+      "forecastHour": 14,
+      "validTime": "2026-10-31T02:00:00Z",
+      "file": "severe/icon/f014.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 15,
+      "forecastHour": 15,
+      "validTime": "2026-10-31T03:00:00Z",
+      "file": "severe/icon/f015.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 16,
+      "forecastHour": 16,
+      "validTime": "2026-10-31T04:00:00Z",
+      "file": "severe/icon/f016.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 17,
+      "forecastHour": 17,
+      "validTime": "2026-10-31T05:00:00Z",
+      "file": "severe/icon/f017.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 18,
+      "forecastHour": 18,
+      "validTime": "2026-10-31T06:00:00Z",
+      "file": "severe/icon/f018.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 19,
+      "forecastHour": 19,
+      "validTime": "2026-10-31T07:00:00Z",
+      "file": "severe/icon/f019.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 20,
+      "forecastHour": 20,
+      "validTime": "2026-10-31T08:00:00Z",
+      "file": "severe/icon/f020.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 21,
+      "forecastHour": 21,
+      "validTime": "2026-10-31T09:00:00Z",
+      "file": "severe/icon/f021.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 22,
+      "forecastHour": 22,
+      "validTime": "2026-10-31T10:00:00Z",
+      "file": "severe/icon/f022.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 23,
+      "forecastHour": 23,
+      "validTime": "2026-10-31T11:00:00Z",
+      "file": "severe/icon/f023.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 24,
+      "forecastHour": 24,
+      "validTime": "2026-10-31T12:00:00Z",
+      "file": "severe/icon/f024.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 25,
+      "forecastHour": 25,
+      "validTime": "2026-10-31T13:00:00Z",
+      "file": "severe/icon/f025.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 26,
+      "forecastHour": 26,
+      "validTime": "2026-10-31T14:00:00Z",
+      "file": "severe/icon/f026.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 27,
+      "forecastHour": 27,
+      "validTime": "2026-10-31T15:00:00Z",
+      "file": "severe/icon/f027.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 28,
+      "forecastHour": 28,
+      "validTime": "2026-10-31T16:00:00Z",
+      "file": "severe/icon/f028.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 29,
+      "forecastHour": 29,
+      "validTime": "2026-10-31T17:00:00Z",
+      "file": "severe/icon/f029.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 30,
+      "forecastHour": 30,
+      "validTime": "2026-10-31T18:00:00Z",
+      "file": "severe/icon/f030.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 31,
+      "forecastHour": 31,
+      "validTime": "2026-10-31T19:00:00Z",
+      "file": "severe/icon/f031.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 32,
+      "forecastHour": 32,
+      "validTime": "2026-10-31T20:00:00Z",
+      "file": "severe/icon/f032.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 33,
+      "forecastHour": 33,
+      "validTime": "2026-10-31T21:00:00Z",
+      "file": "severe/icon/f033.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 34,
+      "forecastHour": 34,
+      "validTime": "2026-10-31T22:00:00Z",
+      "file": "severe/icon/f034.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 35,
+      "forecastHour": 35,
+      "validTime": "2026-10-31T23:00:00Z",
+      "file": "severe/icon/f035.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 36,
+      "forecastHour": 36,
+      "validTime": "2026-11-01T00:00:00Z",
+      "file": "severe/icon/f036.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 37,
+      "forecastHour": 37,
+      "validTime": "2026-11-01T01:00:00Z",
+      "file": "severe/icon/f037.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 38,
+      "forecastHour": 38,
+      "validTime": "2026-11-01T02:00:00Z",
+      "file": "severe/icon/f038.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 39,
+      "forecastHour": 39,
+      "validTime": "2026-11-01T03:00:00Z",
+      "file": "severe/icon/f039.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    },
+    {
+      "index": 40,
+      "forecastHour": 40,
+      "validTime": "2026-11-01T04:00:00Z",
+      "file": "severe/icon/f040.json.gz",
+      "gridX": 279,
+      "gridY": 234,
+      "nativeGrid": true
+    }
+  ]
+}
