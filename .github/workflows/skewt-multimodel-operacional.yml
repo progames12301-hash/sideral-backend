@@ -1,4 +1,4 @@
-name: Sideral Skew-T — ECMWF, ICON, UKMO e meteoblue NEMS10
+name: Sideral Skew-T — UKMO e meteoblue NEMS10
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
         required: true
         type: choice
         default: all
-        options: [all, icon, ecmwf-hybrid, ukmo10km, nems10]
+        options: [all, ukmo10km, nems10]
       cycle:
         description: 'Rodada de previsão'
         required: true
@@ -46,8 +46,8 @@ jobs:
       fail-fast: false
       matrix:
         # job.if é avaliado antes da expansão da matriz e não pode usar matrix.model.
-        # No dispatch, cria somente o job selecionado; all e gatilhos automáticos executam os três.
-        model: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.model != 'all' && format('["{0}"]', inputs.model) || '["icon","ecmwf-hybrid","ukmo10km","nems10"]') }}
+        # No dispatch, cria somente o job selecionado; all e gatilhos automáticos executam UKMO e NEMS10.
+        model: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.model != 'all' && format('["{0}"]', inputs.model) || '["ukmo10km","nems10"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
