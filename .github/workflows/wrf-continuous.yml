@@ -33,6 +33,38 @@ jobs:
           target="$(TZ=America/Sao_Paulo date -d tomorrow +%F)"
           echo "Data local necessária: $target"
 
+          has_target() {
+            local branch="$1" minimum="$2" metadata="/tmp/${branch}.json"
+            curl -fsSL --connect-timeout 10 --max-time 30 \
+              "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${branch}/metadata.json?controller=${GITHUB_RUN_ID}" \
+              -o "$metadata" || return 1
+            python3 - "$metadata" "$target" "$minimum" <<'PY'
+          import datetime as dt
+          import json
+          import sys
+          from zoneinfo import ZoneInfo
+
+          path, target, minimum = sys.argv[1], sys.argv[2], int(sys.argv[3])
+          data = json.load(open(path, encoding='utf-8'))
+          if data.get('forecastLocalDate') == target and int(data.get('frameCount', 0)) >= minimum:
+              raise SystemExit(0)
+          if target in (data.get('forecastLocalDates') or []):
+              raise SystemExit(0)
+          count = 0
+          for frame in data.get('frames') or []:
+              value = frame.get('validTime') or frame.get('valid_time')
+              if not value:
+                  continue
+              try:
+                  parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+                  if parsed.astimezone(ZoneInfo('America/Sao_Paulo')).date().isoformat() == target:
+                      count += 1
+              except ValueError:
+                  pass
+          raise SystemExit(0 if count >= minimum else 1)
+          PY
+          }
+
           may_dispatch() {
             local workflow="$1" active now created id status age
             # WRF segments have their own timeout; never restart a healthy multi-wave run.
@@ -55,6 +87,20 @@ jobs:
             active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 30 --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested" or .status == "pending")] | length')"
             [ "$active" = "0" ]
           }
+          ensure_forecast() {
+            local label="$1" branch="$2" workflow="$3" minimum="$4"
+            if has_target "$branch" "$minimum"; then
+              echo "$label já cobre $target."
+              return
+            fi
+            if may_dispatch "$workflow"; then
+              gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
+              echo "$label iniciado para atualizar $target."
+            else
+              echo "$label já está em execução."
+            fi
+          }
+
           latest_complete_gfs() {
             python3 - <<'PY'
           import datetime as dt
