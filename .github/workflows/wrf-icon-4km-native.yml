@@ -3,11 +3,8 @@ name: WRF 7 km SUL ICON - AUTOMATICO DIARIO
 on:
   workflow_dispatch:
   schedule:
-    # Fallback diário: a execução normal também é disparada quando o ICON Global termina.
+    # Execução regional diária independente do publicador ICON Global.
     - cron: '0 6 * * *'
-  workflow_run:
-    workflows: ["ICON Global - PROXIMO DIA AUTOMATICO"]
-    types: [completed]
 
 permissions:
   contents: write

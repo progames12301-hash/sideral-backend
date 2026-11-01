@@ -3,9 +3,6 @@ name: Previsões contínuas — próximo dia
 on:
   workflow_run:
     workflows:
-      - "GFS Global — dados para Modelos"
-      - "ICON Global - PROXIMO DIA AUTOMATICO"
-      - "ECMWF IFS - PROXIMO DIA AUTOMATICO"
       - "WRF 4 km - DOIS DIAS AUTOMATICO"
       - "WRF Sudeste 4 km ICON - REFL NATIVO"
       - "WRF Sudeste 4 km ECMWF - REFL NATIVO"
@@ -168,10 +165,6 @@ jobs:
               -f run_cycle="$cycle"
             echo "WRF $candidate iniciado imediatamente."
           }
-
-          ensure_forecast "GFS" "gfs-model-data" "gfs-global-models.yml" 8
-          ensure_forecast "ICON" "icon-data" "icon-global-auto.yml" 24
-          ensure_forecast "ECMWF" "ecmwf-data" "ecmwf-ifs-auto.yml" 8
 
           # O Sudeste possui branches e workflows próprios. Não depender
           # apenas do WRF Sul: se a branch estiver ausente, vazia ou sem o
