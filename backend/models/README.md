@@ -14,14 +14,19 @@ Este módulo não simula dados. Ele publica rodadas locais presentes em `SIDERAL
 
 Nenhuma chave de provedor deve ser armazenada neste diretório ou enviada ao frontend.
 
-## Alimentação automática
+## Modelos globais descontinuados — 2026-11-01
 
-- ECMWF IFS: branch `ecmwf-data` já produzida pelo workflow oficial do projeto;
-- ICON: branch `icon-data` já produzida pelo workflow oficial do projeto;
-- GFS: `.github/workflows/gfs-global-models.yml`, dados NOAA/NCEP NOMADS;
-- AIFS: `.github/workflows/aifs-global-models.yml`, dados ECMWF Open Data.
+A publicação operacional independente foi encerrada para:
 
-GFS e AIFS usam `backend.models.publish_remote` e publicam somente JSON compactado validado. Esses processos não executam nem modificam o WRF. Chuva de 24 horas é a soma dos intervalos reais publicados; períodos incompletos não são anunciados como 24 horas.
+- AIFS — branch histórica `aifs-data`;
+- ECMWF IFS — branch histórica `ecmwf-data`;
+- ECMWF HRES 9 km — branch histórica `ecmwf-hres9km-native`;
+- GFS — branch histórica `gfs-model-data`;
+- DWD ICON Global — branch histórica `icon-data`.
+
+Os dados e branches foram preservados para consulta histórica; não devem ser considerados atualizados. Os workflows de publicação foram arquivados com a extensão `.yml.disabled`. A geração Skew-T global ECMWF/ICON/HRES também foi retirada da agenda. O workflow multimodelo continua publicando apenas UKMO e NEMS10.
+
+A descontinuação desses produtos globais não desativa os WRF regionais. Os workflows regionais mantêm suas próprias agendas e obtêm os dados de entrada diretamente das fontes GFS, ICON e ECMWF. O controlador WRF deixou de disparar ou recuperar as publicações globais independentes.
 
 ## Estrutura aceita
 
