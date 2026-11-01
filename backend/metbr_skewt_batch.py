@@ -22,6 +22,49 @@ GITHUB_RELEASE_DOWNLOAD = "https://github.com/slaksjsjjjjjj-dev/multimodelsss/re
 REQUEST_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 ALLOWED_CYCLES = {"latest", "00", "06", "12", "18", "21"}
 
+# Each HTML sends its own model_key. Keep the legacy METBR route for older pages,
+# but never silently route an unknown WRF model to METBR.
+MODEL_RUNNERS: dict[str, dict[str, Any]] = {
+    "metbr": {
+        "workflow": WORKFLOW_FILE,
+        "release_prefix": "metbr-skewt-click",
+        "max_forecast_hour": 42,
+        "uses_cycle": True,
+    },
+    "tarc_wrf_3km": {
+        "workflow": "wrf-skewt-clickpoint-tarc-3km.yml",
+        "release_prefix": "tarc-skewt-click",
+        "max_forecast_hour": 48,
+        "uses_cycle": False,
+    },
+    "sideral_wrf_4km_sudeste": {
+        "workflow": "wrf-skewt-clickpoint-sideral-4km-sudeste.yml",
+        "release_prefix": "sideral-4km-sudeste-skewt-click",
+        "max_forecast_hour": 48,
+        "uses_cycle": False,
+    },
+    "sideral_wrf_5km_sudeste": {
+        "workflow": "wrf-skewt-clickpoint-sideral-5km-sudeste.yml",
+        "release_prefix": "sideral-5km-sudeste-skewt-click",
+        "max_forecast_hour": 48,
+        "uses_cycle": False,
+    },
+    "cbr_wrf_4km": {
+        "workflow": "wrf-skewt-clickpoint-cbr-4km.yml",
+        "release_prefix": "cbr-skewt-click",
+        "max_forecast_hour": 42,
+        "uses_cycle": False,
+    },
+}
+
+
+def _model_config(model_key: str | None) -> tuple[str, dict[str, Any]]:
+    key = str(model_key or "metbr").strip().lower()
+    config = MODEL_RUNNERS.get(key)
+    if config is None:
+        raise ValueError(f"Modelo Click-to-Point não reconhecido: {key or '(vazio)'}.")
+    return key, config
+
 
 class BatchRequestError(RuntimeError):
     """A safe, user-displayable error raised by the isolated batch feature."""
@@ -60,18 +103,19 @@ def _request_id(value: str) -> str:
     return request_id
 
 
-def _release_asset_url(request_id: str, asset_name: str) -> str:
+def _release_asset_url(request_id: str, asset_name: str, model_key: str = "metbr") -> str:
     request_id = _request_id(request_id)
-    if asset_name not in {"status.json", "manifest.json"} and not re.fullmatch(
-        r"f(?:00[0-9]|0[1-3][0-9]|04[0-2])\.png", asset_name
-    ):
-        raise ValueError("Arquivo de sondagem inválido.")
-    tag = f"metbr-skewt-click-{request_id}"
+    _, config = _model_config(model_key)
+    if asset_name not in {"status.json", "manifest.json"}:
+        match = re.fullmatch(r"f(\d{3})\.png", asset_name)
+        if not match or int(match.group(1)) > int(config["max_forecast_hour"]):
+            raise ValueError("Arquivo de sondagem inválido para o modelo selecionado.")
+    tag = f"{config['release_prefix']}-{request_id}"
     return f"{GITHUB_RELEASE_DOWNLOAD}/{tag}/{asset_name}"
 
 
 def dispatch_request(payload: dict[str, Any], client_ip: str = "") -> dict[str, Any]:
-    """Request one complete point-specific forecast-hour batch through workflow_dispatch."""
+    """Dispatch a point-specific batch to the workflow belonging to model_key."""
     try:
         latitude = float(payload.get("latitude"))
         longitude = float(payload.get("longitude"))
@@ -80,39 +124,44 @@ def dispatch_request(payload: dict[str, Any], client_ip: str = "") -> dict[str, 
     if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
         raise ValueError("Latitude/longitude fora dos limites geográficos.")
 
+    model_key, config = _model_config(payload.get("model_key"))
     _check_dispatch_rate(client_ip)
-    cycle = str(payload.get("cycle") or "latest").strip().lower()
-    if cycle not in ALLOWED_CYCLES:
-        raise ValueError("Rodada inválida. Use latest, 00, 06, 12, 18 ou 21.")
 
     token = os.environ.get("METBR_SKEWT_GITHUB_TOKEN", "").strip()
     if not token:
         raise BatchRequestError(
             "O disparo do lote ainda não está habilitado no Render. "
-            "Configure a variável METBR_SKEWT_GITHUB_TOKEN com um token GitHub "
-            "que tenha permissão Actions: write neste repositório."
+            "Configure METBR_SKEWT_GITHUB_TOKEN com permissão Actions: write "
+            "no repositório slaksjsjjjjjj-dev/multimodelsss."
         )
 
     request_id = uuid.uuid4().hex
+    workflow = str(config["workflow"])
     url = (
         f"{GITHUB_API}/repos/{GITHUB_REPOSITORY}/actions/workflows/"
-        f"{WORKFLOW_FILE}/dispatches"
+        f"{workflow}/dispatches"
     )
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "Sideral-METBR-SkewT/1.0",
+        "User-Agent": "Sideral-WRF-SkewT-ClickPoint/1.0",
     }
-    body = {
-        "ref": "main",
-        "inputs": {
-            "latitude": f"{latitude:.6f}",
-            "longitude": f"{longitude:.6f}",
-            "cycle": cycle,
-            "request_id": request_id,
-        },
+    inputs = {
+        "latitude": f"{latitude:.6f}",
+        "longitude": f"{longitude:.6f}",
+        "request_id": request_id,
     }
+
+    # The legacy METBR workflow still requires a cycle input. The four WRF
+    # runners intentionally accept only coordinates and request_id.
+    if config["uses_cycle"]:
+        cycle = str(payload.get("cycle") or "latest").strip().lower()
+        if cycle not in ALLOWED_CYCLES:
+            raise ValueError("Rodada inválida. Use latest, 00, 06, 12, 18 ou 21.")
+        inputs["cycle"] = cycle
+
+    body = {"ref": "main", "inputs": inputs}
     try:
         response = requests.post(url, headers=headers, json=body, timeout=(10, 25))
     except requests.RequestException as exc:
@@ -129,28 +178,31 @@ def dispatch_request(payload: dict[str, Any], client_ip: str = "") -> dict[str, 
             detail = ""
         if response.status_code in {401, 403, 404}:
             raise BatchRequestError(
-                "O GitHub recusou o disparo do workflow "
-                f"(HTTP {response.status_code}). Verifique o token e a permissão Actions: write."
+                f"O GitHub recusou o workflow {workflow} (HTTP {response.status_code}). "
+                "Verifique o token e a permissão Actions: write."
                 + (f" Detalhe: {detail[:240]}" if detail else "")
             )
         raise BatchRequestError(
-            f"O GitHub não aceitou o lote (HTTP {response.status_code})."
+            f"O GitHub não aceitou o workflow {workflow} (HTTP {response.status_code})."
             + (f" {detail[:240]}" if detail else "")
         )
 
-    return {
+    result = {
         "status": "queued",
         "request_id": request_id,
+        "model_key": model_key,
         "latitude": latitude,
         "longitude": longitude,
-        "cycle": cycle,
-        "workflow": WORKFLOW_FILE,
-        "message": "Lote solicitado ao GitHub Actions.",
+        "workflow": workflow,
+        "release_prefix": config["release_prefix"],
+        "message": f"Pedido encaminhado ao runner {workflow}.",
     }
+    if config["uses_cycle"]:
+        result["cycle"] = inputs["cycle"]
+    return result
 
-
-def _get_json_asset(request_id: str, asset_name: str) -> dict[str, Any] | None:
-    url = _release_asset_url(request_id, asset_name)
+def _get_json_asset(request_id: str, asset_name: str, model_key: str = "metbr") -> dict[str, Any] | None:
+    url = _release_asset_url(request_id, asset_name, model_key)
     try:
         response = requests.get(
             url,
@@ -179,16 +231,17 @@ def _get_json_asset(request_id: str, asset_name: str) -> dict[str, Any] | None:
     return value
 
 
-def get_status(request_id: str) -> dict[str, Any]:
+def get_status(request_id: str, model_key: str = "metbr") -> dict[str, Any]:
     request_id = _request_id(request_id)
-    status = _get_json_asset(request_id, "status.json")
+    model_key, _ = _model_config(model_key)
+    status = _get_json_asset(request_id, "status.json", model_key)
     if status is None:
         return {"status": "queued", "request_id": request_id}
 
     result = dict(status)
     result.setdefault("request_id", request_id)
     if result.get("status") == "completed":
-        manifest = _get_json_asset(request_id, "manifest.json")
+        manifest = _get_json_asset(request_id, "manifest.json", model_key)
         if manifest is not None:
             result["manifest"] = manifest
             result["available_hours"] = manifest.get("forecast_hours") or result.get("available_hours") or []
@@ -197,23 +250,24 @@ def get_status(request_id: str) -> dict[str, Any]:
     return result
 
 
-def get_png(request_id: str, forecast_hour: int) -> bytes:
+def get_png(request_id: str, forecast_hour: int, model_key: str = "metbr") -> bytes:
     request_id = _request_id(request_id)
+    model_key, config = _model_config(model_key)
     try:
         hour = int(forecast_hour)
     except (TypeError, ValueError):
         raise ValueError("Validade inválida.") from None
-    if hour < 0 or hour > 42:
-        raise ValueError("Validade fora do intervalo F000–F042.")
+    if hour < 0 or hour > int(config["max_forecast_hour"]):
+        raise ValueError(f"Validade fora do intervalo F000–F{int(config['max_forecast_hour']):03d}.")
 
-    status = _get_json_asset(request_id, "status.json")
+    status = _get_json_asset(request_id, "status.json", model_key)
     if status is None or status.get("status") != "completed":
         raise FileNotFoundError("O lote ainda não foi concluído.")
     available = status.get("available_hours") or []
     if hour not in {int(value) for value in available}:
         raise FileNotFoundError(f"F{hour:03d} não foi gerado neste lote.")
 
-    url = _release_asset_url(request_id, f"f{hour:03d}.png")
+    url = _release_asset_url(request_id, f"f{hour:03d}.png", model_key)
     try:
         response = requests.get(
             url,
