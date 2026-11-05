@@ -9,7 +9,7 @@
     48
   ],
   "temporalResolutionMinutes": 60,
-  "initTime": "2026-11-05T00:00:00Z",
+  "initTime": "2026-11-06T06:00:00Z",
   "grid": {
     "nx": 336,
     "ny": 500
@@ -53,7 +53,7 @@
   "frames": [
     {
       "forecastHour": 0,
-      "time": "2026-11-05T00:00:00Z",
+      "time": "2026-11-06T06:00:00Z",
       "file": "frames/f000.json.gz",
       "grid": {
         "nx": 336,
@@ -69,16 +69,16 @@
           "max": 0.0
         },
         "wind10Ms": {
-          "min": 0.004352044779807329,
-          "max": 15.386490821838379
+          "min": 0.0019404576160013676,
+          "max": 11.35258674621582
         },
         "t2C": {
-          "min": 14.90118408203125,
-          "max": 31.712860107421875
+          "min": 8.46466064453125,
+          "max": 28.600006103515625
         },
         "psfcHpa": {
-          "min": 807.4137573242188,
-          "max": 1013.1338500976562
+          "min": 806.5610961914062,
+          "max": 1013.618408203125
         }
       },
       "availableVariables": [
@@ -107,7 +107,7 @@
     },
     {
       "forecastHour": 1,
-      "time": "2026-11-05T01:00:00Z",
+      "time": "2026-11-06T07:00:00Z",
       "file": "frames/f001.json.gz",
       "grid": {
         "nx": 336,
@@ -116,23 +116,23 @@
       "ranges": {
         "reflectivityDbz": {
           "min": -35.0,
-          "max": 49.40245819091797
+          "max": 31.309085845947266
         },
         "reflectivityCompositeDbz": {
           "min": -35.0,
-          "max": 63.234867095947266
+          "max": 31.309085845947266
         },
         "wind10Ms": {
-          "min": 0.010773204267024994,
-          "max": 15.232163429260254
+          "min": 0.0017249981174245477,
+          "max": 10.913668632507324
         },
         "t2C": {
-          "min": 11.63201904296875,
-          "max": 30.326171875
+          "min": 6.69781494140625,
+          "max": 26.958343505859375
         },
         "psfcHpa": {
-          "min": 806.6810302734375,
-          "max": 1012.6621704101562
+          "min": 807.4422607421875,
+          "max": 1014.6972045898438
         }
       },
       "availableVariables": [
@@ -161,7 +161,7 @@
     },
     {
       "forecastHour": 2,
-      "time": "2026-11-05T02:00:00Z",
+      "time": "2026-11-06T08:00:00Z",
       "file": "frames/f002.json.gz",
       "grid": {
         "nx": 336,
@@ -170,23 +170,23 @@
       "ranges": {
         "reflectivityDbz": {
           "min": -35.0,
-          "max": 51.707183837890625
+          "max": 40.95109558105469
         },
         "reflectivityCompositeDbz": {
           "min": -35.0,
-          "max": 65.24537658691406
+          "max": 42.38554763793945
         },
         "wind10Ms": {
-          "min": 0.011232494376599789,
-          "max": 12.7114896774292
+          "min": 0.0031557357870042324,
+          "max": 10.63311767578125
         },
         "t2C": {
-          "min": 12.4744873046875,
-          "max": 29.554168701171875
+          "min": 6.653106689453125,
+          "max": 26.843231201171875
         },
         "psfcHpa": {
-          "min": 806.0758666992188,
-          "max": 1012.2406005859375
+          "min": 807.9241943359375,
+          "max": 1015.046142578125
         }
       },
       "availableVariables": [
@@ -215,7 +215,7 @@
     },
     {
       "forecastHour": 3,
-      "time": "2026-11-05T03:00:00Z",
+      "time": "2026-11-06T09:00:00Z",
       "file": "frames/f003.json.gz",
       "grid": {
         "nx": 336,
@@ -224,23 +224,23 @@
       "ranges": {
         "reflectivityDbz": {
           "min": -35.0,
-          "max": 52.714046478271484
+          "max": 36.326351165771484
         },
         "reflectivityCompositeDbz": {
           "min": -35.0,
-          "max": 69.68609619140625
+          "max": 36.326351165771484
         },
         "wind10Ms": {
-          "min": 0.009853271767497063,
-          "max": 14.083823204040527
+          "min": 0.007713195867836475,
+          "max": 10.633898735046387
         },
         "t2C": {
-          "min": 12.1307373046875,
-          "max": 29.580413818359375
+          "min": 6.374542236328125,
+          "max": 29.25567626953125
         },
         "psfcHpa": {
-          "min": 806.6253051757812,
-          "max": 1011.81982421875
+          "min": 808.353515625,
+          "max": 1015.6470336914062
         }
       },
       "availableVariables": [
@@ -269,7 +269,7 @@
     },
     {
       "forecastHour": 4,
-      "time": "2026-11-05T04:00:00Z",
+      "time": "2026-11-06T10:00:00Z",
       "file": "frames/f004.json.gz",
       "grid": {
         "nx": 336,
@@ -278,23 +278,23 @@
       "ranges": {
         "reflectivityDbz": {
           "min": -35.0,
-          "max": 52.07422637939453
+          "max": 33.96870803833008
         },
         "reflectivityCompositeDbz": {
           "min": -35.0,
-          "max": 67.52748107910156
+          "max": 33.96870803833008
         },
         "wind10Ms": {
-          "min": 0.003688130294904113,
-          "max": 13.869709968566895
+          "min": 0.004937071818858385,
+          "max": 10.417180061340332
         },
         "t2C": {
-          "min": 11.600860595703125,
-          "max": 29.84478759765625
+          "min": 8.96221923828125,
+          "max": 30.82427978515625
         },
         "psfcHpa": {
-          "min": 806.9537353515625,
-          "max": 1011.9547119140625
+          "min": 808.8322143554688,
+          "max": 1016.1798706054688
         }
       },
       "availableVariables": [
@@ -323,7 +323,7 @@
     },
     {
       "forecastHour": 5,
-      "time": "2026-11-05T05:00:00Z",
+      "time": "2026-11-06T11:00:00Z",
       "file": "frames/f005.json.gz",
       "grid": {
         "nx": 336,
@@ -332,23 +332,23 @@
       "ranges": {
         "reflectivityDbz": {
           "min": -35.0,
-          "max": 52.535308837890625
+          "max": 32.545570373535156
         },
         "reflectivityCompositeDbz": {
           "min": -35.0,
-          "max": 69.25859069824219
+          "max": 32.545570373535156
         },
         "wind10Ms": {
-          "min": 0.010608353652060032,
-          "max": 14.143064498901367
+          "min": 0.004043190740048885,
+          "max": 10.160276412963867
         },
         "t2C": {
-          "min": 11.61907958984375,
-          "max": 29.82427978515625
+          "min": 12.23309326171875,
+          "max": 32.4368896484375
         },
         "psfcHpa": {
-          "min": 806.4127197265625,
-          "max": 1011.1303100585938
+          "min": 808.9705200195312,
+          "max": 1016.2200927734375
         }
       },
       "availableVariables": [
@@ -377,7 +377,7 @@
     },
     {
       "forecastHour": 6,
-      "time": "2026-11-05T06:00:00Z",
+      "time": "2026-11-06T12:00:00Z",
       "file": "frames/f006.json.gz",
       "grid": {
         "nx": 336,
@@ -386,671 +386,23 @@
       "ranges": {
         "reflectivityDbz": {
           "min": -35.0,
-          "max": 52.514488220214844
+          "max": 31.866920471191406
         },
         "reflectivityCompositeDbz": {
           "min": -35.0,
-          "max": 72.39064025878906
+          "max": 32.72673034667969
         },
         "wind10Ms": {
-          "min": 0.004400298930704594,
-          "max": 15.656536102294922
+          "min": 0.014236214570701122,
+          "max": 10.54190731048584
         },
         "t2C": {
-          "min": 11.819854736328125,
-          "max": 31.040924072265625
+          "min": 13.46844482421875,
+          "max": 34.99774169921875
         },
         "psfcHpa": {
-          "min": 805.721923828125,
-          "max": 1010.9834594726562
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 7,
-      "time": "2026-11-05T07:00:00Z",
-      "file": "frames/f007.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.68592071533203
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 70.65205383300781
-        },
-        "wind10Ms": {
-          "min": 0.01595740020275116,
-          "max": 17.915241241455078
-        },
-        "t2C": {
-          "min": 11.573028564453125,
-          "max": 31.549285888671875
-        },
-        "psfcHpa": {
-          "min": 805.9032592773438,
-          "max": 1011.3416137695312
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 8,
-      "time": "2026-11-05T08:00:00Z",
-      "file": "frames/f008.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.96977233886719
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 69.7837142944336
-        },
-        "wind10Ms": {
-          "min": 0.005784276407212019,
-          "max": 13.772397994995117
-        },
-        "t2C": {
-          "min": 12.31915283203125,
-          "max": 31.780487060546875
-        },
-        "psfcHpa": {
-          "min": 806.2913818359375,
-          "max": 1012.2288818359375
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 9,
-      "time": "2026-11-05T09:00:00Z",
-      "file": "frames/f009.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.81162643432617
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 70.5008773803711
-        },
-        "wind10Ms": {
-          "min": 0.005279845092445612,
-          "max": 15.89283561706543
-        },
-        "t2C": {
-          "min": 13.502044677734375,
-          "max": 31.8935546875
-        },
-        "psfcHpa": {
-          "min": 806.190673828125,
-          "max": 1012.9501342773438
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 10,
-      "time": "2026-11-05T10:00:00Z",
-      "file": "frames/f010.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.94925308227539
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 72.19242858886719
-        },
-        "wind10Ms": {
-          "min": 0.005512596573680639,
-          "max": 14.165414810180664
-        },
-        "t2C": {
-          "min": 13.600250244140625,
-          "max": 33.75665283203125
-        },
-        "psfcHpa": {
-          "min": 807.0187377929688,
-          "max": 1013.1868896484375
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 11,
-      "time": "2026-11-05T11:00:00Z",
-      "file": "frames/f011.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 53.57942199707031
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 70.03772735595703
-        },
-        "wind10Ms": {
-          "min": 0.002892825985327363,
-          "max": 14.203502655029297
-        },
-        "t2C": {
-          "min": 13.651519775390625,
-          "max": 35.731292724609375
-        },
-        "psfcHpa": {
-          "min": 807.5947875976562,
-          "max": 1013.29052734375
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 12,
-      "time": "2026-11-05T12:00:00Z",
-      "file": "frames/f012.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.83321762084961
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 67.97443389892578
-        },
-        "wind10Ms": {
-          "min": 0.006030794698745012,
-          "max": 14.662049293518066
-        },
-        "t2C": {
-          "min": 14.2899169921875,
-          "max": 38.105133056640625
-        },
-        "psfcHpa": {
-          "min": 807.927001953125,
-          "max": 1013.552001953125
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 13,
-      "time": "2026-11-05T13:00:00Z",
-      "file": "frames/f013.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.444610595703125
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 71.69371795654297
-        },
-        "wind10Ms": {
-          "min": 0.016797516494989395,
-          "max": 15.0934476852417
-        },
-        "t2C": {
-          "min": 14.867218017578125,
-          "max": 39.22393798828125
-        },
-        "psfcHpa": {
-          "min": 807.7982788085938,
-          "max": 1012.8485717773438
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 14,
-      "time": "2026-11-05T14:00:00Z",
-      "file": "frames/f014.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.57123947143555
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 70.21600341796875
-        },
-        "wind10Ms": {
-          "min": 0.01840227283537388,
-          "max": 16.6251163482666
-        },
-        "t2C": {
-          "min": 15.19256591796875,
-          "max": 40.05035400390625
-        },
-        "psfcHpa": {
-          "min": 807.67041015625,
-          "max": 1012.2269287109375
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 15,
-      "time": "2026-11-05T15:00:00Z",
-      "file": "frames/f015.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 53.13935852050781
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 70.45793151855469
-        },
-        "wind10Ms": {
-          "min": 0.032614126801490784,
-          "max": 16.568092346191406
-        },
-        "t2C": {
-          "min": 15.952117919921875,
-          "max": 40.883209228515625
-        },
-        "psfcHpa": {
-          "min": 807.1146240234375,
-          "max": 1012.0765380859375
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 16,
-      "time": "2026-11-05T16:00:00Z",
-      "file": "frames/f016.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 52.71649932861328
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 72.16287994384766
-        },
-        "wind10Ms": {
-          "min": 0.003344136755913496,
-          "max": 20.582361221313477
-        },
-        "t2C": {
-          "min": 16.1353759765625,
-          "max": 41.916900634765625
-        },
-        "psfcHpa": {
-          "min": 806.8414916992188,
-          "max": 1012.0457153320312
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 17,
-      "time": "2026-11-05T17:00:00Z",
-      "file": "frames/f017.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 53.417747497558594
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 71.68147277832031
-        },
-        "wind10Ms": {
-          "min": 0.008137322962284088,
-          "max": 18.58100128173828
-        },
-        "t2C": {
-          "min": 16.365081787109375,
-          "max": 42.702667236328125
-        },
-        "psfcHpa": {
-          "min": 806.7310180664062,
-          "max": 1012.056884765625
-        }
-      },
-      "availableVariables": [
-        "cloudFraction",
-        "graupelncMm",
-        "hailncMm",
-        "lat",
-        "lon",
-        "psfcHpa",
-        "q2KgKg",
-        "rainTotalMm",
-        "raincMm",
-        "rainncMm",
-        "rainshMm",
-        "reflectivityCompositeDbz",
-        "reflectivityDbz",
-        "rh2Pct",
-        "snowncMm",
-        "t2C",
-        "td2C",
-        "u10Ms",
-        "v10Ms",
-        "wind10DirDeg",
-        "wind10Ms"
-      ]
-    },
-    {
-      "forecastHour": 18,
-      "time": "2026-11-05T18:00:00Z",
-      "file": "frames/f018.json.gz",
-      "grid": {
-        "nx": 336,
-        "ny": 500
-      },
-      "ranges": {
-        "reflectivityDbz": {
-          "min": -35.0,
-          "max": 53.08623123168945
-        },
-        "reflectivityCompositeDbz": {
-          "min": -35.0,
-          "max": 70.89263153076172
-        },
-        "wind10Ms": {
-          "min": 0.011197374202311039,
-          "max": 16.99454116821289
-        },
-        "t2C": {
-          "min": 16.22528076171875,
-          "max": 42.461517333984375
-        },
-        "psfcHpa": {
-          "min": 806.2416381835938,
-          "max": 1012.134033203125
+          "min": 809.5415649414062,
+          "max": 1016.6914672851562
         }
       },
       "availableVariables": [
@@ -1078,8 +430,20 @@
       ]
     }
   ],
-  "frameCount": 19,
+  "frameCount": 7,
   "missingForecastHours": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
     19,
     20,
     21,
@@ -1113,5 +477,5 @@
   ],
   "status": "partial",
   "publicationStatus": "partial",
-  "sourceRunId": 41853505866
+  "sourceRunId": 42002342958
 }
