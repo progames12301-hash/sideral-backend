@@ -34,6 +34,8 @@ jobs:
             wrf-sudeste-ecmwf-data
             cim-wrf-3km-icon-data
             cim-wrf-3km-ecmwf-data
+            cim-wrf-4km-data
+            cim-wrf2-4km-data
         shell: bash
         run: |
           set -euo pipefail
