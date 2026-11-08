@@ -81,7 +81,14 @@ prepare_source_with_fallback() {
         FORCE_RUN_DATE="$RUN_DATE"
         FORCE_RUN_CYCLE="$RUN_CYCLE"
         export FORCE_RUN_DATE FORCE_RUN_CYCLE
-        echo "CIM4: ciclo ICON validado e fixado: $RUN_DATE $RUN_CYCLE Z"
+        ICON_SOURCE_DATE="${ICON_SOURCE_DATE:-$RUN_DATE}"
+        ICON_SOURCE_CYCLE="${ICON_SOURCE_CYCLE:-$RUN_CYCLE}"
+        ICON_OFFSET_HOURS="${ICON_OFFSET_HOURS:-0}"
+        echo "CIM4: ciclo ICON fonte $ICON_SOURCE_DATE $ICON_SOURCE_CYCLE Z; validade $RUN_DATE $RUN_CYCLE Z; offset=$ICON_OFFSET_HOURS h"
+      else
+        ICON_SOURCE_DATE=""
+        ICON_SOURCE_CYCLE=""
+        ICON_OFFSET_HOURS=""
       fi
       echo "CIM ICON SOURCE: fonte escolhida ${selected^^}"
       break
@@ -95,7 +102,9 @@ prepare_source_with_fallback() {
   }
 
   SOURCE_MODEL="$selected"
-  printf 'RUN_DATE=%s\nRUN_CYCLE=%s\nSOURCE_MODEL=%s\n' "$RUN_DATE" "$RUN_CYCLE" "$SOURCE_MODEL" > cim4-run.env
+  printf 'RUN_DATE=%s\nRUN_CYCLE=%s\nSOURCE_MODEL=%s\nWRF2_TOMORROW=%s\nWRF2_ICON_ONLY=%s\nICON_SOURCE_DATE=%s\nICON_SOURCE_CYCLE=%s\nICON_OFFSET_HOURS=%s\n' \
+    "$RUN_DATE" "$RUN_CYCLE" "$SOURCE_MODEL" "${WRF2_TOMORROW:-0}" "${WRF2_ICON_ONLY:-0}" \
+    "${ICON_SOURCE_DATE:-}" "${ICON_SOURCE_CYCLE:-}" "${ICON_OFFSET_HOURS:-}" > cim4-run.env
   gh release upload "$CHECKPOINT_TAG" cim4-run.env --repo "$GITHUB_REPOSITORY" --clobber
 }
 
@@ -103,6 +112,7 @@ if [[ "$COLD_START" == "0" ]]; then
   rm -rf "$INPUT"/*
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'cim4-run.env' --dir . --clobber
   source cim4-run.env
+  export WRF2_TOMORROW="${WRF2_TOMORROW:-0}" WRF2_ICON_ONLY="${WRF2_ICON_ONLY:-0}"
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern "cim4-restart-$START_HOUR-*" --dir "$INPUT" --clobber
   gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'cim4-namelist.input' --dir "$INPUT" --clobber
   mkdir -p "$INPUT/normalized"
