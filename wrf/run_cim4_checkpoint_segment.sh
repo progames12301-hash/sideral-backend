@@ -86,7 +86,7 @@ prepare_source_with_fallback() {
       echo "CIM ICON SOURCE: fonte escolhida ${selected^^}"
       break
     fi
-    echo "SIDERAL ICON SOURCE: ${model^^} falhou (exit=$rc); seguindo para a proxima fonte"
+    echo "CIM4 ICON SOURCE: ${model^^} falhou (exit=$rc); seguindo para a proxima fonte"
   done
 
   [[ -n "$selected" ]] || {
@@ -132,7 +132,7 @@ if [[ "$COLD_START" == "0" ]]; then
   export WRF_RESTART_DIR="$INPUT/normalized"
   RESTART_STARTED_AT="$(date +%s)"
   bash wrf/run_cim4_restart_segment.sh "$START_HOUR" "$END_HOUR" "$WRF_RESTART_DIR"
-  echo "SIDERAL_METRIC restart_forecast_seconds=$(( $(date +%s) - RESTART_STARTED_AT ))"
+  echo "CIM4_METRIC restart_forecast_seconds=$(( $(date +%s) - RESTART_STARTED_AT ))"
 
   OUTPUT_DIR="$ROOT/cim4_segment_output"
   test -d "$OUTPUT_DIR"
