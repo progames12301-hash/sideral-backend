@@ -1,0 +1,227 @@
+name: Publish CIM WRF 4 km compact JSON checkpoints
+
+on:
+  repository_dispatch:
+    types:
+      - cim4-checkpoint-published
+      - cim4-wrf2-checkpoint-published
+  workflow_dispatch:
+    inputs:
+      model:
+        description: CIM product to republish
+        required: true
+        type: choice
+        options:
+          - cim4
+          - cim4_2
+      run_id:
+        description: Source CIM 4 km workflow run ID (blank = latest)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: regional-json-cim4-${{ github.event.action || inputs.model || 'automatic' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout publisher
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Resolve model, run and checkpoint release
+        id: checkpoint
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_RUN_ID: ${{ github.event.client_payload.run_id }}
+          INPUT_MODEL: ${{ inputs.model }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "repository_dispatch" ]]; then
+            if [[ "$EVENT_ACTION" == "cim4-wrf2-checkpoint-published" ]]; then MODEL="cim4_2"; else MODEL="cim4"; fi
+            RUN_ID="$EVENT_RUN_ID"
+          else
+            MODEL="$INPUT_MODEL"
+            RUN_ID="$INPUT_RUN_ID"
+          fi
+          case "$MODEL" in
+            cim4)
+              WORKFLOW_FILE="cim-wrf-4km.yml"
+              DATA_BRANCH="cim-wrf-4km-data"
+              TAG_PREFIX="cim4-checkpoint"
+              MODEL_KEY="cim_wrf_4km"
+              ;;
+            cim4_2)
+              WORKFLOW_FILE="cim-wrf2-4km.yml"
+              DATA_BRANCH="cim-wrf2-4km-data"
+              TAG_PREFIX="cim4-wrf2-checkpoint"
+              MODEL_KEY="cim_wrf2_4km"
+              ;;
+            *) echo "Modelo CIM inválido: $MODEL" >&2; exit 2 ;;
+          esac
+          if [[ ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
+            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          fi
+          if [[ ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "Não foi possível identificar a execução CIM de origem."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TAG="${TAG_PREFIX}-$RUN_ID"
+          RELEASE="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets 2>/dev/null || true)"
+          if [[ -z "$RELEASE" ]]; then
+            echo "Checkpoint $TAG ainda não existe; publicação adiada."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ASSET_COUNT="$(jq '[.assets[].name | select(test("^[0-9]{8}_[0-9]{6}[.]npz$"))] | length' <<< "$RELEASE")"
+          LATEST_NPZ="$(jq -r '[.assets[].name | select(test("^[0-9]{8}_[0-9]{6}[.]npz$"))] | sort | last // empty' <<< "$RELEASE")"
+          if [[ "$ASSET_COUNT" -lt 1 || -z "$LATEST_NPZ" ]]; then
+            echo "Checkpoint $TAG ainda não contém NPZs compactos."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p checkpoint_probe
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern cim4-run.env --dir checkpoint_probe --clobber
+          if gh api "repos/$GITHUB_REPOSITORY/contents/metadata.json?ref=$DATA_BRANCH" > existing-api.json 2>/dev/null; then
+            jq -r '.content' existing-api.json | base64 --decode > existing-metadata.json
+          else
+            printf '{"initTime":"","frames":[],"frameCount":0,"status":"partial"}\n' > existing-metadata.json
+          fi
+          SHOULD_PUBLISH="$(python3 - "$LATEST_NPZ" "$ASSET_COUNT" existing-metadata.json <<'PY'
+          import json, re, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          values = {}
+          for line in (Path("checkpoint_probe") / "cim4-run.env").read_text(encoding="utf-8").splitlines():
+              if "=" in line and not line.strip().startswith("#"):
+                  key, value = line.split("=", 1)
+                  values[key.strip()] = value.strip().strip('"').strip("'")
+          date = values.get("RUN_DATE", "").replace("-", "")
+          cycle = values.get("RUN_CYCLE", "")
+          if not re.fullmatch(r"\d{8}", date) or cycle not in {"00","06","12","18"}:
+              raise SystemExit("RUN_DATE/RUN_CYCLE inválidos no checkpoint CIM.")
+          candidate_init = datetime.strptime(date + cycle, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+          match = re.fullmatch(r"(\d{8})_(\d{6})\.npz", sys.argv[1])
+          if not match:
+              raise SystemExit("Nome NPZ inesperado: " + sys.argv[1])
+          candidate_end = datetime.strptime(match.group(1)+match.group(2), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+          candidate_count = int(sys.argv[2])
+          try:
+              existing = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+          except Exception:
+              existing = {}
+          if not existing.get("initTime"):
+              publish = True
+          else:
+              existing_init = datetime.fromisoformat(existing["initTime"].replace("Z","+00:00"))
+              frames = existing.get("frames") or []
+              last = max(frames, key=lambda f:int(f.get("forecastHour",-1))) if frames else {}
+              end_s = last.get("time") or last.get("validTime")
+              existing_end = datetime.fromisoformat(end_s.replace("Z","+00:00")) if end_s else None
+              existing_count = int(existing.get("frameCount",len(frames)))
+              if candidate_init < existing_init:
+                  publish = False
+              elif candidate_init > existing_init:
+                  publish = True
+              elif existing.get("status") == "complete" and candidate_count <= existing_count:
+                  publish = False
+              else:
+                  publish = existing_end is None or candidate_end > existing_end or candidate_count > existing_count
+          print("true" if publish else "false")
+          PY
+          )"
+          if [[ "$SHOULD_PUBLISH" != "true" ]]; then
+            echo "JSON CIM já cobre este checkpoint; publicação incremental ignorada."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+          echo "model_key=$MODEL_KEY" >> "$GITHUB_OUTPUT"
+          echo "branch=$DATA_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "asset_count=$ASSET_COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Download NPZ checkpoint assets
+        if: steps.checkpoint.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.checkpoint.outputs.tag }}
+        run: |
+          set -euo pipefail
+          rm -rf cim4_input cim4_publish
+          mkdir -p cim4_input
+          cp checkpoint_probe/cim4-run.env cim4_input/cim4-run.env
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.npz' --dir cim4_input --clobber
+          test -n "$(find cim4_input -maxdepth 1 -type f -name '*.npz' -size +0c -print -quit)"
+          python3 -m pip install --disable-pip-version-check -q 'numpy>=1.24,<3'
+
+      - name: Build JSON from compact native-grid NPZs
+        if: steps.checkpoint.outputs.publish == 'true'
+        env:
+          MODEL: ${{ steps.checkpoint.outputs.model }}
+          RUN_ID: ${{ steps.checkpoint.outputs.run_id }}
+          MODEL_KEY: ${{ steps.checkpoint.outputs.model_key }}
+        run: |
+          set -euo pipefail
+          python3 -m py_compile wrf/publish_sideral_checkpoint_json.py
+          python3 wrf/publish_sideral_checkpoint_json.py --model "$MODEL" --input-dir cim4_input --run-env cim4_input/cim4-run.env --output-dir cim4_publish --source-run-id "$RUN_ID"
+          python3 - <<'PY'
+          import gzip, json
+          from pathlib import Path
+          root=Path("cim4_publish")
+          meta=json.loads((root/"metadata.json").read_text(encoding="utf-8"))
+          files=sorted((root/"frames").glob("f*.json.gz"))
+          assert meta["modelKey"] == __import__("os").environ["MODEL_KEY"]
+          assert meta["resolutionKm"] == 4
+          assert meta["frameCount"] == len(files) >= 1
+          assert meta["forecastHours"] == [0,40]
+          assert meta["status"] in {"partial","complete"}
+          for item in meta["frames"]:
+              with gzip.open(root/item["file"],"rt",encoding="utf-8") as stream:
+                  frame=json.load(stream)
+              assert frame["modelKey"] == meta["modelKey"]
+              assert frame["nativeReflectivity"] == "REFL_10CM"
+              assert frame["nativeGrid"] is True
+              assert len(frame["fields"]["lat"]) == len(frame["fields"]["lon"])
+          print(f'{meta["model"]}: {meta["frameCount"]}/41 frames; grid={meta["grid"]}; status={meta["status"]}')
+          PY
+
+      - name: Publish metadata and frames to CIM data branch
+        if: steps.checkpoint.outputs.publish == 'true'
+        env:
+          DATA_BRANCH: ${{ steps.checkpoint.outputs.branch }}
+        run: |
+          set -euo pipefail
+          rm -rf cim_data_checkout
+          git clone --filter=blob:none --depth 1 --sparse --branch "$DATA_BRANCH" "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" cim_data_checkout
+          cd cim_data_checkout
+          git sparse-checkout set --no-cone README.md metadata.json variable_catalog.json
+          mkdir -p frames
+          cp -f ../cim4_publish/metadata.json metadata.json
+          cp -f ../wrf/cim4_variable_catalog.json variable_catalog.json
+          cp -f ../cim4_publish/frames/*.json.gz frames/
+          git config user.name "sideral-cim4-bot"
+          git config user.email "sideralmeteorologia@gmail.com"
+          git add --sparse metadata.json variable_catalog.json frames/
+          if git diff --cached --quiet; then
+            echo "CIM: branch já contém os mesmos dados."
+            exit 0
+          fi
+          git commit -m "publish: CIM WRF 4 km compact checkpoint $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin "$DATA_BRANCH"
