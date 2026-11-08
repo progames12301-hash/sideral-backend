@@ -17,10 +17,6 @@ permissions:
   contents: write
   actions: read
 
-concurrency:
-  group: cim-wrf-4km-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-${{ github.run_id }}
-  cancel-in-progress: false
-
 env:
   PYTHON_VERSION: '3.12'
   WRF_TARGET_RESOLUTION_KM: '4'
@@ -49,20 +45,13 @@ jobs:
   seg00:
     name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F000-F006
     runs-on: ubuntu-22.04
-    timeout-minutes: 478
+    timeout-minutes: 350
     steps:
       - name: Checkout CIM 4 km runner
         uses: actions/checkout@v4
         with:
           ref: cim-wrf-4km-runner
           fetch-depth: 1
-
-      - name: Login Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install WRF input and validation dependencies
         shell: bash
@@ -136,7 +125,7 @@ jobs:
   seg01:
     name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F006-F012
     runs-on: ubuntu-22.04
-    timeout-minutes: 478
+    timeout-minutes: 350
     needs: seg00
     steps:
       - name: Checkout CIM 4 km runner
@@ -144,12 +133,6 @@ jobs:
         with:
           ref: cim-wrf-4km-runner
           fetch-depth: 1
-
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install WRF input and validation dependencies
         shell: bash
@@ -219,7 +202,7 @@ jobs:
   seg02:
     name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F012-F018
     runs-on: ubuntu-22.04
-    timeout-minutes: 478
+    timeout-minutes: 350
     needs: seg01
     steps:
       - name: Checkout CIM 4 km runner
@@ -227,12 +210,6 @@ jobs:
         with:
           ref: cim-wrf-4km-runner
           fetch-depth: 1
-
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install WRF input and validation dependencies
         shell: bash
@@ -302,7 +279,7 @@ jobs:
   seg03:
     name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F018-F024
     runs-on: ubuntu-22.04
-    timeout-minutes: 478
+    timeout-minutes: 350
     needs: seg02
     steps:
       - name: Checkout CIM 4 km runner
@@ -310,12 +287,6 @@ jobs:
         with:
           ref: cim-wrf-4km-runner
           fetch-depth: 1
-
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install WRF input and validation dependencies
         shell: bash
@@ -385,7 +356,7 @@ jobs:
   seg04:
     name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F024-F030
     runs-on: ubuntu-22.04
-    timeout-minutes: 478
+    timeout-minutes: 350
     needs: seg03
     steps:
       - name: Checkout CIM 4 km runner
@@ -393,12 +364,6 @@ jobs:
         with:
           ref: cim-wrf-4km-runner
           fetch-depth: 1
-
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install WRF input and validation dependencies
         shell: bash
@@ -468,7 +433,7 @@ jobs:
   seg05:
     name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F030-F036
     runs-on: ubuntu-22.04
-    timeout-minutes: 478
+    timeout-minutes: 350
     needs: seg04
     steps:
       - name: Checkout CIM 4 km runner
@@ -476,12 +441,6 @@ jobs:
         with:
           ref: cim-wrf-4km-runner
           fetch-depth: 1
-
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install WRF input and validation dependencies
         shell: bash
@@ -551,7 +510,7 @@ jobs:
   seg06:
     name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F036-F042
     runs-on: ubuntu-22.04
-    timeout-minutes: 478
+    timeout-minutes: 350
     needs: seg05
     steps:
       - name: Checkout CIM 4 km runner
@@ -559,12 +518,6 @@ jobs:
         with:
           ref: cim-wrf-4km-runner
           fetch-depth: 1
-
-      - name: Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install WRF input and validation dependencies
         shell: bash
