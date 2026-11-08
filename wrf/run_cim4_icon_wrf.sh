@@ -26,29 +26,45 @@ SOURCE_END_HOUR="${WRF_BOUNDARY_END_HOUR:-$WRF_END_HOUR}"
   exit 2
 }
 
-# WRF2: a validade WRF comeca 24 h apos o ciclo ICON fonte.
-# O selector valida todos os campos/horarios fonte de F024 a F072 antes da integracao.
+# WRF2: keep the requested valid time tomorrow, but select the newest complete ICON source cycle.
+# Each candidate is checked for every boundary field and forecast step needed by the WRF2 window.
 if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
   TARGET_DATE="${FORCE_RUN_DATE:-${RUN_DATE:-}}"
   TARGET_CYCLE="$(printf '%02d' "$((10#${FORCE_RUN_CYCLE:-${RUN_CYCLE:-0}}))")"
   [[ "$TARGET_DATE" =~ ^[0-9]{8}$ && "$TARGET_CYCLE" =~ ^(00|06|12|18)$ ]] || {
     echo "WRF2 CIM4: data/ciclo alvo de amanha invalidos: $TARGET_DATE $TARGET_CYCLE" >&2; exit 21;
   }
-  SOURCE_BASE="$(date -u -d "${TARGET_DATE} ${TARGET_CYCLE}:00 UTC -24 hours" +%Y%m%d%H)"
-  ICON_SOURCE_DATE="${SOURCE_BASE:0:8}"
-  ICON_SOURCE_CYCLE="${SOURCE_BASE:8:2}"
+
   SELECTION_ENV="$ROOT/cim4-icon-source-run.env"
-  python3 "$ROOT/wrf/select_tarc_icon_run.py" \
-    --start-hour "$((WRF_START_HOUR+24))" --end-hour "$((SOURCE_END_HOUR+24))" \
-    --date "$ICON_SOURCE_DATE" --cycle "$ICON_SOURCE_CYCLE" --output "$SELECTION_ENV"
-  source "$SELECTION_ENV"
-  ICON_SOURCE_DATE="$RUN_DATE"
-  ICON_SOURCE_CYCLE="$RUN_CYCLE"
-  ICON_OFFSET=24
+  SELECTED_ICON=0
+  for SOURCE_OFFSET in 24 30 36 42 48 54 60 66; do
+    SOURCE_BASE="$(date -u -d "${TARGET_DATE} ${TARGET_CYCLE}:00 UTC -${SOURCE_OFFSET} hours" +%Y%m%d%H)"
+    ICON_SOURCE_DATE="${SOURCE_BASE:0:8}"
+    ICON_SOURCE_CYCLE="${SOURCE_BASE:8:2}"
+    echo "WRF2 CIM4: verificando ICON fonte ${ICON_SOURCE_DATE} ${ICON_SOURCE_CYCLE}Z; offset=${SOURCE_OFFSET}h"
+    if python3 "$ROOT/wrf/select_tarc_icon_run.py" \
+      --start-hour "$((WRF_START_HOUR+SOURCE_OFFSET))" \
+      --end-hour "$((SOURCE_END_HOUR+SOURCE_OFFSET))" \
+      --date "$ICON_SOURCE_DATE" --cycle "$ICON_SOURCE_CYCLE" --output "$SELECTION_ENV"; then
+      source "$SELECTION_ENV"
+      ICON_SOURCE_DATE="$RUN_DATE"
+      ICON_SOURCE_CYCLE="$RUN_CYCLE"
+      ICON_OFFSET="$SOURCE_OFFSET"
+      SELECTED_ICON=1
+      break
+    fi
+    echo "WRF2 CIM4: ICON ${ICON_SOURCE_DATE} ${ICON_SOURCE_CYCLE}Z incompleto para a validade solicitada."
+  done
+
+  [[ "$SELECTED_ICON" == "1" ]] || {
+    echo "WRF2 CIM4: nenhum ciclo ICON completo encontrado para a validade $TARGET_DATE $TARGET_CYCLE; não usar dados incompletos." >&2
+    exit 23
+  }
+
   RUN_DATE="$TARGET_DATE"
   RUN_CYCLE="$TARGET_CYCLE"
-  printf 'RUN_DATE=%s\nRUN_CYCLE=%s\nSOURCE_MODEL=icon\nWRF2_TOMORROW=1\n' \
-    "$RUN_DATE" "$RUN_CYCLE" > "$ROOT/cim4-icon-run.env"
+  printf 'RUN_DATE=%s\nRUN_CYCLE=%s\nSOURCE_MODEL=icon\nWRF2_TOMORROW=1\nICON_SOURCE_DATE=%s\nICON_SOURCE_CYCLE=%s\nICON_OFFSET_HOURS=%s\n' \
+    "$RUN_DATE" "$RUN_CYCLE" "$ICON_SOURCE_DATE" "$ICON_SOURCE_CYCLE" "$ICON_OFFSET" > "$ROOT/cim4-icon-run.env"
 else
   SELECTION_ARGS=(--start-hour "$WRF_START_HOUR" --end-hour "$SOURCE_END_HOUR" --output "$ROOT/cim4-icon-run.env")
   if [[ -n "$FORCE_RUN_DATE" && -n "$FORCE_RUN_CYCLE" ]]; then
