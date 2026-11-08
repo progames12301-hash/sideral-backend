@@ -9,6 +9,7 @@ on:
       - 'wrf/publish_sideral_checkpoint_json.py'
   schedule:
     - cron: '37 10 * * *'
+  # Rebuild after CIM 4 km runner maintenance.
   workflow_dispatch:
 
 permissions:
