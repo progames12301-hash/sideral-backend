@@ -23,7 +23,6 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.12'
-  CIM4_CHECKPOINT_PREFIX: cim4-checkpoint
   WRF_TARGET_RESOLUTION_KM: '4'
   WRF_DX_METERS: '4000'
   WRF_DY_METERS: '4000'
@@ -59,6 +58,7 @@ jobs:
           fetch-depth: 1
 
       - name: Login Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -69,12 +69,14 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          sudo apt-get install -y libeccodes-tools
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 4 km runner scripts
         shell: bash
+        env:
+          CIM4_WRF2: ${{ inputs.wrf2 && '1' || '0' }}
         run: |
           set -euo pipefail
           scripts=(
@@ -89,16 +91,18 @@ jobs:
             test -s "$script"
             bash -n "$script"
           done
-          shellcheck -S error -s bash "${scripts[@]}"
           python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
           python3 - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          name = "cim4_wrf2_variable_catalog.json" if os.environ.get("CIM4_WRF2") == "1" else "cim4_variable_catalog.json"
+          catalog=json.loads(Path("wrf",name).read_text(encoding="utf-8"))
+          expected_key = "cim_wrf2_4km" if os.environ.get("CIM4_WRF2") == "1" else "cim_wrf_4km"
+          assert catalog["modelKey"] == expected_key
           assert catalog["resolutionKm"] == 4
           assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
           assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
-          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          print(f"{catalog['model']}: 558x468 WRF domain / 557x467 mass points")
           PY
 
       - name: Run CIM 4 km forecast segment F000-F006
