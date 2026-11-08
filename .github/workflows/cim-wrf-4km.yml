@@ -2,7 +2,7 @@ name: CIM WRF 4 KM - ICON → ECMWF → GFS · 40h horario
 
 on:
   schedule:
-    - cron: '37 8 * * *'
+    - cron: '37 10 * * *'
   workflow_dispatch:
 
 permissions:
