@@ -3023,6 +3023,8 @@ class Handler(SimpleHTTPRequestHandler):
         "wrf-sul-gfs-4km-legacy": "WRF Sul 4 km legado GFS",
         "wrf-cim-icon-8km": "CIM WRF 8 km ICON",
         "wrf-cim-ecmwf-8km": "CIM WRF 8 km ECMWF",
+        "wrf-cim-4km": "CIM WRF 4 km",
+        "wrf-cim2-4km": "CIM WRF2 4 km",
         "wrf-cbr-4km": "WRF CBR 4 km",
         "wrf-cbr2-4km": "WRF2 CBR 4 km",
         "wrf-tarc-3km": "WRF TARC 3 km",
