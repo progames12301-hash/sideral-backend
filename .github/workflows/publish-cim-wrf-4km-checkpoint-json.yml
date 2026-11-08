@@ -214,7 +214,11 @@ jobs:
           git sparse-checkout set --no-cone README.md metadata.json variable_catalog.json
           mkdir -p frames
           cp -f ../cim4_publish/metadata.json metadata.json
-          cp -f ../wrf/cim4_variable_catalog.json variable_catalog.json
+          if [[ "${{ steps.checkpoint.outputs.model }}" == "cim4_2" ]]; then
+            cp -f ../wrf/cim4_wrf2_variable_catalog.json variable_catalog.json
+          else
+            cp -f ../wrf/cim4_variable_catalog.json variable_catalog.json
+          fi
           cp -f ../cim4_publish/frames/*.json.gz frames/
           git config user.name "sideral-cim4-bot"
           git config user.email "sideralmeteorologia@gmail.com"
