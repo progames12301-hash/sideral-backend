@@ -16,7 +16,7 @@ INPUT="$ROOT/cim4_restart_input"
 mkdir -p "$INPUT"
 
 (( START_HOUR >= 0 && END_HOUR > START_HOUR && START_HOUR % 3 == 0 && END_HOUR % 3 == 0 && END_HOUR <= 42 )) || {
-  echo "F000-F048 CIM4: intervalo invalido" >&2
+  echo "F000-F042 CIM4: intervalo invalido" >&2
   exit 1
 }
 case "$COLD_START" in 0|1) ;; *) echo "COLD_START deve ser 1 no F000" >&2; exit 1 ;; esac
@@ -33,7 +33,7 @@ chmod +x wrf/run_cim4_checkpoint_segment.sh wrf/run_cim4_icon_wrf.sh wrf/run_cim
 
 export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-4}"
 export WRF_DX_METERS="${WRF_DX_METERS:-4000}" WRF_DY_METERS="${WRF_DY_METERS:-4000}"
-export WRF_E_WE="${WRF_E_WE:-337}" WRF_E_SN="${WRF_E_SN:-501}"
+export WRF_E_WE="${WRF_E_WE:-558}" WRF_E_SN="${WRF_E_SN:-468}"
 export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}"
 export WRF_TIME_STEP="${WRF_TIME_STEP:-20}"
 export WRF_MPI_PROCS="${WRF_MPI_PROCS:-4}"
@@ -83,7 +83,7 @@ prepare_source_with_fallback() {
         export FORCE_RUN_DATE FORCE_RUN_CYCLE
         echo "CIM4: ciclo ICON validado e fixado: $RUN_DATE $RUN_CYCLE Z"
       fi
-      echo "SIDERAL ICON SOURCE: fonte escolhida ${selected^^}"
+      echo "CIM ICON SOURCE: fonte escolhida ${selected^^}"
       break
     fi
     echo "SIDERAL ICON SOURCE: ${model^^} falhou (exit=$rc); seguindo para a proxima fonte"
@@ -117,14 +117,14 @@ if [[ "$COLD_START" == "0" ]]; then
   export RUN_DATE RUN_CYCLE
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
   export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-4}" WRF_DX_METERS="${WRF_DX_METERS:-4000}" WRF_DY_METERS="${WRF_DY_METERS:-4000}"
-  export WRF_E_WE="${WRF_E_WE:-337}" WRF_E_SN="${WRF_E_SN:-501}"
+  export WRF_E_WE="${WRF_E_WE:-558}" WRF_E_SN="${WRF_E_SN:-468}"
   export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}" WRF_TIME_STEP="${WRF_TIME_STEP:-20}" WRF_MPI_PROCS="${WRF_MPI_PROCS:-4}"
   export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
   export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
   echo "CIM: preparando LBC com fallback ICON -> ECMWF -> GFS F$START_HOUR-F$END_HOUR"
   BOUNDARY_PREP_STARTED_AT="$(date +%s)"
   prepare_source_with_fallback 1
-  echo "SIDERAL_METRIC boundary_prepare_seconds=$(( $(date +%s) - BOUNDARY_PREP_STARTED_AT ))"
+  echo "CIM4_METRIC boundary_prepare_seconds=$(( $(date +%s) - BOUNDARY_PREP_STARTED_AT ))"
   test -s "$ROOT/wrf_work/run/wrfbdy_d01" || { echo "LBC CIM4 ausente para F$START_HOUR-F$END_HOUR" >&2; exit 27; }
   cp -f "$ROOT/wrf_work/run/wrfbdy_d01" "$INPUT/normalized/wrfbdy_d01"
   test -s "$INPUT/normalized/wrfbdy_d01"
@@ -155,7 +155,7 @@ if os.environ.get("WRF2_TOMORROW") == "1":
 open("cim4-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\nWRF2_TOMORROW={os.environ.get('WRF2_TOMORROW','0')}\n")
 PY
   source cim4-run.env
-  gh release create "$CHECKPOINT_TAG" --target cim-wrf-4km-runner --prerelease --latest=false --repo "$GITHUB_REPOSITORY" --notes "WRF SIDERAL 4 KM SUDESTE ICON checkpoint $GITHUB_RUN_ID" || true
+  gh release create "$CHECKPOINT_TAG" --target cim-wrf-4km-runner --prerelease --latest=false --repo "$GITHUB_REPOSITORY" --notes "CIM WRF 4 KM checkpoint $GITHUB_RUN_ID" || true
   gh release upload "$CHECKPOINT_TAG" cim4-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
@@ -174,7 +174,7 @@ PY
   for f in wrf_work/run/wrfbdy_d01; do cp -f "$f" "cim4-boundary-$(basename "$f")"; done
   cp -f wrf_work/run/namelist.input cim4-namelist.input
 
-  gh release upload "$CHECKPOINT_TAG"     cim4-run.env cim4-namelist.input cim4-boundary-3km-*     cim4-restart-$END_HOUR-* cim4-wrfout-$SEGMENT_INDEX-*     --repo "$GITHUB_REPOSITORY" --clobber
+  gh release upload "$CHECKPOINT_TAG"     cim4-run.env cim4-namelist.input cim4-boundary-*     cim4-restart-$END_HOUR-* cim4-wrfout-$SEGMENT_INDEX-*     --repo "$GITHUB_REPOSITORY" --clobber
 fi
 
 
@@ -194,12 +194,12 @@ if [[ -n "$(find "$POST_INPUT" -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0
 fi
 
 echo "SIDERAL_METRIC segment=F$START_HOUR-F$END_HOUR total_seconds=$(( $(date +%s) - SEGMENT_STARTED_AT ))"
-echo "SIDERAL checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
+echo "CIM4 checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
 # Notify the main-branch incremental publisher after compact NPZs have reached the checkpoint Release.
 if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
-  PUBLISH_EVENT=sideral-wrf-4km-sudeste-2-checkpoint-published
+  PUBLISH_EVENT=cim4-wrf2-checkpoint-published
 else
-  PUBLISH_EVENT=sideral-wrf-4km-sudeste-checkpoint-published
+  PUBLISH_EVENT=cim4-checkpoint-published
 fi
 if ! gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
   -f "event_type=$PUBLISH_EVENT" \
