@@ -1,0 +1,649 @@
+name: CIM WRF 4 km — reusable operational runner
+
+on:
+  workflow_call:
+    inputs:
+      wrf2:
+        description: Run the next-day CIM WRF2 ICON-only configuration
+        required: true
+        type: boolean
+      scheduled_cycle:
+        description: Optional fixed target cycle for scheduled runs
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: cim-wrf-4km-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.12'
+  CIM4_CHECKPOINT_PREFIX: cim4-checkpoint
+  WRF_TARGET_RESOLUTION_KM: '4'
+  WRF_DX_METERS: '4000'
+  WRF_DY_METERS: '4000'
+  WRF_E_WE: '558'
+  WRF_E_SN: '468'
+  WRF_TIME_STEP: '20'
+  WRF_HISTORY_INTERVAL_MINUTES: '60'
+  WRF_MPI_PROCS: '8'
+  WRF_REF_LAT: '-27.50'
+  WRF_REF_LON: '-52.75'
+  WRF_STAND_LON: '-52.75'
+  ICON_SOURCE_XSIZE: '113'
+  ICON_SOURCE_YSIZE: '89'
+  ICON_SOURCE_XFIRST: '-67.0'
+  ICON_SOURCE_YFIRST: '-39.0'
+  ICON_SOURCE_XINC: '0.25'
+  ICON_SOURCE_YINC: '0.25'
+  ECMWF_SOURCE_WEST: '-67'
+  ECMWF_SOURCE_EAST: '-39'
+  ECMWF_SOURCE_SOUTH: '-39'
+  ECMWF_SOURCE_NORTH: '-17'
+
+jobs:
+  seg00:
+    name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F000-F006
+    runs-on: ubuntu-22.04
+    timeout-minutes: 478
+    steps:
+      - name: Checkout CIM 4 km runner
+        uses: actions/checkout@v4
+        with:
+          ref: cim-wrf-4km-runner
+          fetch-depth: 1
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install WRF input and validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+
+      - name: Validate CIM 4 km runner scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cim4_checkpoint_segment.sh
+            wrf/run_cim4_icon_wrf.sh
+            wrf/run_cim4_ecmwf_wrf.sh
+            wrf/run_cim4_gfs_wrf.sh
+            wrf/run_cim4_wrf_with_source.sh
+            wrf/run_cim4_restart_segment.sh
+          )
+          for script in "${scripts[@]}"; do
+            test -s "$script"
+            bash -n "$script"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          assert catalog["resolutionKm"] == 4
+          assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
+          assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
+          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          PY
+
+      - name: Run CIM 4 km forecast segment F000-F006
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+          WRF2_TOMORROW: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF2_ICON_ONLY: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF_SCHEDULED_CYCLE: ${{ inputs.scheduled_cycle }}
+          SOURCE_MODEL: icon
+          WRF_START_HOUR: '0'
+          WRF_END_HOUR: '6'
+          WRF_BOUNDARY_END_HOUR: '6'
+        run: |
+          set -euo pipefail
+          chmod +x wrf/run_cim4_checkpoint_segment.sh
+          bash wrf/run_cim4_checkpoint_segment.sh 0 6 0 1
+
+      - name: Save CIM 4 km diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim4-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-seg00-diagnostics-${{ github.run_id }}
+          path: |
+            cim4_diagnostics/
+            cim4_segment_output/rsl.*
+            wrf_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg01:
+    name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F006-F012
+    runs-on: ubuntu-22.04
+    timeout-minutes: 478
+    needs: seg00
+    steps:
+      - name: Checkout CIM 4 km runner
+        uses: actions/checkout@v4
+        with:
+          ref: cim-wrf-4km-runner
+          fetch-depth: 1
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install WRF input and validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+
+      - name: Validate CIM 4 km runner scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cim4_checkpoint_segment.sh
+            wrf/run_cim4_icon_wrf.sh
+            wrf/run_cim4_ecmwf_wrf.sh
+            wrf/run_cim4_gfs_wrf.sh
+            wrf/run_cim4_wrf_with_source.sh
+            wrf/run_cim4_restart_segment.sh
+          )
+          for script in "${scripts[@]}"; do
+            test -s "$script"
+            bash -n "$script"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          assert catalog["resolutionKm"] == 4
+          assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
+          assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
+          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          PY
+
+      - name: Run CIM 4 km forecast segment F006-F012
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+          WRF2_TOMORROW: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF2_ICON_ONLY: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF_SCHEDULED_CYCLE: ${{ inputs.scheduled_cycle }}
+          SOURCE_MODEL: icon
+          WRF_START_HOUR: '6'
+          WRF_END_HOUR: '12'
+          WRF_BOUNDARY_END_HOUR: '12'
+        run: |
+          set -euo pipefail
+          chmod +x wrf/run_cim4_checkpoint_segment.sh
+          bash wrf/run_cim4_checkpoint_segment.sh 6 12 1 0
+
+      - name: Save CIM 4 km diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim4-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-seg01-diagnostics-${{ github.run_id }}
+          path: |
+            cim4_diagnostics/
+            cim4_segment_output/rsl.*
+            wrf_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg02:
+    name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F012-F018
+    runs-on: ubuntu-22.04
+    timeout-minutes: 478
+    needs: seg01
+    steps:
+      - name: Checkout CIM 4 km runner
+        uses: actions/checkout@v4
+        with:
+          ref: cim-wrf-4km-runner
+          fetch-depth: 1
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install WRF input and validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+
+      - name: Validate CIM 4 km runner scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cim4_checkpoint_segment.sh
+            wrf/run_cim4_icon_wrf.sh
+            wrf/run_cim4_ecmwf_wrf.sh
+            wrf/run_cim4_gfs_wrf.sh
+            wrf/run_cim4_wrf_with_source.sh
+            wrf/run_cim4_restart_segment.sh
+          )
+          for script in "${scripts[@]}"; do
+            test -s "$script"
+            bash -n "$script"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          assert catalog["resolutionKm"] == 4
+          assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
+          assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
+          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          PY
+
+      - name: Run CIM 4 km forecast segment F012-F018
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+          WRF2_TOMORROW: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF2_ICON_ONLY: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF_SCHEDULED_CYCLE: ${{ inputs.scheduled_cycle }}
+          SOURCE_MODEL: icon
+          WRF_START_HOUR: '12'
+          WRF_END_HOUR: '18'
+          WRF_BOUNDARY_END_HOUR: '18'
+        run: |
+          set -euo pipefail
+          chmod +x wrf/run_cim4_checkpoint_segment.sh
+          bash wrf/run_cim4_checkpoint_segment.sh 12 18 2 0
+
+      - name: Save CIM 4 km diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim4-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-seg02-diagnostics-${{ github.run_id }}
+          path: |
+            cim4_diagnostics/
+            cim4_segment_output/rsl.*
+            wrf_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg03:
+    name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F018-F024
+    runs-on: ubuntu-22.04
+    timeout-minutes: 478
+    needs: seg02
+    steps:
+      - name: Checkout CIM 4 km runner
+        uses: actions/checkout@v4
+        with:
+          ref: cim-wrf-4km-runner
+          fetch-depth: 1
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install WRF input and validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+
+      - name: Validate CIM 4 km runner scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cim4_checkpoint_segment.sh
+            wrf/run_cim4_icon_wrf.sh
+            wrf/run_cim4_ecmwf_wrf.sh
+            wrf/run_cim4_gfs_wrf.sh
+            wrf/run_cim4_wrf_with_source.sh
+            wrf/run_cim4_restart_segment.sh
+          )
+          for script in "${scripts[@]}"; do
+            test -s "$script"
+            bash -n "$script"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          assert catalog["resolutionKm"] == 4
+          assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
+          assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
+          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          PY
+
+      - name: Run CIM 4 km forecast segment F018-F024
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+          WRF2_TOMORROW: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF2_ICON_ONLY: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF_SCHEDULED_CYCLE: ${{ inputs.scheduled_cycle }}
+          SOURCE_MODEL: icon
+          WRF_START_HOUR: '18'
+          WRF_END_HOUR: '24'
+          WRF_BOUNDARY_END_HOUR: '24'
+        run: |
+          set -euo pipefail
+          chmod +x wrf/run_cim4_checkpoint_segment.sh
+          bash wrf/run_cim4_checkpoint_segment.sh 18 24 3 0
+
+      - name: Save CIM 4 km diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim4-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-seg03-diagnostics-${{ github.run_id }}
+          path: |
+            cim4_diagnostics/
+            cim4_segment_output/rsl.*
+            wrf_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg04:
+    name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F024-F030
+    runs-on: ubuntu-22.04
+    timeout-minutes: 478
+    needs: seg03
+    steps:
+      - name: Checkout CIM 4 km runner
+        uses: actions/checkout@v4
+        with:
+          ref: cim-wrf-4km-runner
+          fetch-depth: 1
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install WRF input and validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+
+      - name: Validate CIM 4 km runner scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cim4_checkpoint_segment.sh
+            wrf/run_cim4_icon_wrf.sh
+            wrf/run_cim4_ecmwf_wrf.sh
+            wrf/run_cim4_gfs_wrf.sh
+            wrf/run_cim4_wrf_with_source.sh
+            wrf/run_cim4_restart_segment.sh
+          )
+          for script in "${scripts[@]}"; do
+            test -s "$script"
+            bash -n "$script"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          assert catalog["resolutionKm"] == 4
+          assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
+          assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
+          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          PY
+
+      - name: Run CIM 4 km forecast segment F024-F030
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+          WRF2_TOMORROW: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF2_ICON_ONLY: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF_SCHEDULED_CYCLE: ${{ inputs.scheduled_cycle }}
+          SOURCE_MODEL: icon
+          WRF_START_HOUR: '24'
+          WRF_END_HOUR: '30'
+          WRF_BOUNDARY_END_HOUR: '30'
+        run: |
+          set -euo pipefail
+          chmod +x wrf/run_cim4_checkpoint_segment.sh
+          bash wrf/run_cim4_checkpoint_segment.sh 24 30 4 0
+
+      - name: Save CIM 4 km diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim4-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-seg04-diagnostics-${{ github.run_id }}
+          path: |
+            cim4_diagnostics/
+            cim4_segment_output/rsl.*
+            wrf_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg05:
+    name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F030-F036
+    runs-on: ubuntu-22.04
+    timeout-minutes: 478
+    needs: seg04
+    steps:
+      - name: Checkout CIM 4 km runner
+        uses: actions/checkout@v4
+        with:
+          ref: cim-wrf-4km-runner
+          fetch-depth: 1
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install WRF input and validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+
+      - name: Validate CIM 4 km runner scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cim4_checkpoint_segment.sh
+            wrf/run_cim4_icon_wrf.sh
+            wrf/run_cim4_ecmwf_wrf.sh
+            wrf/run_cim4_gfs_wrf.sh
+            wrf/run_cim4_wrf_with_source.sh
+            wrf/run_cim4_restart_segment.sh
+          )
+          for script in "${scripts[@]}"; do
+            test -s "$script"
+            bash -n "$script"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          assert catalog["resolutionKm"] == 4
+          assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
+          assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
+          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          PY
+
+      - name: Run CIM 4 km forecast segment F030-F036
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+          WRF2_TOMORROW: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF2_ICON_ONLY: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF_SCHEDULED_CYCLE: ${{ inputs.scheduled_cycle }}
+          SOURCE_MODEL: icon
+          WRF_START_HOUR: '30'
+          WRF_END_HOUR: '36'
+          WRF_BOUNDARY_END_HOUR: '36'
+        run: |
+          set -euo pipefail
+          chmod +x wrf/run_cim4_checkpoint_segment.sh
+          bash wrf/run_cim4_checkpoint_segment.sh 30 36 5 0
+
+      - name: Save CIM 4 km diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim4-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-seg05-diagnostics-${{ github.run_id }}
+          path: |
+            cim4_diagnostics/
+            cim4_segment_output/rsl.*
+            wrf_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  seg06:
+    name: CIM WRF 4 km ${{ inputs.wrf2 && 'WRF2' || 'principal' }} · F036-F042
+    runs-on: ubuntu-22.04
+    timeout-minutes: 478
+    needs: seg05
+    steps:
+      - name: Checkout CIM 4 km runner
+        uses: actions/checkout@v4
+        with:
+          ref: cim-wrf-4km-runner
+          fetch-depth: 1
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install WRF input and validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-tools shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+
+      - name: Validate CIM 4 km runner scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts=(
+            wrf/run_cim4_checkpoint_segment.sh
+            wrf/run_cim4_icon_wrf.sh
+            wrf/run_cim4_ecmwf_wrf.sh
+            wrf/run_cim4_gfs_wrf.sh
+            wrf/run_cim4_wrf_with_source.sh
+            wrf/run_cim4_restart_segment.sh
+          )
+          for script in "${scripts[@]}"; do
+            test -s "$script"
+            bash -n "$script"
+          done
+          shellcheck -S error -s bash "${scripts[@]}"
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path("wrf/cim4_variable_catalog.json").read_text(encoding="utf-8"))
+          assert catalog["resolutionKm"] == 4
+          assert catalog["domain"]["e_we"] == 558 and catalog["domain"]["e_sn"] == 468
+          assert catalog["domain"]["dx_m"] == 4000 and catalog["domain"]["dy_m"] == 4000
+          print("CIM 4 km catalog: 558x468 WRF domain / 557x467 mass points")
+          PY
+
+      - name: Run CIM 4 km forecast segment F036-F042
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+          WRF2_TOMORROW: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF2_ICON_ONLY: ${{ inputs.wrf2 && '1' || '0' }}
+          WRF_SCHEDULED_CYCLE: ${{ inputs.scheduled_cycle }}
+          SOURCE_MODEL: icon
+          WRF_START_HOUR: '36'
+          WRF_END_HOUR: '42'
+          WRF_BOUNDARY_END_HOUR: '42'
+        run: |
+          set -euo pipefail
+          chmod +x wrf/run_cim4_checkpoint_segment.sh
+          bash wrf/run_cim4_checkpoint_segment.sh 36 42 6 0
+
+      - name: Save CIM 4 km diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim4-${{ inputs.wrf2 && 'wrf2' || 'primary' }}-seg06-diagnostics-${{ github.run_id }}
+          path: |
+            cim4_diagnostics/
+            cim4_segment_output/rsl.*
+            wrf_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  verify:
+    name: Verify CIM 4 km checkpoint and forecast frames
+    runs-on: ubuntu-22.04
+    needs: [seg00, seg01, seg02, seg03, seg04, seg05, seg06]
+    steps:
+      - name: Install GitHub CLI
+        run: gh --version
+      - name: Validate complete checkpoint release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --json assets > release.json
+          NPZ_COUNT="$(jq '[.assets[].name | select(test("^[0-9]{8}_[0-9]{6}[.]npz$"))] | length' release.json)"
+          WRFOUT_COUNT="$(jq '[.assets[].name | select(test("^cim4-wrfout-[0-9]+-wrfout_d01_"))] | length' release.json)"
+          test "$NPZ_COUNT" -ge 41
+          test "$WRFOUT_COUNT" -ge 5
+          echo "CIM 4 km checkpoint validado: NPZ=$NPZ_COUNT; WRFOUT=$WRFOUT_COUNT"
