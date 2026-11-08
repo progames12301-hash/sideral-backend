@@ -11,7 +11,7 @@ OUTPUT="$ROOT/cim4_segment_output"
 MPI_PROCS="$WRF_MPI_PROCS"
 HIST="$WRF_HISTORY_INTERVAL_MINUTES"
 
-(( START_H > 0 && END_H > START_H && START_H % 3 == 0 && END_H % 3 == 0 && END_H <= 48 )) || {
+(( START_H > 0 && END_H > START_H && START_H % 3 == 0 && END_H % 3 == 0 && END_H <= 42 )) || {
   echo "Restart CIM4 invalido: F$START_H-F$END_H" >&2
   exit 2
 }
