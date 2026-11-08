@@ -38,7 +38,7 @@ if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
   ICON_SOURCE_DATE="${SOURCE_BASE:0:8}"
   ICON_SOURCE_CYCLE="${SOURCE_BASE:8:2}"
   SELECTION_ENV="$ROOT/cim4-icon-source-run.env"
-  python3 "$ROOT/wrf/select_cim4_icon_run.py" \
+  python3 "$ROOT/wrf/select_tarc_icon_run.py" \
     --start-hour "$((WRF_START_HOUR+24))" --end-hour "$((SOURCE_END_HOUR+24))" \
     --date "$ICON_SOURCE_DATE" --cycle "$ICON_SOURCE_CYCLE" --output "$SELECTION_ENV"
   source "$SELECTION_ENV"
@@ -54,7 +54,7 @@ else
   if [[ -n "$FORCE_RUN_DATE" && -n "$FORCE_RUN_CYCLE" ]]; then
     SELECTION_ARGS+=(--date "$FORCE_RUN_DATE" --cycle "$FORCE_RUN_CYCLE")
   fi
-  python3 "$ROOT/wrf/select_cim4_icon_run.py" "${SELECTION_ARGS[@]}"
+  python3 "$ROOT/wrf/select_tarc_icon_run.py" "${SELECTION_ARGS[@]}"
   source "$ROOT/cim4-icon-run.env"
   ICON_SOURCE_DATE="$RUN_DATE"
   ICON_SOURCE_CYCLE="$RUN_CYCLE"
