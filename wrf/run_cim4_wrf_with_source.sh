@@ -211,7 +211,7 @@ EOF
 
 chmod -R a+rwX "$WORK"
 
-docker run --rm --entrypoint /bin/bash -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -e WRF_BOUNDARY_ONLY="${WRF_BOUNDARY_ONLY:-0}" -v "$WORK:/work" "$IMAGE" -lc '
+docker run --rm --entrypoint /bin/bash -e LOCAL_USER_ID="$HOST_UID" -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 -e WRF_BOUNDARY_ONLY="${WRF_BOUNDARY_ONLY:-0}" -e WRF_MPI_PROCS="$WRF_MPI_PROCS" -v "$WORK:/work" "$IMAGE" -lc '
 set -euo pipefail
 cd /work
 echo "CIM4: WRF_BOUNDARY_ONLY=${WRF_BOUNDARY_ONLY:-0}"
@@ -271,7 +271,7 @@ cp met_em.d01.*.nc run/
 cd run
 
 echo "=== REAL.EXE ==="
-mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/real.exe || { STATUS=$?; tail -240 rsl.error.0000 || true; exit "$STATUS"; }
+mpirun --allow-run-as-root --oversubscribe --bind-to none -np "${WRF_MPI_PROCS:-4}" /comsoftware/wrf/WRF-4.3/main/real.exe || { STATUS=$?; tail -240 rsl.error.0000 || true; exit "$STATUS"; }
 test -s wrfinput_d01
 test -s wrfbdy_d01
 
@@ -282,7 +282,7 @@ if [[ "${WRF_BOUNDARY_ONLY:-0}" == "1" ]]; then
 fi
 
 echo "=== CIM WRF 4 KM / REFL_10CM NATIVO ==="
-mpirun --allow-run-as-root --oversubscribe --bind-to none -np 4 /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
+mpirun --allow-run-as-root --oversubscribe --bind-to none -np "${WRF_MPI_PROCS:-4}" /comsoftware/wrf/WRF-4.3/main/wrf.exe > wrf.stdout 2>&1 || { STATUS=$?; tail -260 rsl.error.0000 || true; exit "$STATUS"; }
 grep -q "SUCCESS COMPLETE WRF" rsl.error.0000 || { tail -260 rsl.error.0000 || true; exit 51; }
 ls -lh wrfout_d01_* wrfrst_d01_* wrfbdy_d01 | tee /work/cim4-files.txt
 '
