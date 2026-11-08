@@ -2,7 +2,7 @@ name: CIM WRF2 4 KM - ICON valido amanha · 40h horario
 
 on:
   schedule:
-    - cron: '17 7 * * *'
+    - cron: '17 19 * * *'
   workflow_dispatch:
 
 permissions:
@@ -15,5 +15,5 @@ jobs:
     uses: ./.github/workflows/cim-wrf-4km-reusable.yml
     with:
       wrf2: true
-      scheduled_cycle: '00'
+      scheduled_cycle: '12'
     secrets: inherit
