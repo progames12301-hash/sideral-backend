@@ -1,0 +1,19 @@
+name: CIM WRF 4 KM - ICON → ECMWF → GFS · 40h horario
+
+on:
+  schedule:
+    - cron: '37 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  operational:
+    name: CIM 4 km principal
+    uses: ./.github/workflows/cim-wrf-4km-reusable.yml
+    with:
+      wrf2: false
+      scheduled_cycle: ''
+    secrets: inherit
