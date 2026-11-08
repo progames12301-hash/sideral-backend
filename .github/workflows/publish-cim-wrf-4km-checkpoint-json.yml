@@ -88,15 +88,45 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          ASSET_COUNT="$(jq '[.assets[].name | select(test("^[0-9]{8}_[0-9]{6}[.]npz$"))] | length' <<< "$RELEASE")"
-          LATEST_NPZ="$(jq -r '[.assets[].name | select(test("^[0-9]{8}_[0-9]{6}[.]npz$"))] | sort | last // empty' <<< "$RELEASE")"
-          if [[ "$ASSET_COUNT" -lt 1 || -z "$LATEST_NPZ" ]]; then
+          ALL_NPZ_COUNT="$(jq '[.assets[].name | select(test("^[0-9]{8}_[0-9]{6}[.]npz$"))] | length' <<< "$RELEASE")"
+          if [[ "$ALL_NPZ_COUNT" -lt 1 ]]; then
             echo "Checkpoint $TAG ainda não contém NPZs compactos."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           mkdir -p checkpoint_probe
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern cim4-run.env --dir checkpoint_probe --clobber
+          read -r ASSET_COUNT LATEST_NPZ < <(python3 - "$RELEASE" checkpoint_probe/cim4-run.env <<'PY'
+          import datetime as dt, json, re, sys
+          from pathlib import Path
+          release = json.loads(sys.argv[1])
+          values = {}
+          for line in Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
+              if "=" in line and not line.strip().startswith("#"):
+                  key, value = line.split("=", 1)
+                  values[key.strip()] = value.strip().strip('"').strip("'")
+          date = values.get("RUN_DATE", "").replace("-", "")
+          cycle = values.get("RUN_CYCLE", "")
+          init = dt.datetime.strptime(date + cycle, "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+          frames = []
+          for asset in release.get("assets", []):
+              name = asset.get("name", "")
+              match = re.fullmatch(r"(\d{8})_(\d{6})\.npz", name)
+              if not match:
+                  continue
+              valid = dt.datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S").replace(tzinfo=dt.timezone.utc)
+              lead = (valid - init).total_seconds() / 3600
+              if lead.is_integer() and 0 <= lead <= 40:
+                  frames.append(name)
+          frames.sort()
+          print(len(frames), frames[-1] if frames else "")
+          PY
+          )
+          if [[ "$ASSET_COUNT" -lt 1 || -z "$LATEST_NPZ" ]]; then
+            echo "Nenhum quadro publicado entre F000 e F040 no checkpoint $TAG."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if gh api "repos/$GITHUB_REPOSITORY/contents/metadata.json?ref=$DATA_BRANCH" > existing-api.json 2>/dev/null; then
             jq -r '.content' existing-api.json | base64 --decode > existing-metadata.json
           else
