@@ -48,6 +48,8 @@ jobs:
               {"workflow":"metbr-wrf2-4km-tomorrow.yml", "branches":["metbr-wrf2-json-data"], "frames":43, "age":30, "future":36},
               {"workflow":"wrf-brasil-12km.yml", "branches":["wrf-brasil-12km-data"], "frames":49, "age":30, "future":3},
               {"workflow":"cim-wrf-3km-operational.yml", "branches":["cim-wrf-3km-icon-data","cim-wrf-3km-ecmwf-data"], "frames":41, "age":30, "future":3, "severe":True},
+              {"workflow":"cim-wrf-4km.yml", "branches":["cim-wrf-4km-data"], "frames":41, "age":30, "future":3},
+              {"workflow":"cim-wrf2-4km.yml", "branches":["cim-wrf2-4km-data"], "frames":41, "age":30, "future":36},
               {"workflow":"wrf-tarc-3km.yml", "branches":["tarc-json-data"], "frames":49, "age":30, "future":6},
               {"workflow":"wrf2-tarc-3km-tomorrow.yml", "branches":["tarc-wrf2-json-data"], "frames":49, "age":30, "future":36},
               {"workflow":"wrf-cbr-4km.yml", "branches":["cbr-json-data"], "frames":43, "age":30, "future":6},
