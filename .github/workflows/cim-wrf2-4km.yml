@@ -1,12 +1,6 @@
 name: CIM WRF2 4 KM - ICON valido amanha · 40h horario
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/cim-wrf2-4km.yml'
-      - '.github/workflows/cim-wrf-4km-reusable.yml'
-      - 'wrf/publish_sideral_checkpoint_json.py'
   schedule:
     - cron: '17 19 * * *'
   # Rebuild after CIM 4 km runner maintenance.
