@@ -1,10 +1,14 @@
-name: CIM WRF 4 KM - ICON → ECMWF → GFS · 40h horario
+name: CIM WRF 5 KM - ICON → ECMWF → GFS · 40h horario
 
 on:
   schedule:
     - cron: '37 10 * * *'
   # Rebuild after CIM 4 km runner maintenance.
   workflow_dispatch:
+
+concurrency:
+  group: cim-wrf-5km-primary
+  cancel-in-progress: true
 
 permissions:
   contents: write
