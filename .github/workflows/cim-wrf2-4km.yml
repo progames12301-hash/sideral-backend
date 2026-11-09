@@ -3,7 +3,7 @@ name: CIM WRF2 5 KM - ICON valido amanha · 40h horario
 on:
   schedule:
     - cron: '17 19 * * *'
-  # Rebuild after CIM 4 km runner maintenance.
+  # Rebuild after CIM 5 km runner maintenance.
   # Retry with persisted WRF2 ICON-only mode across all restart segments.
   workflow_dispatch:
 
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   operational:
-    name: CIM 4 km WRF2
+    name: CIM 5 km WRF2
     uses: ./.github/workflows/cim-wrf-4km-reusable.yml
     with:
       wrf2: true
