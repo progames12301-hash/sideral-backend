@@ -89,7 +89,7 @@ jobs:
           print(f"{catalog['model']}: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F000-F006
+      - name: Run CIM 5 km forecast segment F000-F003 F000-F006
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -166,7 +166,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F003-F006
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -243,7 +243,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F006-F009
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -320,7 +320,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F009-F012
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -397,7 +397,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F012-F015
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -474,7 +474,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F015-F018
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -551,7 +551,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F018-F021
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -628,7 +628,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F021-F024
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -705,7 +705,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F024-F027
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -782,7 +782,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F027-F030
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -859,7 +859,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F030-F033
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -936,7 +936,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F033-F036
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -1013,7 +1013,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F036-F039
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -1090,7 +1090,7 @@ jobs:
           print("CIM 5 km catalog: 447x375 WRF domain / 446x374 mass points")
           PY
 
-      - name: Run CIM 5 km forecast segment F006-F012
+      - name: Run CIM 5 km forecast segment F039-F042
         env:
           GH_TOKEN: ${{ github.token }}
           CHECKPOINT_TAG: ${{ format('cim4{0}-checkpoint-{1}', inputs.wrf2 && '-wrf2' || '', github.run_id) }}
@@ -1137,4 +1137,4 @@ jobs:
           WRFOUT_COUNT="$(jq '[.assets[].name | select(test("^cim4-wrfout-[0-9]+-wrfout_d01_"))] | length' release.json)"
           test "$NPZ_COUNT" -ge 41
           test "$WRFOUT_COUNT" -ge 5
-          echo "CIM 4 km checkpoint validado: NPZ=$NPZ_COUNT; WRFOUT=$WRFOUT_COUNT"
+          echo "CIM 5 km checkpoint validado: NPZ=$NPZ_COUNT; WRFOUT=$WRFOUT_COUNT"
