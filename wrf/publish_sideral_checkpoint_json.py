@@ -45,8 +45,8 @@ MODEL_INFO = {
     "sideral5": {"model": "WRF SIDERAL 5 KM SUDESTE", "modelKey": "sideral_wrf_5km_sudeste", "resolutionKm": 5, "maxHour": 48, "schemaVersion": "sideral-wrf-sudeste-5km-v1", "domain": {"west": -52.95, "east": -38.05, "south": -31.75, "north": -13.17}},
     "sideral4_2": {"model": "WRF SIDERAL 4 KM 2 SUDESTE", "modelKey": "sideral_wrf_4km_2_sudeste", "resolutionKm": 4, "maxHour": 48, "schemaVersion": "sideral-wrf-sudeste-4km-2-v1", "domain": {"west": -52.95, "east": -38.05, "south": -31.75, "north": -13.17}},
     "sideral5_2": {"model": "WRF SIDERAL 5 KM 2 SUDESTE", "modelKey": "sideral_wrf_5km_2_sudeste", "resolutionKm": 5, "maxHour": 48, "schemaVersion": "sideral-wrf-sudeste-5km-2-v1", "domain": {"west": -52.95, "east": -38.05, "south": -31.75, "north": -13.17}},
-    "cim4": {"model": "CIM WRF 4 KM", "modelKey": "cim_wrf_4km", "resolutionKm": 4, "maxHour": 40, "schemaVersion": "sideral-cim-wrf-4km-v1", "domain": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}},
-    "cim4_2": {"model": "CIM WRF2 4 KM", "modelKey": "cim_wrf2_4km", "resolutionKm": 4, "maxHour": 40, "schemaVersion": "sideral-cim-wrf2-4km-v1", "domain": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}},
+    "cim4": {"model": "CIM WRF 5 KM", "modelKey": "cim_wrf_4km", "resolutionKm": 5, "maxHour": 40, "schemaVersion": "sideral-cim-wrf-5km-v1", "domain": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}},
+    "cim4_2": {"model": "CIM WRF2 5 KM", "modelKey": "cim_wrf2_4km", "resolutionKm": 5, "maxHour": 40, "schemaVersion": "sideral-cim-wrf2-5km-v1", "domain": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}},
 }
 
 ALL_FIELDS = [
@@ -232,11 +232,11 @@ def main():
         "initTime": iso(init),
         "grid": first_grid,
         "domain": model_info["domain"],
-        "domainName": "CIM Sul/Sudeste 4 km" if model in {"cim4", "cim4_2"} else model_info["model"],
+        "domainName": "CIM Sul/Sudeste 5 km" if model in {"cim4", "cim4_2"} else model_info["model"],
         "domainTargets": ["Sul do Brasil", "Sudeste do Brasil", "Uruguai", "leste do Paraguai", "nordeste/centro-leste da Argentina"] if model in {"cim4", "cim4_2"} else None,
         "displayBoundingBox": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4} if model in {"cim4", "cim4_2"} else None,
         "sourceBoundingBox": {"west": -67.0, "east": -39.0, "south": -39.0, "north": -17.0} if model in {"cim4", "cim4_2"} else None,
-        "wrfGridConfig": {"e_we": 558, "e_sn": 468, "gridX": 557, "gridY": 467, "dxMeters": 4000, "dyMeters": 4000, "refLat": -27.5, "refLon": -52.75, "standLon": -52.75} if model in {"cim4", "cim4_2"} else None,
+        "wrfGridConfig": {"e_we": 447, "e_sn": 375, "gridX": 446, "gridY": 374, "dxMeters": 5000, "dyMeters": 5000, "refLat": -27.5, "refLon": -52.75, "standLon": -52.75} if model in {"cim4", "cim4_2"} else None,
         "projection": "Lambert Conformal",
         "nativeReflectivity": "REFL_10CM",
         "reflectivityComposite": "maximum through the native WRF column",
