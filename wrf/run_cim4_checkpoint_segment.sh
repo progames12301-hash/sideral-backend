@@ -32,7 +32,7 @@ done
 chmod +x wrf/run_cim4_checkpoint_segment.sh wrf/run_cim4_icon_wrf.sh wrf/run_cim4_ecmwf_wrf.sh wrf/run_cim4_gfs_wrf.sh wrf/run_cim4_wrf_with_source.sh wrf/run_cim4_restart_segment.sh
 
 export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-5}"
-export WRF_DX_METERS="${WRF_DX_METERS:-5000}" WRF_DY_METERS="${WRF_DY_METERS:-4000}"
+export WRF_DX_METERS="${WRF_DX_METERS:-5000}" WRF_DY_METERS="${WRF_DY_METERS:-5000}"
 export WRF_E_WE="${WRF_E_WE:-447}" WRF_E_SN="${WRF_E_SN:-375}"
 export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}"
 export WRF_TIME_STEP="${WRF_TIME_STEP:-25}"
@@ -126,9 +126,9 @@ if [[ "$COLD_START" == "0" ]]; then
   # ICON LBC covering START_HOUR..END_HOUR before restarting WRF.
   export RUN_DATE RUN_CYCLE
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
-  export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-4}" WRF_DX_METERS="${WRF_DX_METERS:-4000}" WRF_DY_METERS="${WRF_DY_METERS:-4000}"
-  export WRF_E_WE="${WRF_E_WE:-558}" WRF_E_SN="${WRF_E_SN:-468}"
-  export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}" WRF_TIME_STEP="${WRF_TIME_STEP:-20}" WRF_MPI_PROCS="${WRF_MPI_PROCS:-4}"
+  export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-5}" WRF_DX_METERS="${WRF_DX_METERS:-5000}" WRF_DY_METERS="${WRF_DY_METERS:-5000}"
+  export WRF_E_WE="${WRF_E_WE:-447}" WRF_E_SN="${WRF_E_SN:-375}"
+  export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}" WRF_TIME_STEP="${WRF_TIME_STEP:-25}" WRF_MPI_PROCS="${WRF_MPI_PROCS:-4}"
   export WRF_START_HOUR="$START_HOUR" WRF_END_HOUR="$END_HOUR"
   export WRF_BOUNDARY_END_HOUR="$END_HOUR" WRF_BOUNDARY_ONLY=1
   echo "CIM: preparando LBC com fallback ICON -> ECMWF -> GFS F$START_HOUR-F$END_HOUR"
@@ -165,7 +165,7 @@ if os.environ.get("WRF2_TOMORROW") == "1":
 open("cim4-run.env","w").write(f"RUN_DATE={run:%Y%m%d}\nRUN_CYCLE={run:%H}\nSOURCE_MODEL=icon\nWRF2_TOMORROW={os.environ.get('WRF2_TOMORROW','0')}\n")
 PY
   source cim4-run.env
-  gh release create "$CHECKPOINT_TAG" --target cim-wrf-4km-runner --prerelease --latest=false --repo "$GITHUB_REPOSITORY" --notes "CIM WRF 4 KM checkpoint $GITHUB_RUN_ID" || true
+  gh release create "$CHECKPOINT_TAG" --target cim-wrf-4km-runner --prerelease --latest=false --repo "$GITHUB_REPOSITORY" --notes "CIM WRF 5 KM checkpoint $GITHUB_RUN_ID" || true
   gh release upload "$CHECKPOINT_TAG" cim4-run.env --repo "$GITHUB_REPOSITORY" --clobber
 
   export FORCE_RUN_DATE="$RUN_DATE" FORCE_RUN_CYCLE="$RUN_CYCLE"
