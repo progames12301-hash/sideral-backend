@@ -1,4 +1,4 @@
-name: CIM WRF2 4 KM - ICON valido amanha · 40h horario
+name: CIM WRF2 5 KM - ICON valido amanha · 40h horario
 
 on:
   schedule:
@@ -6,6 +6,10 @@ on:
   # Rebuild after CIM 4 km runner maintenance.
   # Retry with persisted WRF2 ICON-only mode across all restart segments.
   workflow_dispatch:
+
+concurrency:
+  group: cim-wrf-5km-wrf2
+  cancel-in-progress: true
 
 permissions:
   contents: write
