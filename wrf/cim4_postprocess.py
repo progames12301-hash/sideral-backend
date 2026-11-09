@@ -56,7 +56,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     index = []
     is_wrf2 = os.environ.get("WRF2_TOMORROW", "0") == "1"
-    model_label = "CIM WRF2 4 KM" if is_wrf2 else "CIM WRF 4 KM"
+    model_label = "CIM WRF2 5 KM" if is_wrf2 else "CIM WRF 5 KM"
     model_key = "cim_wrf2_4km" if is_wrf2 else "cim_wrf_4km"
 
     for path in sorted(args.files):
@@ -125,11 +125,11 @@ def main():
     manifest = out / "metadata.json"
     manifest.write_text(json.dumps({
         "model": model_label,
-        "resolutionKm": 4,
+        "resolutionKm": 5,
         "modelKey": model_key,
         "nativeReflectivity": "REFL_10CM",
         "projection": "WRF Lambert",
-        "domain": {"e_we": 558, "e_sn": 468, "dx_m": 4000, "dy_m": 4000, "displayBoundingBox": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}, "sourceBoundingBox": {"west": -67.0, "east": -39.0, "south": -39.0, "north": -17.0}},
+        "domain": {"e_we": 447, "e_sn": 375, "dx_m": 5000, "dy_m": 5000, "displayBoundingBox": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}, "sourceBoundingBox": {"west": -67.0, "east": -39.0, "south": -39.0, "north": -17.0}},
         "frames": index,
         "products": {
             "reflectivity_native_dbz": "native REFL_10CM, lowest model level",
