@@ -31,11 +31,11 @@ done
 
 chmod +x wrf/run_cim4_checkpoint_segment.sh wrf/run_cim4_icon_wrf.sh wrf/run_cim4_ecmwf_wrf.sh wrf/run_cim4_gfs_wrf.sh wrf/run_cim4_wrf_with_source.sh wrf/run_cim4_restart_segment.sh
 
-export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-4}"
-export WRF_DX_METERS="${WRF_DX_METERS:-4000}" WRF_DY_METERS="${WRF_DY_METERS:-4000}"
-export WRF_E_WE="${WRF_E_WE:-558}" WRF_E_SN="${WRF_E_SN:-468}"
+export WRF_TARGET_RESOLUTION_KM="${WRF_TARGET_RESOLUTION_KM:-5}"
+export WRF_DX_METERS="${WRF_DX_METERS:-5000}" WRF_DY_METERS="${WRF_DY_METERS:-4000}"
+export WRF_E_WE="${WRF_E_WE:-447}" WRF_E_SN="${WRF_E_SN:-375}"
 export WRF_HISTORY_INTERVAL_MINUTES="${WRF_HISTORY_INTERVAL_MINUTES:-60}"
-export WRF_TIME_STEP="${WRF_TIME_STEP:-20}"
+export WRF_TIME_STEP="${WRF_TIME_STEP:-25}"
 export WRF_MPI_PROCS="${WRF_MPI_PROCS:-4}"
 export WRF_BOUNDARY_END_HOUR="$END_HOUR"
 export WRF_REF_LAT="${WRF_REF_LAT:--23.0}" WRF_REF_LON="${WRF_REF_LON:--45.5}" WRF_STAND_LON="${WRF_STAND_LON:--45.5}"
@@ -204,7 +204,7 @@ if [[ -n "$(find "$POST_INPUT" -maxdepth 1 -type f -name 'wrfout_d01_*' -size +0
 fi
 
 echo "SIDERAL_METRIC segment=F$START_HOUR-F$END_HOUR total_seconds=$(( $(date +%s) - SEGMENT_STARTED_AT ))"
-echo "CIM4 checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
+echo "CIM5 checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
 # Notify the main-branch incremental publisher after compact NPZs have reached the checkpoint Release.
 if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
   PUBLISH_EVENT=cim4-wrf2-checkpoint-published
