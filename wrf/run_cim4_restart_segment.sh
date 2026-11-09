@@ -46,7 +46,7 @@ pairs = {
  'end_year':end.year,'end_month':end.month,'end_day':end.day,'end_hour':end.hour,
  'run_days':0,'run_hours':end_h-start_h,'run_minutes':0,'run_seconds':0,
  'restart':'.true.','restart_interval':(end_h-start_h)*60,'override_restart_timers':'.true.','history_interval':hist,
- 'time_step':int(os.environ.get('WRF_TIME_STEP','20')),'time_step_fract_num':0,'time_step_fract_den':1,
+ 'time_step':int(os.environ.get('WRF_TIME_STEP','25')),'time_step_fract_num':0,'time_step_fract_den':1,
 }
 for key, value in pairs.items():
     pat=rf'(?m)^\s*{re.escape(key)}\s*=.*$'
@@ -60,7 +60,7 @@ for key, value in pairs.items():
 open(p,'w',encoding='utf-8').write(s)
 expected=f"wrfrst_d01_{start:%Y-%m-%d_%H:%M:%S}"
 open(os.path.join(os.path.dirname(p),'.expected_restart'),'w').write(expected+'\n')
-print('CIM4 restart:', start.isoformat(), '->', end.isoformat(), 'dt=18 s')
+print('CIM4 restart:', start.isoformat(), '->', end.isoformat(), 'dt=25 s')
 PY
 
 EXPECTED_RST="$(cat "$WORK/run/.expected_restart")"
