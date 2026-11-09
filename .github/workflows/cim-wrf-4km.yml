@@ -1,12 +1,6 @@
 name: CIM WRF 4 KM - ICON → ECMWF → GFS · 40h horario
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/cim-wrf-4km.yml'
-      - '.github/workflows/cim-wrf-4km-reusable.yml'
-      - 'wrf/publish_sideral_checkpoint_json.py'
   schedule:
     - cron: '37 10 * * *'
   # Rebuild after CIM 4 km runner maintenance.
