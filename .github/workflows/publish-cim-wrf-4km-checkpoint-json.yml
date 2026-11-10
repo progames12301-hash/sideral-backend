@@ -231,6 +231,11 @@ jobs:
           files=sorted((root/"frames").glob("f*.json.gz"))
           assert meta["modelKey"] == __import__("os").environ["MODEL_KEY"]
           assert meta["resolutionKm"] == 5
+          if os.environ["MODEL_KEY"] in {"cim_wrf_4km", "cim_wrf2_4km"}:
+              assert meta["grid"] == {"nx": 446, "ny": 374}, f"malha CIM 5 km inválida: {meta['grid']}"
+              assert meta.get("wrfGridConfig", {}).get("dxMeters") == 5000
+              assert meta.get("wrfGridConfig", {}).get("dyMeters") == 5000
+              assert all(frame["grid"] == {"nx": 446, "ny": 374} for frame in meta["frames"])
           assert meta["frameCount"] == len(files) >= 1
           assert meta["forecastHours"] == [0,40]
           assert meta["status"] in {"partial","complete"}
