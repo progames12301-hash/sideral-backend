@@ -61,7 +61,7 @@ jobs:
             RUN_ID="$EVENT_RUN_ID"
           elif [[ "$EVENT_NAME" == "push" ]]; then
             MODEL="cim4"
-            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW_FILE" --status completed --limit 50 --json databaseId,conclusion --jq '[.[] | select(.conclusion == "success")][0].databaseId // empty')"
+            RUN_ID=""
           else
             MODEL="$INPUT_MODEL"
             RUN_ID="$INPUT_RUN_ID"
@@ -82,7 +82,11 @@ jobs:
             *) echo "Modelo CIM inválido: $MODEL" >&2; exit 2 ;;
           esac
           if [[ ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
-            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            if [[ "$EVENT_NAME" == "push" ]]; then
+              RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW_FILE" --status completed --limit 50 --json databaseId,conclusion --jq '[.[] | select(.conclusion == "success")][0].databaseId // empty')"
+            else
+              RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW_FILE" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            fi
           fi
           if [[ ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
             echo "Não foi possível identificar a execução CIM de origem."
