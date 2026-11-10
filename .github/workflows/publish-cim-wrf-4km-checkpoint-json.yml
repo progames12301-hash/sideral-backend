@@ -1,4 +1,4 @@
-name: Publish CIM WRF 4 km compact JSON checkpoints
+name: Publish CIM WRF 5 km compact JSON checkpoints
 
 on:
   repository_dispatch:
@@ -8,14 +8,14 @@ on:
   workflow_dispatch:
     inputs:
       model:
-        description: CIM product to republish
+        description: CIM 5 km product to republish
         required: true
         type: choice
         options:
           - cim4
           - cim4_2
       run_id:
-        description: Source CIM 4 km workflow run ID (blank = latest)
+        description: Source CIM 5 km workflow run ID (blank = latest)
         required: false
         type: string
 
@@ -218,7 +218,7 @@ jobs:
           meta=json.loads((root/"metadata.json").read_text(encoding="utf-8"))
           files=sorted((root/"frames").glob("f*.json.gz"))
           assert meta["modelKey"] == __import__("os").environ["MODEL_KEY"]
-          assert meta["resolutionKm"] == 4
+          assert meta["resolutionKm"] == 5
           assert meta["frameCount"] == len(files) >= 1
           assert meta["forecastHours"] == [0,40]
           assert meta["status"] in {"partial","complete"}
@@ -257,5 +257,5 @@ jobs:
             echo "CIM: branch já contém os mesmos dados."
             exit 0
           fi
-          git commit -m "publish: CIM WRF 4 km compact checkpoint $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git commit -m "publish: CIM WRF 5 km compact checkpoint $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push origin "$DATA_BRANCH"
