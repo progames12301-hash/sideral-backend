@@ -253,8 +253,16 @@ jobs:
         if: steps.checkpoint.outputs.publish == 'true'
         env:
           DATA_BRANCH: ${{ steps.checkpoint.outputs.branch }}
+          SOURCE_RUN_ID: ${{ steps.checkpoint.outputs.run_id }}
         run: |
           set -euo pipefail
+          SOURCE_STATE="$(gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json status,conclusion)"
+          SOURCE_STATUS="$(jq -r '.status' <<< "$SOURCE_STATE")"
+          SOURCE_CONCLUSION="$(jq -r '.conclusion // ""' <<< "$SOURCE_STATE")"
+          if [[ "$SOURCE_STATUS" != "completed" || "$SOURCE_CONCLUSION" != "success" ]]; then
+            echo "CIM publication skipped: source run $SOURCE_RUN_ID is $SOURCE_STATUS/$SOURCE_CONCLUSION, not completed successfully."
+            exit 0
+          fi
           rm -rf cim_data_checkout
           git clone --filter=blob:none --depth 1 --sparse --branch "$DATA_BRANCH" "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" cim_data_checkout
           cd cim_data_checkout
