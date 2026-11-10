@@ -34,8 +34,8 @@ def main() -> None:
 
     if lat.ndim != 2 or lon.shape != lat.shape or dbz.shape != lat.shape:
         raise SystemExit(f"Grade incompatível: lat={lat.shape}, lon={lon.shape}, dBZ={dbz.shape}")
-    if lat.shape != (375, 447):
-        raise SystemExit(f"Grade não corresponde ao CIM 5 km esperado (375x447): {lat.shape}")
+    if lat.shape != (374, 446):
+        raise SystemExit(f"Grade não corresponde à malha útil do CIM 5 km (374x446): {lat.shape}")
 
     valid = dbz[np.isfinite(dbz)]
     if valid.size == 0 or float(np.nanmax(valid)) <= 0:
