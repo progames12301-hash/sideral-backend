@@ -1,0 +1,78 @@
+name: CIM WRF 5 km — recuperar PNG de refletividade
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/cim5-reflectivity-recovery.yml
+      - wrf/render_cim5_reflectivity.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  render:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install plotting dependencies
+        run: python -m pip install --disable-pip-version-check 'numpy>=1.24,<3' 'matplotlib>=3.8,<4'
+
+      - name: Download published CIM 5 km checkpoint frame F040
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh release download cim4-checkpoint-42599605365 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 20261110_220000.npz \
+            --dir input \
+            --clobber
+          test -s input/20261110_220000.npz
+
+      - name: Render native composite reflectivity
+        run: |
+          set -euo pipefail
+          python wrf/render_cim5_reflectivity.py \
+            --npz input/20261110_220000.npz \
+            --output output/CIM-WRF-5KM-REFLETIVIDADE-F040.png \
+            --run-init 2026-11-09T06:00:00Z \
+            --forecast-hour 40
+          test -s output/CIM-WRF-5KM-REFLETIVIDADE-F040.png
+
+      - name: Save PNG in a dedicated GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="cim-wrf-5km-reflectivity-f040-20261109-06z"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" output/CIM-WRF-5KM-REFLETIVIDADE-F040.png \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" output/CIM-WRF-5KM-REFLETIVIDADE-F040.png \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "CIM WRF 5 km — Refletividade composta F040" \
+              --notes "Renderizado do NPZ nativo publicado na release cim4-checkpoint-42599605365. Grade 447x375, 5 km, campo REFL_10CM composto."
+          fi
+
+      - name: Upload PNG as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cim-wrf-5km-reflectivity-f040
+          path: output/CIM-WRF-5KM-REFLETIVIDADE-F040.png
+          if-no-files-found: error
+          retention-days: 14
