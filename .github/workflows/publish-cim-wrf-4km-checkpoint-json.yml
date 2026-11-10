@@ -1,6 +1,11 @@
 name: Publish CIM WRF 5 km compact JSON checkpoints
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-cim-wrf-4km-checkpoint-json.yml
   repository_dispatch:
     types:
       - cim4-checkpoint-published
@@ -54,6 +59,9 @@ jobs:
           if [[ "$EVENT_NAME" == "repository_dispatch" ]]; then
             if [[ "$EVENT_ACTION" == "cim4-wrf2-checkpoint-published" ]]; then MODEL="cim4_2"; else MODEL="cim4"; fi
             RUN_ID="$EVENT_RUN_ID"
+          elif [[ "$EVENT_NAME" == "push" ]]; then
+            MODEL="cim4"
+            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW_FILE" --status completed --limit 50 --json databaseId,conclusion --jq '[.[] | select(.conclusion == "success")][0].databaseId // empty')"
           else
             MODEL="$INPUT_MODEL"
             RUN_ID="$INPUT_RUN_ID"
