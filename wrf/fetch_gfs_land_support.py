@@ -139,6 +139,7 @@ def choose_run(session: requests.Session, target: dt.datetime, max_target_hour: 
             f"F{lag:03d}..F{last_step:03d} para validar {target:%Y%m%d %H}Z"
         )
         if exists(session, first_idx) and exists(session, last_idx):
+            print(f"GFS land aceito: {candidate:%Y%m%d %H}Z; cobertura F{first_step:03d}-F{last_step:03d}", flush=True)
             return candidate, lag
     raise RuntimeError(
         f"Nenhuma rodada GFS de suporte cobre {target:%Y%m%d %H}Z ate +{max_target_hour} h"
