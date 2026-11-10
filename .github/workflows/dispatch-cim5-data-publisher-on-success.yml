@@ -1,0 +1,35 @@
+name: Dispatch complete CIM 5 km runs to data publisher
+
+on:
+  workflow_run:
+    workflows:
+      - CIM WRF 5 KM - ICON → ECMWF → GFS · 40h horario
+      - CIM WRF2 5 KM - ICON valido amanha · 40h horario
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  dispatch:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Dispatch only completed successful CIM run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_NAME: ${{ github.event.workflow_run.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$SOURCE_RUN_NAME" == *"WRF2"* ]]; then
+            PUBLISH_EVENT="cim4-wrf2-checkpoint-published"
+          else
+            PUBLISH_EVENT="cim4-checkpoint-published"
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
+            -f "event_type=$PUBLISH_EVENT" \
+            -f "client_payload[run_id]=$SOURCE_RUN_ID"
+          echo "Run completo $SOURCE_RUN_ID ($SOURCE_RUN_NAME) enviado para $PUBLISH_EVENT."
