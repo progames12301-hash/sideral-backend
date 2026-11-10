@@ -1138,3 +1138,20 @@ jobs:
           test "$NPZ_COUNT" -ge 41
           test "$WRFOUT_COUNT" -ge 5
           echo "CIM 5 km checkpoint validado: NPZ=$NPZ_COUNT; WRFOUT=$WRFOUT_COUNT"
+
+      - name: Dispatch complete CIM 5 km data publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WRF2: ${{ inputs.wrf2 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$WRF2" == "true" ]]; then
+            PUBLISH_EVENT="cim4-wrf2-checkpoint-published"
+          else
+            PUBLISH_EVENT="cim4-checkpoint-published"
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
+            -f "event_type=$PUBLISH_EVENT" \
+            -f "client_payload[run_id]=$GITHUB_RUN_ID"
+          echo "Publicação CIM 5 km enviada após validação completa: $PUBLISH_EVENT / run $GITHUB_RUN_ID"
