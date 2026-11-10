@@ -205,14 +205,5 @@ fi
 
 echo "SIDERAL_METRIC segment=F$START_HOUR-F$END_HOUR total_seconds=$(( $(date +%s) - SEGMENT_STARTED_AT ))"
 echo "CIM5 checkpoint F$START_HOUR-F$END_HOUR publicado em $CHECKPOINT_TAG."
-# Notify the main-branch incremental publisher after compact NPZs have reached the checkpoint Release.
-if [[ "${WRF2_TOMORROW:-0}" == "1" ]]; then
-  PUBLISH_EVENT=cim4-wrf2-checkpoint-published
-else
-  PUBLISH_EVENT=cim4-checkpoint-published
-fi
-if ! gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" \
-  -f "event_type=$PUBLISH_EVENT" \
-  -f "client_payload[run_id]=$GITHUB_RUN_ID" >/dev/null; then
-  echo "AVISO: dispatch da publicação incremental CIM4 falhou; o publicador de recuperação tentará novamente."
-fi
+# A publicação operacional é disparada pelo job verify somente depois de F042
+# e da contagem mínima de WRFOUT/NPZs. Assim a branch recebe a rodada completa.
