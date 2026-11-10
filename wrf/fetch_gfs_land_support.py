@@ -128,8 +128,12 @@ def fetch_step(session: requests.Session, date: str, cycle: str, step: int, outp
 
 
 def choose_run(session: requests.Session, target: dt.datetime, start_target_hour: int, max_target_hour: int) -> tuple[dt.datetime, int]:
-    # GFS roda de 6 em 6 h. Tenta a rodada equivalente e depois recua.
-    for lag in (0, 6, 12, 18, 24, 30, 36):
+    # GFS roda de 6 em 6 h. O alvo CIM pode ser para o dia seguinte;
+    # o ciclo utilizável mais recente pode estar 42-78 h atrás quando a rodada
+    # corrente ainda está sendo publicada. Mantemos os arquivos WPS em passos
+    # de 3 h e, por isso, não avançamos além de F120 do ciclo-fonte.
+    max_back_hours = 78
+    for lag in range(0, max_back_hours + 1, 6):
         candidate = target - dt.timedelta(hours=lag)
         first_step = lag + start_target_hour
         last_step = lag + max_target_hour
@@ -141,6 +145,7 @@ def choose_run(session: requests.Session, target: dt.datetime, start_target_hour
             f"{target:%Y%m%d %H}Z +{start_target_hour}..+{max_target_hour} h"
         )
         if exists(session, first_idx) and exists(session, last_idx):
+            print(f"GFS land aceito: {candidate:%Y%m%d %H}Z; cobertura F{first_step:03d}-F{last_step:03d}", flush=True)
             return candidate, lag
     raise RuntimeError(
         f"Nenhuma rodada GFS de suporte cobre {target:%Y%m%d %H}Z ate +{max_target_hour} h"
