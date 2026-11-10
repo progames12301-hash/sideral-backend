@@ -224,7 +224,7 @@ jobs:
           python3 -m py_compile wrf/publish_sideral_checkpoint_json.py
           python3 wrf/publish_sideral_checkpoint_json.py --model "$MODEL" --input-dir cim4_input --run-env cim4_input/cim4-run.env --output-dir cim4_publish --source-run-id "$RUN_ID"
           python3 - <<'PY'
-          import gzip, json
+          import gzip, json, os
           from pathlib import Path
           root=Path("cim4_publish")
           meta=json.loads((root/"metadata.json").read_text(encoding="utf-8"))
