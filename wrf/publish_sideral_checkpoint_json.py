@@ -118,6 +118,10 @@ def frame_from_npz(path: Path, init: dt.datetime, model: str, max_hour: int):
     if lat is None or lon is None or lat.ndim != 2 or lon.shape != lat.shape:
         raise RuntimeError(f"Grade lat/lon ausente ou incompatível em {path.name}")
     shape = lat.shape
+    if model in {"cim4", "cim4_2"} and shape != (374, 446):
+        raise RuntimeError(
+            f"CIM WRF 5 km exige malha útil 446x374; {path.name} contém {shape[1]}x{shape[0]}"
+        )
     fields = {"lat": flat_array(lat, 4), "lon": flat_array(lon, 4)}
     source_fields = {}
     for old_name, (new_name, decimals) in FIELD_MAP.items():
