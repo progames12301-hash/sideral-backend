@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Render native CIM WRF 5 km composite reflectivity from a published NPZ checkpoint."""
+# Uses the released native-grid composite dBZ array; it does not synthesize echoes.
 from __future__ import annotations
 
 import argparse
