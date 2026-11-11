@@ -87,9 +87,7 @@ jobs:
       - name: Install compiler, NetCDF and WRF build dependencies
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y build-essential gfortran csh tcsh m4 flex bison perl \
-            libnetcdf-dev libnetcdff-dev netcdf-bin libhdf5-dev libpng-dev zlib1g-dev libjpeg-dev
+          bash scripts/apt-install-resilient.sh build-essential gfortran csh tcsh m4 flex bison perl libnetcdf-dev libnetcdff-dev netcdf-bin libhdf5-dev libpng-dev zlib1g-dev libjpeg-dev
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
