@@ -138,8 +138,7 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
           sudo apt-get clean || true
           docker system prune -af || true
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools
+          source wrf/ensure_eccodes_tools.sh
           docker pull dtcenter/wps_wrf:latest
       - uses: actions/setup-python@v5
         with:
