@@ -76,6 +76,7 @@ try_install() {
     -o Acquire::https::Timeout=20 \
     -o Acquire::ForceIPv4=true \
     -o Acquire::Queue-Mode=access
+      || return $?
   sudo timeout --signal=TERM --kill-after=10s 480s apt-get install -y --no-install-recommends \
     -o Acquire::Retries=1 \
     -o Acquire::http::Timeout=20 \
