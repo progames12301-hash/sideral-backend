@@ -27,6 +27,10 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Checkout apt fallback helper and renderer sources
+        uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Selecionar checkpoint CBR concluído mais recente
         env:
           GH_REPO: ${{ github.repository }}
