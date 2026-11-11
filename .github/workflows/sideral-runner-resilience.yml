@@ -1,0 +1,57 @@
+name: Sideral Runner Resilience - transient retry
+
+on:
+  workflow_run:
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: sideral-transient-retry-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  retry-transient-failure:
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt < 2 &&
+      github.event.workflow_run.name != 'Sideral Runner Resilience - transient retry'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Classify infrastructure failures and retry once
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_RUN_ID: ${{ github.event.workflow_run.id }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          echo "Inspecting failed run $GH_RUN_ID in $GH_REPOSITORY"
+
+          LOG="$RUNNER_TEMP/failed-run.log"
+          timeout 90s gh run view "$GH_RUN_ID" --repo "$GH_REPOSITORY" --log-failed >"$LOG" 2>&1 || true
+
+          # Include jobs that failed before a hosted runner ever started.
+          JOBS_JSON="$(gh api "repos/$GH_REPOSITORY/actions/runs/$GH_RUN_ID/jobs?per_page=100" 2>/dev/null || printf '{}')"
+          RUNNER_NOT_STARTED="$(printf '%s' "$JOBS_JSON" | jq -r '
+            [.jobs[]? | select(.conclusion == "failure" and (.started_at == null or .runner_name == null))] | length
+          ' 2>/dev/null || printf '0')"
+
+          TRANSIENT_RE='Temporary failure resolving|Could not resolve|Name or service not known|Could not resolve proxy|Connection timed out|Connection reset by peer|SSL connection timeout|TLS handshake timeout|curl: \(28\)|unexpected EOF|remote end hung up|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout|HTTP 502|HTTP 503|HTTP 504|API rate limit exceeded|secondary rate limit|Service Unavailable|The request was aborted|Failed to connect to .* port .* after|apt.*Temporary failure|Failed to fetch .* (Temporary failure|Connection timed out)'
+          if grep -Eiq "$TRANSIENT_RE" "$LOG"; then
+            echo "Transient network/platform signature found; requesting one full workflow rerun."
+            grep -Ein "$TRANSIENT_RE" "$LOG" | tail -n 20 || true
+          elif [[ "$RUNNER_NOT_STARTED" =~ ^[0-9]+$ ]] && (( RUNNER_NOT_STARTED > 0 )); then
+            echo "At least one failed job never acquired a runner; requesting one full workflow rerun."
+          else
+            echo "No recognized transient infrastructure failure. No automatic retry; model, data, code and authentication errors stay visible."
+            exit 0
+          fi
+
+          # One bounded retry: run_attempt is checked on the triggering event,
+          # and this workflow ignores itself. This avoids infinite retry loops.
+          gh run rerun "$GH_RUN_ID" --repo "$GH_REPOSITORY"
+          echo "Retry requested for run $GH_RUN_ID."
