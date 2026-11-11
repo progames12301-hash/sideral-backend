@@ -57,8 +57,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools
+          source wrf/ensure_eccodes_tools.sh
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -133,8 +132,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -210,8 +209,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -287,8 +286,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -364,8 +363,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -441,8 +440,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -518,8 +517,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -595,8 +594,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -672,8 +671,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -749,8 +748,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -826,8 +825,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -903,8 +902,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -980,8 +979,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
@@ -1057,8 +1056,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-tools shellcheck
+          source wrf/ensure_eccodes_tools.sh
+          command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
           python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
