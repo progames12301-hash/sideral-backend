@@ -1,0 +1,59 @@
+{
+  "model": "CIM WRF2 5 KM",
+  "modelKey": "cim_wrf2_4km",
+  "resolutionKm": 5,
+  "region": "Sul e Sudeste do Brasil, Uruguai, leste do Paraguai e nordeste/centro-leste da Argentina",
+  "domain": {
+    "e_we": 447,
+    "e_sn": 375,
+    "dx_m": 5000,
+    "dy_m": 5000,
+    "displayBoundingBox": {
+      "west": -63.6,
+      "east": -41.8,
+      "south": -35.6,
+      "north": -19.4
+    },
+    "sourceBoundingBox": {
+      "west": -67,
+      "east": -39,
+      "south": -39,
+      "north": -17
+    },
+    "projection": "Lambert Conformal",
+    "ref_lat": -27.5,
+    "ref_lon": -52.75,
+    "stand_lon": -52.75
+  },
+  "forecast": {
+    "hours": 40,
+    "integrationHours": 42,
+    "output_interval_minutes": 60,
+    "input_models": [
+      "ICON",
+      "ECMWF IFS",
+      "GFS fallback"
+    ]
+  },
+  "native_products": [
+    "REFL_10CM",
+    "U10",
+    "V10",
+    "T2",
+    "Q2",
+    "PSFC",
+    "SLP",
+    "RAINC",
+    "RAINNC",
+    "RAINSH",
+    "SNOWNC",
+    "GRAUPELNC",
+    "HAILNC",
+    "CLDFRA"
+  ],
+  "rules": [
+    "Native WRF grid retained; no downsampling",
+    "Native REFL_10CM only; no synthetic reflectivity",
+    "ICON -> ECMWF -> GFS fallback for the primary CIM run"
+  ]
+}

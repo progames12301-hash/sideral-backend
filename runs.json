@@ -1,0 +1,31 @@
+{
+  "schema": "sideral-wrf-run-index-v1",
+  "retentionHours": 96,
+  "latest": "2026111012",
+  "runs": [
+    {
+      "id": "2026111012",
+      "runDate": null,
+      "runCycle": null,
+      "initTime": "2026-11-10T12:00:00Z",
+      "generatedAt": null,
+      "frameCount": 41,
+      "reflectivitySource": null,
+      "resolutionKm": 5,
+      "metadata": "runs/2026111012/metadata.json",
+      "basePath": "runs/2026111012"
+    },
+    {
+      "id": "2026110912",
+      "runDate": null,
+      "runCycle": null,
+      "initTime": "2026-11-09T12:00:00Z",
+      "generatedAt": null,
+      "frameCount": 7,
+      "reflectivitySource": null,
+      "resolutionKm": 4,
+      "metadata": "runs/2026110912/metadata.json",
+      "basePath": "runs/2026110912"
+    }
+  ]
+}
