@@ -42,7 +42,7 @@ jobs:
             [.jobs[]? | select(.conclusion == "failure" and (.started_at == null or .runner_name == null))] | length
           ' 2>/dev/null || printf '0')"
 
-          TRANSIENT_RE='Temporary failure resolving|Could not resolve|Name or service not known|Could not resolve proxy|Connection timed out|Connection reset by peer|SSL connection timeout|TLS handshake timeout|curl: \(28\)|unexpected EOF|remote end hung up|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout|HTTP 502|HTTP 503|HTTP 504|API rate limit exceeded|secondary rate limit|Service Unavailable|The request was aborted|Failed to connect to .* port .* after|apt.*Temporary failure|Failed to fetch .* (Temporary failure|Connection timed out)'
+          TRANSIENT_RE='Temporary failure resolving|Could not resolve|Name or service not known|Could not resolve proxy|Connection timed out|Connection reset by peer|SSL connection timeout|TLS handshake timeout|curl: \(28\)|unexpected EOF|remote end hung up|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout|HTTP 429|429 Too Many Requests|HTTP 502|HTTP 503|HTTP 504|returned error: (429|500|502|503|504)|unable to access .* (429|500|502|503|504)|API rate limit exceeded|secondary rate limit|Service Unavailable|The request was aborted|Failed to connect to .* port .* after|apt.*Temporary failure|Failed to fetch .* (Temporary failure|Connection timed out)|The runner is not responding|lost communication with the runner|upstream connect error|no hosted runner matches'
           if grep -Eiq "$TRANSIENT_RE" "$LOG"; then
             echo "Transient network/platform signature found; requesting one full workflow rerun."
             grep -Ein "$TRANSIENT_RE" "$LOG" | tail -n 20 || true
