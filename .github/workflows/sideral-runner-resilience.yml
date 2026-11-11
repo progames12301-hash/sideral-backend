@@ -2,6 +2,7 @@ name: Sideral Runner Resilience - transient retry
 
 on:
   workflow_run:
+    workflows: ["*"]
     types: [completed]
 
 permissions:
@@ -15,6 +16,7 @@ concurrency:
 jobs:
   retry-transient-failure:
     if: >-
+      github.event.workflow_run.workflow_id != 414983124 &&
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.run_attempt < 2 &&
       github.event.workflow_run.name != 'Sideral Runner Resilience - transient retry'
