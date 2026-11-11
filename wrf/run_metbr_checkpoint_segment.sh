@@ -21,10 +21,7 @@ case "$COLD_START" in
   *) echo "COLD_START invalido: use 1 no F000 e 0 nos segmentos de continuacao" >&2; exit 1 ;;
 esac
 
-if ! command -v grib_set >/dev/null 2>&1; then
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq libeccodes-tools
-fi
+source "$ROOT/wrf/ensure_eccodes_tools.sh"
 for tool in grib_set grib_copy grib_count; do
   command -v "$tool" >/dev/null || { echo "ERRO: ecCodes/$tool indisponivel" >&2; exit 10; }
 done
