@@ -148,8 +148,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
+          bash scripts/apt-install-resilient.sh ffmpeg
           python -m py_compile tools/render_tarc_native_reflectivity_mp4.py
           python tools/render_tarc_native_reflectivity_mp4.py \
             --input-dir native_input \
