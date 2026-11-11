@@ -88,7 +88,7 @@ sideral_ensure_eccodes_tools() {
         cat > "$wrapper_dir/$tool" <<EOF
 #!/usr/bin/env bash
 set -Eeuo pipefail
-exec docker run --rm --entrypoint "$tool" -v "\\${PWD}:\\${PWD}" -w "\\${PWD}" "$image" "\$@"
+exec docker run --rm --entrypoint "$tool" -v "\${PWD}:\${PWD}" -w "\${PWD}" "$image" "\$@"
 EOF
         chmod +x "$wrapper_dir/$tool"
       done
