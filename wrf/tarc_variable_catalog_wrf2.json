@@ -200,6 +200,11 @@
       "reflectivity_column_max_dbz",
       "native",
       "refletividade máxima derivada na coluna (REFD_MAX)"
+    ],
+    [
+      "wind_gust_10m_ms",
+      "native",
+      "GUST/WINDGUST: rajada de superfície emitida pelo WRF quando disponível; não é substituída pelo máximo de vento"
     ]
   ],
   "additional_diagnostics_from_native_wrf": [
@@ -234,7 +239,7 @@
     "vento U/V 850/700/500/200 hPa",
     "geopotencial 850/700/500/200 hPa"
   ],
-  "note": "Os diagnosticos adicionais dependem de pos-processamento vertical dos wrfout 3D; o pipeline desta branch preserva os wrfout nativos para essa etapa sem inventar campos inexistentes. NWP fields are included in hourly compact output when present; missing fields remain unavailable. WSPD10MAX is an interval maximum, not an instantaneous gust.",
+  "note": "Os diagnosticos adicionais dependem de pos-processamento vertical dos wrfout 3D; o pipeline desta branch preserva os wrfout nativos para essa etapa sem inventar campos inexistentes. NWP fields are included in hourly compact output when present; missing fields remain unavailable. WSPD10MAX is an interval maximum, not an instantaneous gust. GUST/WINDGUST is exported independently when the selected surface physics writes it; WSPD10MAX remains a separate interval-maximum field.",
   "modelKey": "sideral_wrf_4km_2_sudeste",
   "resolutionKm": 4
 }
