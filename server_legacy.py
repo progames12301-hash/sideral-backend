@@ -2898,6 +2898,23 @@ class Handler(SimpleHTTPRequestHandler):
             except BatchRequestError as exc:
                 self.send_json(503, {"error": str(exc)})
             return
+        if parsed_path == "/api/wrf/sounding/batch/profile":
+            from backend.metbr_skewt_batch import BatchRequestError, get_profile
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                profile = get_profile(
+                    query.get("request_id", [""])[0],
+                    int(query.get("fh", ["-1"])[0]),
+                    query.get("model_key", ["metbr"])[0],
+                )
+                self.send_json(200, profile)
+            except (ValueError, TypeError) as exc:
+                self.send_json(400, {"error": str(exc)})
+            except FileNotFoundError as exc:
+                self.send_json(404, {"error": str(exc)})
+            except BatchRequestError as exc:
+                self.send_json(503, {"error": str(exc)})
+            return
         if parsed_path == "/api/wrf/sounding/batch/image":
             from backend.metbr_skewt_batch import BatchRequestError, get_png
             query = parse_qs(urlparse(self.path).query)
