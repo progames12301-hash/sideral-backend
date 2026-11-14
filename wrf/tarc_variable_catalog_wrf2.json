@@ -145,6 +145,61 @@
       "XLONG",
       "native",
       "longitude das celulas"
+    ],
+    [
+      "wind10m_max_ms",
+      "native",
+      "máxima do vento a 10 m no intervalo WRF (proxy de pico/rajada; não instantânea) (WSPD10MAX)"
+    ],
+    [
+      "updraft_helicity_max_m2s2",
+      "native",
+      "helicidade máxima da corrente ascendente (UP_HELI_MAX)"
+    ],
+    [
+      "updraft_velocity_max_ms",
+      "native",
+      "velocidade vertical máxima da corrente ascendente (W_UP_MAX)"
+    ],
+    [
+      "downdraft_velocity_max_ms",
+      "native",
+      "velocidade vertical máxima da corrente descendente (W_DN_MAX)"
+    ],
+    [
+      "column_mean_vertical_velocity_ms",
+      "native",
+      "velocidade vertical média na coluna (W_COLMEAN)"
+    ],
+    [
+      "interval_mean_vertical_velocity_ms",
+      "native",
+      "velocidade vertical média no intervalo (W_MEAN)"
+    ],
+    [
+      "graupel_column_max_kgm2",
+      "native",
+      "máximo de graupel integrado na coluna (GRPL_MAX)"
+    ],
+    [
+      "graupel_column_integral_kgm2",
+      "native",
+      "graupel integrado na coluna (GRPL_COLINT)"
+    ],
+    [
+      "hail_diameter_lowest_level_max_m",
+      "native",
+      "diâmetro máximo de granizo no nível inferior (HAIL_MAXK1)"
+    ],
+    [
+      "hail_diameter_column_max_m",
+      "native",
+      "diâmetro máximo de granizo na coluna (HAIL_MAX2D)"
+    ],
+    [
+      "reflectivity_column_max_dbz",
+      "native",
+      "refletividade máxima derivada na coluna (REFD_MAX)"
     ]
   ],
   "additional_diagnostics_from_native_wrf": [
@@ -179,7 +234,7 @@
     "vento U/V 850/700/500/200 hPa",
     "geopotencial 850/700/500/200 hPa"
   ],
-  "note": "Os diagnosticos adicionais dependem de pos-processamento vertical dos wrfout 3D; o pipeline desta branch preserva os wrfout nativos para essa etapa sem inventar campos inexistentes.",
+  "note": "Os diagnosticos adicionais dependem de pos-processamento vertical dos wrfout 3D; o pipeline desta branch preserva os wrfout nativos para essa etapa sem inventar campos inexistentes. NWP fields are included in hourly compact output when present; missing fields remain unavailable. WSPD10MAX is an interval maximum, not an instantaneous gust.",
   "modelKey": "sideral_wrf_4km_2_sudeste",
   "resolutionKm": 4
 }
