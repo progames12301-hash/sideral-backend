@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           source wrf/ensure_eccodes_tools.sh
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -77,7 +77,7 @@ jobs:
             test -s "$script"
             bash -n "$script"
           done
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -135,7 +135,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -154,7 +154,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -212,7 +212,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -231,7 +231,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -289,7 +289,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -308,7 +308,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -366,7 +366,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -385,7 +385,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -443,7 +443,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -462,7 +462,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -520,7 +520,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -539,7 +539,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -597,7 +597,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -616,7 +616,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -674,7 +674,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -693,7 +693,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -751,7 +751,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -770,7 +770,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -828,7 +828,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -847,7 +847,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -905,7 +905,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -924,7 +924,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -982,7 +982,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -1001,7 +1001,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -1059,7 +1059,7 @@ jobs:
           source wrf/ensure_eccodes_tools.sh
           command -v shellcheck >/dev/null || { echo "ShellCheck não disponível na imagem runner" >&2; exit 1; }
           python -m pip install --upgrade pip
-          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
+          python -m pip install 'numpy==1.26.4' 'netCDF4>=1.7,<2' 'xarray>=2024.1,<2027' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validate CIM 5 km runner scripts
         shell: bash
@@ -1078,7 +1078,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/cim4_postprocess.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/select_tarc_icon_run.py wrf/extract_wrf_severe_core.py wrf/cim4_postprocess.py
           python3 - <<'PY'
           import json
           from pathlib import Path
