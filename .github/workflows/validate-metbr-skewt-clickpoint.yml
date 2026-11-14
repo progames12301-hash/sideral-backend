@@ -1,14 +1,28 @@
-name: Validate METBR Skew-T Click-to-Point
+name: Validate Skew-T Click-to-Point backend
 
 on:
+  push:
+    branches: ["main"]
+    paths:
+      - "backend/metbr_skewt_batch.py"
+      - "backend/tests/test_skewt_clickpoint_models.py"
+      - "server_legacy.py"
+      - ".github/workflows/validate-metbr-skewt-clickpoint.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "backend/metbr_skewt_batch.py"
+      - "backend/tests/test_skewt_clickpoint_models.py"
+      - "server_legacy.py"
+      - ".github/workflows/validate-metbr-skewt-clickpoint.yml"
   workflow_dispatch:
+
 permissions:
   contents: read
 
 jobs:
-  syntax:
-    if: false  # Desativado para reduzir carga de runners.
-    name: Validate backend Python syntax
+  syntax-and-tests:
+    name: Validate Click-to-Point dispatcher and routes
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -16,10 +30,13 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Compile the Render endpoint and native METBR Skew-T modules
+          python-version: "3.11"
+      - name: Install test dependency
+        run: python -m pip install "requests>=2.31"
+      - name: Compile backend modules
         run: |
           python -m py_compile \
             server_legacy.py \
-            wrf/metbr_skewt_south.py \
-            tools/skewt/metbr_native_spc_render.py
+            backend/metbr_skewt_batch.py
+      - name: Test global NWP dispatch and profile retrieval
+        run: python -m unittest backend.tests.test_skewt_clickpoint_models -v
