@@ -83,6 +83,10 @@ MODEL_RUNNERS: dict[str, dict[str, Any]] = {
 
 def _model_config(model_key: str | None) -> tuple[str, dict[str, Any]]:
     key = str(model_key or "metbr").strip().lower()
+    # Compatibility for already-published HTML clients. This only normalizes
+    # the transport key; it always selects conventional GFS data and workflow.
+    if key == "gfs_ai":
+        key = "gfs"
     config = MODEL_RUNNERS.get(key)
     if config is None:
         raise ValueError(f"Modelo Click-to-Point não reconhecido: {key or '(vazio)'}.")
