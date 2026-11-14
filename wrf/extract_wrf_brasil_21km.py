@@ -154,6 +154,8 @@ def main():
                     if k in ("lat", "lon"):
                         continue
                     fields[k] = flat(value, 2) if value is not None else None
+                # Mantém a chave legada consumida por alguns clientes antigos.
+                fields.setdefault("shearDirection", None)
                 valid=times[index].strftime("%Y-%m-%dT%H:%M:%SZ"); payload={"schema":"sideral-wrf-brasil-21km-fields-v1","model":"WRF Brasil","resolutionKm":21,"gridX":215,"gridY":215,"forecastHour":index,"validTime":valid,"surface":fields,"pressureLevels":levels,"pressureSource":"SLP_NATIVE","nativeGrid":True,"severe":severe_meta}
                 gz_path=fields_dir/f"f{index:03d}.json.gz"; body=json.dumps(payload,ensure_ascii=False,separators=(",",":"),allow_nan=False).encode()
                 with gz_path.open("wb") as raw:
