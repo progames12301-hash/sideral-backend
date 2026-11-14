@@ -45,7 +45,7 @@ pairs = {
  'start_year':start.year,'start_month':start.month,'start_day':start.day,'start_hour':start.hour,
  'end_year':end.year,'end_month':end.month,'end_day':end.day,'end_hour':end.hour,
  'run_days':0,'run_hours':end_h-start_h,'run_minutes':0,'run_seconds':0,
- 'restart':'.true.','restart_interval':(end_h-start_h)*60,'override_restart_timers':'.true.','history_interval':hist,
+ 'restart':'.true.','restart_interval':(end_h-start_h)*60,'override_restart_timers':'.true.','history_interval':hist,'nwp_diagnostics':1,
  'time_step':int(os.environ.get('WRF_TIME_STEP','25')),'time_step_fract_num':0,'time_step_fract_den':1,
 }
 for key, value in pairs.items():
@@ -53,7 +53,7 @@ for key, value in pairs.items():
     rep=f' {key} = {value},'
     if re.search(pat,s):
         s=re.sub(pat,rep,s)
-    elif key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds','end_year','end_month','end_day','end_hour'}:
+    elif key in {'restart','restart_interval','override_restart_timers','history_interval','nwp_diagnostics','run_days','run_hours','run_minutes','run_seconds','end_year','end_month','end_day','end_hour'}:
         s=s.replace('&time_control', '&time_control\n'+rep, 1)
     else:
         s=s.replace('&domains', '&domains\n'+rep, 1)
