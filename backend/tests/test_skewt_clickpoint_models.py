@@ -138,6 +138,41 @@ class GlobalSkewTClickPointTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, "F006"):
                 batch.get_profile(request_id, 6, "gfs")
 
+    def test_simultaneous_request_ids_cannot_read_each_others_profiles(self):
+        requests = {
+            "1" * 32: ("gfs", 6),
+            "2" * 32: ("ecmwf_ifs", 12),
+        }
+
+        def release_asset(request_id, asset_name, model_key):
+            expected_model, hour = requests[request_id]
+            if model_key != expected_model:
+                raise AssertionError("model_key crossed between requests")
+            if asset_name == "status.json":
+                return {
+                    "status": "completed",
+                    "request_id": request_id,
+                    "model_key": expected_model,
+                    "available_hours": [hour],
+                }
+            return {
+                "request_id": request_id,
+                "model_key": expected_model,
+                "forecast_hour": hour,
+                "profile": [{"pressure_hpa": 900, "temperature_c": 12.0}],
+            }
+
+        with patch.object(batch, "_get_json_asset", side_effect=release_asset):
+            first = batch.get_profile("1" * 32, 6, "gfs")
+            second = batch.get_profile("2" * 32, 12, "ecmwf_ifs")
+
+        self.assertEqual(first["request_id"], "1" * 32)
+        self.assertEqual(first["model_key"], "gfs")
+        self.assertEqual(first["forecast_hour"], 6)
+        self.assertEqual(second["request_id"], "2" * 32)
+        self.assertEqual(second["model_key"], "ecmwf_ifs")
+        self.assertEqual(second["forecast_hour"], 12)
+
     def test_legacy_wrf_dispatch_does_not_gain_a_new_required_input(self):
         with patch.dict("os.environ", {"METBR_SKEWT_GITHUB_TOKEN": "test-token"}):
             with patch.object(batch, "_check_dispatch_rate"):
