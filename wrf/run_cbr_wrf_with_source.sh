@@ -136,6 +136,7 @@ cat > "$WORK/namelist.input" <<EOF
  interval_seconds=10800,
  input_from_file=.true.,
  history_interval=$WRF_HISTORY_INTERVAL_MINUTES,
+ nwp_diagnostics=1,
  frames_per_outfile=1,
  restart=.false.,
  restart_interval=$RESTART_MIN,
