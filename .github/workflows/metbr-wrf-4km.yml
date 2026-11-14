@@ -29,6 +29,8 @@ jobs:
         with:
           ref: wrf-runner
           fetch-depth: 1
+      - name: Validar extratores METBR e núcleo de diagnósticos
+        run: python3 -m py_compile wrf/extract_wrf_severe_core.py wrf/metbr_extract_json.py wrf/extract_cim_wrf_core.py
       - name: Login Docker Hub
         uses: docker/login-action@v3
         with:
