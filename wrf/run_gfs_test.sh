@@ -144,6 +144,7 @@ cat > "$WORK/namelist.input" <<EOF
  interval_seconds = 10800,
  input_from_file = .true.,
  history_interval = 180,
+ nwp_diagnostics = 1,
  frames_per_outfile = 1,
  restart = .false.,
  io_form_history = 2,
