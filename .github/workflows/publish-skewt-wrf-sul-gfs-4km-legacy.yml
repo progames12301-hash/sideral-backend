@@ -1,0 +1,37 @@
+name: Publicar Skew-T — WRF Sul 4 km legado GFS
+
+on:
+  workflow_run:
+    workflows: ["WRF Sul 4 km - LEGADO MANUAL"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: ID da execução concluída do WRF Sul 4 km legado
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-skewt-wrf-sul-gfs-4km-legacy-${{ github.event.workflow_run.id || inputs.source_run_id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success') }}
+    uses: ./.github/workflows/skewt-wrf-publish-reusable.yml
+    permissions:
+      contents: write
+      actions: read
+    with:
+      source-run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+      expected-source-workflow: "WRF Sul 4 km - LEGADO MANUAL"
+      model-key: "wrf-sul-gfs-4km-legacy"
+      model-label: "WRF Sul 4 km legado GFS"
+      resolution-km: "4"
+      source-mode: artifact
+      artifact-name: "skewt-wrfout-sul-gfs-4km-legacy"

@@ -1,0 +1,152 @@
+name: Validate Skew-T Python and workflow syntax
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/skewt/*.py"
+      - "wrf/skewt_native_capitals.py"
+      - "wrf/skewt_brasil_21km_capitais.py"
+      - ".github/actions/**/*.yml"
+      - ".github/actions/**/*.yaml"
+      - ".github/workflows/*.yml"
+      - ".github/workflows/*.yaml"
+      - "skewt.html"
+      - "metbr-wrf-4km.html"
+      - "metbr-wrf-4km-click-point-test.html"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install YAML parser
+        run: python -m pip install --disable-pip-version-check pyyaml
+      - name: Check all workflow YAML and reject duplicate keys
+        run: |
+          python - <<'PY'
+          import glob
+          import yaml
+
+          class UniqueKeyLoader(yaml.SafeLoader):
+              pass
+
+          def construct_unique_mapping(loader, node, deep=False):
+              loader.flatten_mapping(node)
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=deep)
+                  if key in mapping:
+                      raise yaml.constructor.ConstructorError(
+                          "while constructing a mapping",
+                          node.start_mark,
+                          f"duplicate key {key!r}",
+                          key_node.start_mark,
+                      )
+                  mapping[key] = loader.construct_object(value_node, deep=deep)
+              return mapping
+
+          UniqueKeyLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+              construct_unique_mapping,
+          )
+          paths = sorted(
+              glob.glob(".github/workflows/*.yml")
+              + glob.glob(".github/workflows/*.yaml")
+              + glob.glob(".github/actions/**/*.yml", recursive=True)
+              + glob.glob(".github/actions/**/*.yaml", recursive=True)
+          )
+          for path in paths:
+              with open(path, encoding="utf-8") as stream:
+                  yaml.load(stream, Loader=UniqueKeyLoader)
+          print(f"Validated YAML syntax and duplicate keys in {len(paths)} workflow files.")
+          PY
+      - name: Compile Skew-T scripts before any rendering
+        run: |
+          python -m py_compile \
+            tools/skewt/native_spc_render.py \
+            tools/skewt/metbr_native_spc_render.py \
+            tools/skewt/generate_capitals_sharppy.py \
+            tools/skewt/generate_multimodel_capitals.py \
+            tools/skewt/generate_sharppy_product.py \
+            tools/skewt/generate_sharppy_product_operational.py \
+            tools/skewt/ecmwf_profile.py \
+            tools/skewt/render_operational_interface.py \
+            tools/skewt/render_operational_interface_v2.py \
+            wrf/skewt_brasil_21km_capitais.py \
+            wrf/skewt_native_capitals.py
+
+      - name: Compile inline JavaScript in Skew-T pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class InlineScripts(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.collect = False
+                  self.current = []
+                  self.scripts = []
+                  self.current_module = False
+
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() == "script":
+                      attributes = dict(attrs)
+                      self.collect = "src" not in attributes
+                      self.current_module = attributes.get("type", "").lower() == "module"
+                      self.current = []
+
+              def handle_data(self, data):
+                  if self.collect:
+                      self.current.append(data)
+
+              def handle_endtag(self, tag):
+                  if tag.lower() == "script" and self.collect:
+                      self.scripts.append(("".join(self.current), self.current_module))
+                      self.collect = False
+                      self.current = []
+                      self.current_module = False
+
+          sources = (
+              ("Skew t.html", "/tmp/skewt-main-inline"),
+              ("skewt.html", "/tmp/skewt-current-inline"),
+              ("skewt-capitais.html", "/tmp/skewt-capitais-inline"),
+              ("metbr-wrf-4km-click-point-test.html", "/tmp/metbr-wrf-skewt-capitals-inline"),
+          )
+          for source, output_dir in sources:
+              parser = InlineScripts()
+              parser.feed(Path(source).read_text(encoding="utf-8"))
+              if not parser.scripts:
+                  raise SystemExit(f"Nenhum script inline encontrado em {source}")
+              root = Path(output_dir)
+              root.mkdir(parents=True, exist_ok=True)
+              for index, (code, is_module) in enumerate(parser.scripts):
+                  extension = ".mjs" if is_module else ".js"
+                  target = root / f"inline-{index:02d}{extension}"
+                  target.write_text(code, encoding="utf-8")
+              print(f"{source}: {len(parser.scripts)} script(s) extraídos individualmente")
+          PY
+          for directory in \
+            /tmp/skewt-main-inline \
+            /tmp/skewt-current-inline \
+            /tmp/skewt-capitais-inline \
+            /tmp/metbr-wrf-skewt-capitals-inline; do
+            for file in "$directory"/*.js "$directory"/*.mjs; do
+              [[ -f "$file" ]] || continue
+              echo "Verificando $file"
+              node --check "$file"
+            done
+          done

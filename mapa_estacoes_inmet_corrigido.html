@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Estações Sideral</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="station-history.css?v=20260830-history1" />
+    <link rel="stylesheet" href="stations-sideral.css?v=20260913-real1" />
+    <link rel="stylesheet" href="site-shell.css?v=20260822-sidebar-icons1" />
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="navigation.js?v=20260902-saticon2" defer></script>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+  </head>
+  <body>
+    <header>
+      <div class="header-container">
+        <div class="menu" id="menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="links">
+          <a href="dashboard.html">Início</a>
+          <a href="previsao.html">Previsão</a>
+          <a href="radar.html">Radar</a>
+          <a href="sobre.html">Sobre</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="sidebar" id="sidebar">
+      <a href="dashboard.html">Início</a>
+      <a href="previsao.html">Previsão</a>
+      <a href="radar.html">Radar</a>
+      <a href="mapa_tornados.html">Mapa de Tornados</a>
+      <a href="estudo_tornados.html">Estudo de Tornados</a>
+      <a href="alertas.html">Alertas</a>
+      <a href="noticias.html">Notícias</a>
+      <a href="noticias-2.html">Notícias 2</a>
+      <a href="noticia-1.html">Notícia 1</a>
+      <a href="noticia-2.html">Notícia 2</a>
+      <a href="noticia-3.html">Notícia 3</a>
+      <a href="noticia-4.html">Notícia 4</a>
+      <a href="noticia-5.html">Notícia 5</a>
+      <a href="noticia-6.html">Notícia 6</a>
+      <a href="noticia-7.html">Notícia 7</a>
+      <a href="climatologia.html">Climatologia</a>
+      <a href="hidrologia.html">Hidrologia</a>
+      <a href="satelites.html">Satélites</a>
+      <a href="agrometeorologia.html">Agrometeorologia</a>
+      <a href="educacao-meteorologica.html">Educação Meteorológica</a>
+      <a href="escala-fujita.html">Escala Fujita</a>
+      <a href="cartas_sinoticas.html">Cartas Sinóticas</a>
+      <a href="mapa_estacoes_inmet_corrigido.html">Estações Sideral</a>
+      <a href="Meteogramas.html">Meteogramas</a>
+      <a href="Skew t.html">Skew-T Log-P</a>
+      <a href="refletividaded.html">Temperatura e Vento</a>
+      <a href="refletividaded.html">Refletividade</a>
+      <a href="refletividaded.html">MUCAPE</a>
+      <a href="refletividaded.html">Nuvem</a>
+      <a href="refletividaded.html">GFS Landing</a>
+      <a href="refletividaded.html">Welcome</a>
+      <a href="doacoes.html">Doações</a>
+      <a href="projeto-desinformacao-zero.html">Desinformação Zero</a>
+      <a href="formulario-requisitar.html">Formulário Requisitar</a>
+      <a href="requisitar-dados.html">Requisitar Dados</a>
+      <a href="registro-guaraciaba-sc-2009.html">Registro Guaraciaba 2009</a>
+      <a href="registro-indaiatuba-sp-2005.html">Registro Indaiatuba 2005</a>
+      <a href="registro-itu-sp-1991.html">Registro Itu 1991</a>
+      <a href="registro-jarinu-campinas-sp-2016.html">Registro Jarinu 2016</a>
+      <a href="registro-maravilha-sc-1984.html">Registro Maravilha 1984</a>
+      <a href="registro-marechal-candido-rondon-pr-2015.html"
+        >Registro Marechal 2015</a
+      >
+      <a href="registro-palmas-pr-1959.html">Registro Palmas 1959</a>
+      <a href="registro-piedade-sp-1987.html">Registro Piedade 1987</a>
+      <a href="registro-taquarituba-sp-2013.html">Registro Taquarituba 2013</a>
+      <a href="registro-xanxere-sc-2015.html">Registro Xanxerê 2015</a>
+      <a href="sobre.html">Sobre</a>
+      <a href="index.html">Index</a>
+    </div>
+
+    <div id="map"></div>
+    <a class="map-logo" href="dashboard.html" aria-label="Sideral"><img src="sideral-removebg-preview.png" alt="Sideral" /></a>
+
+    <button class="station-controls-toggle" id="stationControlsToggle" type="button" aria-label="Abrir filtros das estações" aria-controls="stationControls" aria-expanded="false"><i class="ph ph-sliders-horizontal"></i></button>
+    <aside class="station-controls" id="stationControls">
+      <div class="station-controls-title"><i class="ph ph-broadcast"></i><div><b>Estações Sideral</b><small>Observações reais · redes integradas</small></div></div>
+      <label for="networkFilter">Rede</label><select id="networkFilter"><option value="TODAS">Todas as redes</option></select>
+      <label for="ufFilter">UF</label><select id="ufFilter"><option value="TODAS">Brasil</option></select>
+      <label for="variableFilter">Variável</label>
+      <select id="variableFilter"><option value="temperature">Temperatura</option><option value="humidity">Umidade</option><option value="windSpeed">Vento</option><option value="windGust">Rajada</option><option value="rain24h">Chuva 24 h</option><option value="rain1h">Chuva 1 h</option><option value="pressure">Pressão</option><option value="riverLevel">Nível de rio</option></select>
+      <label for="freshnessFilter">Atualização</label><select id="freshnessFilter"><option value="TODAS">Todas</option><option value="RECENTES">Recentes (até 2 h)</option><option value="ATRASADAS">Atrasadas</option><option value="SEM_DADO">Sem horário recente</option></select>
+      <input id="stationSearch" type="search" placeholder="Nome, cidade ou código..." />
+      <div class="source-summary" id="sourceSummary"></div>
+      <button id="reloadStations" type="button"><i class="ph ph-arrows-clockwise"></i> Atualizar</button>
+    </aside>
+
+    <div class="station-status" id="stationStatus">Carregando estações observacionais reais...</div>
+    <div class="station-legend" id="stationLegend"><b id="legendTitle">Temperatura</b><div id="legendRows"></div></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="station-history.js?v=20260903-gms1"></script>
+    <script src="stations-sideral.js?v=20260913-real1"></script>
+  </body>
+</html>
