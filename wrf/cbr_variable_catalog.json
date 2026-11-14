@@ -197,6 +197,11 @@
       "reflectivity_column_max_dbz",
       "native",
       "refletividade máxima derivada na coluna (REFD_MAX)"
+    ],
+    [
+      "wind_gust_10m_ms",
+      "native",
+      "GUST/WINDGUST: rajada de superfície emitida pelo WRF quando disponível; não é substituída pelo máximo de vento"
     ]
   ],
   "severe_diagnostics": [
@@ -237,5 +242,5 @@
     "GFS only for land/soil support through WPS",
     "native WRF grid retained"
   ],
-  "note": " WRF NWP diagnostics are exported in hourly compact products when present; missing physics fields are omitted and reported rather than replaced with zero. WSPD10MAX is an interval maximum, not an instantaneous gust."
+  "note": " WRF NWP diagnostics are exported in hourly compact products when present; missing physics fields are omitted and reported rather than replaced with zero. WSPD10MAX is an interval maximum, not an instantaneous gust. GUST/WINDGUST is exported independently when the selected surface physics writes it; WSPD10MAX remains a separate interval-maximum field."
 }
