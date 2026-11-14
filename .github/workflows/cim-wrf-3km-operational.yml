@@ -131,7 +131,7 @@ jobs:
           python -m pip install 'numpy==1.26.4' 'xarray>=2024.1,<2026' 'netCDF4>=1.7,<2' 'scipy>=1.11,<2' 'requests>=2.31' 'ecmwf-opendata==0.3.34'
 
       - name: Validar extratores e diagnósticos CIM
-        run: python -m py_compile wrf/extract_wrf_severe_core.py wrf/extract_cim_wrf_core.py wrf/extract_cim_wrf.py
+        run: python -m py_compile wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/extract_cim_wrf_core.py wrf/extract_cim_wrf.py
 
       - name: Executar CIM 8 km
         env:
