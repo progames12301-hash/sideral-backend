@@ -108,6 +108,11 @@ def main():
             if "rainc_mm" in variables and "rainnc_mm" in variables:
                 variables["rain_total_mm"] = (variables["rainc_mm"] + variables["rainnc_mm"]).astype(np.float32)
 
+            for source_name, product_name in [["WSPD10MAX","wind10m_max_ms","máxima do vento a 10 m no intervalo de histórico; proxy de pico/rajada, não rajada instantânea"],["UP_HELI_MAX","updraft_helicity_max_m2s2","helicidade máxima da corrente ascendente"],["W_UP_MAX","updraft_velocity_max_ms","velocidade vertical máxima da corrente ascendente"],["W_DN_MAX","downdraft_velocity_max_ms","velocidade vertical máxima da corrente descendente"],["W_COLMEAN","column_mean_vertical_velocity_ms","velocidade vertical média na coluna"],["W_MEAN","interval_mean_vertical_velocity_ms","velocidade vertical média no intervalo de diagnóstico"],["GRPL_MAX","graupel_column_max_kgm2","máximo de graupel integrado na coluna"],["GRPL_COLINT","graupel_column_integral_kgm2","graupel integrado na coluna"],["HAIL_MAXK1","hail_diameter_lowest_level_max_m","diâmetro máximo de granizo no nível inferior"],["HAIL_MAX2D","hail_diameter_column_max_m","diâmetro máximo de granizo na coluna"],["REFD_MAX","reflectivity_column_max_dbz","refletividade máxima derivada na coluna"]]:
+                diagnostic = read2d(ds, source_name)
+                if diagnostic is not None:
+                    variables[product_name] = diagnostic.astype(np.float32, copy=False)
+
             safe = stamp.replace("-", "").replace(":", "").replace(".", "_")
             output = out / (safe + ".npz")
             np.savez_compressed(output, **variables)
@@ -117,6 +122,7 @@ def main():
                 "product": output.name,
                 "shape": list(lat.shape) if lat is not None else None,
                 "variables": sorted(variables.keys()),
+                "nwpDiagnostics": [key for _, key, _ in [["WSPD10MAX","wind10m_max_ms","máxima do vento a 10 m no intervalo de histórico; proxy de pico/rajada, não rajada instantânea"],["UP_HELI_MAX","updraft_helicity_max_m2s2","helicidade máxima da corrente ascendente"],["W_UP_MAX","updraft_velocity_max_ms","velocidade vertical máxima da corrente ascendente"],["W_DN_MAX","downdraft_velocity_max_ms","velocidade vertical máxima da corrente descendente"],["W_COLMEAN","column_mean_vertical_velocity_ms","velocidade vertical média na coluna"],["W_MEAN","interval_mean_vertical_velocity_ms","velocidade vertical média no intervalo de diagnóstico"],["GRPL_MAX","graupel_column_max_kgm2","máximo de graupel integrado na coluna"],["GRPL_COLINT","graupel_column_integral_kgm2","graupel integrado na coluna"],["HAIL_MAXK1","hail_diameter_lowest_level_max_m","diâmetro máximo de granizo no nível inferior"],["HAIL_MAX2D","hail_diameter_column_max_m","diâmetro máximo de granizo na coluna"],["REFD_MAX","reflectivity_column_max_dbz","refletividade máxima derivada na coluna"]] if key in variables],
             })
 
     manifest = out / "metadata.json"
@@ -135,6 +141,18 @@ def main():
             "td2_c": "derived from T2/Q2/PSFC",
             "rh2_pct": "derived from T2/Q2/PSFC",
             "rain_total_mm": "RAINC + RAINNC",
+            "wind10m_max_ms": "máxima do vento a 10 m no intervalo de histórico; proxy de pico/rajada, não rajada instantânea (WSPD10MAX)",
+            "updraft_helicity_max_m2s2": "helicidade máxima da corrente ascendente (UP_HELI_MAX)",
+            "updraft_velocity_max_ms": "velocidade vertical máxima da corrente ascendente (W_UP_MAX)",
+            "downdraft_velocity_max_ms": "velocidade vertical máxima da corrente descendente (W_DN_MAX)",
+            "column_mean_vertical_velocity_ms": "velocidade vertical média na coluna (W_COLMEAN)",
+            "interval_mean_vertical_velocity_ms": "velocidade vertical média no intervalo de diagnóstico (W_MEAN)",
+            "graupel_column_max_kgm2": "máximo de graupel integrado na coluna (GRPL_MAX)",
+            "graupel_column_integral_kgm2": "graupel integrado na coluna (GRPL_COLINT)",
+            "hail_diameter_lowest_level_max_m": "diâmetro máximo de granizo no nível inferior (HAIL_MAXK1)",
+            "hail_diameter_column_max_m": "diâmetro máximo de granizo na coluna (HAIL_MAX2D)",
+            "reflectivity_column_max_dbz": "refletividade máxima derivada na coluna (REFD_MAX)",
+            "wind10mMaxNote": "WSPD10MAX é máximo no intervalo de histórico do WRF; não é rajada instantânea observada.",
         },
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
