@@ -70,6 +70,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --disable-pip-version-check 'numpy>=2.0,<3' 'netCDF4>=1.7,<2' 'xarray>=2024.0,<2025'
 
+      - name: Validar extratores e núcleo de diagnósticos
+        run: python -m py_compile wrf/extract_wrf_severe_core.py wrf/extract_wrf_brasil_21km.py
+
       - name: Resolver rodada GFS com F048
         id: run
         env:
