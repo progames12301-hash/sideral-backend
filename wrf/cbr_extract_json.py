@@ -135,6 +135,9 @@ def frame_payload(path):
         slp = arr2d(ds, "SLP")
         rainc, rainnc, rainsh = arr2d(ds, "RAINC"), arr2d(ds, "RAINNC"), arr2d(ds, "RAINSH")
         snownc, graupel, hail, cldfra = [arr2d(ds, n) for n in ("SNOWNC", "GRAUPELNC", "HAILNC", "CLDFRA")]
+        gust10 = arr2d(ds, "GUST")
+        if gust10 is None:
+            gust10 = arr2d(ds, "WINDGUST")
         nwp_diagnostics = {
             "WSPD10MAX": arr2d(ds, "WSPD10MAX"),
             "UP_HELI_MAX": arr2d(ds, "UP_HELI_MAX"),
@@ -191,6 +194,9 @@ def frame_payload(path):
 
         if rainc is not None and rainnc is not None:
             fields["rainTotalMm"] = flatten(rainc + rainnc, 2)
+
+        if gust10 is not None:
+            fields["windGust10mMs"] = flatten(gust10, 2)
 
         for source_name, product_name, decimals in [["WSPD10MAX","wind10mMaxMs",2],["UP_HELI_MAX","updraftHelicityMaxM2s2",2],["W_UP_MAX","updraftVelocityMaxMs",2],["W_DN_MAX","downdraftVelocityMaxMs",2],["W_COLMEAN","columnMeanVerticalVelocityMs",3],["W_MEAN","intervalMeanVerticalVelocityMs",3],["GRPL_MAX","graupelColumnMaxKgM2",3],["GRPL_COLINT","graupelColumnIntegralKgM2",3],["HAIL_MAXK1","hailDiameterLowestLevelMaxM",4],["HAIL_MAX2D","hailDiameterColumnMaxM",4],["REFD_MAX","reflectivityColumnMaxDbz",1]]:
             value = nwp_diagnostics.get(source_name)
@@ -389,8 +395,9 @@ def main():
             "psfcHpa", "slpHpa",
             "raincMm", "rainncMm", "rainshMm", "rainTotalMm",
             "snowncMm", "graupelncMm", "hailncMm", "cloudFraction",
-            "wind10mMaxMs", "updraftHelicityMaxM2s2", "updraftVelocityMaxMs", "downdraftVelocityMaxMs", "columnMeanVerticalVelocityMs", "intervalMeanVerticalVelocityMs", "graupelColumnMaxKgM2", "graupelColumnIntegralKgM2", "hailDiameterLowestLevelMaxM", "hailDiameterColumnMaxM", "reflectivityColumnMaxDbz"
+            "windGust10mMs", "wind10mMaxMs", "updraftHelicityMaxM2s2", "updraftVelocityMaxMs", "downdraftVelocityMaxMs", "columnMeanVerticalVelocityMs", "intervalMeanVerticalVelocityMs", "graupelColumnMaxKgM2", "graupelColumnIntegralKgM2", "hailDiameterLowestLevelMaxM", "hailDiameterColumnMaxM", "reflectivityColumnMaxDbz"
         ],
+        "windGust10mNote": "GUST/WINDGUST é campo de rajada física emitido pela configuração de superfície, quando disponível; nunca substituído por WSPD10MAX.",
         "wind10mMaxNote": "WSPD10MAX é máximo no intervalo de histórico do WRF; proxy de pico/rajada, não rajada instantânea.",
         "frames": frames,
         "frameCount": len(frames),
