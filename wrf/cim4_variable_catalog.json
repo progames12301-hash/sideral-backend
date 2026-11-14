@@ -60,7 +60,9 @@
     "GRPL_COLINT",
     "HAIL_MAXK1",
     "HAIL_MAX2D",
-    "REFD_MAX"
+    "REFD_MAX",
+    "GUST",
+    "WINDGUST"
   ],
   "rules": [
     "Native WRF grid retained; no downsampling",
@@ -78,7 +80,8 @@
     "graupel_column_integral_kgm2",
     "hail_diameter_lowest_level_max_m",
     "hail_diameter_column_max_m",
-    "reflectivity_column_max_dbz"
+    "reflectivity_column_max_dbz",
+    "wind_gust_10m_ms"
   ],
-  "diagnostics_note": "Os campos severos são calculados por pós-processamento dos wrfout 3D e publicados em cada NPZ horário quando disponíveis. WSPD10MAX é máximo no intervalo de histórico, não rajada instantânea."
+  "diagnostics_note": "Os campos severos são calculados por pós-processamento dos wrfout 3D e publicados em cada NPZ horário quando disponíveis. WSPD10MAX é máximo no intervalo de histórico, não rajada instantânea. GUST/WINDGUST is included separately when emitted by the surface scheme; WSPD10MAX is only the history-interval maximum."
 }
