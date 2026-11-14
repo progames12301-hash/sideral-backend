@@ -55,6 +55,29 @@ MODEL_RUNNERS: dict[str, dict[str, Any]] = {
         "max_forecast_hour": 42,
         "uses_cycle": False,
     },
+    # Global conventional NWP models. Keep these identifiers aligned with the
+    # three workflow_dispatch files and the nwp-data manifest model_key.
+    "gfs": {
+        "workflow": "GLOBAL_GFS_SKEWT_CLICKPOINT.yml",
+        "release_prefix": "gfs-skewt-click",
+        "max_forecast_hour": 384,
+        "uses_cycle": False,
+        "uses_forecast_hour": True,
+    },
+    "icon_dwd": {
+        "workflow": "GLOBAL_ICON_DWD_SKEWT_CLICKPOINT.yml",
+        "release_prefix": "icon-dwd-skewt-click",
+        "max_forecast_hour": 180,
+        "uses_cycle": False,
+        "uses_forecast_hour": True,
+    },
+    "ecmwf_ifs": {
+        "workflow": "GLOBAL_ECMWF_IFS_SKEWT_CLICKPOINT.yml",
+        "release_prefix": "ecmwf-ifs-skewt-click",
+        "max_forecast_hour": 360,
+        "uses_cycle": False,
+        "uses_forecast_hour": True,
+    },
 }
 
 
@@ -107,7 +130,7 @@ def _release_asset_url(request_id: str, asset_name: str, model_key: str = "metbr
     request_id = _request_id(request_id)
     _, config = _model_config(model_key)
     if asset_name not in {"status.json", "manifest.json"}:
-        match = re.fullmatch(r"f(\d{3})\.png", asset_name)
+        match = re.fullmatch(r"f(\d{3})\.(?:png|json)", asset_name)
         if not match or int(match.group(1)) > int(config["max_forecast_hour"]):
             raise ValueError("Arquivo de sondagem inválido para o modelo selecionado.")
     tag = f"{config['release_prefix']}-{request_id}"
@@ -125,6 +148,21 @@ def dispatch_request(payload: dict[str, Any], client_ip: str = "") -> dict[str, 
         raise ValueError("Latitude/longitude fora dos limites geográficos.")
 
     model_key, config = _model_config(payload.get("model_key"))
+    forecast_hour = None
+    if config.get("uses_forecast_hour"):
+        try:
+            raw_hour = payload.get("forecast_hour")
+            if isinstance(raw_hour, bool):
+                raise ValueError
+            forecast_hour = int(raw_hour)
+        except (TypeError, ValueError):
+            raise ValueError("Informe forecast_hour como uma hora de previsão inteira.") from None
+        if forecast_hour < 0 or forecast_hour > int(config["max_forecast_hour"]):
+            raise ValueError(
+                f"Validade fora do intervalo F000–F{int(config['max_forecast_hour']):03d} "
+                f"para {model_key}."
+            )
+
     _check_dispatch_rate(client_ip)
 
     token = os.environ.get("METBR_SKEWT_GITHUB_TOKEN", "").strip()
@@ -153,13 +191,15 @@ def dispatch_request(payload: dict[str, Any], client_ip: str = "") -> dict[str, 
         "request_id": request_id,
     }
 
-    # The legacy METBR workflow still requires a cycle input. The four WRF
-    # runners intentionally accept only coordinates and request_id.
+    # Legacy METBR requires a cycle; global NWP Click-to-Point workflows
+    # require the selected forecast hour. Existing WRF runners remain unchanged.
     if config["uses_cycle"]:
         cycle = str(payload.get("cycle") or "latest").strip().lower()
         if cycle not in ALLOWED_CYCLES:
             raise ValueError("Rodada inválida. Use latest, 00, 06, 12, 18 ou 21.")
         inputs["cycle"] = cycle
+    if config.get("uses_forecast_hour"):
+        inputs["forecast_hour"] = str(forecast_hour)
 
     body = {"ref": "main", "inputs": inputs}
     try:
@@ -199,6 +239,8 @@ def dispatch_request(payload: dict[str, Any], client_ip: str = "") -> dict[str, 
     }
     if config["uses_cycle"]:
         result["cycle"] = inputs["cycle"]
+    if config.get("uses_forecast_hour"):
+        result["forecast_hour"] = forecast_hour
     return result
 
 def _get_json_asset(request_id: str, asset_name: str, model_key: str = "metbr") -> dict[str, Any] | None:
@@ -228,6 +270,12 @@ def _get_json_asset(request_id: str, asset_name: str, model_key: str = "metbr") 
         raise BatchRequestError("O GitHub retornou um manifesto inválido.") from exc
     if not isinstance(value, dict) or value.get("request_id") != request_id:
         raise BatchRequestError("O manifesto retornado não corresponde ao pedido solicitado.")
+    expected_model = str(model_key or "metbr").strip().lower()
+    returned_model = str(value.get("model_key") or expected_model).strip().lower()
+    if returned_model != expected_model:
+        raise BatchRequestError(
+            f"O GitHub retornou model_key={returned_model!r}; esperado {expected_model!r}."
+        )
     return value
 
 
@@ -248,6 +296,36 @@ def get_status(request_id: str, model_key: str = "metbr") -> dict[str, Any]:
             result["run_utc"] = manifest.get("run_utc")
             result["release_tag"] = manifest.get("release_tag")
     return result
+
+
+def get_profile(request_id: str, forecast_hour: int, model_key: str = "metbr") -> dict[str, Any]:
+    """Return the published profile JSON for one completed validity."""
+    request_id = _request_id(request_id)
+    model_key, config = _model_config(model_key)
+    try:
+        hour = int(forecast_hour)
+    except (TypeError, ValueError):
+        raise ValueError("Validade inválida.") from None
+    if hour < 0 or hour > int(config["max_forecast_hour"]):
+        raise ValueError(
+            f"Validade fora do intervalo F000–F{int(config['max_forecast_hour']):03d}."
+        )
+
+    status = _get_json_asset(request_id, "status.json", model_key)
+    if status is None or status.get("status") != "completed":
+        raise FileNotFoundError("O lote ainda não foi concluído.")
+    available = status.get("available_hours") or []
+    if hour not in {int(value) for value in available}:
+        raise FileNotFoundError(f"F{hour:03d} não foi gerado neste lote.")
+
+    profile = _get_json_asset(request_id, f"f{hour:03d}.json", model_key)
+    if profile is None:
+        raise FileNotFoundError(f"O perfil JSON F{hour:03d} ainda não foi publicado.")
+    if profile.get("model_key") != model_key or profile.get("request_id") != request_id:
+        raise BatchRequestError("O perfil publicado não corresponde ao modelo e pedido solicitados.")
+    if int(profile.get("forecast_hour", -1)) != hour:
+        raise BatchRequestError("A validade do perfil publicado não corresponde à solicitação.")
+    return profile
 
 
 def get_png(request_id: str, forecast_hour: int, model_key: str = "metbr") -> bytes:
