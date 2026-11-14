@@ -34,10 +34,37 @@ class GlobalSkewTClickPointTests(unittest.TestCase):
                 self.assertEqual(config["max_forecast_hour"], maximum)
                 self.assertTrue(config["uses_forecast_hour"])
 
-        for unsupported in ("gfs_ai", "icon_ai", "aifs", "ecmwf_aifs"):
+        for unsupported in ("icon_ai", "aifs", "ecmwf_aifs"):
             with self.subTest(unsupported=unsupported):
                 with self.assertRaises(ValueError):
                     batch._model_config(unsupported)
+
+    def test_legacy_gfs_ai_transport_key_routes_only_to_conventional_gfs(self):
+        key, config = batch._model_config("gfs_ai")
+        self.assertEqual(key, "gfs")
+        self.assertEqual(config["workflow"], "GLOBAL_GFS_SKEWT_CLICKPOINT.yml")
+        self.assertEqual(config["release_prefix"], "gfs-skewt-click")
+        self.assertEqual(config["directory"] if "directory" in config else key, "gfs")
+
+        with patch.dict("os.environ", {"METBR_SKEWT_GITHUB_TOKEN": "test-token"}):
+            with patch.object(batch, "_check_dispatch_rate"):
+                with patch.object(
+                    batch.requests,
+                    "post",
+                    return_value=Mock(status_code=204),
+                ) as post:
+                    result = batch.dispatch_request(
+                        {
+                            "model_key": "gfs_ai",
+                            "latitude": -23.55,
+                            "longitude": -46.63,
+                            "forecast_hour": 6,
+                        },
+                        client_ip="legacy-gfs-key-test",
+                    )
+        self.assertEqual(result["model_key"], "gfs")
+        self.assertEqual(result["workflow"], "GLOBAL_GFS_SKEWT_CLICKPOINT.yml")
+        self.assertEqual(post.call_args.kwargs["json"]["inputs"]["forecast_hour"], "6")
 
     def test_dispatch_forwards_selected_forecast_hour_to_each_global_workflow(self):
         expected = {
