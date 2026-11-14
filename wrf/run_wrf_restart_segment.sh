@@ -50,14 +50,14 @@ vals={
  'start_minute':0,'start_second':0,
  'end_year':end_time.year,'end_month':end_time.month,'end_day':end_time.day,'end_hour':end_time.hour,
  'run_days':0,'run_hours':hours,'run_minutes':0,'run_seconds':0,
- 'restart':'.true.','restart_interval':hours*60,'override_restart_timers':'.true.','history_interval':hist,
+ 'restart':'.true.','restart_interval':hours*60,'override_restart_timers':'.true.','history_interval':hist,'nwp_diagnostics':1,
  'time_step':20,'time_step_fract_num':0,'time_step_fract_den':1,
 }
 for key,value in vals.items():
     pat=rf'(?m)^\s*{re.escape(key)}\s*=.*$'
     rep=f' {key} = {value},'
     if re.search(pat,s): s=re.sub(pat,rep,s)
-    elif key in {'restart','restart_interval','override_restart_timers','history_interval','run_days','run_hours','run_minutes','run_seconds','end_year','end_month','end_day','end_hour'}:
+    elif key in {'restart','restart_interval','override_restart_timers','history_interval','nwp_diagnostics','run_days','run_hours','run_minutes','run_seconds','end_year','end_month','end_day','end_hour'}:
         s=s.replace('&time_control', f'&time_control\n{rep}',1)
     elif key in {'time_step','time_step_fract_num','time_step_fract_den'}:
         s=s.replace('&domains', f'&domains\n{rep}',1)
