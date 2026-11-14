@@ -57,7 +57,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -124,7 +124,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -190,7 +190,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -256,7 +256,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -322,7 +322,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -388,7 +388,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -454,7 +454,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -520,7 +520,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -586,7 +586,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -652,7 +652,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -718,7 +718,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -784,7 +784,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -850,7 +850,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -916,7 +916,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
@@ -985,7 +985,7 @@ jobs:
             stat -c 'CBR script: %A %a %n' "$f"
           done
           shellcheck -S error -s bash "${scripts[@]}"
-          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
+          python3 -m py_compile wrf/fetch_icon_wrf_step.py wrf/select_cbr_icon_run.py wrf/fetch_ecmwf_wrf_input.py wrf/fetch_gfs_land_support.py wrf/extract_wrf_severe_core.py wrf/extract_wrf_severe.py wrf/cbr_extract_json.py wrf/cbr_postprocess.py wrf/validate_cbr_extraction.py
           test -s wrf/Vtable.ECMWF_OPEN || { echo "Vtable ECMWF CBR ausente" >&2; exit 1; }
           python3 - <<'PY'
           import json
