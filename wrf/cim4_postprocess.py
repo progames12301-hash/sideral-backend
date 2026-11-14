@@ -162,7 +162,7 @@ def main():
         "domain": {"e_we": 447, "e_sn": 375, "dx_m": 5000, "dy_m": 5000, "displayBoundingBox": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}, "sourceBoundingBox": {"west": -67.0, "east": -39.0, "south": -39.0, "north": -17.0}},
         "frames": index,
         "severeDiagnostics": {
-            "status": "available" if any(any(np.isfinite(v) for v in entry.values() if isinstance(v, (int, float))) for entries in severe_history.values() for entry in entries) else "unavailable",
+            "status": "available" if any(entry.get("status") == "available" for entries in severe_history.values() for entry in entries) else "unavailable",
             "fields": [f"severe_{name}" for name in SEVERE_FIELDS],
             "variables": {
                 name: {
@@ -174,6 +174,7 @@ def main():
             },
             "diagnosticMethods": severe_methods,
             "frameDiagnostics": severe_frame_diagnostics,
+            "windGust10mNote": "GUST/WINDGUST é publicado separadamente quando a física de superfície o emitir; não é substituído por WSPD10MAX.",
             "wind10mMaxNote": "WSPD10MAX é a velocidade máxima a 10 m no intervalo de histórico do WRF; proxy de pico/rajada, não rajada instantânea observada.",
         },
         "products": {
