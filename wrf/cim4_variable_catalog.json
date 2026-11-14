@@ -49,11 +49,36 @@
     "SNOWNC",
     "GRAUPELNC",
     "HAILNC",
-    "CLDFRA"
+    "CLDFRA",
+    "WSPD10MAX",
+    "UP_HELI_MAX",
+    "W_UP_MAX",
+    "W_DN_MAX",
+    "W_COLMEAN",
+    "W_MEAN",
+    "GRPL_MAX",
+    "GRPL_COLINT",
+    "HAIL_MAXK1",
+    "HAIL_MAX2D",
+    "REFD_MAX"
   ],
   "rules": [
     "Native WRF grid retained; no downsampling",
     "Native REFL_10CM only; no synthetic reflectivity",
     "ICON -> ECMWF -> GFS fallback for the primary CIM run"
-  ]
+  ],
+  "severe_diagnostics": [
+    "wind10m_max_ms",
+    "updraft_helicity_max_m2s2",
+    "updraft_velocity_max_ms",
+    "downdraft_velocity_max_ms",
+    "column_mean_vertical_velocity_ms",
+    "interval_mean_vertical_velocity_ms",
+    "graupel_column_max_kgm2",
+    "graupel_column_integral_kgm2",
+    "hail_diameter_lowest_level_max_m",
+    "hail_diameter_column_max_m",
+    "reflectivity_column_max_dbz"
+  ],
+  "diagnostics_note": "Os campos severos são calculados por pós-processamento dos wrfout 3D e publicados em cada NPZ horário quando disponíveis. WSPD10MAX é máximo no intervalo de histórico, não rajada instantânea."
 }
