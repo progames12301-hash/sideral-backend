@@ -6,6 +6,13 @@ import os
 from pathlib import Path
 
 import numpy as np
+import xarray as xr
+
+from extract_wrf_severe_core import (
+    FIELDS as SEVERE_FIELDS,
+    METHODS as SEVERE_METHODS,
+    compute as compute_severe,
+)
 from netCDF4 import Dataset
 
 EPS = 0.622
@@ -55,6 +62,9 @@ def main():
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     index = []
+    severe_history = {name: [] for name in SEVERE_FIELDS}
+    severe_methods = dict(SEVERE_METHODS)
+    severe_frame_diagnostics = []
     is_wrf2 = os.environ.get("WRF2_TOMORROW", "0") == "1"
     model_label = "CIM WRF2 5 KM" if is_wrf2 else "CIM WRF 5 KM"
     model_key = "cim_wrf2_4km" if is_wrf2 else "cim_wrf_4km"
@@ -111,6 +121,26 @@ def main():
             if "rainc_mm" in variables and "rainnc_mm" in variables:
                 variables["rain_total_mm"] = (variables["rainc_mm"] + variables["rainnc_mm"]).astype(np.float32)
 
+            # Publica também os diagnósticos verticais/severos do núcleo comum.
+            # Mantém a grade nativa completa do CIM 5 km e os NaN como ausências reais.
+            if lat is None:
+                raise RuntimeError(f"XLAT ausente em {path}")
+            with xr.open_dataset(path, engine="netcdf4", decode_times=False) as xds:
+                ny, nx = lat.shape
+                severe_fields, severe_status, frame_methods, detail = compute_severe(
+                    xds, np.arange(ny, dtype=int), np.arange(nx, dtype=int)
+                )
+            for field in SEVERE_FIELDS:
+                variables[f"severe_{field}"] = np.asarray(severe_fields[field], dtype=np.float32)
+                severe_history[field].append(severe_status[field])
+            severe_methods = frame_methods
+            if detail.get("missingWrfVariables"):
+                severe_frame_diagnostics.append({
+                    "time": stamp,
+                    "missingWrfVariables": detail["missingWrfVariables"],
+                    "variables": detail.get("variables", {}),
+                })
+
             safe = stamp.replace("-", "").replace(":", "").replace(".", "_")
             output = out / (safe + ".npz")
             np.savez_compressed(output, **variables)
@@ -131,6 +161,21 @@ def main():
         "projection": "WRF Lambert",
         "domain": {"e_we": 447, "e_sn": 375, "dx_m": 5000, "dy_m": 5000, "displayBoundingBox": {"west": -63.6, "east": -41.8, "south": -35.6, "north": -19.4}, "sourceBoundingBox": {"west": -67.0, "east": -39.0, "south": -39.0, "north": -17.0}},
         "frames": index,
+        "severeDiagnostics": {
+            "status": "available" if any(any(np.isfinite(v) for v in entry.values() if isinstance(v, (int, float))) for entries in severe_history.values() for entry in entries) else "unavailable",
+            "fields": [f"severe_{name}" for name in SEVERE_FIELDS],
+            "variables": {
+                name: {
+                    "status": "available" if any(entry.get("status") == "available" for entry in severe_history[name]) else "unavailable",
+                    "availableFrames": sum(entry.get("status") == "available" for entry in severe_history[name]),
+                    "totalFrames": len(severe_history[name]),
+                }
+                for name in SEVERE_FIELDS
+            },
+            "diagnosticMethods": severe_methods,
+            "frameDiagnostics": severe_frame_diagnostics,
+            "wind10mMaxNote": "WSPD10MAX é a velocidade máxima a 10 m no intervalo de histórico do WRF; proxy de pico/rajada, não rajada instantânea observada.",
+        },
         "products": {
             "reflectivity_native_dbz": "native REFL_10CM, lowest model level",
             "reflectivity_composite_dbz": "maximum native REFL_10CM through the column",
